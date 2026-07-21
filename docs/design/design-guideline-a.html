@@ -1,0 +1,1326 @@
+<!--
+  에듀제이씨 학원 · LMS 디자인 시스템 (Design Guideline A)
+  Single self-contained file. No external requests: system font stacks only,
+  all imagery as inline SVG/CSS, all CSS/JS inline.
+  Direction: 청자(celadon) · 먹(sumi ink) · 한지(hanji paper), 채점(red) as reserved semantic.
+-->
+<section class="page" aria-label="에듀제이씨 학원 LMS 디자인 시스템">
+
+<!-- ============================== TOKENS & STYLES ============================== -->
+<style>
+  /* ---------- Reset-ish ---------- */
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { background: var(--paper); color: var(--ink); min-height: 100%; }
+  .page :where(h1,h2,h3,h4,p,figure,ul,ol,table) { margin: 0; }
+  .page :where(ul,ol) { padding: 0; list-style: none; }
+  .page img, .page svg { display: block; max-width: 100%; }
+  .page button { font: inherit; color: inherit; cursor: pointer; }
+
+  /* ---------- Fonts (system stacks — no network) ---------- */
+  .page {
+    --font-sans: 'Apple SD Gothic Neo','Malgun Gothic','Pretendard',-apple-system,
+                 BlinkMacSystemFont,system-ui,'Segoe UI',Roboto,'Noto Sans KR',sans-serif;
+    --font-mono: ui-monospace,'SFMono-Regular','SF Mono','Cascadia Mono','Consolas',
+                 'Liberation Mono',Menlo,monospace;
+  }
+
+  /* ---------- LIGHT tokens (default) ---------- */
+  :root, .page {
+    --paper:        #EEF1EC;
+    --surface:      #FAFBF8;
+    --surface-2:    #F2F5EF;
+    --surface-sunk: #E7EBE3;
+    --line:         #D6DCD1;
+    --line-2:       #C4CCBD;
+
+    --ink:    #1E2422;
+    --ink-2:  #4C554F;
+    --ink-3:  #636C64;
+
+    --primary:       #2C6E60;
+    --primary-hover: #235A4E;
+    --primary-press: #1C4A40;
+    --primary-ink:   #FAFBF8;   /* text on primary */
+    --primary-tint:  #DCE9E3;
+    --primary-tint-2:#C7DCD3;
+    --primary-ontint:#1C5346;   /* text/dot on tint */
+
+    --warn:         #9A6B15;
+    --warn-tint:    #F4E7CA;
+    --warn-ontint:  #6B4A0D;
+
+    --danger:       #B23A2C;
+    --danger-hover: #97301F;
+    --danger-ink:   #FCF3F1;
+    --danger-tint:  #F6DED8;
+    --danger-ontint:#8A2C1E;
+
+    --neutral-tint:  #E7EBE3;
+    --neutral-ontint:#4C554F;
+
+    --data:      var(--primary);
+    --data-soft: #A9C7BC;
+
+    --ring: #157C69;
+
+    --shadow-sm: 0 1px 2px rgba(24,36,30,.05);
+    --shadow-md: 0 1px 2px rgba(24,36,30,.05), 0 10px 26px -14px rgba(24,36,30,.18);
+    --shadow-lg: 0 2px 4px rgba(24,36,30,.05), 0 26px 50px -24px rgba(24,36,30,.24);
+
+    --radius:   14px;
+    --radius-sm: 9px;
+    --radius-pill: 999px;
+
+    color-scheme: light;
+  }
+
+  /* ---------- DARK via OS preference ---------- */
+  @media (prefers-color-scheme: dark) {
+    :root, .page {
+      --paper:        #0F1513;
+      --surface:      #18201D;
+      --surface-2:    #202824;
+      --surface-sunk: #131A17;
+      --line:         #2B342F;
+      --line-2:       #3A453F;
+
+      --ink:    #E8ECE6;
+      --ink-2:  #ABB4AD;
+      --ink-3:  #828D86;
+
+      --primary:       #37937C;
+      --primary-hover: #43A88F;
+      --primary-press: #4FB79C;
+      --primary-ink:   #071110;
+      --primary-tint:  #1A302A;
+      --primary-tint-2:#234238;
+      --primary-ontint:#7FCCB6;
+
+      --warn:         #D9A441;
+      --warn-tint:    #362A11;
+      --warn-ontint:  #E7BC64;
+
+      --danger:       #C24B3B;
+      --danger-hover: #D25B49;
+      --danger-ink:   #FDF1EE;
+      --danger-tint:  #3A201B;
+      --danger-ontint:#EB9F92;
+
+      --neutral-tint:  #232C28;
+      --neutral-ontint:#ABB4AD;
+
+      --data:      #5FB39D;
+      --data-soft: #2F4A42;
+
+      --ring: #5FC4AB;
+
+      --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+      --shadow-md: 0 1px 2px rgba(0,0,0,.4), 0 14px 30px -16px rgba(0,0,0,.6);
+      --shadow-lg: 0 2px 4px rgba(0,0,0,.4), 0 30px 56px -26px rgba(0,0,0,.7);
+
+      color-scheme: dark;
+    }
+  }
+
+  /* ---------- Explicit theme overrides (toggle beats OS, both directions) ---------- */
+  :root[data-theme="light"], :root[data-theme="light"] .page, .page[data-theme="light"] {
+    --paper:#EEF1EC; --surface:#FAFBF8; --surface-2:#F2F5EF; --surface-sunk:#E7EBE3;
+    --line:#D6DCD1; --line-2:#C4CCBD;
+    --ink:#1E2422; --ink-2:#4C554F; --ink-3:#636C64;
+    --primary:#2C6E60; --primary-hover:#235A4E; --primary-press:#1C4A40; --primary-ink:#FAFBF8;
+    --primary-tint:#DCE9E3; --primary-tint-2:#C7DCD3; --primary-ontint:#1C5346;
+    --warn:#9A6B15; --warn-tint:#F4E7CA; --warn-ontint:#6B4A0D;
+    --danger:#B23A2C; --danger-hover:#97301F; --danger-ink:#FCF3F1; --danger-tint:#F6DED8; --danger-ontint:#8A2C1E;
+    --neutral-tint:#E7EBE3; --neutral-ontint:#4C554F;
+    --data:#2C6E60; --data-soft:#A9C7BC; --ring:#157C69;
+    --shadow-sm:0 1px 2px rgba(24,36,30,.05);
+    --shadow-md:0 1px 2px rgba(24,36,30,.05), 0 10px 26px -14px rgba(24,36,30,.18);
+    --shadow-lg:0 2px 4px rgba(24,36,30,.05), 0 26px 50px -24px rgba(24,36,30,.24);
+    color-scheme: light;
+  }
+  :root[data-theme="dark"], :root[data-theme="dark"] .page, .page[data-theme="dark"] {
+    --paper:#0F1513; --surface:#18201D; --surface-2:#202824; --surface-sunk:#131A17;
+    --line:#2B342F; --line-2:#3A453F;
+    --ink:#E8ECE6; --ink-2:#ABB4AD; --ink-3:#828D86;
+    --primary:#37937C; --primary-hover:#43A88F; --primary-press:#4FB79C; --primary-ink:#071110;
+    --primary-tint:#1A302A; --primary-tint-2:#234238; --primary-ontint:#7FCCB6;
+    --warn:#D9A441; --warn-tint:#362A11; --warn-ontint:#E7BC64;
+    --danger:#C24B3B; --danger-hover:#D25B49; --danger-ink:#FDF1EE; --danger-tint:#3A201B; --danger-ontint:#EB9F92;
+    --neutral-tint:#232C28; --neutral-ontint:#ABB4AD;
+    --data:#5FB39D; --data-soft:#2F4A42; --ring:#5FC4AB;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+    --shadow-md:0 1px 2px rgba(0,0,0,.4), 0 14px 30px -16px rgba(0,0,0,.6);
+    --shadow-lg:0 2px 4px rgba(0,0,0,.4), 0 30px 56px -26px rgba(0,0,0,.7);
+    color-scheme: dark;
+  }
+
+  /* ---------- Base ---------- */
+  .page {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .page { scroll-behavior: smooth; }
+  }
+
+  .page :where(a) { color: var(--primary); text-underline-offset: 3px; }
+
+  /* Focus — visible on every interactive surface */
+  .page :where(a,button,input,select,textarea,summary,[tabindex]):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* ---------- Type scale (roles) ---------- */
+  .t-eyebrow {
+    font-family: var(--font-mono);
+    font-size: .72rem; font-weight: 600;
+    letter-spacing: .18em; text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .t-display {
+    font-size: clamp(2rem, 1.28rem + 3vw, 3.15rem);
+    font-weight: 800; line-height: 1.06; letter-spacing: -.022em;
+    text-wrap: balance;
+  }
+  .t-h1 { font-size: clamp(1.35rem,1.1rem + 1vw,1.7rem); font-weight: 800; line-height: 1.2; letter-spacing: -.015em; }
+  .t-h2 { font-size: 1.16rem; font-weight: 700; line-height: 1.3; letter-spacing: -.01em; }
+  .t-h3 { font-size: 1rem; font-weight: 700; line-height: 1.35; }
+  .t-body { font-size: 1rem; font-weight: 400; }
+  .t-small { font-size: .875rem; }
+  .t-caption { font-size: .78rem; color: var(--ink-3); line-height: 1.5; }
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1, "cv01" 1;
+  }
+  .muted  { color: var(--ink-2); }
+  .muted2 { color: var(--ink-3); }
+
+  /* ---------- Layout ---------- */
+  .wrap { width: min(1120px, 100% - 2.5rem); margin-inline: auto; }
+  .section { padding-block: clamp(2.75rem, 2rem + 3vw, 4.5rem); }
+  .section + .section { border-top: 1px solid var(--line); }
+  .sec-head { display: flex; flex-direction: column; gap: .5rem; margin-bottom: 1.9rem; max-width: 62ch; }
+  .stack-lg { display: grid; gap: 1.1rem; }
+  .grid { display: grid; gap: 1.1rem; }
+
+  /* ---------- Top bar ---------- */
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--paper) 82%, transparent);
+    -webkit-backdrop-filter: saturate(1.4) blur(10px);
+    backdrop-filter: saturate(1.4) blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .topbar-in { display: flex; align-items: center; gap: 1rem; height: 60px; }
+  .brand { display: flex; align-items: center; gap: .6rem; text-decoration: none; color: var(--ink); }
+  .brand-mark { flex: none; width: 30px; height: 30px; }
+  .brand-name { font-weight: 800; letter-spacing: -.02em; font-size: 1.02rem; line-height: 1; }
+  .brand-sub { font-family: var(--font-mono); font-size: .62rem; letter-spacing: .16em; color: var(--ink-3); text-transform: uppercase; }
+  .topnav { margin-left: auto; display: flex; align-items: center; gap: .1rem; }
+  .topnav a {
+    text-decoration: none; color: var(--ink-2); font-size: .86rem; font-weight: 600;
+    padding: .45rem .7rem; border-radius: var(--radius-pill);
+  }
+  .topnav a:hover { color: var(--ink); background: var(--surface-2); }
+  .topnav-links { display: flex; gap: .1rem; }
+  @media (max-width: 760px){ .topnav-links { display: none; } }
+
+  .theme-toggle {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 38px; height: 38px; border-radius: var(--radius-pill);
+    background: var(--surface); border: 1px solid var(--line); color: var(--ink-2);
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .theme-toggle:hover { color: var(--ink); border-color: var(--line-2); }
+  .theme-toggle .i-sun { display: none; }
+  .theme-toggle .i-moon { display: block; }
+  :root[data-theme="dark"] .theme-toggle .i-sun, .page[data-theme="dark"] .theme-toggle .i-sun { display: block; }
+  :root[data-theme="dark"] .theme-toggle .i-moon, .page[data-theme="dark"] .theme-toggle .i-moon { display: none; }
+  @media (prefers-color-scheme: dark) {
+    .theme-toggle .i-sun { display: block; } .theme-toggle .i-moon { display: none; }
+    :root[data-theme="light"] .theme-toggle .i-sun, .page[data-theme="light"] .theme-toggle .i-sun { display: none; }
+    :root[data-theme="light"] .theme-toggle .i-moon, .page[data-theme="light"] .theme-toggle .i-moon { display: block; }
+  }
+
+  /* ---------- Hero ---------- */
+  .hero { position: relative; padding-block: clamp(2.5rem, 1.6rem + 4vw, 5rem) clamp(2rem,1.4rem+2vw,3.25rem); }
+  .hero-motif {
+    position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+    mask-image: linear-gradient(180deg, #000 0%, #000 42%, transparent 82%);
+    -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 42%, transparent 82%);
+  }
+  .hero-in { position: relative; z-index: 1; max-width: 700px; }
+  .hero-lead { margin-top: 1.15rem; font-size: 1.075rem; line-height: 1.7; color: var(--ink-2); max-width: 54ch; }
+  .hero-meta { margin-top: 1.6rem; display: flex; flex-wrap: wrap; gap: .5rem; }
+  .hanko {
+    display: inline-flex; align-items: center; gap: .5rem;
+    font-family: var(--font-mono); font-size: .72rem; letter-spacing: .04em;
+    color: var(--ink-2); background: var(--surface); border: 1px solid var(--line);
+    padding: .34rem .7rem .34rem .5rem; border-radius: var(--radius-pill);
+  }
+  .hanko b { width: 10px; height: 10px; border-radius: 3px; }
+
+  /* ---------- Rationale ---------- */
+  .rationale { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 2.4rem; }
+  @media (max-width: 820px){ .rationale { grid-template-columns: 1fr; } }
+  .rat {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 1.15rem 1.2rem 1.25rem; box-shadow: var(--shadow-sm);
+  }
+  .rat-k { font-family: var(--font-mono); font-size: .7rem; letter-spacing: .12em; text-transform: uppercase; color: var(--primary); }
+  .rat h3 { margin: .5rem 0 .5rem; font-size: 1.02rem; letter-spacing: -.01em; }
+  .rat p { font-size: .9rem; color: var(--ink-2); line-height: 1.62; }
+
+  /* ---------- Cards ---------- */
+  .card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  }
+  .card-pad { padding: 1.15rem 1.25rem; }
+  .card-hd { display: flex; align-items: center; gap: .7rem; padding: 1rem 1.25rem; border-bottom: 1px solid var(--line); }
+  .card-hd h3 { flex: 1 1 auto; }
+  .card-ft { padding: .85rem 1.25rem; border-top: 1px solid var(--line); display: flex; gap: .6rem; flex-wrap: wrap; }
+
+  /* ---------- Buttons ---------- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
+    font-weight: 700; font-size: .9rem; line-height: 1;
+    padding: .66rem 1rem; border-radius: var(--radius-sm);
+    border: 1px solid transparent; white-space: nowrap;
+    transition: background .15s, border-color .15s, color .15s, transform .06s, box-shadow .15s;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn .ic { width: 16px; height: 16px; }
+  .btn-primary { background: var(--primary); color: var(--primary-ink); box-shadow: var(--shadow-sm); }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-primary:active { background: var(--primary-press); }
+  .btn-secondary { background: var(--surface); color: var(--ink); border-color: var(--line-2); }
+  .btn-secondary:hover { background: var(--surface-2); border-color: var(--ink-3); }
+  .btn-danger { background: var(--surface); color: var(--danger-ontint); border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
+  .btn-danger:hover { background: var(--danger); color: var(--danger-ink); border-color: var(--danger); }
+  .btn-ghost { background: transparent; color: var(--ink-2); border-color: transparent; }
+  .btn-ghost:hover { background: var(--surface-2); color: var(--ink); }
+  .btn-sm { padding: .42rem .7rem; font-size: .82rem; border-radius: 7px; }
+  .btn[disabled], .btn[aria-disabled="true"] { opacity: .48; cursor: not-allowed; box-shadow: none; }
+  .btn-row { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
+
+  /* ---------- Form fields ---------- */
+  .field { display: grid; gap: .38rem; }
+  .field > label { font-size: .82rem; font-weight: 700; color: var(--ink); }
+  .field .hint { font-size: .76rem; color: var(--ink-3); }
+  .field .err { font-size: .76rem; color: var(--danger-ontint); font-weight: 600; display: flex; gap: .3rem; align-items: center; }
+  .control, .page select.control, .page textarea.control, .page input.control {
+    width: 100%; font: inherit; font-size: .92rem; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--radius-sm);
+    padding: .6rem .75rem; transition: border-color .15s, box-shadow .15s, background .15s;
+  }
+  .control::placeholder { color: var(--ink-3); }
+  .control:hover { border-color: var(--ink-3); }
+  .control:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent); }
+  textarea.control { min-height: 92px; resize: vertical; line-height: 1.55; }
+  select.control {
+    -webkit-appearance: none; appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23636C64' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+    background-repeat: no-repeat; background-position: right .7rem center; padding-right: 2.1rem;
+  }
+  .control.is-error { border-color: var(--danger); box-shadow: 0 0 0 3px var(--danger-tint); }
+  .field-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 1rem 1.1rem; }
+  @media (max-width: 620px){ .field-grid { grid-template-columns: 1fr; } }
+
+  /* file dropzone */
+  .dropzone {
+    border: 1.5px dashed var(--line-2); border-radius: var(--radius); background: var(--surface-2);
+    padding: 1.1rem; display: flex; align-items: center; gap: .9rem;
+  }
+  .dz-ic { flex: none; width: 42px; height: 42px; border-radius: 11px; background: var(--primary-tint);
+           color: var(--primary-ontint); display: grid; place-items: center; }
+  .dz-file { font-family: var(--font-mono); font-size: .84rem; color: var(--ink); }
+
+  /* ---------- Pills / badges ---------- */
+  .pill {
+    display: inline-flex; align-items: center; gap: .4rem;
+    font-size: .76rem; font-weight: 700; line-height: 1;
+    padding: .34rem .6rem; border-radius: var(--radius-pill);
+    background: var(--neutral-tint); color: var(--neutral-ontint);
+    border: 1px solid transparent; white-space: nowrap;
+  }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+  .pill--ok   { background: var(--primary-tint); color: var(--primary-ontint); }
+  .pill--wait { background: var(--warn-tint);    color: var(--warn-ontint); }
+  .pill--no   { background: var(--danger-tint);  color: var(--danger-ontint); }
+  .pill .num  { font-size: .74rem; }
+
+  /* type/category chip (neutral — status colors stay reserved) */
+  .chip {
+    display: inline-flex; align-items: center; gap: .38rem;
+    font-size: .76rem; font-weight: 600; color: var(--ink-2);
+    background: var(--surface); border: 1px solid var(--line-2);
+    padding: .3rem .58rem; border-radius: 8px; white-space: nowrap;
+  }
+  .chip .ic { width: 13px; height: 13px; color: var(--ink-3); }
+  .chip.is-active { background: var(--primary); color: var(--primary-ink); border-color: var(--primary); }
+  .chip.is-active .ic { color: var(--primary-ink); }
+
+  /* ---------- Table (signature: 누적 성적표) ---------- */
+  .table-scroll { overflow-x: auto; border-radius: var(--radius); -webkit-overflow-scrolling: touch; }
+  table.grade { width: 100%; border-collapse: collapse; min-width: 640px; font-size: .9rem; }
+  .grade thead th {
+    text-align: right; font-size: .72rem; font-weight: 700; letter-spacing: .02em;
+    color: var(--ink-3); padding: .7rem .8rem; background: var(--surface-2);
+    border-bottom: 1px solid var(--line); position: sticky; top: 0; white-space: nowrap;
+  }
+  .grade thead th.lead, .grade tbody td.lead { text-align: left; }
+  .grade tbody td { padding: .72rem .8rem; border-bottom: 1px solid var(--line); text-align: right; vertical-align: middle; }
+  .grade tbody tr:last-child td { border-bottom: 0; }
+  .grade tbody tr:hover td { background: color-mix(in srgb, var(--primary) 5%, var(--surface)); }
+  .grade tbody tr.is-latest td { background: color-mix(in srgb, var(--primary) 7%, var(--surface)); }
+  .round { display: flex; align-items: baseline; gap: .55rem; }
+  .round .rn { font-family: var(--font-mono); font-size: .78rem; color: var(--primary); font-weight: 700; }
+  .round .rt { font-weight: 700; }
+  .round .rd { font-family: var(--font-mono); font-size: .72rem; color: var(--ink-3); }
+  td.cell-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .94rem; }
+  .delta { font-family: var(--font-mono); font-size: .74rem; font-weight: 700; margin-left: .4rem; }
+  .delta.up { color: var(--primary-ontint); }
+  .delta.down { color: var(--danger-ontint); }
+  .rank sub { font-family: var(--font-mono); font-size: .68rem; color: var(--ink-3); }
+
+  /* 등급 tier chip */
+  .grade-tag {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 2.35rem; padding: .2rem .45rem; border-radius: 7px;
+    font-family: var(--font-mono); font-size: .8rem; font-weight: 700; gap: .15rem;
+  }
+  .tier-1 { background: var(--primary-tint-2); color: var(--primary-ontint); }
+  .tier-2 { background: var(--primary-tint);   color: var(--primary-ontint); }
+  .tier-3 { background: var(--warn-tint);      color: var(--warn-ontint); }
+  .tier-4 { background: var(--danger-tint);    color: var(--danger-ontint); }
+  .grade-tag small { font-weight: 600; opacity: .75; }
+
+  /* sparkline */
+  .spark { width: 118px; height: 30px; display: inline-block; vertical-align: middle; }
+  .spark .track { fill: none; stroke: var(--line); stroke-width: 1; }
+  .spark .line { fill: none; stroke: var(--data); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .spark .end-ring { fill: var(--surface); }
+  .spark .end-dot { fill: var(--data); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .spark .line { stroke-dasharray: var(--len, 240); stroke-dashoffset: var(--len, 240); animation: draw .9s cubic-bezier(.4,0,.2,1) forwards; }
+    .spark .end-dot, .spark .end-ring { opacity: 0; animation: pop .3s ease forwards; animation-delay: .8s; }
+    @keyframes draw { to { stroke-dashoffset: 0; } }
+    @keyframes pop { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: scale(1); } }
+  }
+
+  /* ---------- 등급 band meter (stat) ---------- */
+  .metric-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border-radius: var(--radius); overflow: hidden; }
+  @media (max-width: 620px){ .metric-strip { grid-template-columns: 1fr; } }
+  .metric { background: var(--surface); padding: 1rem 1.1rem; }
+  .metric .m-label { font-size: .78rem; color: var(--ink-3); font-weight: 600; }
+  .metric .m-value { font-family: var(--font-mono); font-size: 1.9rem; font-weight: 700; line-height: 1.1; letter-spacing: -.01em; margin-top: .15rem; }
+  .metric .m-value .u { font-size: .9rem; color: var(--ink-3); font-weight: 600; margin-left: .15rem; }
+  .metric .m-sub { font-size: .78rem; color: var(--ink-2); margin-top: .3rem; }
+  .band { display: grid; grid-template-columns: repeat(9,1fr); gap: 3px; margin-top: .55rem; }
+  .band i { height: 16px; border-radius: 3px; background: var(--surface-sunk); border: 1px solid var(--line); }
+  .band i.on { border-color: transparent; }
+  .band i.t1 { background: var(--primary); } .band i.t2 { background: var(--primary-tint-2); }
+  .band i.t3 { background: var(--warn); } .band i.t4 { background: var(--danger); }
+
+  /* ---------- Media / video embed mock ---------- */
+  .video {
+    position: relative; aspect-ratio: 16/9; border-radius: var(--radius-sm); overflow: hidden;
+    background:
+      radial-gradient(120% 120% at 50% 40%, #23423A 0%, #16302A 55%, #0F231F 100%);
+    display: grid; place-items: center;
+  }
+  .video .badge {
+    position: absolute; left: .5rem; top: .5rem;
+    font-family: var(--font-mono); font-size: .64rem; letter-spacing: .06em;
+    color: #DCEDE6; background: rgba(8,20,17,.55); padding: .2rem .45rem; border-radius: 6px;
+    border: 1px solid rgba(220,237,230,.18);
+  }
+  .video .play { width: 46px; height: 46px; border-radius: 50%; background: rgba(255,255,255,.92); color: #16302A; display: grid; place-items: center; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+  .video .time { position: absolute; right: .5rem; bottom: .5rem; font-family: var(--font-mono); font-size: .64rem; color: #DCEDE6; background: rgba(8,20,17,.55); padding: .15rem .4rem; border-radius: 5px; }
+
+  /* ---------- Applied dashboards ---------- */
+  .app-frame { border: 1px solid var(--line); border-radius: calc(var(--radius) + 4px); overflow: hidden; box-shadow: var(--shadow-lg); background: var(--paper); }
+  .app-top { display: flex; align-items: center; gap: .8rem; padding: .7rem 1rem; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .app-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line-2); }
+  .app-url { font-family: var(--font-mono); font-size: .72rem; color: var(--ink-3); }
+  .app-role { margin-left: auto; }
+  .lms-nav { display: flex; gap: .15rem; padding: 0 .6rem; background: var(--surface); border-bottom: 1px solid var(--line); overflow-x: auto; }
+  .lms-nav a { text-decoration: none; color: var(--ink-2); font-size: .84rem; font-weight: 600; padding: .7rem .75rem; border-bottom: 2px solid transparent; white-space: nowrap; }
+  .lms-nav a:hover { color: var(--ink); }
+  .lms-nav a.active { color: var(--primary); border-bottom-color: var(--primary); }
+  .app-body { padding: clamp(1rem, .6rem + 1.5vw, 1.6rem); background: var(--paper); }
+  .dash { display: grid; grid-template-columns: 1.55fr 1fr; gap: 1.1rem; align-items: start; }
+  @media (max-width: 900px){ .dash { grid-template-columns: 1fr; } }
+  .greet { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 1.1rem; flex-wrap: wrap; }
+  .greet .who { font-size: 1.25rem; font-weight: 800; letter-spacing: -.01em; }
+  .greet .sub { font-size: .82rem; color: var(--ink-2); }
+
+  .list { display: grid; }
+  .list li { display: flex; gap: .75rem; align-items: center; padding: .8rem 0; border-bottom: 1px solid var(--line); }
+  .list li:last-child { border-bottom: 0; }
+  .li-main { flex: 1 1 auto; min-width: 0; }
+  .li-title { font-weight: 700; font-size: .9rem; }
+  .li-meta { font-size: .76rem; color: var(--ink-3); margin-top: .12rem; }
+  .li-meta .num { font-size: .74rem; }
+  .thumb { flex: none; width: 92px; }
+
+  .pay { display: flex; align-items: center; gap: .8rem; padding: .7rem 0; }
+  .pay .bk { width: 34px; height: 44px; border-radius: 4px; background: linear-gradient(135deg,var(--primary-tint),var(--primary-tint-2)); border: 1px solid var(--line); flex: none; }
+
+  /* admin */
+  table.admin { width: 100%; border-collapse: collapse; min-width: 720px; font-size: .88rem; }
+  .admin thead th { text-align: left; font-size: .72rem; color: var(--ink-3); font-weight: 700; padding: .6rem .7rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .admin tbody td { padding: .7rem .7rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .admin tbody tr:last-child td { border-bottom: 0; }
+  .admin .stud { font-weight: 700; }
+  .admin .when { font-family: var(--font-mono); font-size: .76rem; color: var(--ink-3); }
+  .admin .acts { display: flex; gap: .4rem; justify-content: flex-end; }
+
+  .clinic-row { display: flex; align-items: center; gap: .8rem; padding: .75rem 0; border-bottom: 1px solid var(--line); }
+  .clinic-row:last-child { border-bottom: 0; }
+  .slot { font-family: var(--font-mono); font-size: .82rem; font-weight: 700; color: var(--ink); flex: none; width: 104px; }
+  .slot small { display: block; color: var(--ink-3); font-weight: 500; font-size: .68rem; }
+  .assignee { flex: 1 1 auto; min-width: 0; }
+  .assignee .nm { font-weight: 700; font-size: .88rem; }
+  .assignee .rl { font-size: .74rem; color: var(--ink-3); }
+  .live { display: inline-flex; align-items: center; gap: .35rem; }
+  .live .blip { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 0 color-mix(in srgb,var(--primary) 60%, transparent); }
+  @media (prefers-reduced-motion: no-preference){ .live .blip { animation: blip 1.8s ease-out infinite; } @keyframes blip { 0%{ box-shadow: 0 0 0 0 color-mix(in srgb,var(--primary) 55%, transparent);} 70%{ box-shadow: 0 0 0 6px transparent;} 100%{ box-shadow: 0 0 0 0 transparent;} } }
+
+  /* ---------- Color section ---------- */
+  .swatch-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; }
+  @media (max-width: 820px){ .swatch-cols { grid-template-columns: 1fr; } }
+  .swatch-panel { border-radius: var(--radius); border: 1px solid var(--line); overflow: hidden; }
+  .swatch-panel .hd { display: flex; align-items: center; gap: .5rem; padding: .7rem 1rem; font-weight: 700; font-size: .9rem; border-bottom: 1px solid; }
+  .swatch-panel .hd .k { font-family: var(--font-mono); font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; margin-left: auto; opacity: .7; }
+  .sw-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 1px; }
+  .sw { padding: .8rem .85rem; display: flex; flex-direction: column; gap: .5rem; }
+  .sw .chipc { height: 40px; border-radius: 8px; border: 1px solid rgba(128,128,128,.22); }
+  .sw .nm { font-size: .8rem; font-weight: 700; }
+  .sw .tk { font-family: var(--font-mono); font-size: .68rem; opacity: .78; }
+  .sw .hx { font-family: var(--font-mono); font-size: .72rem; letter-spacing: .02em; }
+  .sw .ro { font-size: .7rem; opacity: .72; line-height: 1.4; }
+
+  /* light demo panel (always shows light palette) */
+  .demo-light { background:#FAFBF8; color:#1E2422; }
+  .demo-light .hd { background:#F2F5EF; border-color:#D6DCD1; }
+  .demo-light .sw-grid { background:#D6DCD1; }
+  .demo-light .sw { background:#FAFBF8; }
+  /* dark demo panel (always shows dark palette) */
+  .demo-dark { background:#18201D; color:#E8ECE6; }
+  .demo-dark .hd { background:#202824; border-color:#2B342F; }
+  .demo-dark .sw-grid { background:#2B342F; }
+  .demo-dark .sw { background:#18201D; }
+
+  /* ---------- Type specimen ---------- */
+  .spec { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .spec-row { display: grid; grid-template-columns: 150px 1fr; gap: 1rem; padding: 1.1rem 1.25rem; border-bottom: 1px solid var(--line); align-items: baseline; }
+  .spec-row:last-child { border-bottom: 0; }
+  @media (max-width: 680px){ .spec-row { grid-template-columns: 1fr; gap: .35rem; } }
+  .spec-meta .role { font-weight: 700; font-size: .82rem; }
+  .spec-meta .cfg { font-family: var(--font-mono); font-size: .68rem; color: var(--ink-3); margin-top: .2rem; line-height: 1.5; }
+  .spec-eg { min-width: 0; }
+  .numtable { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .95rem; display: grid; gap: .1rem; }
+  .numtable span { display: flex; justify-content: space-between; max-width: 260px; }
+  .numtable b { font-weight: 700; }
+
+  /* ---------- Component gallery ---------- */
+  .demo-cols { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.1rem; }
+  @media (max-width: 820px){ .demo-cols { grid-template-columns: 1fr; } }
+  .demo-block h3 { font-size: .82rem; letter-spacing: -.005em; margin-bottom: .8rem; color: var(--ink-2); font-family: var(--font-mono); text-transform: uppercase; font-size: .7rem; letter-spacing: .12em; }
+  .swatch-inline { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+
+  .footer { padding-block: 2.4rem 3rem; color: var(--ink-3); }
+  .footer .fnote { font-size: .8rem; line-height: 1.7; max-width: 60ch; }
+  .footer .ftags { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: 1rem; }
+
+  .divider-note { font-size: .78rem; color: var(--ink-3); margin-top: .7rem; }
+  .kbd { font-family: var(--font-mono); font-size: .72rem; background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: .05rem .35rem; }
+</style>
+
+<!-- ============================== TOP BAR ============================== -->
+<header class="topbar">
+  <div class="wrap topbar-in">
+    <a class="brand" href="#top" aria-label="에듀제이씨 학원 LMS 디자인 시스템 홈">
+      <svg class="brand-mark" viewBox="0 0 30 30" role="img" aria-hidden="true">
+        <rect x="1" y="1" width="28" height="28" rx="8" style="fill:var(--primary)"/>
+        <circle cx="15" cy="15" r="8.5" fill="none" style="stroke:var(--primary-ink)" stroke-width="2.4" opacity=".55"/>
+        <circle cx="15" cy="15" r="3.4" style="fill:var(--primary-ink)"/>
+      </svg>
+      <span>
+        <span class="brand-name">에듀제이씨</span>
+        <span class="brand-sub">LMS · Design System</span>
+      </span>
+    </a>
+    <nav class="topnav" aria-label="문서 섹션">
+      <span class="topnav-links">
+        <a href="#direction">방향</a>
+        <a href="#color">색상</a>
+        <a href="#type">타이포</a>
+        <a href="#components">컴포넌트</a>
+        <a href="#student">학생</a>
+        <a href="#admin">관리자</a>
+      </span>
+      <button class="theme-toggle" id="themeToggle" type="button" aria-label="라이트/다크 화면 전환" aria-pressed="false">
+        <svg class="i-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        <svg class="i-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.4M12 19.6V22M4.9 4.9l1.7 1.7M17.4 17.4l1.7 1.7M2 12h2.4M19.6 12H22M4.9 19.1l1.7-1.7M17.4 6.6l1.7-1.7"/></svg>
+      </button>
+    </nav>
+  </div>
+</header>
+
+<!-- ============================== HERO / DIRECTION ============================== -->
+<a id="top"></a>
+<section class="hero" id="direction">
+  <div class="hero-motif" aria-hidden="true">
+    <!-- faint OMR-bubble / hanji lattice, celadon, very low opacity -->
+    <svg width="100%" height="100%" preserveAspectRatio="xMidYMid slice" viewBox="0 0 1200 520">
+      <defs>
+        <pattern id="omr" width="46" height="46" patternUnits="userSpaceOnUse">
+          <circle cx="12" cy="12" r="6.4" fill="none" style="stroke:var(--primary)" stroke-width="1.3" opacity=".16"/>
+        </pattern>
+      </defs>
+      <rect width="1200" height="520" fill="url(#omr)"/>
+    </svg>
+  </div>
+  <div class="wrap hero-in">
+    <p class="t-eyebrow">에듀제이씨 학원 · LMS 디자인 시스템 v1.0</p>
+    <h1 class="t-display" style="margin-top:.7rem;">학원의 하루를<br>한 화면에 담는 규칙</h1>
+    <p class="hero-lead">
+      누적 성적표 조회부터 복습영상 승인, 클리닉 화상 배정까지 —
+      카카오톡·유튜브·결제선생에 흩어져 있던 일을 하나의 차분한 화면으로 모읍니다.
+      이 페이지는 그 화면을 만드는 색·타이포·컴포넌트 규칙을 정리한 문서입니다.
+    </p>
+    <div class="hero-meta">
+      <span class="hanko"><b style="background:#2C6E60"></b>청자 靑瓷 · 기본색</span>
+      <span class="hanko"><b style="background:#1E2422"></b>먹 墨 · 본문</span>
+      <span class="hanko"><b style="background:#EEF1EC;border:1px solid #D6DCD1"></b>한지 韓紙 · 배경</span>
+      <span class="hanko"><b style="background:#B23A2C"></b>채점 朱 · 확인 필요</span>
+    </div>
+
+    <div class="rationale">
+      <div class="rat">
+        <span class="rat-k">01 · 색</span>
+        <h3>측정과 축적의 색</h3>
+        <p>학원의 정체성은 화려함이 아니라 ‘쌓이는 기록’입니다. 고려청자의 차분한 청록을 기본색으로,
+           먹빛 글자와 한지 톤 배경으로 오래 봐도 편한 학습 공간을 만듭니다. 붉은색은 오직 채점의 언어 —
+           미결제·미승인·감점처럼 확인이 필요한 곳에만 씁니다.</p>
+      </div>
+      <div class="rat">
+        <span class="rat-k">02 · 숫자</span>
+        <h3>성적표처럼 줄 맞춘 숫자</h3>
+        <p>원점수·백분위·등급·회차·결제 금액까지 모든 수치는 고정폭 숫자로 세로줄을 맞췄습니다.
+           종이 성적표를 훑듯, 회차가 쌓일수록 추이가 한눈에 비교되도록 하는 것이 이 시스템의 중심입니다.</p>
+      </div>
+      <div class="rat">
+        <span class="rat-k">03 · 흐름</span>
+        <h3>이탈 없는 하나의 흐름</h3>
+        <p>유튜브로 나가지 않고 임베드로 복습영상을 보고, 줌 없이 LMS 안에서 클리닉 화상방에 들어갑니다.
+           디자인도 이 ‘밖으로 나가지 않는 흐름’을 지지하도록 요소를 절제하고, 강조는 한 곳에만 둡니다.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== COLOR ============================== -->
+<section class="section" id="color">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="t-eyebrow">색상 · Color tokens</p>
+      <h2 class="t-h1">라이트와 다크, 같은 무게로</h2>
+      <p class="muted t-small">모든 색은 CSS 변수로 정의되어 두 테마에서 자동 전환됩니다. 상태색(승인·대기·미승인)은
+        의미 전용으로 예약되어 장식에 쓰지 않습니다. 아래 두 패널은 각 테마의 실제 값을 그대로 보여줍니다.</p>
+    </div>
+
+    <div class="swatch-cols">
+      <!-- LIGHT -->
+      <div class="swatch-panel demo-light">
+        <div class="hd">한지 · 라이트 <span class="k">Light</span></div>
+        <div class="sw-grid">
+          <div class="sw"><div class="chipc" style="background:#EEF1EC"></div><div class="nm">한지 배경</div><div class="tk">--paper</div><div class="hx">#EEF1EC</div><div class="ro">앱 전체 바탕</div></div>
+          <div class="sw"><div class="chipc" style="background:#FAFBF8"></div><div class="nm">표면</div><div class="tk">--surface</div><div class="hx">#FAFBF8</div><div class="ro">카드·입력</div></div>
+          <div class="sw"><div class="chipc" style="background:#1E2422"></div><div class="nm">먹 본문</div><div class="tk">--ink</div><div class="hx">#1E2422</div><div class="ro">제목·본문 (14:1)</div></div>
+          <div class="sw"><div class="chipc" style="background:#636C64"></div><div class="nm">먹 흐림</div><div class="tk">--ink-3</div><div class="hx">#636C64</div><div class="ro">캡션 (4.9:1)</div></div>
+          <div class="sw"><div class="chipc" style="background:#2C6E60"></div><div class="nm">청자 브랜드</div><div class="tk">--primary</div><div class="hx">#2C6E60</div><div class="ro">기본 버튼·링크</div></div>
+          <div class="sw"><div class="chipc" style="background:#DCE9E3"></div><div class="nm">청자 틴트</div><div class="tk">--primary-tint</div><div class="hx">#DCE9E3</div><div class="ro">완료 상태 배경</div></div>
+          <div class="sw"><div class="chipc" style="background:#9A6B15"></div><div class="nm">대기 앰버</div><div class="tk">--warn</div><div class="hx">#9A6B15</div><div class="ro">대기중·임박</div></div>
+          <div class="sw"><div class="chipc" style="background:#B23A2C"></div><div class="nm">채점 적</div><div class="tk">--danger</div><div class="hx">#B23A2C</div><div class="ro">미승인·미결제</div></div>
+        </div>
+      </div>
+      <!-- DARK -->
+      <div class="swatch-panel demo-dark">
+        <div class="hd">먹빛 · 다크 <span class="k">Dark</span></div>
+        <div class="sw-grid">
+          <div class="sw"><div class="chipc" style="background:#0F1513"></div><div class="nm">배경</div><div class="tk">--paper</div><div class="hx">#0F1513</div><div class="ro">순검정 대신 청록 먹</div></div>
+          <div class="sw"><div class="chipc" style="background:#18201D"></div><div class="nm">표면</div><div class="tk">--surface</div><div class="hx">#18201D</div><div class="ro">카드·입력</div></div>
+          <div class="sw"><div class="chipc" style="background:#E8ECE6"></div><div class="nm">본문</div><div class="tk">--ink</div><div class="hx">#E8ECE6</div><div class="ro">제목·본문</div></div>
+          <div class="sw"><div class="chipc" style="background:#828D86"></div><div class="nm">흐림</div><div class="tk">--ink-3</div><div class="hx">#828D86</div><div class="ro">캡션</div></div>
+          <div class="sw"><div class="chipc" style="background:#37937C"></div><div class="nm">청자 브랜드</div><div class="tk">--primary</div><div class="hx">#37937C</div><div class="ro">버튼 배경</div></div>
+          <div class="sw"><div class="chipc" style="background:#5FB39D"></div><div class="nm">청자 강조</div><div class="tk">--data</div><div class="hx">#5FB39D</div><div class="ro">추이선·데이터</div></div>
+          <div class="sw"><div class="chipc" style="background:#D9A441"></div><div class="nm">대기 앰버</div><div class="tk">--warn</div><div class="hx">#D9A441</div><div class="ro">대기중·임박</div></div>
+          <div class="sw"><div class="chipc" style="background:#C24B3B"></div><div class="nm">채점 적</div><div class="tk">--danger</div><div class="hx">#C24B3B</div><div class="ro">미승인·미결제</div></div>
+        </div>
+      </div>
+    </div>
+    <p class="divider-note">상태 팔레트는 <b>승인/완료 = 청자</b>, <b>대기 = 앰버</b>, <b>미승인/미결제 = 채점 적</b> 세 단계로 고정합니다.
+      브랜드색과 ‘완료’가 같은 청자 계열을 공유해, 잘 끝난 일은 곧 학원의 색이 되도록 했습니다.</p>
+  </div>
+</section>
+
+<!-- ============================== TYPOGRAPHY ============================== -->
+<section class="section" id="type">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="t-eyebrow">타이포그래피 · Type scale</p>
+      <h2 class="t-h1">부드러운 한글, 반듯한 숫자</h2>
+      <p class="muted t-small">본문은 시스템 한글 산세리프(Apple SD Gothic Neo · 맑은 고딕)로, 모든 숫자와 라벨은
+        고정폭 서체로 둡니다. 웹폰트를 부르지 않아 어떤 환경에서도 무너지지 않습니다.</p>
+    </div>
+
+    <div class="spec">
+      <div class="spec-row">
+        <div class="spec-meta"><div class="role">디스플레이</div><div class="cfg">Sans 800 · clamp 2–3.15rem<br>tracking −.022em / lh 1.06</div></div>
+        <div class="spec-eg"><div class="t-display">누적 성적표</div></div>
+      </div>
+      <div class="spec-row">
+        <div class="spec-meta"><div class="role">제목 H1</div><div class="cfg">Sans 800 · 1.35–1.7rem</div></div>
+        <div class="spec-eg"><div class="t-h1">복습영상 · 결석보강 신청 현황</div></div>
+      </div>
+      <div class="spec-row">
+        <div class="spec-meta"><div class="role">제목 H2</div><div class="cfg">Sans 700 · 1.16rem</div></div>
+        <div class="spec-eg"><div class="t-h2">클리닉 화상 배정 — 오늘 4건</div></div>
+      </div>
+      <div class="spec-row">
+        <div class="spec-meta"><div class="role">본문</div><div class="cfg">Sans 400 · 1rem / lh 1.65</div></div>
+        <div class="spec-eg"><p class="t-body">승인된 복습영상은 다른 사이트로 이동하지 않고 화면 안에서 바로 재생됩니다.
+          수강 기간이 끝나면 재생 권한이 자동으로 만료됩니다.</p></div>
+      </div>
+      <div class="spec-row">
+        <div class="spec-meta"><div class="role">캡션</div><div class="cfg">Sans 400 · .78rem · --ink-3</div></div>
+        <div class="spec-eg"><p class="t-caption">아카플로우에서 내려받은 채점 결과 파일(.xlsx)을 그대로 업로드하세요.</p></div>
+      </div>
+      <div class="spec-row">
+        <div class="spec-meta"><div class="role">라벨 / 이브로우</div><div class="cfg">Mono 600 · .72rem<br>uppercase · tracking .18em</div></div>
+        <div class="spec-eg"><span class="t-eyebrow">제14회 정기 모의고사</span></div>
+      </div>
+      <div class="spec-row">
+        <div class="spec-meta"><div class="role">숫자 · 데이터</div><div class="cfg">Mono · tabular-nums<br>세로줄 정렬 전용</div></div>
+        <div class="spec-eg">
+          <div class="numtable">
+            <span><b>백분위</b><span>95.0</span></span>
+            <span><b>원점수</b><span>92</span></span>
+            <span><b>전국 석차</b><span>3,120</span></span>
+            <span><b>누적 평균</b><span>87.6</span></span>
+            <span><b>결제 금액</b><span>18,000원</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== COMPONENTS ============================== -->
+<section class="section" id="components">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="t-eyebrow">컴포넌트 · Components</p>
+      <h2 class="t-h1">조용한 기본, 하나의 강조</h2>
+      <p class="muted t-small">버튼·입력·상태는 최대한 담담하게. 시각적 무게는 오직 성적표 그리드에 몰아줍니다.</p>
+    </div>
+
+    <div class="demo-cols">
+      <!-- Buttons -->
+      <div class="card card-pad demo-block">
+        <h3>버튼</h3>
+        <div class="btn-row" style="margin-bottom:.7rem;">
+          <button class="btn btn-primary" type="button">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
+            승인하기
+          </button>
+          <button class="btn btn-secondary" type="button">자세히 보기</button>
+          <button class="btn btn-danger" type="button">거절</button>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary btn-sm" type="button">배정하기</button>
+          <button class="btn btn-ghost btn-sm" type="button">취소</button>
+          <button class="btn btn-primary" type="button" aria-disabled="true" disabled>발송됨</button>
+        </div>
+        <p class="divider-note">기본(청자) · 보조(외곽선) · 삭제(채점 적)는 hover 시에만 붉게 채워져 되돌릴 수 없는 동작임을 알립니다.</p>
+      </div>
+
+      <!-- Status pills -->
+      <div class="card card-pad demo-block">
+        <h3>상태 배지</h3>
+        <div class="swatch-inline" style="margin-bottom:.8rem;">
+          <span class="pill pill--ok"><span class="dot"></span>승인완료</span>
+          <span class="pill pill--wait"><span class="dot"></span>대기중</span>
+          <span class="pill pill--no"><span class="dot"></span>미승인</span>
+          <span class="pill pill--ok"><span class="dot"></span>결제완료</span>
+          <span class="pill pill--no"><span class="dot"></span>미결제</span>
+        </div>
+        <div class="swatch-inline">
+          <span class="pill pill--ok"><span class="dot"></span>수강중 <span class="num">D-4</span></span>
+          <span class="pill pill--wait"><span class="dot"></span>입장대기</span>
+          <span class="pill pill--ok"><span class="dot"></span>진행중</span>
+          <span class="pill"><span class="dot"></span>만료</span>
+        </div>
+        <p class="divider-note">색은 항상 글자와 함께. 색만으로 상태를 전달하지 않습니다.</p>
+      </div>
+
+      <!-- Category chips -->
+      <div class="card card-pad demo-block">
+        <h3>신청 유형 태그</h3>
+        <div class="swatch-inline">
+          <span class="chip is-active">
+            <svg class="ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>복습영상</span>
+          <span class="chip">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>결석보강</span>
+          <span class="chip">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6.5" width="13" height="11" rx="2"/><path d="M15.5 10l6-3v10l-6-3z"/></svg>클리닉</span>
+        </div>
+        <p class="divider-note">유형은 중립색 태그로 두어, 예약된 상태색과 섞이지 않게 합니다.</p>
+      </div>
+
+      <!-- Form fields -->
+      <div class="card card-pad demo-block">
+        <h3>입력 필드</h3>
+        <div class="grid" style="gap:.9rem;">
+          <div class="field">
+            <label for="f-name">학생 검색</label>
+            <input class="control" id="f-name" type="text" placeholder="이름 또는 학번" value="김서연">
+          </div>
+          <div class="field">
+            <label for="f-type">신청 유형</label>
+            <select class="control" id="f-type">
+              <option>복습영상</option><option>결석보강</option><option>클리닉</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="f-when">클리닉 희망 시간</label>
+            <input class="control is-error" id="f-when" type="text" value="2026-07-09 19:00" aria-invalid="true" aria-describedby="f-when-err">
+            <span class="err" id="f-when-err">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/></svg>
+              해당 시간대는 배정 가능한 직원이 없습니다. 다른 시간을 선택하세요.
+            </span>
+          </div>
+          <div class="field">
+            <label for="f-msg">문의 내용</label>
+            <textarea class="control" id="f-msg" placeholder="궁금한 점을 남겨 주세요. 연구실에서 확인 후 답변드립니다."></textarea>
+            <span class="hint">카카오톡 대신 여기서 문의하면 답변이 문의함에 함께 쌓입니다.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card + nav -->
+      <div class="demo-block">
+        <h3>카드 · 내비게이션</h3>
+        <div class="card" style="margin-bottom:1rem;">
+          <div class="card-hd">
+            <h3 class="t-h3">「2025 수능특강 수학」</h3>
+            <span class="pill pill--no"><span class="dot"></span>미결제</span>
+          </div>
+          <div class="card-pad">
+            <p class="t-small muted">교재 결제는 결제선생 화면을 그대로 불러와 진행합니다. 결제가 끝나면 상태가 자동으로 바뀝니다.</p>
+            <p class="num" style="font-size:1.1rem;font-weight:700;margin-top:.5rem;">18,000원</p>
+          </div>
+          <div class="card-ft">
+            <button class="btn btn-primary btn-sm" type="button">결제하기</button>
+            <button class="btn btn-ghost btn-sm" type="button">정오표 보기</button>
+          </div>
+        </div>
+        <nav class="lms-nav" aria-label="학생 메뉴 예시" style="border-radius:var(--radius-sm);border:1px solid var(--line);">
+          <a href="#student" class="active">성적</a>
+          <a href="#components">복습영상</a>
+          <a href="#components">클리닉</a>
+          <a href="#components">교재</a>
+          <a href="#components">공지·정오표</a>
+          <a href="#components">문의</a>
+        </nav>
+      </div>
+
+      <!-- Data table (compact demo of the signature) -->
+      <div class="demo-block" style="grid-column: 1 / -1;">
+        <h3>데이터 테이블 — 누적 성적표 (시그니처)</h3>
+        <div class="card">
+          <div class="table-scroll">
+            <table class="grade" aria-label="영어 누적 성적표 예시">
+              <thead>
+                <tr>
+                  <th class="lead" scope="col">회차</th>
+                  <th scope="col">원점수</th>
+                  <th scope="col">백분위</th>
+                  <th scope="col">등급</th>
+                  <th scope="col">전국 석차</th>
+                  <th scope="col" style="text-align:center">추이</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="lead"><span class="round"><span class="rn">12회</span><span class="rt">정기</span><span class="rd">05/31</span></span></td>
+                  <td class="cell-num">84</td>
+                  <td class="cell-num">88</td>
+                  <td><span class="grade-tag tier-2">2<small>등급</small></span></td>
+                  <td class="cell-num rank">8,940<sub> / 68,204</sub></td>
+                  <td style="text-align:center">
+                    <svg class="spark" viewBox="0 0 118 30" role="img" aria-label="백분위 추이 상승" style="--len:150">
+                      <polyline class="line" points="4,20 40,17 76,12 112,7"/>
+                      <circle class="end-ring" cx="112" cy="7" r="5"/><circle class="end-dot" cx="112" cy="7" r="3"/>
+                    </svg>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="lead"><span class="round"><span class="rn">13회</span><span class="rt">정기</span><span class="rd">06/14</span></span></td>
+                  <td class="cell-num">80</td>
+                  <td class="cell-num">85<span class="delta down">▼3</span></td>
+                  <td><span class="grade-tag tier-3">3<small>등급</small></span></td>
+                  <td class="cell-num rank">10,120<sub> / 67,880</sub></td>
+                  <td style="text-align:center">
+                    <svg class="spark" viewBox="0 0 118 30" role="img" aria-label="백분위 추이 하락" style="--len:150">
+                      <polyline class="line" points="4,10 40,13 76,9 112,15"/>
+                      <circle class="end-ring" cx="112" cy="15" r="5"/><circle class="end-dot" cx="112" cy="15" r="3"/>
+                    </svg>
+                  </td>
+                </tr>
+                <tr class="is-latest">
+                  <td class="lead"><span class="round"><span class="rn">14회</span><span class="rt">정기</span><span class="rd">07/05</span></span></td>
+                  <td class="cell-num">91</td>
+                  <td class="cell-num">94<span class="delta up">▲9</span></td>
+                  <td><span class="grade-tag tier-2">2<small>등급</small></span></td>
+                  <td class="cell-num rank">4,050<sub> / 67,540</sub></td>
+                  <td style="text-align:center">
+                    <svg class="spark" viewBox="0 0 118 30" role="img" aria-label="백분위 추이 큰 폭 상승" style="--len:150">
+                      <polyline class="line" points="4,18 40,15 76,17 112,6"/>
+                      <circle class="end-ring" cx="112" cy="6" r="5"/><circle class="end-dot" cx="112" cy="6" r="3"/>
+                    </svg>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <p class="divider-note">회차는 실제 시험 순서라 몸통 왼쪽에 고정폭 번호로 세웠습니다(장식용 번호가 아니라 정보). 추이선은 페이지가 열릴 때 한 번 그려집니다 — 성적이 게시되는 순간을 뜻합니다.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== APPLIED 1 — STUDENT ============================== -->
+<section class="section" id="student">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="t-eyebrow">적용 예시 1 · 학생 대시보드</p>
+      <h2 class="t-h1">김서연 학생이 로그인하면</h2>
+      <p class="muted t-small">누적 성적표가 중심에 오고, 복습영상·클리닉·교재 신청 현황이 곁을 지킵니다.</p>
+    </div>
+
+    <div class="app-frame">
+      <div class="app-top">
+        <span class="app-dot"></span>
+        <span class="app-url">lms.edujc.kr / 성적 / 수학</span>
+        <span class="app-role pill"><span class="dot"></span>학생</span>
+      </div>
+      <nav class="lms-nav" aria-label="학생 메뉴">
+        <a href="#student" class="active">성적</a>
+        <a href="#student">복습영상</a>
+        <a href="#student">클리닉</a>
+        <a href="#student">교재</a>
+        <a href="#student">공지·정오표</a>
+        <a href="#student">문의</a>
+      </nav>
+      <div class="app-body">
+        <div class="greet">
+          <div>
+            <div class="who">안녕하세요, 김서연 학생</div>
+            <div class="sub">고2 · 수학 정규반 (목 19:00) · 담임 박도현</div>
+          </div>
+          <div class="swatch-inline">
+            <span class="chip is-active">수학</span>
+            <span class="chip">국어</span>
+            <span class="chip">영어</span>
+          </div>
+        </div>
+
+        <!-- metric strip -->
+        <div class="metric-strip" style="margin-bottom:1.1rem;">
+          <div class="metric">
+            <div class="m-label">최근 백분위 · 제14회</div>
+            <div class="m-value">95.0<span class="delta up" style="font-size:.9rem"> ▲4</span></div>
+            <div class="m-sub">직전 회차 대비 상승</div>
+          </div>
+          <div class="metric">
+            <div class="m-label">현재 등급 · 수학</div>
+            <div class="m-value">2<span class="u">등급</span></div>
+            <div class="band" role="img" aria-label="9등급 척도 중 2등급">
+              <i class="on t1"></i><i class="on t2"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+          </div>
+          <div class="metric">
+            <div class="m-label">누적 평균 백분위</div>
+            <div class="m-value">87.6</div>
+            <div class="m-sub">응시 5회 · 최고 95.0</div>
+          </div>
+        </div>
+
+        <div class="dash">
+          <!-- LEFT: cumulative gradebook (signature) -->
+          <div class="card">
+            <div class="card-hd">
+              <h3 class="t-h3">수학 · 누적 성적표</h3>
+              <button class="btn btn-secondary btn-sm" type="button">
+                <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V4h12v5M6 18H4v-5h16v5h-2M8 22h8v-6H8z"/></svg>
+                인쇄용 PDF
+              </button>
+            </div>
+            <div class="table-scroll">
+              <table class="grade" aria-label="김서연 수학 누적 성적표">
+                <thead>
+                  <tr>
+                    <th class="lead" scope="col">회차</th>
+                    <th scope="col">원점수</th>
+                    <th scope="col">백분위</th>
+                    <th scope="col">등급</th>
+                    <th scope="col">전국 석차</th>
+                    <th scope="col" style="text-align:center">추이</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="lead"><span class="round"><span class="rn">10회</span><span class="rt">정기</span><span class="rd">04/12</span></span></td>
+                    <td class="cell-num">76</td>
+                    <td class="cell-num">82</td>
+                    <td><span class="grade-tag tier-3">3<small>등급</small></span></td>
+                    <td class="cell-num rank">12,940<sub> / 68,204</sub></td>
+                    <td style="text-align:center">
+                      <svg class="spark" viewBox="0 0 118 30" role="img" aria-label="백분위 82" style="--len:60"><polyline class="line" points="90,22 118,22"/><circle class="end-ring" cx="118" cy="22" r="5"/><circle class="end-dot" cx="118" cy="22" r="3"/></svg>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="lead"><span class="round"><span class="rn">11회</span><span class="rt">정기</span><span class="rd">05/10</span></span></td>
+                    <td class="cell-num">81</td>
+                    <td class="cell-num">86<span class="delta up">▲4</span></td>
+                    <td><span class="grade-tag tier-3">3<small>등급</small></span></td>
+                    <td class="cell-num rank">9,870<sub> / 68,010</sub></td>
+                    <td style="text-align:center">
+                      <svg class="spark" viewBox="0 0 118 30" role="img" aria-label="백분위 82에서 86으로 상승" style="--len:110"><polyline class="line" points="62,23 118,18"/><circle class="end-ring" cx="118" cy="18" r="5"/><circle class="end-dot" cx="118" cy="18" r="3"/></svg>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="lead"><span class="round"><span class="rn">12회</span><span class="rt">정기</span><span class="rd">05/31</span></span></td>
+                    <td class="cell-num">79</td>
+                    <td class="cell-num">84<span class="delta down">▼2</span></td>
+                    <td><span class="grade-tag tier-3">3<small>등급</small></span></td>
+                    <td class="cell-num rank">10,720<sub> / 67,880</sub></td>
+                    <td style="text-align:center">
+                      <svg class="spark" viewBox="0 0 118 30" role="img" aria-label="백분위 86에서 84로 하락" style="--len:150"><polyline class="line" points="34,23 62,18 90,21 118,20"/><circle class="end-ring" cx="118" cy="20" r="5"/><circle class="end-dot" cx="118" cy="20" r="3"/></svg>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="lead"><span class="round"><span class="rn">13회</span><span class="rt">정기</span><span class="rd">06/14</span></span></td>
+                    <td class="cell-num">88</td>
+                    <td class="cell-num">91<span class="delta up">▲7</span></td>
+                    <td><span class="grade-tag tier-2">2<small>등급</small></span></td>
+                    <td class="cell-num rank">5,410<sub> / 67,540</sub></td>
+                    <td style="text-align:center">
+                      <svg class="spark" viewBox="0 0 118 30" role="img" aria-label="백분위 84에서 91로 상승" style="--len:170"><polyline class="line" points="20,23 48,18 76,21 118,11"/><circle class="end-ring" cx="118" cy="11" r="5"/><circle class="end-dot" cx="118" cy="11" r="3"/></svg>
+                    </td>
+                  </tr>
+                  <tr class="is-latest">
+                    <td class="lead"><span class="round"><span class="rn">14회</span><span class="rt">정기</span><span class="rd">07/05</span></span></td>
+                    <td class="cell-num">92</td>
+                    <td class="cell-num">95<span class="delta up">▲4</span></td>
+                    <td><span class="grade-tag tier-2">2<small>등급</small></span></td>
+                    <td class="cell-num rank">3,120<sub> / 67,210</sub></td>
+                    <td style="text-align:center">
+                      <svg class="spark" viewBox="0 0 118 30" role="img" aria-label="백분위 91에서 95로 상승, 최고점" style="--len:200"><polyline class="line" points="4,23 32,18 60,21 88,12 116,7"/><circle class="end-ring" cx="116" cy="7" r="5"/><circle class="end-dot" cx="116" cy="7" r="3"/></svg>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="card-ft">
+              <span class="t-caption">제14회 성적이 <b>2026-07-06</b>에 게시되었습니다. 알림톡이 발송되었습니다.</span>
+            </div>
+          </div>
+
+          <!-- RIGHT: applications -->
+          <div class="stack-lg">
+            <!-- 복습영상 -->
+            <div class="card">
+              <div class="card-hd"><h3 class="t-h3">복습영상</h3><span class="chip"><svg class="ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>LMS 내 재생</span></div>
+              <div class="card-pad" style="padding-top:.4rem;padding-bottom:.4rem;">
+                <ul class="list">
+                  <li>
+                    <div class="thumb">
+                      <div class="video">
+                        <span class="badge">비공개</span>
+                        <span class="play"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg></span>
+                        <span class="time">42:10</span>
+                      </div>
+                    </div>
+                    <div class="li-main">
+                      <div class="li-title">미적분 12강 · 극한의 활용</div>
+                      <div class="li-meta"><span class="chip" style="padding:.1rem .4rem">복습영상</span> · <span class="num">07/03</span> 신청</div>
+                    </div>
+                    <span class="pill pill--ok"><span class="dot"></span>수강중 <span class="num">D-4</span></span>
+                  </li>
+                  <li>
+                    <div class="li-main">
+                      <div class="li-title">확률과통계 8강 · 조건부확률</div>
+                      <div class="li-meta"><span class="chip" style="padding:.1rem .4rem">결석보강</span> · <span class="num">07/06</span> 신청</div>
+                    </div>
+                    <span class="pill pill--wait"><span class="dot"></span>승인 대기</span>
+                  </li>
+                  <li>
+                    <div class="li-main">
+                      <div class="li-title">수학Ⅰ 5강 · 수열의 합</div>
+                      <div class="li-meta"><span class="chip" style="padding:.1rem .4rem">복습영상</span> · <span class="num">06/20</span> 신청</div>
+                    </div>
+                    <span class="pill"><span class="dot"></span>만료</span>
+                  </li>
+                </ul>
+              </div>
+              <div class="card-ft"><button class="btn btn-secondary btn-sm" type="button">새 영상 신청</button></div>
+            </div>
+
+            <!-- 클리닉 -->
+            <div class="card">
+              <div class="card-hd"><h3 class="t-h3">클리닉 (1:1 화상)</h3></div>
+              <div class="card-pad">
+                <div class="btn-row" style="justify-content:space-between;">
+                  <div>
+                    <div class="li-title">7/9(수) 19:00–19:30</div>
+                    <div class="li-meta">담당 <b>박도현</b> 선생님 · 미적분 오답 클리닉</div>
+                  </div>
+                  <span class="pill pill--ok"><span class="dot"></span>배정완료</span>
+                </div>
+              </div>
+              <div class="card-ft">
+                <button class="btn btn-primary btn-sm" type="button">
+                  <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6.5" width="13" height="11" rx="2"/><path d="M15.5 10l6-3v10l-6-3z"/></svg>
+                  화상방 입장
+                </button>
+                <span class="t-caption">입장 버튼은 시작 10분 전에 열립니다.</span>
+              </div>
+            </div>
+
+            <!-- 교재 결제 -->
+            <div class="card">
+              <div class="card-hd"><h3 class="t-h3">교재 결제</h3></div>
+              <div class="card-pad" style="padding-top:.3rem;padding-bottom:.3rem;">
+                <div class="pay">
+                  <span class="bk" aria-hidden="true"></span>
+                  <div class="li-main"><div class="li-title">2025 수능특강 수학</div><div class="li-meta num">18,000원</div></div>
+                  <button class="btn btn-primary btn-sm" type="button">결제하기</button>
+                </div>
+                <div class="pay" style="border-top:1px solid var(--line)">
+                  <span class="bk" aria-hidden="true"></span>
+                  <div class="li-main"><div class="li-title">내신 대비 워크북 6월호</div><div class="li-meta num">9,000원</div></div>
+                  <span class="pill pill--ok"><span class="dot"></span>결제완료</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== APPLIED 2 — ADMIN ============================== -->
+<section class="section" id="admin">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="t-eyebrow">적용 예시 2 · 관리자 (연구실)</p>
+      <h2 class="t-h1">연구실 직원의 하루</h2>
+      <p class="muted t-small">채점 결과를 올리고, 신청을 승인하고, 오늘의 클리닉 화상방을 배정합니다 — 카카오톡·유튜브를 오가지 않고.</p>
+    </div>
+
+    <div class="app-frame">
+      <div class="app-top">
+        <span class="app-dot"></span>
+        <span class="app-url">lms.edujc.kr / 관리 / 신청</span>
+        <span class="app-role pill"><span class="dot"></span>관리자 · 연구실</span>
+      </div>
+      <nav class="lms-nav" aria-label="관리자 메뉴">
+        <a href="#admin" class="active">신청 관리</a>
+        <a href="#admin">성적 업로드</a>
+        <a href="#admin">클리닉 배정</a>
+        <a href="#admin">결제 현황</a>
+        <a href="#admin">게시판</a>
+        <a href="#admin">문의</a>
+      </nav>
+      <div class="app-body">
+
+        <!-- 성적 업로드 -->
+        <div class="card" style="margin-bottom:1.1rem;">
+          <div class="card-hd"><h3 class="t-h3">성적 업로드 — 제14회 정기 모의고사</h3><span class="pill pill--wait"><span class="dot"></span>반영 대기</span></div>
+          <div class="card-pad">
+            <div class="dropzone">
+              <span class="dz-ic" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+              </span>
+              <div class="li-main">
+                <div class="dz-file">제14회_정기모의고사_채점결과.xlsx</div>
+                <div class="li-meta">학생 <b class="num">312</b>명 · <b class="num">30</b>문항 정오 처리 완료 · 오류 <b class="num">0</b>건</div>
+              </div>
+              <span class="pill pill--ok"><span class="dot"></span>검증 통과</span>
+            </div>
+            <p class="t-caption" style="margin-top:.7rem;">아카플로우에서 내려받은 채점 결과 파일을 그대로 올리면, 학생별 누적 성적표에 자동 반영됩니다.</p>
+          </div>
+          <div class="card-ft">
+            <button class="btn btn-primary btn-sm" type="button">누적 성적표에 반영</button>
+            <button class="btn btn-secondary btn-sm" type="button">알림톡 미리보기</button>
+            <button class="btn btn-ghost btn-sm" type="button">파일 교체</button>
+          </div>
+        </div>
+
+        <div class="dash" style="grid-template-columns:1.35fr 1fr;">
+          <!-- 승인 대기 목록 -->
+          <div class="card">
+            <div class="card-hd"><h3 class="t-h3">승인 대기 목록</h3><span class="pill pill--wait"><span class="dot"></span>대기 <span class="num">3</span></span></div>
+            <div class="table-scroll">
+              <table class="admin" aria-label="복습영상·결석보강·클리닉 승인 대기 목록">
+                <thead>
+                  <tr><th scope="col">학생</th><th scope="col">유형</th><th scope="col">대상</th><th scope="col">신청</th><th scope="col" style="text-align:right">처리</th></tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="stud">김서연</td>
+                    <td><span class="chip" style="padding:.16rem .45rem"><svg class="ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>복습영상</span></td>
+                    <td>확률과통계 8강 · 조건부확률</td>
+                    <td class="when">07/06 21:14</td>
+                    <td><div class="acts"><button class="btn btn-primary btn-sm" type="button">승인</button><button class="btn btn-danger btn-sm" type="button">거절</button></div></td>
+                  </tr>
+                  <tr>
+                    <td class="stud">이준호</td>
+                    <td><span class="chip" style="padding:.16rem .45rem"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>결석보강</span></td>
+                    <td>미적분 11강 · 도함수의 활용</td>
+                    <td class="when">07/06 20:02</td>
+                    <td><div class="acts"><button class="btn btn-primary btn-sm" type="button">승인</button><button class="btn btn-danger btn-sm" type="button">거절</button></div></td>
+                  </tr>
+                  <tr>
+                    <td class="stud">박민지</td>
+                    <td><span class="chip" style="padding:.16rem .45rem"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6.5" width="13" height="11" rx="2"/><path d="M15.5 10l6-3v10l-6-3z"/></svg>클리닉</span></td>
+                    <td>희망 <span class="num">07/09(수) 19:00</span></td>
+                    <td class="when">07/06 18:47</td>
+                    <td><div class="acts"><button class="btn btn-primary btn-sm" type="button">배정</button><button class="btn btn-danger btn-sm" type="button">거절</button></div></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- 클리닉 화상 배정 현황 -->
+          <div class="card">
+            <div class="card-hd"><h3 class="t-h3">오늘의 클리닉 배정</h3><span class="t-caption num">07/07 (월)</span></div>
+            <div class="card-pad" style="padding-top:.2rem;padding-bottom:.2rem;">
+              <div class="clinic-row">
+                <span class="slot">17:00–17:30<small>진행 12분째</small></span>
+                <div class="assignee"><div class="nm">최지아</div><div class="rl">담당 박도현 · 미적분</div></div>
+                <span class="pill pill--ok"><span class="live"><span class="blip"></span></span>진행중</span>
+                <button class="btn btn-primary btn-sm" type="button">입장</button>
+              </div>
+              <div class="clinic-row">
+                <span class="slot">18:00–18:30<small>시작 예정</small></span>
+                <div class="assignee"><div class="nm">한서준</div><div class="rl">담당 김유진 · 확통</div></div>
+                <span class="pill pill--ok"><span class="dot"></span>배정완료</span>
+                <button class="btn btn-secondary btn-sm" type="button">방 준비</button>
+              </div>
+              <div class="clinic-row">
+                <span class="slot">19:00–19:30<small>배정 필요</small></span>
+                <div class="assignee">
+                  <div class="nm">박민지</div>
+                  <div class="rl" style="margin-top:.25rem">
+                    <select class="control" style="padding:.3rem .5rem;font-size:.78rem;max-width:150px" aria-label="담당 직원 배정">
+                      <option>직원 선택…</option><option>박도현</option><option>김유진</option><option>이한나</option>
+                    </select>
+                  </div>
+                </div>
+                <span class="pill pill--wait"><span class="dot"></span>미배정</span>
+                <button class="btn btn-primary btn-sm" type="button">배정</button>
+              </div>
+              <div class="clinic-row">
+                <span class="slot">20:00–20:30<small>시작 예정</small></span>
+                <div class="assignee"><div class="nm">오세훈</div><div class="rl">담당 박도현 · 미적분</div></div>
+                <span class="pill pill--ok"><span class="dot"></span>배정완료</span>
+                <button class="btn btn-secondary btn-sm" type="button">방 준비</button>
+              </div>
+            </div>
+            <div class="card-ft"><span class="t-caption">화상방은 배정 확정 시 LMS 안에 자동 생성되며, 학생과 담당 직원만 입장할 수 있습니다.</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== FOOTER ============================== -->
+<footer class="section footer">
+  <div class="wrap">
+    <p class="t-eyebrow" style="color:var(--primary)">에듀제이씨 학원 · LMS 디자인 시스템</p>
+    <p class="fnote" style="margin-top:.6rem;">
+      단일 HTML 문서 · 외부 요청 없음 · 시스템 서체(맑은 고딕 / Apple SD Gothic Neo)와 고정폭 서체만 사용.
+      모든 이미지는 인라인 SVG·CSS로 그렸습니다. 우측 상단 버튼 또는 <span class="kbd">시스템 설정</span>으로 라이트·다크를 전환할 수 있습니다.
+    </p>
+    <div class="ftags">
+      <span class="hanko"><b style="background:#2C6E60"></b>청자 #2C6E60</span>
+      <span class="hanko"><b style="background:#1E2422"></b>먹 #1E2422</span>
+      <span class="hanko"><b style="background:#B23A2C"></b>채점 #B23A2C</span>
+      <span class="hanko">v1.0 · 2026</span>
+    </div>
+  </div>
+</footer>
+
+</section>
+
+<!-- ============================== THEME TOGGLE JS ============================== -->
+<script>
+(function () {
+  var root = document.documentElement;
+  var btn = document.getElementById('themeToggle');
+  var KEY = 'edujc-theme';
+
+  function stored() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
+  function save(v) { try { localStorage.setItem(KEY, v); } catch (e) {} }
+
+  function systemDark() {
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  function current() {
+    var t = root.getAttribute('data-theme');
+    if (t === 'dark' || t === 'light') return t;
+    return systemDark() ? 'dark' : 'light';
+  }
+  function apply(t) {
+    root.setAttribute('data-theme', t);
+    if (btn) {
+      btn.setAttribute('aria-pressed', String(t === 'dark'));
+      btn.setAttribute('aria-label', t === 'dark' ? '라이트 화면으로 전환' : '다크 화면으로 전환');
+    }
+  }
+
+  var init = stored();
+  if (init === 'dark' || init === 'light') apply(init);
+  else if (btn) btn.setAttribute('aria-pressed', String(systemDark()));
+
+  if (btn) {
+    btn.addEventListener('click', function () {
+      var next = current() === 'dark' ? 'light' : 'dark';
+      apply(next);
+      save(next);
+    });
+  }
+})();
+</script>

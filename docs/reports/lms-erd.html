@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>한종철 LMS — DB 관계도 (ERD)</title>
+<style>
+  @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css');
+  :root{--navy:#1E3A63;--ink:#16181D;--ink-soft:#565E6C;--line:#E6E8EC;--surface:#F7F8FA;
+        --font:'Pretendard Variable','Pretendard','Malgun Gothic',sans-serif;}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:var(--font);color:var(--ink);background:#fff;line-height:1.6;
+       -webkit-font-smoothing:antialiased;letter-spacing:-0.006em}
+  .wrap{max-width:1400px;margin:0 auto;padding:32px 28px 48px}
+  h1{font-size:1.6rem;font-weight:780;letter-spacing:-0.02em;margin:0 0 8px}
+  h1 .accent{color:var(--navy)}
+  .lead{color:var(--ink-soft);font-size:.98rem;margin:0 0 18px;max-width:80ch}
+  .legend{display:flex;gap:8px 18px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);
+          border-radius:10px;padding:12px 16px;font-size:.85rem;color:var(--ink-soft);margin-bottom:20px}
+  .legend b{color:var(--ink)}
+  .legend .k{display:inline-flex;align-items:center;gap:6px}
+  .swatch{width:14px;height:14px;border-radius:3px;background:var(--navy);display:inline-block}
+  .diagram{border:1px solid var(--line);border-radius:12px;padding:10px;overflow:auto;background:#fff}
+  .mermaid{min-width:900px}
+  .note{margin-top:16px;font-size:.85rem;color:var(--ink-soft);line-height:1.55}
+  .note b{color:var(--ink)}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>한종철 LMS — <span class="accent">데이터베이스 관계도 (ERD)</span></h1>
+    <p class="lead">표(테이블)들이 어떻게 연결되는지 한눈에 보는 그림입니다. <b>화살표</b> = "이 표가 저 표를 가리킨다(외래키 FK)", <b>화살표 위 글자</b> = 연결의 의미. 같은 색 상자 = 같은 도메인.</p>
+
+    <div class="legend">
+      <span class="k"><span class="swatch"></span> <b>파란 상자 = 두 중심 허브</b> (users·students)</span>
+      <span class="k"><b>─►</b> 실선 = 반드시 가리킴</span>
+      <span class="k"><b>┈►</b> 점선 = 셋 중 하나만 가리킴(대상 택1)</span>
+      <span class="k"><b>1:1 / 1:N</b> = 한 개 : 여러 개 관계</span>
+    </div>
+
+    <div class="diagram">
+<pre class="mermaid">
+flowchart LR
+
+  subgraph ACC["🧑‍🎓 계정·학생"]
+    users["users<br/><small>로그인 계정</small>"]
+    students["students<br/><small>학생 (원번)</small>"]
+    parents["parents<br/><small>학부모 연락처</small>"]
+  end
+
+  subgraph GRD["📝 성적 / OMR"]
+    exams["exams<br/><small>시험</small>"]
+    questions["questions<br/><small>문항·정답</small>"]
+    answer_sheets["answer_sheets<br/><small>OMR 스캔</small>"]
+    sheet_answers["sheet_answers<br/><small>문항별 답안</small>"]
+    scores["scores<br/><small>성적</small>"]
+    class_sessions["class_sessions<br/><small>수업 회차</small>"]
+    attendances["attendances<br/><small>당일 출석</small>"]
+    assignments["assignments<br/><small>과제 수행</small>"]
+  end
+
+  subgraph VID["🎬 영상"]
+    videos["videos<br/><small>영상</small>"]
+    video_requests["video_requests<br/><small>영상 신청</small>"]
+  end
+
+  subgraph CLI["🩺 클리닉"]
+    clinic_requests["clinic_requests<br/><small>신청·배정·출결</small>"]
+    clinic_eval_criteria["clinic_eval_criteria<br/><small>평가표 항목</small>"]
+    clinic_evaluations["clinic_evaluations<br/><small>조교 평가</small>"]
+  end
+
+  subgraph PAY["💳 결제"]
+    products["products<br/><small>교재</small>"]
+    orders["orders<br/><small>구매·청구</small>"]
+    payments["payments<br/><small>결제 내역</small>"]
+  end
+
+  subgraph BRD["📢 게시판·문의"]
+    posts["posts<br/><small>공지·정오표</small>"]
+    inquiries["inquiries<br/><small>문의</small>"]
+    inquiry_messages["inquiry_messages<br/><small>문의 대화</small>"]
+  end
+
+  subgraph NOTI["🔔 알림"]
+    notifications["notifications<br/><small>발송 이력</small>"]
+  end
+
+  %% 계정
+  students -->|"1:1 계정"| users
+  parents -->|"학부모"| students
+
+  %% 성적/OMR
+  questions -->|"문항"| exams
+  scores -->|"성적"| exams
+  scores -->|"누구"| students
+  answer_sheets -->|"시험"| exams
+  answer_sheets -->|"누구(매칭후)"| students
+  sheet_answers -->|"답안지"| answer_sheets
+  sheet_answers -->|"문항"| questions
+  class_sessions -->|"그날 시험(선택)"| exams
+  attendances -->|"수업"| class_sessions
+  attendances -->|"누구"| students
+  assignments -->|"수업"| class_sessions
+  assignments -->|"누구"| students
+
+  %% 영상
+  video_requests -->|"영상"| videos
+  video_requests -->|"신청자"| students
+
+  %% 클리닉
+  clinic_requests -->|"신청자"| students
+  clinic_requests -->|"배정 조교"| users
+  clinic_evaluations -->|"평가"| clinic_requests
+  clinic_evaluations -->|"평가항목"| clinic_eval_criteria
+  clinic_evaluations -->|"평가자"| users
+
+  %% 결제
+  orders -->|"구매자"| students
+  orders -->|"교재"| products
+  payments -->|"주문"| orders
+
+  %% 게시판·문의
+  posts -->|"작성자"| users
+  inquiries -->|"작성자"| students
+  inquiry_messages -->|"문의"| inquiries
+  inquiry_messages -->|"보낸이"| users
+
+  %% 알림 (대상 택1 - 폴리모픽)
+  notifications -->|"대상: 학생"| students
+  notifications -.->|"또는 학부모"| parents
+  notifications -.->|"또는 직원"| users
+
+  classDef hub fill:#1E3A63,color:#ffffff,stroke:#16324f,stroke-width:1.5px;
+  class users,students hub;
+
+  style ACC fill:#EEF2F8,stroke:#D8E1EF
+  style GRD fill:#F7F8FA,stroke:#E6E8EC
+  style VID fill:#F7F8FA,stroke:#E6E8EC
+  style CLI fill:#F7F8FA,stroke:#E6E8EC
+  style PAY fill:#F7F8FA,stroke:#E6E8EC
+  style BRD fill:#F7F8FA,stroke:#E6E8EC
+  style NOTI fill:#F7F8FA,stroke:#E6E8EC
+</pre>
+    </div>
+
+    <p class="note"><b>보는 법</b> — 예: <code>scores ─►(누구) students</code> 는 "성적 한 줄은 어느 학생 것인지 <b>students</b>를 가리킨다"는 뜻. <b>students</b>(원번)와 <b>users</b>(계정)로 화살표가 가장 많이 모이죠 — 이 둘이 시스템의 중심 허브입니다. 파일(OMR 스캔·클리닉 녹음)은 표에 <b>경로만</b> 저장하고 실제 파일은 스토리지에 둡니다.</p>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose',
+      flowchart: { curve: 'basis', nodeSpacing: 40, rankSpacing: 70 } });
+  </script>
+</body>
+</html>

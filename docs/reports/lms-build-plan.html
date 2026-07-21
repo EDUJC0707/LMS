@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>한종철 LMS 구축 계획 — 상부 보고</title>
+<style>
+  @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css');
+
+  :root{
+    --paper:#FFFFFF; --ink:#16181D; --ink-soft:#565E6C; --ink-faint:#98A0AC;
+    --line:#E6E8EC; --surface:#F7F8FA; --navy:#1E3A63; --navy-soft:#33507D; --navy-line:#D8E1EF;
+    --font:'Pretendard Variable','Pretendard',-apple-system,BlinkMacSystemFont,system-ui,'Segoe UI','Malgun Gothic',sans-serif;
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--paper); color:var(--ink); font-family:var(--font);
+    font-size:14px; line-height:1.6; letter-spacing:-0.006em;
+    -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  h1,h2,h3,p,ul,li{margin:0}
+  ul{padding:0;list-style:none}
+  strong{font-weight:640;color:var(--ink)}
+
+  .wrap{max-width:900px;margin:0 auto;padding:40px 40px 32px}
+
+  /* header */
+  .eyebrow{font-size:.72rem;font-weight:660;letter-spacing:.08em;color:var(--navy-soft);margin-bottom:10px}
+  .title{font-weight:780;letter-spacing:-0.028em;line-height:1.12;font-size:2rem}
+  .title .accent{color:var(--navy)}
+  .lead{margin-top:12px;color:var(--ink-soft);font-size:1rem;max-width:64ch}
+  .meta{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap}
+  .chip{font-size:.74rem;color:var(--ink-soft);border:1px solid var(--line);border-radius:999px;padding:4px 11px;background:#fff}
+  .chip strong{color:var(--navy)}
+
+  /* section */
+  section{margin-top:30px}
+  .sec-eyebrow{font-size:.72rem;font-weight:660;letter-spacing:.08em;color:var(--navy-soft);margin-bottom:6px}
+  .sec-head{font-weight:720;letter-spacing:-0.02em;font-size:1.25rem;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+
+  /* body paragraph */
+  .p{color:var(--ink-soft);line-height:1.62;max-width:74ch}
+  .p + .p{margin-top:10px}
+  .p strong{color:var(--ink)}
+
+  /* generic bullet list */
+  .list{display:grid;gap:8px}
+  .list li{position:relative;padding-left:16px;font-size:.9rem;color:var(--ink-soft);line-height:1.5}
+  .list li::before{content:"";position:absolute;left:1px;top:.6em;width:5px;height:5px;border-radius:50%;background:var(--navy-soft)}
+  .list li strong{color:var(--ink)}
+
+  /* metrics table (As-is -> To-be) */
+  .tbl{width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:.88rem}
+  .tbl thead th{background:var(--navy);color:#fff;text-align:left;font-weight:620;padding:11px 13px;font-size:.8rem;letter-spacing:.01em}
+  .tbl td{padding:11px 13px;border-top:1px solid var(--line);vertical-align:top;color:var(--ink-soft);line-height:1.5}
+  .tbl tr{break-inside:avoid}
+  .tbl tbody tr:nth-child(even) td{background:var(--surface)}
+  .tbl td.n{font-weight:680;color:var(--navy);white-space:nowrap}
+  .tbl td.asis{color:var(--ink-faint)}
+  .tbl td.tobe{color:var(--ink);border-left:2px solid var(--navy-line)}
+  .tbl td.m{color:var(--navy-soft);font-weight:560}
+  .caption{margin-top:9px;color:var(--ink-faint);font-size:.78rem;line-height:1.5}
+
+  /* principle banner */
+  .principle{border-left:3px solid var(--navy);background:var(--surface);border-radius:0 10px 10px 0;
+    padding:13px 16px;font-weight:600;color:var(--ink);font-size:.96rem;margin-bottom:18px}
+
+  /* gate card */
+  .gate{border:1px solid var(--line);border-radius:12px;background:#fff;padding:18px;break-inside:avoid}
+  .gate + .gate{margin-top:13px}
+  .gate__h{display:flex;align-items:center;gap:10px;font-weight:720;font-size:1.04rem;letter-spacing:-0.01em;margin-bottom:12px}
+  .gate__badge{flex:none;display:grid;place-items:center;min-width:26px;height:24px;padding:0 8px;border-radius:6px;
+    background:var(--navy);color:#fff;font-size:.73rem;font-weight:700;letter-spacing:.02em}
+  .gate__badge--poc{background:var(--navy-soft)}
+
+  .qline{font-size:.9rem;color:var(--ink-soft);line-height:1.55}
+  .qline + .qline{margin-top:7px}
+  .qlabel{font-weight:680;color:var(--ink)}
+
+  /* alternatives w/ pros & cons */
+  .alts{display:grid;gap:9px;margin-top:11px}
+  .alt{border:1px solid var(--line);border-radius:9px;padding:11px 13px;background:var(--surface)}
+  .alt__t{font-weight:660;font-size:.9rem;color:var(--ink);margin-bottom:6px}
+  .pc{display:grid;gap:3px}
+  .pro,.con{position:relative;padding-left:18px;font-size:.855rem;line-height:1.45;color:var(--ink-soft)}
+  .pro::before{content:"＋";position:absolute;left:0;top:0;color:var(--navy);font-weight:800}
+  .con::before{content:"－";position:absolute;left:0;top:0;color:var(--ink-faint);font-weight:800}
+
+  /* inline note (개인정보 등) */
+  .note{margin-top:11px;font-size:.85rem;color:var(--ink-faint);line-height:1.52;padding-left:12px;border-left:2px solid var(--line)}
+  .note b{color:var(--ink-soft)}
+
+  /* decision footer */
+  .decide{margin-top:12px;border-left:3px solid var(--navy);background:#F3F6FB;border-radius:0 8px 8px 0;
+    padding:10px 13px;font-size:.88rem;color:var(--ink);line-height:1.5}
+  .decide b{color:var(--navy);font-weight:680}
+
+  .aside{margin-top:24px;color:var(--ink-faint);font-size:.85rem;line-height:1.55}
+  .aside b{color:var(--ink-soft)}
+
+  .foot{margin-top:28px;border-top:1px solid var(--line);padding-top:14px;color:var(--ink-faint);
+    font-size:.78rem;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+
+  @page{size:A4;margin:14mm}
+  @media print{
+    .wrap{max-width:none;padding:0}
+    section{margin-top:22px}
+    .gates{break-before:page;margin-top:0}
+    .gate.brk{break-before:page}
+    .gate,.tbl tr{break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <p class="eyebrow">LMS 구축 PRD · 상부 보고</p>
+      <h1 class="title">한종철 LMS <span class="accent">구축 계획</span> 보고</h1>
+      <p class="lead">최종 목적지와 성공 지표, 그리고 목적 달성을 위한 단계별 상부 의사결정 사항을 정리했습니다.</p>
+      <div class="meta">
+        <span class="chip">기준일 <strong>2026-07-13</strong></span>
+        <span class="chip">문서 <strong>PRD.md</strong></span>
+        <span class="chip">선결 <strong>PoC 3</strong></span>
+        <span class="chip">의사결정 <strong>관문 5</strong></span>
+      </div>
+    </header>
+
+    <!-- 1. 목적 & 성공지표 -->
+    <section>
+      <p class="sec-eyebrow">왜 만드는가</p>
+      <h2 class="sec-head">최종 목적지 · 성공 지표</h2>
+      <p class="p">흩어진 업무(성적·영상·클리닉·결제·게시판/문의·알림)를 <strong>하나의 LMS</strong>로 통합 — 학생에겐 단일 진입점, 관리자에겐 단일 운영 콘솔. 완성도의 척도는 기능 수가 아니라 <strong>아래 지표의 개선폭</strong>입니다.</p>
+
+      <table class="tbl" style="margin-top:16px">
+        <thead>
+          <tr>
+            <th style="width:15%">항목</th>
+            <th style="width:31%">As-is (현재)</th>
+            <th style="width:33%">To-be (LMS 도입 후)</th>
+            <th style="width:21%">측정 지표</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="n">성적 처리·배부</td>
+            <td class="asis">OMR 수합 → 아카플로우 채점 → 카톡 발송 → 성적표 인쇄·배부 <em>(수작업 다단계)</em></td>
+            <td class="tobe">스캔본 <strong>자동채점+보정</strong> → 누적성적표·알림 <strong>자동</strong> → 앱 조회</td>
+            <td class="m">처리~배부 소요시간 · 수작업 단계 수</td>
+          </tr>
+          <tr>
+            <td class="n">영상 권한 부여/회수</td>
+            <td class="asis">카톡 개별 접수 → 유튜브 수동 공개 → 엑셀 기록 → 1주 후 수동 비공개 <em>(전과정 수동)</em></td>
+            <td class="tobe">LMS 신청~승인~안내~<strong>만료 자동 관리</strong>(권한작업은 할일·알림 보조)</td>
+            <td class="m">건당 처리시간 · 수동 처리 건수 / 자동화율</td>
+          </tr>
+          <tr>
+            <td class="n">교재 청구·결제</td>
+            <td class="asis">등록생마다 카톡 청구서 개별 발송 → 결제 확인</td>
+            <td class="tobe">학생 <strong>버튼 클릭 → 자동 청구</strong> → 대시보드에서 확인</td>
+            <td class="m">청구 방식(수작업→자동) · 확인 소요시간</td>
+          </tr>
+          <tr>
+            <td class="n">클리닉 신청·배정</td>
+            <td class="asis">카톡 채널 접수 → 수동 승인·미트링크 동봉</td>
+            <td class="tobe">LMS <strong>신청·배정·시간제한 링크 자동</strong> 노출</td>
+            <td class="m">접수·배정 일원화 · 수작업 여부</td>
+          </tr>
+          <tr>
+            <td class="n">문의·상담</td>
+            <td class="asis">카카오톡 상담</td>
+            <td class="tobe">LMS <strong>자체 채팅/게시판</strong></td>
+            <td class="m">문의 채널 일원화</td>
+          </tr>
+          <tr>
+            <td class="n">학생 정보 접근</td>
+            <td class="asis">아카플로우·유튜브·결제선생·카톡 <em>분산</em></td>
+            <td class="tobe">LMS <strong>단일 로그인 진입점</strong></td>
+            <td class="m">이용 외부 채널 수 · 단일사이트 이용률</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="caption">※ 각 지표의 구체 목표치(%·시간)는 실측 baseline 확보 후 <strong>관문 5(성공지표 목표치 확정)</strong>에서 결정.</p>
+    </section>
+
+    <!-- 2. 추진 원칙 & 선결 검증 -->
+    <section>
+      <p class="sec-eyebrow">어떻게</p>
+      <h2 class="sec-head">추진 원칙 &amp; 선결 검증</h2>
+      <p class="principle">리스크를 먼저 검증(PoC) → 의사결정 관문을 순차 통과 → 구축·현행 이관</p>
+
+      <div class="gate">
+        <p class="gate__h"><span class="gate__badge gate__badge--poc">PoC</span>선결 — 기술 검증을 가장 먼저</p>
+        <p class="qline">불확실성이 큰 3가지를 먼저 검증해 <span class="qlabel">예산(관문 1)·기술노선(관문 4)</span> 판단 근거로 투입합니다.</p>
+        <ul class="list" style="margin-top:11px">
+          <li><strong>OMR 자체인식 정확도</strong> 검증 (6-1)</li>
+          <li><strong>YouTube 권한 자동화</strong> 방식 검증 (6-7)</li>
+          <li><strong>클리닉 녹음 방식</strong> 검증 (8-5)</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 3. 의사결정 관문 -->
+    <section class="gates">
+      <p class="sec-eyebrow">상부 결정 사항</p>
+      <h2 class="sec-head">의사결정 관문 5</h2>
+
+      <!-- 관문 1 -->
+      <div class="gate">
+        <p class="gate__h"><span class="gate__badge">관문 1</span>사업 범위·예산·일정 승인</p>
+        <p class="qline"><span class="qlabel">문제점</span> — OMR 자체인식은 개발비 증가 + 정확도 미검증(미달 시 수동보정 인건 지속). ‘1차 개발 범위·예산·일정’ 승인과 함께 채점 노선을 결정해야 함.</p>
+        <div class="alts">
+          <div class="alt">
+            <p class="alt__t">A. 자체 인식 개발 (현 결정)</p>
+            <div class="pc">
+              <p class="pro">완전 통합 · 외부 구독 제거 · 장기 운영비 ↓</p>
+              <p class="con">초기 개발비 ↑ · PoC 필수 · 정확도 리스크</p>
+            </div>
+          </div>
+          <div class="alt">
+            <p class="alt__t">B. 외부 채점(아카플로우 등) 결과 업로드 유지</p>
+            <div class="pc">
+              <p class="pro">개발비 ↓ · 검증된 정확도</p>
+              <p class="con">외부 구독료 지속 · 통합 미흡 · 수작업 잔존</p>
+            </div>
+          </div>
+          <div class="alt">
+            <p class="alt__t">C. 상용 OMR 엔진 연동</p>
+            <div class="pc">
+              <p class="pro">검증된 정확도 · 개발 단축</p>
+              <p class="con">라이선스 비용 · 커스터마이즈 제약</p>
+            </div>
+          </div>
+        </div>
+        <p class="decide"><b>결정해야 할 사항</b> — 노선 택일 + PoC 예산·중단 기준. (A=초기 개발비 큼·운영비 작음 / B=초기 작음·구독료 지속 → PoC로 A 타당성 먼저)</p>
+      </div>
+
+      <!-- 관문 2 -->
+      <div class="gate">
+        <p class="gate__h"><span class="gate__badge">관문 2</span>개인정보·법무 검토 <span style="font-weight:520;color:var(--ink-faint);font-size:.82rem">(8-1)</span></p>
+        <ul class="list">
+          <li>클리닉 감독 <strong>녹음본 동의·노무 이슈</strong> <em>(민감 — 방식·보관은 관문 4-B에서 함께 결정)</em></li>
+          <li>전화번호 기반 <strong>원번</strong>·학부모 연락처·성적 등 민감정보 처리방침</li>
+          <li>통합 개인정보 처리방침·동의 절차 채택</li>
+        </ul>
+        <p class="decide"><b>결정해야 할 사항</b> — 개인정보 처리방침·동의 절차 승인 (착수 전 리스크 차단)</p>
+      </div>
+
+      <!-- 관문 3 -->
+      <div class="gate">
+        <p class="gate__h"><span class="gate__badge">관문 3</span>외부 연동·계약</p>
+        <ul class="list">
+          <li><strong>결제선생</strong> 임베드 + 향후 PG 전환 옵션 (6-5)</li>
+          <li><strong>카카오 알림톡</strong> 계약 (6-8) / 신규생 계정 발송 채널 (8-3)</li>
+          <li><strong>Google Workspace·Meet 요금제</strong> — 녹음·API 요건·비용 (6-3)</li>
+          <li>YouTube <strong>50계정 한도</strong> (8-2) — 아래 관문 4-A와 연동</li>
+        </ul>
+        <p class="decide"><b>결정해야 할 사항</b> — 외부 서비스 계약·요금제 승인</p>
+      </div>
+
+      <!-- 관문 4-A -->
+      <div class="gate">
+        <p class="gate__h"><span class="gate__badge">관문 4-A</span>영상 권한 자동화·호스팅 노선 <span style="font-weight:520;color:var(--ink-faint);font-size:.82rem">(6-7 · 8-2)</span></p>
+        <p class="qline"><span class="qlabel">문제점</span> — RPA 봇은 ① <strong>약관 정면 위반</strong> ② 구글이 <strong>자동화 로그인을 기술 차단</strong> → 상시 고장 ③ 적발 시 <strong>계정 정지 = 사업 중단</strong>(연쇄) ④ UI 취약 + <strong>50계정 한도</strong>로 확장 불가 ⑤ 애초에 공식 API 없음. (봇 운영엔 별도 PC·인건이 숨은 비용)</p>
+        <div class="alts">
+          <div class="alt">
+            <p class="alt__t">A. YouTube 유지 + 봇 자동화</p>
+            <div class="pc">
+              <p class="pro">호스팅 자체는 무료</p>
+              <p class="con">약관위반·계정정지 리스크 · UI 유지보수 · 50명 초과 불가</p>
+            </div>
+          </div>
+          <div class="alt">
+            <p class="alt__t">B. YouTube 유지 + 영상 사본 분할(50명 단위)</p>
+            <div class="pc">
+              <p class="pro">당장 새 인프라 불필요</p>
+              <p class="con">사본마다 권한관리 폭증 · 근본 해결 아님</p>
+            </div>
+          </div>
+          <div class="alt">
+            <p class="alt__t">C. 전용/자체 영상서버 전환 (DRM·서명URL)</p>
+            <div class="pc">
+              <p class="pro">자체 권한관리 · 약관/50한도에서 해방 · 안정</p>
+              <p class="con">월 스트리밍·트래픽 비용(사용량 비례) + 개발 필요</p>
+            </div>
+          </div>
+        </div>
+        <p class="decide"><b>결정해야 할 사항</b> — 노선 택일. 봇은 <b>PoC 검증에 한정</b>, 전환 트리거·예산 사전 승인 (중장기 C 전환이 리스크·비용 모두 유리)</p>
+      </div>
+
+      <!-- 관문 4-B -->
+      <div class="gate brk">
+        <p class="gate__h"><span class="gate__badge">관문 4-B</span>클리닉 녹음 방식 + 녹음본 개인정보·보관 <span style="font-weight:520;color:var(--ink-faint);font-size:.82rem">(8-5 · 6-3)</span></p>
+        <p class="qline"><span class="qlabel">문제점</span> — 미트 자체 녹화는 ① <strong>유료 요금제(Business Standard+) 필요</strong> ② <strong>항상 영상+음성</strong> → 음성전용 불가·저장/프라이버시 부담 ↑. 감독용은 <strong>음성만</strong>, 그리고 <strong>조교가 끄거나 깜빡할 수 없는 자동 녹음</strong>이어야 함.</p>
+        <div class="alts">
+          <div class="alt">
+            <p class="alt__t">A. 상용 봇 API (Recall.ai 등, ~$0.5/녹음시간)</p>
+            <div class="pc">
+              <p class="pro">도입 빠름 · 초기비용 낮음 · 월정액 0 · 음성전용 · 중앙 자동</p>
+              <p class="con">사용량 비례 과금 · 데이터 국외이전(위탁·동의 필요)</p>
+            </div>
+          </div>
+          <div class="alt">
+            <p class="alt__t">B. 봇 self-host (Vexa·Attendee 등 오픈소스)</p>
+            <div class="pc">
+              <p class="pro">음성전용 · 중앙 자동(조교 못 끔) · 데이터 사내 보관 → 국외이전/위탁 이슈 해소 · SW 무료</p>
+              <p class="con">서버·인프라 직접 구축·운영 부담 · 봇 참가자 표시·구글 봇차단 대응 · 유지보수 · 초기 기술 역량 필요</p>
+            </div>
+          </div>
+          <div class="alt">
+            <p class="alt__t">C. 미트 자체녹화 (Business Standard+ ~$14/계정·월)</p>
+            <div class="pc">
+              <p class="pro">단순 · 컴플라이언트(사내 Drive)</p>
+              <p class="con">계정당 월 요금 + 영상 저장 강제</p>
+            </div>
+          </div>
+        </div>
+        <p class="note"><b>개인정보·녹음본 보관</b> — 학생·학부모 사전 고지·동의(미성년자 법정대리인) / 제3자 봇 사용 시 위탁계약·국외이전 동의 / 보관기간·파기 정책 + 녹음본 저장 스토리지 비용(보관기간과 직결). → <b>self-host·사내 보관이 개인정보·국외이전 리스크 최소화.</b></p>
+        <p class="decide"><b>결정해야 할 사항</b> — 녹음 방식 택일(실제 물량 기준 A=변동비 vs B=고정비 손익분기 계산) + 개인정보 동의·(제3자 시)위탁 절차 + 보관기간 정책</p>
+      </div>
+
+      <!-- 관문 5 -->
+      <div class="gate">
+        <p class="gate__h"><span class="gate__badge">관문 5</span>런칭·현행 이관·성공지표 확정</p>
+        <ul class="list">
+          <li><strong>등록/미등록 운영</strong>·계정 자동발급 (6-9, 3.1.5)</li>
+          <li><strong>성공지표 목표치</strong> 확정 (5장)</li>
+          <li>As-is(카카오톡·엑셀) → LMS <strong>데이터 이관·병행운영·전환 시점</strong></li>
+        </ul>
+        <p class="decide"><b>결정해야 할 사항</b> — 실서비스 전환·이관 시점 및 성공지표 목표치 승인</p>
+      </div>
+
+      <p class="aside"><b>추후 논의 (비예산)</b> — 랜딩 페이지 구성 (6-10)</p>
+    </section>
+
+    <div class="foot">
+      <span>한종철 LMS 구축 계획 — 상부 보고</span>
+      <span>내부 보고용 · 2026-07-13</span>
+    </div>
+  </main>
+</body>
+</html>

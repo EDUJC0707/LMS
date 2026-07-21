@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>한종철 LMS — 데이터베이스 설계 명세서</title>
+<style>
+  @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css');
+  :root{
+    --paper:#FFFFFF; --ink:#16181D; --ink-soft:#565E6C; --ink-faint:#98A0AC;
+    --line:#E6E8EC; --surface:#F7F8FA; --navy:#1E3A63; --navy-soft:#33507D; --navy-line:#D8E1EF;
+    --font:'Pretendard Variable','Pretendard',-apple-system,BlinkMacSystemFont,system-ui,'Segoe UI','Malgun Gothic',sans-serif;
+    --mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font);
+    font-size:13px;line-height:1.55;letter-spacing:-0.006em;-webkit-font-smoothing:antialiased;
+    font-variant-numeric:tabular-nums;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  h1,h2,h3,p,ul,li{margin:0}
+  ul{padding:0;list-style:none}
+  strong{font-weight:640;color:var(--ink)}
+  code{font-family:var(--mono);font-size:.92em}
+  .wrap{max-width:900px;margin:0 auto;padding:40px 40px 32px}
+
+  .eyebrow{font-size:.72rem;font-weight:660;letter-spacing:.08em;color:var(--navy-soft);margin-bottom:10px}
+  .title{font-weight:780;letter-spacing:-0.028em;line-height:1.12;font-size:1.9rem}
+  .title .accent{color:var(--navy)}
+  .lead{margin-top:12px;color:var(--ink-soft);font-size:.98rem;max-width:70ch}
+  .meta{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap}
+  .chip{font-size:.74rem;color:var(--ink-soft);border:1px solid var(--line);border-radius:999px;padding:4px 11px;background:#fff}
+  .chip strong{color:var(--navy)}
+
+  section{margin-top:26px}
+  .sec-eyebrow{font-size:.72rem;font-weight:660;letter-spacing:.08em;color:var(--navy-soft);margin-bottom:6px}
+  .sec-head{font-weight:720;letter-spacing:-0.02em;font-size:1.2rem;margin-bottom:14px;padding-bottom:9px;border-bottom:1px solid var(--line)}
+  .sec-head .warn{font-size:.72rem;font-weight:640;color:#B4531A;background:#FBEEE4;border:1px solid #F0D8C4;border-radius:999px;padding:2px 9px;margin-left:8px;vertical-align:middle}
+
+  .legend{display:flex;gap:6px 16px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);
+    border-radius:10px;padding:11px 15px;font-size:.8rem;color:var(--ink-soft)}
+  .legend b{color:var(--ink)}
+  .p{color:var(--ink-soft);line-height:1.6;max-width:74ch}
+  .p + .p{margin-top:8px}
+  .p strong{color:var(--ink)}
+
+  /* ERD image */
+  .erd-page{break-before:page}
+  .erd-wrap{border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center;background:#fff}
+  .erd-wrap img{max-width:100%;max-height:238mm;height:auto}
+  .cap{margin-top:8px;color:var(--ink-faint);font-size:.78rem}
+
+  /* table spec blocks */
+  .tblock{margin-top:16px;break-inside:avoid}
+  .tname{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin-bottom:6px}
+  .tname code{font-weight:700;font-size:.98rem;color:var(--navy)}
+  .tname .ko{font-size:.82rem;color:var(--ink-soft)}
+  .spec{width:100%;border-collapse:collapse;border:1px solid var(--line);font-size:.8rem}
+  .spec thead th{background:var(--navy);color:#fff;text-align:left;font-weight:600;padding:6px 10px;font-size:.74rem}
+  .spec td{padding:5px 10px;border-top:1px solid var(--line);vertical-align:top;color:var(--ink-soft);line-height:1.4}
+  .spec tr{break-inside:avoid}
+  .spec tbody tr:nth-child(even) td{background:var(--surface)}
+  .spec td.c{font-family:var(--mono);font-weight:600;color:var(--ink);white-space:nowrap}
+  .spec td.t{font-family:var(--mono);color:var(--navy-soft);white-space:nowrap;font-size:.94em}
+  .spec td.k{white-space:nowrap;font-size:.92em}
+  .badge{display:inline-block;font-size:.68rem;font-weight:640;border-radius:4px;padding:1px 5px;line-height:1.5}
+  .pk{background:var(--navy);color:#fff}
+  .fk{background:#E7EEF7;color:var(--navy)}
+  .uq{background:#EDE7F6;color:#5B3E9B}
+  .uniq{margin-top:5px;font-size:.75rem;color:var(--ink-faint)}
+  .uniq b{color:var(--ink-soft)}
+
+  .note-list{display:grid;gap:9px;max-width:76ch}
+  .note-list li{position:relative;padding-left:16px;color:var(--ink-soft);line-height:1.5;font-size:.88rem}
+  .note-list li::before{content:"";position:absolute;left:1px;top:.6em;width:5px;height:5px;border-radius:50%;background:var(--navy-soft)}
+  .note-list li strong{color:var(--ink)}
+
+  .prov{border-left:3px solid #B4531A;background:#FBEEE4;border-radius:0 8px 8px 0;padding:10px 13px;font-size:.85rem;color:#5A3016;margin-top:10px}
+  .prov b{color:#8A3D12}
+
+  .foot{margin-top:28px;border-top:1px solid var(--line);padding-top:14px;color:var(--ink-faint);font-size:.78rem;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+
+  @page{size:A4;margin:13mm}
+  @media print{ .wrap{max-width:none;padding:0} section{margin-top:20px} }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <p class="eyebrow">한종철 LMS · DB 설계</p>
+    <h1 class="title">데이터베이스 <span class="accent">설계 명세서</span></h1>
+    <p class="lead">관계형 DB(예: PostgreSQL) 기준. 7개 도메인 23개 표의 관계(ERD)와 컬럼·자료형·제약을 정리했습니다. 개발 착수 전 검토용.</p>
+    <div class="meta">
+      <span class="chip">기준일 <strong>2026-07-14</strong></span>
+      <span class="chip">도메인 <strong>7</strong></span>
+      <span class="chip">표 <strong>23</strong></span>
+      <span class="chip">잠정 영역 <strong>3</strong></span>
+    </div>
+  </header>
+
+  <section>
+    <p class="sec-eyebrow">이 문서 읽는 법</p>
+    <h2 class="sec-head">개요</h2>
+    <p class="p"><strong>DB는 프로젝트 전체에 하나</strong>이고, 아래 도메인은 그 안의 표를 묶은 논리적 분류입니다. 표끼리는 <strong>외래키(FK)</strong>로 연결되며, 두 중심 허브는 <code>students</code>(학생)와 <code>users</code>(계정)입니다. OMR 스캔 이미지·클리닉 녹음 등 <strong>큰 파일은 스토리지에 두고 표에는 경로만</strong> 저장합니다.</p>
+    <div class="legend" style="margin-top:12px">
+      <span><b>자료형</b> BIGINT/INT·SMALLINT 정수 · VARCHAR(n) 문자열 · TEXT 긴글 · BOOLEAN 참/거짓 · DATE/TIME/TIMESTAMP 날짜·시각 · NUMERIC(p,s) 소수</span>
+      <span><b>제약</b> <span class="badge pk">PK</span> 기본키 · <span class="badge fk">FK</span> 외래키 · <span class="badge uq">UQ</span> 중복금지 · 필수=NOT NULL</span>
+    </div>
+    <p class="p" style="margin-top:12px">⚠️ <strong>잠정 영역 3곳</strong>은 2026-07-14 회의 결과에 따라 바뀔 수 있어 별도 표시했습니다 — <strong>영상 도메인</strong>(YouTube vs 자체 서버), <strong>클리닉 녹음 방식</strong>(경로만 저장이라 표 구조는 불변), <strong>문의 채널</strong>(자체 채팅 vs 카카오/상담톡). <em>해당 부분은 확정 전 구현을 보류해 주세요.</em></p>
+  </section>
+
+  <!-- ERD -->
+  <section class="erd-page">
+    <p class="sec-eyebrow">전체 구조</p>
+    <h2 class="sec-head">ERD — 관계도</h2>
+    <div class="erd-wrap">
+      <img src="lms-erd.png" alt="한종철 LMS ERD">
+    </div>
+    <p class="cap">화살표 = FK(이 표가 저 표를 가리킴), 파란 상자 = 중심 허브(users·students). 확대본은 별도 파일 <code>lms-erd.png</code> 참고.</p>
+  </section>
+
+  <!-- 계정·학생 -->
+  <section>
+    <p class="sec-eyebrow">Domain 1</p>
+    <h2 class="sec-head">🧑‍🎓 계정 · 학생</h2>
+
+    <div class="tblock">
+      <div class="tname"><code>users</code><span class="ko">모든 로그인 계정 공통</span></div>
+      <table class="spec"><thead><tr><th style="width:22%">컬럼</th><th style="width:20%">자료형</th><th style="width:18%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">user_id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span> 자동증가</td><td>내부 계정 번호</td></tr>
+        <tr><td class="c">login_id</td><td class="t">VARCHAR(50)</td><td class="k"><span class="badge uq">UQ</span> 필수</td><td>로그인 아이디 (형식 미정, PRD 8-4)</td></tr>
+        <tr><td class="c">password_hash</td><td class="t">VARCHAR(255)</td><td class="k">필수</td><td>비밀번호 해시 (원문 저장 금지)</td></tr>
+        <tr><td class="c">role</td><td class="t">VARCHAR(10)</td><td class="k">필수</td><td>대표/관리자/조교/학생 (대표가 변경 가능)</td></tr>
+        <tr><td class="c">name</td><td class="t">VARCHAR(50)</td><td class="k">필수</td><td>이름 (OMR 매칭에도 사용)</td></tr>
+        <tr><td class="c">phone</td><td class="t">VARCHAR(20)</td><td class="k">선택</td><td>본인 전화</td></tr>
+        <tr><td class="c">is_active</td><td class="t">BOOLEAN</td><td class="k">필수, 기본 true</td><td>계정 활성 여부</td></tr>
+        <tr><td class="c">created_at</td><td class="t">TIMESTAMP</td><td class="k">필수, 기본 now</td><td>생성일시(=예비등록 시점)</td></tr>
+      </tbody></table>
+    </div>
+
+    <div class="tblock">
+      <div class="tname"><code>students</code><span class="ko">학생 전용 상세 (users와 1:1)</span></div>
+      <table class="spec"><thead><tr><th style="width:22%">컬럼</th><th style="width:20%">자료형</th><th style="width:18%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">student_id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span> 자동증가</td><td>학생 내부 번호(안 겹치는 진짜 키)</td></tr>
+        <tr><td class="c">user_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> users · <span class="badge uq">UQ</span> 필수</td><td>로그인 계정 (1:1)</td></tr>
+        <tr><td class="c">unique_id</td><td class="t">VARCHAR(10)</td><td class="k">필수, 인덱스</td><td>원번=학년+전화뒤4 (예 <code>3_1234</code>), 고정·불변. 이름과 함께 <b>매칭키</b> — 단독 중복 가능(UNIQUE 아님)</td></tr>
+        <tr><td class="c">grade</td><td class="t">SMALLINT</td><td class="k">필수</td><td>현재 학년(1/2/3/4=재수)</td></tr>
+        <tr><td class="c">school</td><td class="t">VARCHAR(50)</td><td class="k">선택</td><td>학교</td></tr>
+        <tr><td class="c">is_registered</td><td class="t">BOOLEAN</td><td class="k">필수, 기본 false</td><td>LMS 정식 등록 여부(false=예비등록생)</td></tr>
+        <tr><td class="c">registered_at</td><td class="t">TIMESTAMP</td><td class="k">선택</td><td>정식 등록 처리 일시</td></tr>
+        <tr><td class="c">noshow_count</td><td class="t">SMALLINT</td><td class="k">필수, 기본 0</td><td>클리닉 노쇼 누적</td></tr>
+        <tr><td class="c">clinic_banned</td><td class="t">BOOLEAN</td><td class="k">필수, 기본 false</td><td>클리닉 신청 제한</td></tr>
+        <tr><td class="c">credentials_sent_at</td><td class="t">TIMESTAMP</td><td class="k">선택</td><td>계정정보 발송 일시</td></tr>
+        <tr><td class="c">current_class</td><td class="t">VARCHAR(30)</td><td class="k">선택</td><td>현재 반</td></tr>
+        <tr><td class="c">youtube_email</td><td class="t">VARCHAR(255)</td><td class="k">선택</td><td>시청용 구글 계정 기본값</td></tr>
+      </tbody></table>
+    </div>
+
+    <div class="tblock">
+      <div class="tname"><code>parents</code><span class="ko">학부모 연락처</span></div>
+      <table class="spec"><thead><tr><th style="width:22%">컬럼</th><th style="width:20%">자료형</th><th style="width:18%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">parent_id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span> 자동증가</td><td></td></tr>
+        <tr><td class="c">student_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> students · 필수</td><td>어느 학생의 학부모</td></tr>
+        <tr><td class="c">name</td><td class="t">VARCHAR(50)</td><td class="k">선택</td><td>학부모 이름</td></tr>
+        <tr><td class="c">relation</td><td class="t">VARCHAR(10)</td><td class="k">선택</td><td>관계(부/모 등)</td></tr>
+        <tr><td class="c">phone</td><td class="t">VARCHAR(20)</td><td class="k">필수</td><td>청구서·리포트 수신 연락처</td></tr>
+        <tr><td class="c">is_primary</td><td class="t">BOOLEAN</td><td class="k">필수, 기본 false</td><td>주 수신처 여부</td></tr>
+      </tbody></table>
+    </div>
+  </section>
+
+  <!-- 성적/OMR -->
+  <section>
+    <p class="sec-eyebrow">Domain 2</p>
+    <h2 class="sec-head">📝 성적 / OMR</h2>
+
+    <div class="tblock">
+      <div class="tname"><code>exams</code><span class="ko">시험/모의고사 회차</span></div>
+      <table class="spec"><thead><tr><th style="width:24%">컬럼</th><th style="width:20%">자료형</th><th style="width:16%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">exam_id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">name</td><td class="t">VARCHAR(100)</td><td class="k">필수</td><td>시험명</td></tr>
+        <tr><td class="c">exam_date</td><td class="t">DATE</td><td class="k">필수</td><td>시험일</td></tr>
+        <tr><td class="c">round_no</td><td class="t">SMALLINT</td><td class="k">선택</td><td>회차 번호</td></tr>
+        <tr><td class="c">target_grade</td><td class="t">SMALLINT</td><td class="k">선택</td><td>대상 학년</td></tr>
+        <tr><td class="c">notice</td><td class="t">TEXT</td><td class="k">선택</td><td>성적표 공지사항</td></tr>
+        <tr><td class="c">avg_score / stddev /<br>max_score / top30_score</td><td class="t">NUMERIC(6,2)</td><td class="k">선택</td><td>전체평균·표준편차·최고점·상위30% (채점 후 계산 캐시)</td></tr>
+        <tr><td class="c">created_at</td><td class="t">TIMESTAMP</td><td class="k">필수</td><td></td></tr>
+      </tbody></table>
+    </div>
+
+    <div class="tblock">
+      <div class="tname"><code>questions</code><span class="ko">문항 채점기준</span></div>
+      <table class="spec"><thead><tr><th style="width:24%">컬럼</th><th style="width:20%">자료형</th><th style="width:16%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">question_id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">exam_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> exams · 필수</td><td></td></tr>
+        <tr><td class="c">q_number</td><td class="t">SMALLINT</td><td class="k">필수</td><td>문항 번호</td></tr>
+        <tr><td class="c">answer</td><td class="t">VARCHAR(10)</td><td class="k">필수</td><td>정답</td></tr>
+        <tr><td class="c">points</td><td class="t">NUMERIC(4,1)</td><td class="k">필수</td><td>배점</td></tr>
+        <tr><td class="c">unit_major</td><td class="t">VARCHAR(50)</td><td class="k">필수</td><td>대단원 (대단원별 점수 계산에 필수)</td></tr>
+        <tr><td class="c">unit_minor</td><td class="t">VARCHAR(50)</td><td class="k">선택</td><td>중단원 (추후 필수 전환 가능)</td></tr>
+        <tr><td class="c">wrong_rate</td><td class="t">NUMERIC(5,2)</td><td class="k">선택</td><td>오답률(채점 후 계산 캐시)</td></tr>
+      </tbody></table>
+      <p class="uniq"><b>UNIQUE</b> (exam_id, q_number)</p>
+    </div>
+
+    <div class="tblock">
+      <div class="tname"><code>answer_sheets</code><span class="ko">OMR 스캔·매칭</span></div>
+      <table class="spec"><thead><tr><th style="width:24%">컬럼</th><th style="width:20%">자료형</th><th style="width:16%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">sheet_id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">exam_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> exams · 필수</td><td></td></tr>
+        <tr><td class="c">student_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> students · 선택</td><td>매칭 전 NULL, 대조 완료 시 채움</td></tr>
+        <tr><td class="c">scan_image_path</td><td class="t">VARCHAR(500)</td><td class="k">필수</td><td>스캔 파일 경로(파일은 스토리지)</td></tr>
+        <tr><td class="c">recognized_unique_id</td><td class="t">VARCHAR(10)</td><td class="k">선택</td><td>인식된 원번</td></tr>
+        <tr><td class="c">recognized_name</td><td class="t">VARCHAR(50)</td><td class="k">선택</td><td>인식된 이름</td></tr>
+        <tr><td class="c">match_status</td><td class="t">VARCHAR(20)</td><td class="k">필수</td><td>정상/부분/불일치/미존재/중복/비정상</td></tr>
+        <tr><td class="c">is_corrected</td><td class="t">BOOLEAN</td><td class="k">필수, 기본 false</td><td>수동 보정 완료</td></tr>
+        <tr><td class="c">created_at</td><td class="t">TIMESTAMP</td><td class="k">필수</td><td></td></tr>
+      </tbody></table>
+    </div>
+
+    <div class="tblock">
+      <div class="tname"><code>sheet_answers</code><span class="ko">문항별 답안·채점</span></div>
+      <table class="spec"><thead><tr><th style="width:24%">컬럼</th><th style="width:20%">자료형</th><th style="width:16%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">sheet_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> answer_sheets · 필수</td><td></td></tr>
+        <tr><td class="c">question_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> questions · 필수</td><td></td></tr>
+        <tr><td class="c">marked</td><td class="t">VARCHAR(10)</td><td class="k">선택</td><td>학생 마킹 값</td></tr>
+        <tr><td class="c">result</td><td class="t">VARCHAR(10)</td><td class="k">필수</td><td>정답/오답/무응답/복수마킹</td></tr>
+        <tr><td class="c">is_corrected</td><td class="t">BOOLEAN</td><td class="k">필수, 기본 false</td><td>수동 보정 여부</td></tr>
+      </tbody></table>
+      <p class="uniq"><b>UNIQUE</b> (sheet_id, question_id)</p>
+    </div>
+
+    <div class="tblock">
+      <div class="tname"><code>scores</code><span class="ko">성적 집계</span></div>
+      <table class="spec"><thead><tr><th style="width:24%">컬럼</th><th style="width:20%">자료형</th><th style="width:16%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">score_id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">exam_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> exams · 필수</td><td></td></tr>
+        <tr><td class="c">student_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> students · 필수</td><td></td></tr>
+        <tr><td class="c">total_score</td><td class="t">NUMERIC(6,2)</td><td class="k">선택</td><td>총점(미응시=0)</td></tr>
+        <tr><td class="c">max_score</td><td class="t">NUMERIC(6,2)</td><td class="k">선택</td><td>만점</td></tr>
+        <tr><td class="c">percentile</td><td class="t">NUMERIC(5,2)</td><td class="k">선택</td><td>백분위(캐시)</td></tr>
+        <tr><td class="c">rank_top_pct</td><td class="t">NUMERIC(5,2)</td><td class="k">선택</td><td>석차 상위 %(캐시)</td></tr>
+        <tr><td class="c">is_taken</td><td class="t">BOOLEAN</td><td class="k">필수, 기본 true</td><td>응시 여부(false=미응시)</td></tr>
+        <tr><td class="c">created_at</td><td class="t">TIMESTAMP</td><td class="k">필수</td><td></td></tr>
+      </tbody></table>
+      <p class="uniq"><b>UNIQUE</b> (exam_id, student_id) — 한 학생·한 시험당 1줄. <b>대단원별 점수는 questions+sheet_answers로 즉석 계산</b>(별도 표 없음).</p>
+    </div>
+
+    <div class="tblock">
+      <div class="tname"><code>class_sessions</code><span class="ko">수업 회차</span></div>
+      <table class="spec"><thead><tr><th style="width:24%">컬럼</th><th style="width:20%">자료형</th><th style="width:16%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">session_id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">session_date</td><td class="t">DATE</td><td class="k">필수</td><td>수업일</td></tr>
+        <tr><td class="c">session_no</td><td class="t">SMALLINT</td><td class="k">선택</td><td>차시</td></tr>
+        <tr><td class="c">target_grade</td><td class="t">SMALLINT</td><td class="k">선택</td><td>대상</td></tr>
+        <tr><td class="c">exam_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> exams · 선택</td><td>그날 본 시험(없으면 NULL)</td></tr>
+        <tr><td class="c">memo</td><td class="t">VARCHAR(200)</td><td class="k">선택</td><td></td></tr>
+      </tbody></table>
+    </div>
+
+    <div class="tblock">
+      <div class="tname"><code>attendances</code><span class="ko">당일 출석</span></div>
+      <table class="spec"><thead><tr><th style="width:24%">컬럼</th><th style="width:20%">자료형</th><th style="width:16%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">session_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> class_sessions · 필수</td><td></td></tr>
+        <tr><td class="c">student_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> students · 필수</td><td></td></tr>
+        <tr><td class="c">status</td><td class="t">VARCHAR(10)</td><td class="k">필수</td><td>출석/결석/지각</td></tr>
+        <tr><td class="c">created_at</td><td class="t">TIMESTAMP</td><td class="k">필수</td><td></td></tr>
+      </tbody></table>
+      <p class="uniq"><b>UNIQUE</b> (session_id, student_id)</p>
+    </div>
+
+    <div class="tblock">
+      <div class="tname"><code>assignments</code><span class="ko">과제 수행</span></div>
+      <table class="spec"><thead><tr><th style="width:24%">컬럼</th><th style="width:20%">자료형</th><th style="width:16%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">session_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> class_sessions · 필수</td><td></td></tr>
+        <tr><td class="c">student_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> students · 필수</td><td></td></tr>
+        <tr><td class="c">done</td><td class="t">BOOLEAN</td><td class="k">필수</td><td>과제 수행 여부(관리자 수동)</td></tr>
+        <tr><td class="c">memo</td><td class="t">VARCHAR(200)</td><td class="k">선택</td><td></td></tr>
+      </tbody></table>
+      <p class="uniq"><b>UNIQUE</b> (session_id, student_id)</p>
+    </div>
+  </section>
+
+  <!-- 영상 (잠정) -->
+  <section>
+    <p class="sec-eyebrow">Domain 3</p>
+    <h2 class="sec-head">🎬 영상 <span class="warn">⚠️ 잠정 · 관문 4-A 결정 대기</span></h2>
+    <div class="prov"><b>주의</b> — YouTube 봇 vs 자체 영상서버 결정(PRD 6-7)에 따라 유튜브 종속 칸(<code>youtube_url</code>, <code>youtube_email</code>, <code>grant_status/granted_at/revoked_at</code>)이 변경/제거될 수 있음. 신청 흐름(request_type/status/expires_at/link_active)은 유지. <b>확정 전 구현 보류.</b></div>
+
+    <div class="tblock">
+      <div class="tname"><code>videos</code><span class="ko">영상</span></div>
+      <table class="spec"><thead><tr><th style="width:22%">컬럼</th><th style="width:20%">자료형</th><th style="width:18%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">video_id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">title</td><td class="t">VARCHAR(200)</td><td class="k">필수</td><td>영상 제목</td></tr>
+        <tr><td class="c">lecture</td><td class="t">VARCHAR(100)</td><td class="k">선택</td><td>강의/과목 분류</td></tr>
+        <tr><td class="c">session_no</td><td class="t">SMALLINT</td><td class="k">선택</td><td>차시</td></tr>
+        <tr><td class="c">youtube_url</td><td class="t">VARCHAR(500)</td><td class="k">필수</td><td>유튜브(비공개) 링크 <em>(자체서버 전환 시 변경)</em></td></tr>
+        <tr><td class="c">uploaded_at</td><td class="t">TIMESTAMP</td><td class="k">선택</td><td>업로드일</td></tr>
+        <tr><td class="c">is_active</td><td class="t">BOOLEAN</td><td class="k">필수, 기본 true</td><td></td></tr>
+        <tr><td class="c">created_at</td><td class="t">TIMESTAMP</td><td class="k">필수</td><td></td></tr>
+      </tbody></table>
+    </div>
+
+    <div class="tblock">
+      <div class="tname"><code>video_requests</code><span class="ko">영상 신청 (복습·결석보강 통합)</span></div>
+      <table class="spec"><thead><tr><th style="width:22%">컬럼</th><th style="width:20%">자료형</th><th style="width:18%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">request_id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">student_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> students · 필수</td><td>신청자</td></tr>
+        <tr><td class="c">video_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> videos · 필수</td><td>대상 영상</td></tr>
+        <tr><td class="c">request_type</td><td class="t">VARCHAR(10)</td><td class="k">필수</td><td>복습영상 / 결석보강</td></tr>
+        <tr><td class="c">youtube_email</td><td class="t">VARCHAR(255)</td><td class="k">필수</td><td>실제 사용 시청 계정(스냅샷) <em>(자체서버 전환 시 불필요)</em></td></tr>
+        <tr><td class="c">status</td><td class="t">VARCHAR(10)</td><td class="k">필수, 기본 대기</td><td>대기/승인/거절</td></tr>
+        <tr><td class="c">requested_at</td><td class="t">TIMESTAMP</td><td class="k">필수</td><td>신청일</td></tr>
+        <tr><td class="c">approved_at</td><td class="t">TIMESTAMP</td><td class="k">선택</td><td>승인일</td></tr>
+        <tr><td class="c">expires_at</td><td class="t">TIMESTAMP</td><td class="k">선택</td><td>만료 예정일</td></tr>
+        <tr><td class="c">grant_status</td><td class="t">VARCHAR(20)</td><td class="k">필수, 기본 대기</td><td>유튜브 권한: 대기/부여완료/삭제필요/삭제완료 <em>(자체서버 전환 시 대부분 제거)</em></td></tr>
+        <tr><td class="c">granted_at / revoked_at</td><td class="t">TIMESTAMP</td><td class="k">선택</td><td>권한 부여/삭제 완료일</td></tr>
+        <tr><td class="c">link_active</td><td class="t">BOOLEAN</td><td class="k">필수, 기본 false</td><td>LMS 시청 링크 활성(만료 시 자동 false)</td></tr>
+        <tr><td class="c">created_at</td><td class="t">TIMESTAMP</td><td class="k">필수</td><td></td></tr>
+      </tbody></table>
+    </div>
+  </section>
+
+  <!-- 클리닉 -->
+  <section>
+    <p class="sec-eyebrow">Domain 4</p>
+    <h2 class="sec-head">🩺 클리닉 <span class="warn">⚠️ 녹음 방식 보류 · 관문 4-B</span></h2>
+    <div class="prov"><b>주의</b> — 녹음 실현 방식(봇/self-host 등, PRD 8-5)은 회의 후 결정. 단 <code>recording_path</code>는 <b>경로만 저장</b>이라 표 구조는 불변. 평가는 <b>AI가 녹음 요약+항목 판단 → 부적격 시 관리자 검토</b> 흐름.</div>
+
+    <div class="tblock">
+      <div class="tname"><code>clinic_requests</code><span class="ko">신청·배정·출결</span></div>
+      <table class="spec"><thead><tr><th style="width:24%">컬럼</th><th style="width:18%">자료형</th><th style="width:20%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">clinic_id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">student_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> students · 필수</td><td>신청자</td></tr>
+        <tr><td class="c">requested_date</td><td class="t">DATE</td><td class="k">필수</td><td>희망 날짜</td></tr>
+        <tr><td class="c">requested_time</td><td class="t">TIME</td><td class="k">필수</td><td>희망 시작 시간</td></tr>
+        <tr><td class="c">status</td><td class="t">VARCHAR(15)</td><td class="k">필수, 기본 대기</td><td>대기/승인배정/미승인</td></tr>
+        <tr><td class="c">assigned_staff_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> users · 선택</td><td>배정된 조교</td></tr>
+        <tr><td class="c">meet_url</td><td class="t">VARCHAR(500)</td><td class="k">선택</td><td>구글 미트 링크</td></tr>
+        <tr><td class="c">attendance_status</td><td class="t">VARCHAR(10)</td><td class="k">선택</td><td>미처리/출석/결석(=노쇼)</td></tr>
+        <tr><td class="c">attendance_marked_at</td><td class="t">TIMESTAMP</td><td class="k">선택</td><td>버튼 누른 시각(=알림 발송 시점)</td></tr>
+        <tr><td class="c">attendance_marked_by</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> users · 선택</td><td>처리자</td></tr>
+        <tr><td class="c">created_at / updated_at</td><td class="t">TIMESTAMP</td><td class="k">필수 / 선택</td><td>신청일 / 시간수정 추적</td></tr>
+      </tbody></table>
+    </div>
+
+    <div class="tblock">
+      <div class="tname"><code>clinic_eval_criteria</code><span class="ko">평가표 항목 (체크리스트 마스터, 추후 입력)</span></div>
+      <table class="spec"><thead><tr><th style="width:24%">컬럼</th><th style="width:18%">자료형</th><th style="width:20%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">criteria_id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">item</td><td class="t">VARCHAR(200)</td><td class="k">필수</td><td>평가 항목</td></tr>
+        <tr><td class="c">description</td><td class="t">VARCHAR(300)</td><td class="k">선택</td><td>기준 설명</td></tr>
+        <tr><td class="c">display_order</td><td class="t">SMALLINT</td><td class="k">선택</td><td>표시 순서</td></tr>
+        <tr><td class="c">is_active</td><td class="t">BOOLEAN</td><td class="k">필수, 기본 true</td><td>활성 여부</td></tr>
+      </tbody></table>
+    </div>
+
+    <div class="tblock">
+      <div class="tname"><code>clinic_evaluations</code><span class="ko">평가 (클리닉 1건당 1개)</span></div>
+      <table class="spec"><thead><tr><th style="width:24%">컬럼</th><th style="width:18%">자료형</th><th style="width:20%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">eval_id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">clinic_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> clinic_requests · 필수</td><td></td></tr>
+        <tr><td class="c">recording_path</td><td class="t">VARCHAR(500)</td><td class="k">선택</td><td>녹음 파일 경로(스토리지)</td></tr>
+        <tr><td class="c">ai_summary</td><td class="t">TEXT</td><td class="k">선택</td><td>AI 녹음 요약</td></tr>
+        <tr><td class="c">overall_result</td><td class="t">VARCHAR(10)</td><td class="k">선택</td><td>적격/부적격(AI 판정)</td></tr>
+        <tr><td class="c">needs_review</td><td class="t">BOOLEAN</td><td class="k">필수, 기본 false</td><td>부적격→관리자 확인 필요</td></tr>
+        <tr><td class="c">reviewed_by</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> users · 선택</td><td>확인 관리자</td></tr>
+        <tr><td class="c">reviewed_at</td><td class="t">TIMESTAMP</td><td class="k">선택</td><td></td></tr>
+        <tr><td class="c">review_note</td><td class="t">VARCHAR(300)</td><td class="k">선택</td><td>검토 메모/최종 판정</td></tr>
+        <tr><td class="c">evaluated_at</td><td class="t">TIMESTAMP</td><td class="k">선택</td><td>AI 평가 시각</td></tr>
+      </tbody></table>
+    </div>
+
+    <div class="tblock">
+      <div class="tname"><code>clinic_evaluation_items</code><span class="ko">항목별 판단</span></div>
+      <table class="spec"><thead><tr><th style="width:24%">컬럼</th><th style="width:18%">자료형</th><th style="width:20%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">eval_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> clinic_evaluations · 필수</td><td></td></tr>
+        <tr><td class="c">criteria_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> clinic_eval_criteria · 필수</td><td></td></tr>
+        <tr><td class="c">result</td><td class="t">VARCHAR(10)</td><td class="k">필수</td><td>충족/미충족(AI 판단)</td></tr>
+        <tr><td class="c">ai_reason</td><td class="t">VARCHAR(500)</td><td class="k">선택</td><td>AI 판단 근거</td></tr>
+        <tr><td class="c">admin_override</td><td class="t">VARCHAR(10)</td><td class="k">선택</td><td>관리자 수정 최종값</td></tr>
+      </tbody></table>
+      <p class="uniq"><b>UNIQUE</b> (eval_id, criteria_id)</p>
+    </div>
+  </section>
+
+  <!-- 결제 -->
+  <section>
+    <p class="sec-eyebrow">Domain 5</p>
+    <h2 class="sec-head">💳 결제</h2>
+
+    <div class="tblock">
+      <div class="tname"><code>products</code><span class="ko">교재</span></div>
+      <table class="spec"><thead><tr><th style="width:24%">컬럼</th><th style="width:20%">자료형</th><th style="width:16%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">product_id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">name</td><td class="t">VARCHAR(200)</td><td class="k">필수</td><td>교재명</td></tr>
+        <tr><td class="c">price</td><td class="t">INT</td><td class="k">필수</td><td>가격(원)</td></tr>
+        <tr><td class="c">is_active</td><td class="t">BOOLEAN</td><td class="k">필수, 기본 true</td><td>판매 여부</td></tr>
+        <tr><td class="c">created_at</td><td class="t">TIMESTAMP</td><td class="k">필수</td><td></td></tr>
+      </tbody></table>
+    </div>
+
+    <div class="tblock">
+      <div class="tname"><code>orders</code><span class="ko">교재 구매/청구</span></div>
+      <table class="spec"><thead><tr><th style="width:24%">컬럼</th><th style="width:20%">자료형</th><th style="width:16%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">order_id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">student_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> students · 필수</td><td>구매자</td></tr>
+        <tr><td class="c">product_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> products · 필수</td><td>교재</td></tr>
+        <tr><td class="c">amount</td><td class="t">INT</td><td class="k">필수</td><td>청구 금액(주문 시점 스냅샷)</td></tr>
+        <tr><td class="c">status</td><td class="t">VARCHAR(15)</td><td class="k">필수, 기본 미결제</td><td>미결제/결제완료/배부완료</td></tr>
+        <tr><td class="c">billed_to_phone</td><td class="t">VARCHAR(20)</td><td class="k">선택</td><td>청구서 발송 학부모 연락처(스냅샷)</td></tr>
+        <tr><td class="c">ordered_at</td><td class="t">TIMESTAMP</td><td class="k">필수</td><td>구매버튼(청구) 시각</td></tr>
+        <tr><td class="c">paid_at / delivered_at</td><td class="t">TIMESTAMP</td><td class="k">선택</td><td>결제완료 / 배부완료 시각</td></tr>
+      </tbody></table>
+    </div>
+
+    <div class="tblock">
+      <div class="tname"><code>payments</code><span class="ko">결제 트랜잭션 (결제선생 동기화)</span></div>
+      <table class="spec"><thead><tr><th style="width:24%">컬럼</th><th style="width:20%">자료형</th><th style="width:16%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">payment_id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">order_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> orders · 필수</td><td></td></tr>
+        <tr><td class="c">provider</td><td class="t">VARCHAR(20)</td><td class="k">필수</td><td>결제선생 / PG (Provider 추상화)</td></tr>
+        <tr><td class="c">external_ref</td><td class="t">VARCHAR(100)</td><td class="k">선택</td><td>외부 결제 참조 ID</td></tr>
+        <tr><td class="c">status</td><td class="t">VARCHAR(15)</td><td class="k">필수</td><td>대기/완료/실패/취소</td></tr>
+        <tr><td class="c">amount</td><td class="t">INT</td><td class="k">필수</td><td>결제 금액</td></tr>
+        <tr><td class="c">paid_at / synced_at</td><td class="t">TIMESTAMP</td><td class="k">선택</td><td>결제 시각 / 동기화 시각</td></tr>
+        <tr><td class="c">created_at</td><td class="t">TIMESTAMP</td><td class="k">필수</td><td></td></tr>
+      </tbody></table>
+    </div>
+  </section>
+
+  <!-- 게시판/문의 -->
+  <section>
+    <p class="sec-eyebrow">Domain 6</p>
+    <h2 class="sec-head">📢 게시판 · 문의 <span class="warn">⚠️ 문의 채널 보류 · 6-6</span></h2>
+    <div class="prov"><b>주의</b> — 문의 채널(자체 채팅 vs 카카오 버튼/상담톡)은 회의 후 결정. 자체 채팅 유지 시 아래 그대로, 상담톡 연동 시 <code>inquiry_messages</code>를 웹훅으로 채우도록 확장.</div>
+
+    <div class="tblock">
+      <div class="tname"><code>posts</code><span class="ko">공지사항·정오표</span></div>
+      <table class="spec"><thead><tr><th style="width:22%">컬럼</th><th style="width:18%">자료형</th><th style="width:18%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">post_id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">category</td><td class="t">VARCHAR(15)</td><td class="k">필수</td><td>공지사항 / 정오표</td></tr>
+        <tr><td class="c">title</td><td class="t">VARCHAR(200)</td><td class="k">필수</td><td></td></tr>
+        <tr><td class="c">body</td><td class="t">TEXT</td><td class="k">필수</td><td></td></tr>
+        <tr><td class="c">author_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> users · 필수</td><td>작성자(관리자)</td></tr>
+        <tr><td class="c">is_published</td><td class="t">BOOLEAN</td><td class="k">필수, 기본 true</td><td>게시 여부</td></tr>
+        <tr><td class="c">created_at / updated_at</td><td class="t">TIMESTAMP</td><td class="k">필수 / 선택</td><td></td></tr>
+      </tbody></table>
+    </div>
+
+    <div class="tblock">
+      <div class="tname"><code>inquiries</code><span class="ko">문의</span></div>
+      <table class="spec"><thead><tr><th style="width:22%">컬럼</th><th style="width:18%">자료형</th><th style="width:18%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">inquiry_id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">student_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> students · 필수</td><td>문의한 학생</td></tr>
+        <tr><td class="c">title</td><td class="t">VARCHAR(200)</td><td class="k">선택</td><td></td></tr>
+        <tr><td class="c">status</td><td class="t">VARCHAR(10)</td><td class="k">필수, 기본 대기</td><td>대기/답변완료/종료</td></tr>
+        <tr><td class="c">created_at / updated_at</td><td class="t">TIMESTAMP</td><td class="k">필수 / 선택</td><td></td></tr>
+      </tbody></table>
+    </div>
+
+    <div class="tblock">
+      <div class="tname"><code>inquiry_messages</code><span class="ko">문의 대화 (채팅형)</span></div>
+      <table class="spec"><thead><tr><th style="width:22%">컬럼</th><th style="width:18%">자료형</th><th style="width:18%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">inquiry_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> inquiries · 필수</td><td></td></tr>
+        <tr><td class="c">sender_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> users · 필수</td><td>보낸 사람(역할은 users.role로 구분)</td></tr>
+        <tr><td class="c">body</td><td class="t">TEXT</td><td class="k">필수</td><td></td></tr>
+        <tr><td class="c">created_at</td><td class="t">TIMESTAMP</td><td class="k">필수</td><td></td></tr>
+      </tbody></table>
+    </div>
+  </section>
+
+  <!-- 알림 -->
+  <section>
+    <p class="sec-eyebrow">Domain 7</p>
+    <h2 class="sec-head">🔔 알림</h2>
+
+    <div class="tblock">
+      <div class="tname"><code>notifications</code><span class="ko">발송 이력 (= 발송내역 조회의 바탕)</span></div>
+      <table class="spec"><thead><tr><th style="width:22%">컬럼</th><th style="width:18%">자료형</th><th style="width:18%">제약</th><th>설명</th></tr></thead><tbody>
+        <tr><td class="c">notif_id</td><td class="t">BIGINT</td><td class="k"><span class="badge pk">PK</span></td><td></td></tr>
+        <tr><td class="c">student_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> students · 선택</td><td>대상=학생일 때</td></tr>
+        <tr><td class="c">parent_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> parents · 선택</td><td>대상=학부모일 때</td></tr>
+        <tr><td class="c">user_id</td><td class="t">BIGINT</td><td class="k"><span class="badge fk">FK</span> users · 선택</td><td>대상=직원일 때 (셋 중 하나만 채움)</td></tr>
+        <tr><td class="c">channel</td><td class="t">VARCHAR(15)</td><td class="k">필수</td><td>카카오알림톡/문자/앱푸시</td></tr>
+        <tr><td class="c">type</td><td class="t">VARCHAR(20)</td><td class="k">필수</td><td>성적/영상권한/결제/리포트/클리닉출결/계정발급/노쇼경고…</td></tr>
+        <tr><td class="c">title / body</td><td class="t">VARCHAR(200)/TEXT</td><td class="k">선택</td><td>발송 내용</td></tr>
+        <tr><td class="c">ref_type / ref_id</td><td class="t">VARCHAR(20)/BIGINT</td><td class="k">선택</td><td>유발 원인 soft 링크(order/exam/clinic 등)</td></tr>
+        <tr><td class="c">sent_at</td><td class="t">TIMESTAMP</td><td class="k">선택</td><td>발송 시각</td></tr>
+        <tr><td class="c">status</td><td class="t">VARCHAR(15)</td><td class="k">필수, 기본 대기</td><td>대기/성공/실패/전달확인</td></tr>
+        <tr><td class="c">error_msg</td><td class="t">VARCHAR(300)</td><td class="k">선택</td><td>실패 사유</td></tr>
+        <tr><td class="c">created_at</td><td class="t">TIMESTAMP</td><td class="k">필수</td><td></td></tr>
+      </tbody></table>
+    </div>
+  </section>
+
+  <!-- 핵심 설계 결정 -->
+  <section>
+    <p class="sec-eyebrow">배경</p>
+    <h2 class="sec-head">핵심 설계 결정</h2>
+    <ul class="note-list">
+      <li><strong>중심 허브 2개</strong> — <code>students</code>(원번)와 <code>users</code>(계정). 학생 관련 표는 <code>student_id</code>로, 작성자·직원은 <code>user_id</code>로 연결.</li>
+      <li><strong>원번(unique_id)은 매칭키, PK 아님</strong> — 원번=숫자부 5자리(학년+전화뒤4)는 <em>중복 가능</em>하므로 이름과 함께 대조하는 매칭키. 내부 식별은 안 겹치는 <code>student_id</code> 사용.</li>
+      <li><strong>계산값은 캐시</strong> — 전체평균·표준편차(exams), 오답률(questions), 백분위·석차(scores)는 채점 후 계산해 저장, 성적 수정 시 재계산. 대단원별 점수는 즉석 계산.</li>
+      <li><strong>상태·유형은 값으로</strong> — status/type/channel 등은 값 집합. 새 항목이 생겨도 표 변경 없이 값만 추가.</li>
+      <li><strong>큰 파일은 스토리지</strong> — OMR 스캔·클리닉 녹음은 파일 스토리지에 두고 표에는 경로(<code>*_path</code>)만.</li>
+      <li><strong>Provider/채널 추상화는 앱 레이어</strong> — 결제선생↔PG, 알림톡↔앱푸시 교체는 앱 코드에서. DB는 provider/channel 값과 외부 참조만 저장.</li>
+      <li><strong>확장 대비</strong> — 미리 빈 칸을 만들지 않음. 나중에 칸·표 추가는 <strong>마이그레이션</strong>으로. <code>parents</code>는 별도 표라 추후 학부모 계정화 용이.</li>
+    </ul>
+  </section>
+
+  <!-- 잠정 요약 -->
+  <section>
+    <p class="sec-eyebrow">확정 전 보류</p>
+    <h2 class="sec-head">잠정 · 보류 영역 (2026-07-14 회의 후 확정)</h2>
+    <table class="spec"><thead><tr><th style="width:20%">영역</th><th style="width:34%">결정 대기</th><th>설계 영향</th></tr></thead><tbody>
+      <tr><td class="c">영상</td><td>YouTube 봇 vs 자체 영상서버 (관문 4-A / 6-7)</td><td>videos·video_requests의 유튜브 종속 칸 변경/제거. 신청 흐름은 유지.</td></tr>
+      <tr><td class="c">클리닉 녹음</td><td>봇 / self-host / 미트녹화 (관문 4-B / 8-5)</td><td><b>표 구조 불변</b>(recording_path는 경로만). 생성 방식만 결정.</td></tr>
+      <tr><td class="c">문의 채널</td><td>자체 채팅 vs 카카오 버튼/상담톡 (6-6)</td><td>자체 채팅이면 그대로. 상담톡 연동 시 inquiry_messages 확장.</td></tr>
+    </tbody></table>
+  </section>
+
+  <div class="foot">
+    <span>한종철 LMS — 데이터베이스 설계 명세서 (개발 검토용)</span>
+    <span>2026-07-14 · 7 도메인 23 표</span>
+  </div>
+</main>
+</body>
+</html>

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>교재 결제 — LMS 개선 보고</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <header class="masthead">
+    <a class="masthead__home" href="index.html">LMS 통합 구축 · 개선 보고</a>
+    <nav class="masthead__nav" aria-label="시스템">
+      <a href="01-grades.html">성적</a>
+      <a href="02-video.html">영상</a>
+      <a href="03-payment.html" aria-current="page">결제</a>
+      <a href="04-clinic.html">클리닉</a>
+      <a href="05-support.html">문의</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section class="doc-head">
+      <p class="eyebrow">시스템 3 · 결제</p>
+      <h1 class="doc-title">교재 결제</h1>
+      <p class="lead">학생 버튼 한 번으로 학부모에게 청구서가 나가고, 결제 상태는 관리자 화면에서 바로 확인합니다.</p>
+    </section>
+
+    <section class="flowcompare">
+      <div class="flow flow--asis">
+        <div class="flow__cap"><b>As-is</b><span>현재 방식</span></div>
+        <div class="flowlist">
+          <div class="node"><span class="node__n">1</span><p class="node__t">학원으로부터 등록생 명단·학부모 연락처를 수령</p></div>
+          <div class="node"><span class="node__n">2</span><p class="node__t">카카오톡으로 청구서(결제선생)를 등록생마다 사람이 일일이 개별 발행</p></div>
+          <div class="node"><span class="node__n">3</span><p class="node__t">결제내역을 확인한 뒤 교재 배부 — 여러 외부 프로그램과 확인 단계를 거쳐 시간이 오래 소요</p></div>
+        </div>
+      </div>
+      <div class="flow flow--tobe">
+        <div class="flow__cap"><b>To-be</b><span>개선 방식</span></div>
+        <div class="flowlist">
+          <div class="node"><span class="node__n">1</span><p class="node__t">결제선생을 <strong>LMS에 임베드</strong></p></div>
+          <div class="node"><span class="node__n">2</span><p class="node__t">학생이 <strong>교재 구매 버튼 클릭</strong></p></div>
+          <div class="node"><span class="node__n">3</span><p class="node__t">LMS가 학생 계정에 등록된 <strong>학부모 연락처로 청구서 자동 발송</strong></p></div>
+          <div class="node"><span class="node__n">4</span><p class="node__t">결제 확인 시 관리자 페이지에서 <strong>상태(결제 완료·미결제·배부 여부) 조회</strong></p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="gains">
+      <p class="eyebrow">개선 효과</p>
+      <ul class="gainlist">
+        <li class="gain"><strong>청구 자동화</strong> — 등록생별 개별 수동 발송을 제거합니다.</li>
+        <li class="gain"><strong>단계 단축</strong> — 결제 확인까지 거치는 사람과 소요 시간을 줄입니다.</li>
+        <li class="gain"><strong>사용성 향상</strong> — 학부모는 LMS 단일 흐름에서 결제합니다.</li>
+        <li class="gain"><strong>상태 가시화</strong> — 학생별 결제·배부 현황을 한 화면에서 일괄 확인합니다.</li>
+      </ul>
+    </section>
+
+    <section class="caveats">
+      <p class="caveat"><span class="caveats__label">참고</span>1차는 결제선생을 그대로 유지·임베드하고, 추후 PG(결제대행) 직접 연동으로 전환할 수 있도록 설계합니다.</p>
+      <p class="caveat">결제 로직을 Provider 인터페이스로 추상화해, PG 직접 연동으로 바꿔도 주변 기능은 변경하지 않습니다.</p>
+    </section>
+
+    <nav class="pager">
+      <a href="02-video.html"><span class="pager__k">이전</span>복습영상 · 결석보강</a>
+      <a class="pager__next" href="04-clinic.html"><span class="pager__k">다음</span>클리닉</a>
+    </nav>
+  </main>
+  <footer class="foot"><span>LMS 통합 구축 — As-is → To-be</span><span>내부 보고용 · PRD 기준</span></footer>
+</body>
+</html>

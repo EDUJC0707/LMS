@@ -1,0 +1,44 @@
+# Fly.io 배포 설정 — 도쿄(nrt) 리전.
+# 배포 전: (1) app 이름을 실제 이름으로 교체 (2) 비밀은 `fly secrets set` 으로 주입
+#   (DJANGO_SECRET_KEY, DATABASE_URL, REDIS_URL, CELERY_BROKER_URL, AWS_*, SENTRY_DSN 등).
+
+app = "edujc-lms"          # LMS 백엔드 앱. (문제툴은 별도 레포/앱 edujc-qbank)
+primary_region = "nrt"     # 도쿄
+
+[build]
+  dockerfile = "infra/Dockerfile"
+
+[env]
+  DJANGO_SETTINGS_MODULE = "config.settings.prod"
+  PORT = "8000"
+
+# 배포마다 1회 실행(웹/워커 교체 전) — DB 마이그레이션. Postgres attach 후부터 성공.
+[deploy]
+  release_command = "uv run python manage.py migrate --noinput"
+
+# 프로세스 그룹: web(gunicorn) + worker(celery). 동일 이미지, 커맨드만 다름.
+[processes]
+  web = "uv run gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+  worker = "uv run celery -A config worker -l info"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  # 수업시간대(평일 저녁 등) 콜드스타트 방지를 위해 web 은 최소 1대 웜 유지.
+  # 트래픽 패턴에 맞춰 `fly scale count web=N` 또는 스케줄 스케일링으로 조정.
+  min_machines_running = 1
+  processes = ["web"]
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/healthz"
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  processes = ["web", "worker"]

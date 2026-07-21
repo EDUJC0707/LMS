@@ -1,0 +1,29 @@
+# 로컬 개발용 인프라 — PostgreSQL + Redis 만 띄운다.
+# (backend/frontend 는 호스트에서 uv/npm 으로 직접 실행)
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: lms
+      POSTGRES_USER: lms
+      POSTGRES_PASSWORD: lms
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lms"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+volumes:
+  pgdata:
+  redisdata:

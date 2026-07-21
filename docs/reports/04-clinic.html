@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>클리닉 · 시스템 4 — LMS 개선 보고</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <header class="masthead">
+    <a class="masthead__home" href="index.html">LMS 통합 구축 · 개선 보고</a>
+    <nav class="masthead__nav" aria-label="시스템">
+      <a href="01-grades.html">성적</a>
+      <a href="02-video.html">영상</a>
+      <a href="03-payment.html">결제</a>
+      <a href="04-clinic.html" aria-current="page">클리닉</a>
+      <a href="05-support.html">문의</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section class="doc-head">
+      <p class="eyebrow">시스템 4 · 클리닉</p>
+      <h1 class="doc-title">클리닉(1:1 화상 과외)</h1>
+      <p class="lead">구글 미트는 그대로 유지하되, 신청·배정·입장 통제를 LMS가 맡아 비신청자·조기 입장을 차단합니다.</p>
+    </section>
+
+    <section class="flowcompare">
+      <div class="flow flow--asis">
+        <div class="flow__cap"><b>As-is</b><span>현재 방식</span></div>
+        <div class="flowlist">
+          <div class="node"><span class="node__n">1</span><p class="node__t">카카오톡 채널로 신청을 접수하고 배정을 수동으로 관리</p></div>
+          <div class="node"><span class="node__n">2</span><p class="node__t">승인 완료 알림톡에 구글 미트 링크를 미리 동봉해 발송</p></div>
+          <div class="node"><span class="node__n">3</span><p class="node__t">정해진 시간에 화상회의로 진행 — 링크가 사전 전달돼 비신청자·조기 입장 위험</p></div>
+        </div>
+      </div>
+      <div class="flow flow--tobe">
+        <div class="flow__cap"><b>To-be</b><span>개선 방식</span></div>
+        <div class="flowlist">
+          <div class="node"><span class="node__n">1</span><p class="node__t">학생이 희망 <strong>날짜·시간대</strong>를 신청</p></div>
+          <div class="node"><span class="node__n">2</span><p class="node__t">연구실 직원이 배정 가능 직원을 확인해 <strong>승인+배정(담당 지정) 또는 미승인</strong></p></div>
+          <div class="node"><span class="node__n">3</span><p class="node__t">학생은 <strong>상태(대기·배정완료·미승인)</strong>를 조회</p></div>
+          <div class="node"><span class="node__n">4</span><p class="node__t">구글 미트 링크는 <strong>시작 5분 전부터 해당 학생 계정에만</strong> 노출</p></div>
+          <div class="node"><span class="node__n">5</span><p class="node__t"><strong>관리자 한정 녹화·녹음</strong>으로 운영 관리</p></div>
+          <div class="node"><span class="node__n">6</span><p class="node__t"><strong>클리닉 시작 직후</strong> 학부모에게 출석 알림 발송 — 시작 10분 경과 후에도 미출석이면 조교·관리자가 <strong>결석 처리</strong>(결석 알림 발송)</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="gains">
+      <p class="eyebrow">개선 효과</p>
+      <ul class="gainlist">
+        <li class="gain"><strong>오입장 차단</strong> — 비신청자·조기 입장을 방지합니다.</li>
+        <li class="gain"><strong>링크 5분 전 한정</strong> — 시작 직전, 신청자 계정에만 노출됩니다.</li>
+        <li class="gain"><strong>학부모 소통</strong> — 출석·결석 결과를 학부모에게 알림으로 안내합니다.</li>
+        <li class="gain"><strong>일원화</strong> — 신청부터 배정, 링크까지 LMS에서 단일 관리합니다.</li>
+        <li class="gain"><strong>품질 관리</strong> — 관리자 녹화로 운영을 관리합니다.</li>
+      </ul>
+    </section>
+
+    <section class="caveats">
+      <p class="caveat"><span class="caveats__label">참고</span>구글 미트 링크 생성 자동화의 범위는 별도로 검토합니다.</p>
+      <p class="caveat">녹화 기능은 Google Workspace 요금제 요건과 녹화물 개인정보 처리 방침을 별도로 검토합니다.</p>
+    </section>
+
+    <nav class="pager">
+      <a href="03-payment.html"><span class="pager__k">이전</span>교재 결제</a>
+      <a class="pager__next" href="05-support.html"><span class="pager__k">다음</span>문의 · 게시판</a>
+    </nav>
+  </main>
+
+  <footer class="foot"><span>LMS 통합 구축 — As-is → To-be</span><span>내부 보고용 · PRD 기준</span></footer>
+</body>
+</html>

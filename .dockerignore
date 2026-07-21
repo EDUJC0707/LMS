@@ -1,0 +1,38 @@
+# Fly 빌드 컨텍스트 = 저장소 루트. Dockerfile 은 backend/ 만 COPY 하지만
+# 컨텍스트 전체가 빌더로 전송되므로 불필요한 것은 여기서 제외해 이미지·전송을 줄인다.
+
+# VCS / OS
+.git
+.gitignore
+.DS_Store
+**/.DS_Store
+
+# 프런트(별도 배포) · 노드
+frontend/
+**/node_modules/
+
+# 파이썬 캐시 · 가상환경
+**/__pycache__/
+**/*.py[cod]
+**/.venv/
+.venv/
+
+# 로컬 산출물 · 사용자 업로드(스토리지로 감)
+backend/media/
+backend/staticfiles/
+**/.pytest_cache/
+**/.ruff_cache/
+
+# 환경/비밀
+**/.env
+**/.env.*
+
+# 문서 · 산출물 · 실험(런타임 불필요)
+docs/
+deck/
+report/
+temp/
+*.pptx
+*.pdf
+README.md
+Makefile

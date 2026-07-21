@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LMS 통합 구축 · 개선 보고 — 개요</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <header class="masthead">
+    <a class="masthead__home" href="index.html">LMS 통합 구축 · 개선 보고</a>
+    <nav class="masthead__nav" aria-label="시스템">
+      <a href="01-grades.html">성적</a>
+      <a href="02-video.html">영상</a>
+      <a href="03-payment.html">결제</a>
+      <a href="04-clinic.html">클리닉</a>
+      <a href="05-support.html">문의</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section class="doc-head">
+      <p class="eyebrow">내부 보고 · PRD 기준</p>
+      <h1 class="doc-title">분산된 학원 운영을 <span class="accent">하나의 LMS</span>로</h1>
+      <p class="lead">현재 성적 처리, 복습영상 제공, 교재 결제, 학생 상담이 아카플로우·YouTube·결제선생·카카오톡에 나뉘어 운영되고 있습니다. 본 보고는 이 분산된 기능을 하나의 LMS로 일원화하여 관리자의 반복 수작업을 줄이고 학생에게 단일 진입점을 제공하려는 개선 방향을 정리한 것입니다.</p>
+    </section>
+
+    <section>
+      <div class="overview">
+        <div><p class="label">배경</p><p>성적, 복습영상, 교재 결제, 상담 기능이 각기 다른 외부 서비스에 흩어져 있습니다. 관리자는 여러 시스템을 오가며 명단 대조와 자료 배부, 결제 확인 등 같은 업무를 수작업으로 반복하고, 학생은 기능마다 진입점이 나뉘어 있습니다.</p></div>
+        <div><p class="label">목적</p><p>분산된 기능을 하나의 LMS로 일원화합니다. 관리자의 반복 수작업을 줄이고, 학생에게는 모든 기능을 하나의 진입점에서 이용하도록 하여 외부 서비스 의존을 낮추는 것을 목표로 합니다.</p></div>
+      </div>
+    </section>
+
+    <section>
+      <p class="eyebrow">시스템별 As-is → To-be</p>
+      <div class="syslist">
+        <a class="sysrow" href="01-grades.html"><span class="sysrow__n">시스템 1</span><span class="sysrow__t">성적 처리 및 성적표 배부</span><span class="sysrow__d">OMR 자동 채점과 표준 성적표를 LMS에서 산출·조회</span><span class="sysrow__go">보기</span></a>
+        <a class="sysrow" href="02-video.html"><span class="sysrow__n">시스템 2</span><span class="sysrow__t">복습영상 · 결석보강 수강</span><span class="sysrow__d">신청·권한·만료를 LMS에서 관리</span><span class="sysrow__go">보기</span></a>
+        <a class="sysrow" href="03-payment.html"><span class="sysrow__n">시스템 3</span><span class="sysrow__t">교재 결제</span><span class="sysrow__d">버튼 한 번으로 학부모에게 청구·결제 연결</span><span class="sysrow__go">보기</span></a>
+        <a class="sysrow" href="04-clinic.html"><span class="sysrow__n">시스템 4</span><span class="sysrow__t">클리닉(1:1 화상 과외)</span><span class="sysrow__d">신청·배정·입장을 LMS에서 통제</span><span class="sysrow__go">보기</span></a>
+        <a class="sysrow" href="05-support.html"><span class="sysrow__n">시스템 5</span><span class="sysrow__t">문의 · 게시판</span><span class="sysrow__d">카카오톡 개별 응대를 자체 채팅·게시판으로 정리</span><span class="sysrow__go">보기</span></a>
+      </div>
+    </section>
+
+    <section>
+      <p class="eyebrow">공통 축</p>
+      <ul class="threads">
+        <li class="thread"><strong>단일 진입점</strong> — 흩어진 기능을 하나의 LMS로</li>
+        <li class="thread"><strong>알림 채널 추상화</strong> — 현재 카카오 알림톡, 향후 자체 앱 푸시 등으로 확장·교체</li>
+        <li class="thread"><strong>교체 대비 모듈화</strong> — 결제(결제선생→PG)·화상(구글 미트)·영상 모듈을 인터페이스로 추상화</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="foot"><span>LMS 통합 구축 — As-is → To-be</span><span>내부 보고용 · PRD 기준</span></footer>
+</body>
+</html>

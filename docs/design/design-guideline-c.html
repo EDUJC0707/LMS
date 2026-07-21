@@ -1,0 +1,1199 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>에듀제이씨 LMS · 디자인 시스템</title>
+<meta name="description" content="에듀제이씨 학원 LMS의 색·타이포·컴포넌트 규칙을 정리한 디자인 시스템. OMR '표기'를 신호 언어로 삼은 학습관리 인터페이스.">
+<meta name="color-scheme" content="light dark">
+<style>
+/* =========================================================================
+   에듀제이씨 LMS — 디자인 시스템
+   개념: "채점(Scoring)" — 학원의 시작점인 OMR 답안지의 '표기(mark)'를
+   상태·선택·진행을 말하는 단 하나의 신호 형태로 삼는다.
+   데이터(성적/회차/석차)는 고정폭 서체로 성적표처럼 또렷하게.
+   ========================================================================= */
+
+/* ---------- 토큰: 라이트 (기본) ---------- */
+:root{
+  /* 서피스 — '답안지' 계열 (크림 아님, 살짝 청회색 종이) */
+  --paper:      #F1F3F7;   /* 페이지 배경 */
+  --surface:    #FFFFFF;   /* 카드 */
+  --surface-2:  #E9ECF3;   /* 가라앉은 well / 표 줄무늬 */
+  --surface-3:  #FBFCFE;   /* 살짝 뜬 면 */
+
+  /* 흑연 — 잉크/텍스트 */
+  --ink:        #191C29;   /* 본문/제목 (청흑연) */
+  --ink-2:      #545A70;   /* 보조 텍스트 */
+  --ink-3:      #868DA3;   /* 캡션/비활성 */
+  --line:       #DDE1EB;   /* 경계선 */
+  --line-soft:  #E7EAF1;   /* 옅은 경계선 */
+
+  /* 잉크(브랜드) — 깊은 보라빛 인디고 */
+  --brand:      #3B3E8C;   /* 기본 브랜드 */
+  --brand-strong:#2F3277;  /* hover/누름 */
+  --brand-bright:#5A5FD6;  /* 포커스링/강조 */
+  --brand-tint: #E9EAF7;   /* 옅은 배경 */
+  --brand-tint-ink:#2E3180;/* 옅은 배경 위 텍스트 */
+  --on-brand:   #FFFFFF;
+
+  /* 상태색 — 학원 세계의 재료에서 따옴 */
+  --ok:         #1E7F52;   /* 승인/완료 (통과) */
+  --ok-tint:    #E0F1E8;
+  --ok-ink:     #12603C;
+  --wait:       #A76A08;   /* 대기 (꿀빛 형광펜) */
+  --wait-tint:  #FAEDD3;
+  --wait-ink:   #8A5606;
+  --no:         #C0372E;   /* 미승인/미결제 (채점 빨강펜) */
+  --no-tint:    #FBE3E0;
+  --no-ink:     #9C2A22;
+  --mute:       #6B7290;   /* 만료/중립 */
+  --mute-tint:  #E7E9F0;
+
+  /* 형태 */
+  --r-xs: 6px; --r-sm: 9px; --r: 13px; --r-lg: 18px; --r-pill: 999px;
+  --shadow-1: 0 1px 2px rgba(20,24,45,.06), 0 2px 6px rgba(20,24,45,.05);
+  --shadow-2: 0 6px 16px rgba(20,24,45,.10), 0 2px 5px rgba(20,24,45,.06);
+  --ring: 0 0 0 3px var(--paper), 0 0 0 5px var(--brand-bright);
+
+  /* 서체 */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "맑은 고딕", "Segoe UI", "Noto Sans KR", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "Segoe UI Mono", "D2Coding", Consolas, Menlo, monospace;
+
+  color-scheme: light;
+}
+
+/* ---------- 토큰: OS 다크 (사용자가 토글로 강제하지 않았을 때) ---------- */
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:      #12141C;
+    --surface:    #1B1E2A;
+    --surface-2:  #0E1017;
+    --surface-3:  #232636;
+
+    --ink:        #ECEEF5;
+    --ink-2:      #A7AEC4;
+    --ink-3:      #737A93;
+    --line:       #2C3143;
+    --line-soft:  #232838;
+
+    --brand:      #7B80E6;
+    --brand-strong:#8E93EF;
+    --brand-bright:#9BA0FF;
+    --brand-tint: #23264A;
+    --brand-tint-ink:#B9BCF6;
+    --on-brand:   #12132A;
+
+    --ok:         #4FC08A;  --ok-tint:#123024;  --ok-ink:#8FE0B7;
+    --wait:       #E0AC57;  --wait-tint:#33260F; --wait-ink:#F1CE8E;
+    --no:         #E9887E;  --no-tint:#3A1E1D;   --no-ink:#F4B4AD;
+    --mute:       #8A90AC;  --mute-tint:#242838;
+
+    --shadow-1: 0 1px 2px rgba(0,0,0,.4), 0 2px 8px rgba(0,0,0,.35);
+    --shadow-2: 0 8px 24px rgba(0,0,0,.5), 0 2px 6px rgba(0,0,0,.4);
+    --ring: 0 0 0 3px var(--paper), 0 0 0 5px var(--brand-bright);
+    color-scheme: dark;
+  }
+}
+
+/* ---------- 토큰: 강제 라이트 (OS 무시, 항상 우선) ---------- */
+:root[data-theme="light"]{
+  --paper:#F1F3F7; --surface:#FFFFFF; --surface-2:#E9ECF3; --surface-3:#FBFCFE;
+  --ink:#191C29; --ink-2:#545A70; --ink-3:#868DA3; --line:#DDE1EB; --line-soft:#E7EAF1;
+  --brand:#3B3E8C; --brand-strong:#2F3277; --brand-bright:#5A5FD6; --brand-tint:#E9EAF7; --brand-tint-ink:#2E3180; --on-brand:#FFFFFF;
+  --ok:#1E7F52; --ok-tint:#E0F1E8; --ok-ink:#12603C;
+  --wait:#A76A08; --wait-tint:#FAEDD3; --wait-ink:#8A5606;
+  --no:#C0372E; --no-tint:#FBE3E0; --no-ink:#9C2A22;
+  --mute:#6B7290; --mute-tint:#E7E9F0;
+  --shadow-1:0 1px 2px rgba(20,24,45,.06),0 2px 6px rgba(20,24,45,.05);
+  --shadow-2:0 6px 16px rgba(20,24,45,.10),0 2px 5px rgba(20,24,45,.06);
+  color-scheme: light;
+}
+
+/* ---------- 토큰: 강제 다크 (OS 무시, 항상 우선) ---------- */
+:root[data-theme="dark"]{
+  --paper:#12141C; --surface:#1B1E2A; --surface-2:#0E1017; --surface-3:#232636;
+  --ink:#ECEEF5; --ink-2:#A7AEC4; --ink-3:#737A93; --line:#2C3143; --line-soft:#232838;
+  --brand:#7B80E6; --brand-strong:#8E93EF; --brand-bright:#9BA0FF; --brand-tint:#23264A; --brand-tint-ink:#B9BCF6; --on-brand:#12132A;
+  --ok:#4FC08A; --ok-tint:#123024; --ok-ink:#8FE0B7;
+  --wait:#E0AC57; --wait-tint:#33260F; --wait-ink:#F1CE8E;
+  --no:#E9887E; --no-tint:#3A1E1D; --no-ink:#F4B4AD;
+  --mute:#8A90AC; --mute-tint:#242838;
+  --shadow-1:0 1px 2px rgba(0,0,0,.4),0 2px 8px rgba(0,0,0,.35);
+  --shadow-2:0 8px 24px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.4);
+  color-scheme: dark;
+}
+
+/* ---------- 리셋 & 기본 ---------- */
+*,*::before,*::after{ box-sizing:border-box; }
+html{ -webkit-text-size-adjust:100%; }
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:var(--font-sans); font-size:16px; line-height:1.6;
+  font-weight:420; letter-spacing:-0.003em;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  overflow-x:hidden;
+}
+@media (prefers-reduced-motion: no-preference){ html{ scroll-behavior:smooth; } }
+h1,h2,h3,h4,p{ margin:0; }
+a{ color:inherit; text-decoration:none; }
+button{ font-family:inherit; }
+img,svg{ display:block; max-width:100%; }
+:focus-visible{ outline:none; box-shadow:var(--ring); border-radius:var(--r-xs); }
+::selection{ background:var(--brand-bright); color:#fff; }
+.tnum{ font-variant-numeric: tabular-nums; }
+
+/* ---------- 레이아웃 ---------- */
+.wrap{ width:100%; max-width:1140px; margin-inline:auto; padding-inline:clamp(1.05rem,4vw,2rem); }
+.section{ padding-block:clamp(3rem,7vw,5.25rem); scroll-margin-top:78px; }
+.section + .section{ border-top:1px solid var(--line-soft); }
+.sec-head{ display:flex; align-items:baseline; gap:.9rem; margin-bottom:1.9rem; flex-wrap:wrap; }
+.sec-idx{ font-family:var(--font-mono); font-size:.8rem; color:var(--brand); font-weight:600; letter-spacing:.06em; padding-top:.25rem; }
+.sec-title{ font-size:clamp(1.4rem,3.2vw,1.85rem); font-weight:780; letter-spacing:-0.02em; }
+.sec-note{ color:var(--ink-2); font-size:.95rem; max-width:52ch; margin-top:.3rem; }
+.eyebrow{ font-family:var(--font-mono); font-size:.72rem; font-weight:600; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-3); display:inline-flex; align-items:center; gap:.5em; }
+
+/* =========================================================================
+   상단 내비게이션
+   ========================================================================= */
+.topbar{
+  position:sticky; top:0; z-index:50;
+  background:color-mix(in srgb, var(--paper) 82%, transparent);
+  -webkit-backdrop-filter:saturate(1.6) blur(12px); backdrop-filter:saturate(1.6) blur(12px);
+  border-bottom:1px solid var(--line-soft);
+}
+.topbar-in{ display:flex; align-items:center; gap:1rem; height:60px; }
+.brand{ display:flex; align-items:center; gap:.6rem; margin-right:auto; }
+.brand-name{ font-weight:750; letter-spacing:-0.02em; font-size:1.02rem; }
+.brand-sub{ font-family:var(--font-mono); font-size:.66rem; color:var(--ink-3); letter-spacing:.04em; }
+.navlinks{ display:flex; gap:.15rem; overflow-x:auto; scrollbar-width:none; -ms-overflow-style:none; }
+.navlinks::-webkit-scrollbar{ display:none; }
+.navlink{
+  font-size:.86rem; font-weight:560; color:var(--ink-2);
+  padding:.44rem .66rem; border-radius:var(--r-sm); white-space:nowrap;
+  transition:color .15s, background .15s;
+}
+.navlink:hover{ color:var(--ink); background:var(--surface-2); }
+.navlink.is-active{ color:var(--brand); background:var(--brand-tint); }
+.theme-toggle{
+  flex:none; display:inline-flex; align-items:center; gap:.4rem;
+  height:38px; padding:0 .8rem; border-radius:var(--r-pill);
+  border:1px solid var(--line); background:var(--surface); color:var(--ink);
+  font-size:.8rem; font-weight:600; cursor:pointer; transition:border-color .15s, background .15s;
+}
+.theme-toggle:hover{ border-color:var(--brand); }
+.theme-toggle .t-ico{ width:16px; height:16px; }
+.theme-toggle .t-dark{ display:none; }
+:root[data-theme="dark"] .theme-toggle .t-dark{ display:block; }
+:root[data-theme="dark"] .theme-toggle .t-light{ display:none; }
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .theme-toggle .t-dark{ display:block; }
+  :root:not([data-theme="light"]) .theme-toggle .t-light{ display:none; }
+}
+@media (max-width:720px){
+  .navlinks{ display:none; }
+  .brand-sub{ display:none; }
+}
+
+/* =========================================================================
+   OMR '표기' — 시그니처 프리미티브
+   빈 원(미표기) → 가운데 점(진행) → 채운 원(완료)
+   ========================================================================= */
+.mark{
+  --mk: var(--ink-3);
+  width:.82em; height:.82em; flex:none; box-sizing:border-box;
+  border:2px solid var(--mk); border-radius:50%; display:inline-block; position:relative;
+  background:transparent;
+}
+.mark.is-fill{ background:var(--mk); }
+.mark.is-dot::after{ content:""; position:absolute; inset:22%; border-radius:50%; background:var(--mk); }
+.mark.is-x::before, .mark.is-x::after{
+  content:""; position:absolute; left:50%; top:50%; width:52%; height:2px; background:var(--mk); border-radius:2px;
+}
+.mark.is-x::before{ transform:translate(-50%,-50%) rotate(45deg); }
+.mark.is-x::after{ transform:translate(-50%,-50%) rotate(-45deg); }
+
+/* 브랜드 로고 마크 */
+.logo-mark{ width:26px; height:26px; flex:none; }
+
+/* =========================================================================
+   히어로 + OMR 답안 스트립 (시그니처)
+   ========================================================================= */
+.hero{ padding-block:clamp(2.6rem,6vw,4.5rem) clamp(2.4rem,5vw,3.6rem); }
+.hero-grid{ display:grid; grid-template-columns:1.15fr .85fr; gap:clamp(1.5rem,4vw,3rem); align-items:center; }
+.hero h1{
+  font-size:clamp(2rem,5.2vw,3.15rem); line-height:1.12; font-weight:800; letter-spacing:-0.035em;
+  margin:.9rem 0 1.05rem;
+}
+.hero h1 .em{ color:var(--brand); }
+.hero-lead{ color:var(--ink-2); font-size:clamp(1rem,1.6vw,1.12rem); max-width:44ch; }
+.hero-meta{ display:flex; gap:1.4rem; margin-top:1.6rem; flex-wrap:wrap; }
+.hero-meta .item{ display:flex; flex-direction:column; gap:.15rem; }
+.hero-meta .k{ font-family:var(--font-mono); font-size:1.28rem; font-weight:600; letter-spacing:-.01em; }
+.hero-meta .l{ font-size:.76rem; color:var(--ink-3); }
+
+/* 답안지 카드 */
+.answersheet{
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg);
+  padding:1.25rem 1.3rem 1.35rem; box-shadow:var(--shadow-2); position:relative; overflow:hidden;
+}
+.answersheet::before{ /* 좌측 채점용 타이밍 마크 열 */
+  content:""; position:absolute; left:0; top:0; bottom:0; width:14px;
+  background:
+    repeating-linear-gradient(var(--ink) 0 6px, transparent 6px 15px);
+  opacity:.12;
+}
+.as-head{ display:flex; justify-content:space-between; align-items:center; margin:0 0 .9rem .8rem; }
+.as-title{ font-family:var(--font-mono); font-size:.74rem; letter-spacing:.08em; color:var(--ink-2); text-transform:uppercase; }
+.as-code{ font-family:var(--font-mono); font-size:.72rem; color:var(--ink-3); }
+.omr-row{ display:flex; align-items:center; gap:.5rem; padding:.28rem 0 .28rem .8rem; }
+.omr-q{ font-family:var(--font-mono); font-size:.8rem; color:var(--ink-3); width:1.7rem; text-align:right; font-variant-numeric:tabular-nums; }
+.bubbles{ display:flex; gap:.42rem; }
+.bubble{
+  width:1.5rem; height:1.5rem; border-radius:50%; border:1.8px solid var(--line);
+  display:grid; place-items:center; font-family:var(--font-mono); font-size:.68rem; color:var(--ink-3);
+  background:var(--surface-3);
+}
+.bubble.is-marked{
+  border-color:var(--brand); background:var(--brand); color:var(--on-brand);
+  box-shadow:0 1px 4px color-mix(in srgb,var(--brand) 40%, transparent);
+}
+.as-legend{
+  margin:1rem 0 0 .8rem; padding-top:.85rem; border-top:1px dashed var(--line);
+  display:flex; gap:1.15rem; flex-wrap:wrap; font-size:.76rem; color:var(--ink-2);
+}
+.as-legend .lg{ display:inline-flex; align-items:center; gap:.42rem; }
+
+@media (prefers-reduced-motion: no-preference){
+  .bubble.is-marked{ animation: markin .5s var(--d,0s) both cubic-bezier(.2,.85,.3,1.25); }
+  @keyframes markin{ from{ transform:scale(.15); opacity:0; } to{ transform:scale(1); opacity:1; } }
+}
+@media (max-width:860px){
+  .hero-grid{ grid-template-columns:1fr; }
+}
+
+/* =========================================================================
+   원칙 카드 (방향성)
+   ========================================================================= */
+.principles{ display:grid; grid-template-columns:repeat(4,1fr); gap:1rem; }
+.principle{
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r);
+  padding:1.15rem 1.15rem 1.25rem; box-shadow:var(--shadow-1);
+}
+.principle .p-mark{ width:30px; height:30px; border-radius:9px; background:var(--brand-tint); color:var(--brand); display:grid; place-items:center; margin-bottom:.75rem; }
+.principle h3{ font-size:1rem; font-weight:720; letter-spacing:-.01em; margin-bottom:.4rem; }
+.principle p{ font-size:.87rem; color:var(--ink-2); line-height:1.55; }
+@media (max-width:940px){ .principles{ grid-template-columns:repeat(2,1fr);} }
+@media (max-width:520px){ .principles{ grid-template-columns:1fr;} }
+
+/* =========================================================================
+   색상 토큰
+   ========================================================================= */
+.swatch-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:.85rem; }
+.swatch{ background:var(--surface); border:1px solid var(--line); border-radius:var(--r); overflow:hidden; box-shadow:var(--shadow-1); }
+.swatch .chip{ height:82px; border-bottom:1px solid var(--line-soft); position:relative; }
+.swatch .chip .dotmark{ position:absolute; right:.6rem; bottom:.6rem; }
+.swatch .meta{ padding:.7rem .8rem .8rem; }
+.swatch .nm{ font-size:.9rem; font-weight:680; display:flex; align-items:center; gap:.4rem; }
+.swatch .nm .en{ font-family:var(--font-mono); font-size:.68rem; color:var(--ink-3); font-weight:500; }
+.swatch .val{ font-family:var(--font-mono); font-size:.74rem; color:var(--ink-2); margin-top:.3rem; display:flex; justify-content:space-between; gap:.4rem; }
+.swatch .val b{ color:var(--ink); font-weight:600; }
+.pair-note{ display:flex; gap:.5rem; align-items:center; font-size:.8rem; color:var(--ink-3); margin-bottom:1.1rem; font-family:var(--font-mono); }
+@media (max-width:940px){ .swatch-grid{ grid-template-columns:repeat(2,1fr);} }
+@media (max-width:520px){ .swatch-grid{ grid-template-columns:1fr;} }
+
+/* =========================================================================
+   타이포그래피 스케일
+   ========================================================================= */
+.type-list{ display:flex; flex-direction:column; }
+.type-row{
+  display:grid; grid-template-columns:minmax(0,1fr) 220px; gap:1.5rem; align-items:baseline;
+  padding:1.15rem 0; border-top:1px solid var(--line-soft);
+}
+.type-row:first-child{ border-top:none; }
+.type-spec{ font-family:var(--font-mono); font-size:.76rem; color:var(--ink-3); line-height:1.7; }
+.type-spec b{ color:var(--ink-2); font-weight:600; }
+.t-display{ font-size:clamp(2rem,4.5vw,2.9rem); font-weight:800; letter-spacing:-.035em; line-height:1.05; }
+.t-h1{ font-size:1.7rem; font-weight:760; letter-spacing:-.022em; }
+.t-h2{ font-size:1.25rem; font-weight:700; letter-spacing:-.015em; }
+.t-body{ font-size:1rem; font-weight:420; color:var(--ink); }
+.t-caption{ font-size:.8rem; color:var(--ink-2); }
+.t-num{ font-family:var(--font-mono); font-size:2.3rem; font-weight:600; letter-spacing:-.01em; font-variant-numeric:tabular-nums; }
+.t-num .u{ font-size:1rem; color:var(--ink-3); font-weight:500; margin-left:.2rem; }
+@media (max-width:640px){ .type-row{ grid-template-columns:1fr; gap:.5rem; } }
+
+/* =========================================================================
+   컴포넌트
+   ========================================================================= */
+.demo-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:1.1rem; }
+.panel{ background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:1.25rem 1.3rem 1.4rem; box-shadow:var(--shadow-1); }
+.panel > .p-label{ font-family:var(--font-mono); font-size:.72rem; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3); margin-bottom:1rem; display:block; }
+.row-wrap{ display:flex; gap:.65rem; flex-wrap:wrap; align-items:center; }
+.stack{ display:flex; flex-direction:column; gap:1rem; }
+
+/* 버튼 */
+.btn{
+  --_bg:var(--brand); --_fg:var(--on-brand); --_bd:transparent;
+  display:inline-flex; align-items:center; justify-content:center; gap:.5rem;
+  font-size:.9rem; font-weight:640; letter-spacing:-.01em; line-height:1;
+  padding:.68rem 1.05rem; border-radius:var(--r-sm); cursor:pointer;
+  background:var(--_bg); color:var(--_fg); border:1.5px solid var(--_bd);
+  transition:transform .06s ease, background .15s, border-color .15s, box-shadow .15s;
+}
+.btn:hover{ background:var(--brand-strong); }
+.btn:active{ transform:translateY(1px); }
+.btn .mark{ --mk:currentColor; }
+.btn--secondary{ --_bg:transparent; --_fg:var(--ink); --_bd:var(--line); }
+.btn--secondary:hover{ background:var(--surface-2); border-color:var(--brand); }
+.btn--ghost{ --_bg:transparent; --_fg:var(--brand); --_bd:transparent; }
+.btn--ghost:hover{ background:var(--brand-tint); }
+.btn--danger{ --_bg:var(--no); --_fg:#fff; }
+.btn--danger:hover{ background:var(--no-ink); }
+:root[data-theme="dark"] .btn--danger{ --_fg:#2a0f0d; }
+.btn--sm{ padding:.46rem .75rem; font-size:.82rem; border-radius:var(--r-xs); }
+.btn:disabled{ opacity:.5; cursor:not-allowed; }
+.btn:disabled:hover{ background:var(--_bg); }
+
+/* 폼 필드 */
+.field{ display:flex; flex-direction:column; gap:.4rem; margin-bottom:1.05rem; }
+.field:last-child{ margin-bottom:0; }
+.field label{ font-size:.83rem; font-weight:620; color:var(--ink); }
+.field .hint{ font-size:.76rem; color:var(--ink-3); }
+.field .err{ font-size:.76rem; color:var(--no); display:flex; align-items:center; gap:.35rem; }
+.input, .select, .textarea{
+  width:100%; font-family:inherit; font-size:.92rem; color:var(--ink);
+  background:var(--surface-3); border:1.5px solid var(--line); border-radius:var(--r-sm);
+  padding:.62rem .72rem; transition:border-color .15s, box-shadow .15s; -webkit-appearance:none; appearance:none;
+}
+.input::placeholder,.textarea::placeholder{ color:var(--ink-3); }
+.input:focus,.select:focus,.textarea:focus{ outline:none; border-color:var(--brand); box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 22%, transparent); }
+.select{ background-image:linear-gradient(45deg,transparent 50%,var(--ink-3) 50%),linear-gradient(135deg,var(--ink-3) 50%,transparent 50%); background-position:calc(100% - 18px) 55%,calc(100% - 13px) 55%; background-size:5px 5px,5px 5px; background-repeat:no-repeat; padding-right:2rem; }
+.textarea{ resize:vertical; min-height:84px; line-height:1.55; }
+.field--err .input{ border-color:var(--no); box-shadow:0 0 0 3px var(--no-tint); }
+
+/* OMR 스타일 라디오/체크 (선택도 '표기') */
+.omr-choice{ display:flex; flex-direction:column; gap:.55rem; }
+.choice{ display:flex; align-items:center; gap:.6rem; cursor:pointer; font-size:.9rem; padding:.15rem 0; }
+.choice input{ position:absolute; opacity:0; width:0; height:0; }
+.choice .bub{
+  width:1.35rem; height:1.35rem; border-radius:50%; border:2px solid var(--line); background:var(--surface-3);
+  flex:none; display:grid; place-items:center; transition:border-color .12s, background .12s;
+}
+.choice .bub .fill{ width:60%; height:60%; border-radius:50%; background:var(--brand); transform:scale(0); transition:transform .14s cubic-bezier(.2,.85,.3,1.3); }
+.choice input:checked + .bub{ border-color:var(--brand); }
+.choice input:checked + .bub .fill{ transform:scale(1); }
+.choice input:focus-visible + .bub{ box-shadow:var(--ring); }
+.choice.chk .bub{ border-radius:6px; }
+.choice.chk .bub .fill{ border-radius:3px; }
+
+/* 상태 필 / 배지 */
+.pills-wrap{ display:flex; gap:.55rem; flex-wrap:wrap; }
+.pill{
+  --mk:var(--mute);
+  display:inline-flex; align-items:center; gap:.42em;
+  font-size:.78rem; font-weight:640; line-height:1; letter-spacing:-.01em;
+  padding:.42em .72em .42em .6em; border-radius:var(--r-pill);
+  background:var(--mute-tint); color:var(--ink); border:1px solid transparent;
+}
+.pill .mark{ width:.74em; height:.74em; border-width:2px; }
+.pill--ok{ --mk:var(--ok); background:var(--ok-tint); color:var(--ok-ink); }
+.pill--wait{ --mk:var(--wait); background:var(--wait-tint); color:var(--wait-ink); }
+.pill--no{ --mk:var(--no); background:var(--no-tint); color:var(--no-ink); }
+.pill--brand{ --mk:var(--brand); background:var(--brand-tint); color:var(--brand-tint-ink); }
+.pill--mute{ --mk:var(--mute); background:var(--mute-tint); color:var(--ink-2); }
+
+/* 표 */
+.table-scroll{ overflow-x:auto; border:1px solid var(--line); border-radius:var(--r); background:var(--surface); box-shadow:var(--shadow-1); -webkit-overflow-scrolling:touch; }
+table.data{ width:100%; border-collapse:collapse; min-width:560px; font-size:.88rem; }
+table.data th, table.data td{ padding:.72rem .9rem; text-align:left; border-bottom:1px solid var(--line-soft); white-space:nowrap; }
+table.data thead th{ font-family:var(--font-mono); font-size:.72rem; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-3); font-weight:600; background:var(--surface-2); position:sticky; top:0; }
+table.data tbody tr:hover{ background:var(--surface-2); }
+table.data tbody tr:last-child td{ border-bottom:none; }
+table.data td.num, table.data th.num{ text-align:right; font-family:var(--font-mono); font-variant-numeric:tabular-nums; }
+.grade-tag{ font-family:var(--font-mono); font-weight:600; font-size:.8rem; padding:.12rem .42rem; border-radius:var(--r-xs); background:var(--brand-tint); color:var(--brand-tint-ink); }
+
+/* 앱 내비 미리보기 */
+.appnav{ display:flex; flex-direction:column; gap:.2rem; }
+.appnav a{ display:flex; align-items:center; gap:.65rem; padding:.55rem .7rem; border-radius:var(--r-sm); font-size:.88rem; color:var(--ink-2); font-weight:540; }
+.appnav a .ic{ width:16px; height:16px; color:var(--ink-3); }
+.appnav a:hover{ background:var(--surface-2); color:var(--ink); }
+.appnav a.on{ background:var(--brand-tint); color:var(--brand-tint-ink); font-weight:660; }
+.appnav a.on .ic{ color:var(--brand); }
+.appnav a .cnt{ margin-left:auto; font-family:var(--font-mono); font-size:.72rem; background:var(--no); color:#fff; border-radius:var(--r-pill); padding:.05rem .4rem; }
+:root[data-theme="dark"] .appnav a .cnt{ color:#2a0f0d; }
+
+@media (max-width:820px){ .demo-grid{ grid-template-columns:1fr; } }
+
+/* =========================================================================
+   적용 화면
+   ========================================================================= */
+.app-frame{
+  background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r-lg);
+  overflow:hidden; box-shadow:var(--shadow-2);
+}
+.app-bar{ display:flex; align-items:center; gap:.6rem; padding:.7rem 1rem; background:var(--surface); border-bottom:1px solid var(--line); }
+.app-dots{ display:flex; gap:.35rem; }
+.app-dots i{ width:10px; height:10px; border-radius:50%; background:var(--line); display:block; }
+.app-url{ margin-left:.4rem; font-family:var(--font-mono); font-size:.72rem; color:var(--ink-3); }
+.app-role{ margin-left:auto; font-size:.74rem; font-weight:640; padding:.28rem .6rem; border-radius:var(--r-pill); background:var(--brand-tint); color:var(--brand-tint-ink); }
+.app-role.admin{ background:var(--wait-tint); color:var(--wait-ink); }
+.app-body{ display:grid; grid-template-columns:200px 1fr; }
+.app-side{ padding:1rem .8rem; border-right:1px solid var(--line); background:var(--surface); }
+.app-side .who{ display:flex; align-items:center; gap:.6rem; padding:.3rem .3rem 1rem; }
+.avatar{ width:34px; height:34px; border-radius:10px; background:var(--brand); color:var(--on-brand); display:grid; place-items:center; font-weight:700; font-size:.9rem; flex:none; }
+.app-main{ padding:clamp(1rem,2.5vw,1.6rem); background:var(--paper); }
+.app-h{ font-size:1.15rem; font-weight:760; letter-spacing:-.02em; }
+.app-sub{ color:var(--ink-2); font-size:.85rem; margin-top:.2rem; }
+.cards2{ display:grid; grid-template-columns:1.1fr .9fr; gap:1rem; margin-top:1.15rem; }
+.cards2.one{ grid-template-columns:1fr; }
+.ucard{ background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:1.05rem 1.1rem 1.15rem; box-shadow:var(--shadow-1); }
+.ucard h4{ font-size:.82rem; font-weight:680; color:var(--ink-2); display:flex; align-items:center; justify-content:space-between; margin-bottom:.85rem; }
+.ucard h4 .link{ font-size:.74rem; color:var(--brand); font-weight:600; }
+
+/* 성적 요약 */
+.score-head{ display:flex; align-items:flex-end; gap:.9rem; }
+.score-big{ font-family:var(--font-mono); font-size:2.7rem; font-weight:600; letter-spacing:-.02em; line-height:.95; font-variant-numeric:tabular-nums; }
+.score-big .u{ font-size:1rem; color:var(--ink-3); font-weight:500; }
+.delta{ font-family:var(--font-mono); font-size:.82rem; font-weight:600; padding:.15rem .45rem; border-radius:var(--r-xs); display:inline-flex; align-items:center; gap:.25rem; }
+.delta.up{ color:var(--ok-ink); background:var(--ok-tint); }
+.score-meta{ display:flex; gap:1.3rem; margin-top:.2rem; }
+.score-meta .m{ font-size:.76rem; color:var(--ink-3); }
+.score-meta .m b{ font-family:var(--font-mono); color:var(--ink); font-size:.95rem; font-weight:600; display:block; font-variant-numeric:tabular-nums; }
+.spark{ margin-top:.9rem; }
+.spark-x{ display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:.64rem; color:var(--ink-3); margin-top:.3rem; }
+
+/* 리스트 아이템 (신청 현황) */
+.reqlist{ display:flex; flex-direction:column; gap:.1rem; }
+.req{ display:flex; align-items:center; gap:.75rem; padding:.7rem .1rem; border-bottom:1px solid var(--line-soft); }
+.req:last-child{ border-bottom:none; }
+.req .rtype{ font-family:var(--font-mono); font-size:.66rem; letter-spacing:.03em; padding:.2rem .4rem; border-radius:var(--r-xs); background:var(--surface-2); color:var(--ink-2); flex:none; }
+.req .rtype.clinic{ background:var(--brand-tint); color:var(--brand-tint-ink); }
+.req .rbody{ min-width:0; }
+.req .rtitle{ font-size:.88rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.req .rmeta{ font-size:.75rem; color:var(--ink-3); font-family:var(--font-mono); }
+.req .rstat{ margin-left:auto; flex:none; }
+
+/* 클리닉 입장 카드 */
+.clinic{ background:linear-gradient(135deg, var(--brand) 0%, var(--brand-strong) 100%); color:#fff; border-radius:var(--r); padding:1.1rem 1.15rem; position:relative; overflow:hidden; }
+:root[data-theme="dark"] .clinic{ color:#0e0f24; }
+.clinic::after{ content:""; position:absolute; right:-30px; top:-30px; width:120px; height:120px; border-radius:50%; border:16px solid rgba(255,255,255,.12); }
+.clinic .c-when{ font-family:var(--font-mono); font-size:1.05rem; font-weight:600; letter-spacing:-.01em; }
+.clinic .c-who{ font-size:.82rem; opacity:.92; margin-top:.25rem; }
+.clinic .c-pill{ display:inline-flex; align-items:center; gap:.4rem; font-size:.72rem; font-weight:640; background:rgba(255,255,255,.2); padding:.3rem .6rem; border-radius:var(--r-pill); margin-top:.7rem; }
+.clinic .btn{ margin-top:.9rem; width:100%; --_bg:#fff; --_fg:var(--brand); }
+:root[data-theme="dark"] .clinic .btn{ --_bg:#0e0f24; --_fg:#fff; }
+.clinic .btn:hover{ background:#fff; filter:brightness(.96); }
+
+/* 결제 미니 */
+.payline{ display:flex; align-items:center; gap:.7rem; padding:.6rem 0; font-size:.85rem; }
+.payline + .payline{ border-top:1px solid var(--line-soft); }
+.payline .bk{ flex:none; width:30px; height:38px; border-radius:4px; background:var(--surface-2); border:1px solid var(--line); position:relative; }
+.payline .bk::before{ content:""; position:absolute; left:4px; top:0; bottom:0; width:3px; background:var(--brand); opacity:.6; }
+.payline .pt{ min-width:0; }
+.payline .pt b{ font-weight:620; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.payline .pt span{ font-size:.74rem; color:var(--ink-3); }
+.payline .pill{ margin-left:auto; }
+
+/* 관리자: 업로드 위젯 */
+.upload{ border:1.5px dashed var(--line); border-radius:var(--r); padding:1rem; display:flex; align-items:center; gap:.9rem; background:var(--surface-3); }
+.upload .uic{ width:40px; height:40px; border-radius:10px; background:var(--brand-tint); color:var(--brand); display:grid; place-items:center; flex:none; }
+.upload .ut{ min-width:0; flex:1; }
+.upload .ut b{ font-size:.86rem; font-family:var(--font-mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; }
+.upload .bar{ height:6px; border-radius:99px; background:var(--surface-2); margin-top:.5rem; overflow:hidden; }
+.upload .bar i{ display:block; height:100%; width:72%; background:var(--brand); border-radius:99px; }
+.upload .ut span{ font-size:.72rem; color:var(--ink-3); }
+
+/* 관리자: 클리닉 배정 보드 */
+.assign{ display:flex; flex-direction:column; gap:.5rem; }
+.slot{ display:flex; align-items:center; gap:.7rem; padding:.65rem .8rem; border:1px solid var(--line); border-radius:var(--r-sm); background:var(--surface); }
+.slot .time{ font-family:var(--font-mono); font-size:.9rem; font-weight:600; font-variant-numeric:tabular-nums; flex:none; }
+.slot .flow{ font-size:.85rem; display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; }
+.slot .flow .stu{ font-weight:620; }
+.slot .flow .arw{ color:var(--ink-3); }
+.slot .flow .tut{ color:var(--ink-2); }
+.slot .act{ margin-left:auto; flex:none; }
+
+.app-note{ font-size:.78rem; color:var(--ink-3); margin-top:1rem; display:flex; gap:.5rem; align-items:flex-start; }
+.app-note .mark{ margin-top:.2rem; }
+
+@media (max-width:760px){
+  .app-body{ grid-template-columns:1fr; }
+  .app-side{ display:none; }
+  .cards2{ grid-template-columns:1fr; }
+}
+
+/* =========================================================================
+   푸터
+   ========================================================================= */
+.foot{ padding-block:2.6rem 3.4rem; border-top:1px solid var(--line-soft); color:var(--ink-3); font-size:.82rem; }
+.foot-in{ display:flex; justify-content:space-between; gap:1rem; flex-wrap:wrap; align-items:center; }
+.foot .fmark{ display:flex; align-items:center; gap:.55rem; color:var(--ink-2); font-weight:600; }
+.foot code{ font-family:var(--font-mono); font-size:.76rem; }
+
+/* 유틸 */
+.mt-sm{ margin-top:.55rem; } .mt-md{ margin-top:1rem; }
+.muted{ color:var(--ink-3); }
+.divider{ height:1px; background:var(--line-soft); margin:1.1rem 0; }
+</style>
+</head>
+<body>
+
+<!-- ============ 상단바 ============ -->
+<header class="topbar">
+  <div class="wrap topbar-in">
+    <a class="brand" href="#top" aria-label="에듀제이씨 LMS 디자인 시스템">
+      <svg class="logo-mark" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+        <rect x="1" y="1" width="24" height="24" rx="7" fill="var(--brand)"/>
+        <circle cx="13" cy="13" r="7" fill="none" stroke="var(--on-brand)" stroke-width="2.4"/>
+        <circle cx="13" cy="13" r="3" fill="var(--on-brand)"/>
+      </svg>
+      <span>
+        <span class="brand-name">에듀제이씨 LMS</span>
+        <span class="brand-sub" aria-hidden="true">DESIGN SYSTEM v1.0</span>
+      </span>
+    </a>
+    <nav class="navlinks" aria-label="섹션">
+      <a class="navlink" href="#direction">방향성</a>
+      <a class="navlink" href="#color">색상</a>
+      <a class="navlink" href="#type">타이포</a>
+      <a class="navlink" href="#components">컴포넌트</a>
+      <a class="navlink" href="#applied">적용 화면</a>
+    </nav>
+    <button class="theme-toggle" id="themeBtn" type="button" aria-pressed="false" aria-label="화면 테마 전환">
+      <svg class="t-ico t-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>
+      <svg class="t-ico t-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 14.5A8 8 0 019.5 4a7 7 0 108.5 10.5z"/></svg>
+      <span id="themeLbl">다크</span>
+    </button>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- ============ 히어로 ============ -->
+<section class="section hero" aria-labelledby="hero-h">
+  <div class="wrap">
+    <div class="hero-grid">
+      <div>
+        <span class="eyebrow"><span class="mark is-fill" style="--mk:var(--brand)"></span> 에듀제이씨 학원 · LMS 디자인 시스템</span>
+        <h1 id="hero-h">여섯 개의 사이트에 흩어진 학원 업무를,<br><span class="em">하나의 화면</span>으로.</h1>
+        <p class="hero-lead">성적 조회부터 복습영상·결석보강, 1:1 화상 클리닉, 교재 결제까지 — 에듀제이씨 LMS의 모든 화면을 지탱하는 색·타이포·컴포넌트 규칙입니다. 학원의 시작점인 <b>OMR 답안지의 ‘표기(mark)’</b>를 상태와 선택을 말하는 하나의 신호 언어로 삼았습니다.</p>
+        <div class="hero-meta">
+          <div class="item"><span class="k tnum">9</span><span class="l">상태 토큰 (승인·대기·완료 …)</span></div>
+          <div class="item"><span class="k tnum">2</span><span class="l">역할 · 학생 / 관리자</span></div>
+          <div class="item"><span class="k tnum">2</span><span class="l">테마 · 라이트 / 다크</span></div>
+        </div>
+      </div>
+
+      <!-- 시그니처: OMR 답안 스트립 -->
+      <figure class="answersheet" aria-label="OMR 답안 표기 예시">
+        <div class="as-head">
+          <span class="as-title">답안 표기 · MARK STATES</span>
+          <span class="as-code" aria-hidden="true">FORM-OMR-01</span>
+        </div>
+        <div class="omr-row"><span class="omr-q">01</span><span class="bubbles"><span class="bubble">1</span><span class="bubble is-marked" style="--d:.15s">2</span><span class="bubble">3</span><span class="bubble">4</span><span class="bubble">5</span></span></div>
+        <div class="omr-row"><span class="omr-q">02</span><span class="bubbles"><span class="bubble">1</span><span class="bubble">2</span><span class="bubble">3</span><span class="bubble is-marked" style="--d:.28s">4</span><span class="bubble">5</span></span></div>
+        <div class="omr-row"><span class="omr-q">03</span><span class="bubbles"><span class="bubble is-marked" style="--d:.41s">1</span><span class="bubble">2</span><span class="bubble">3</span><span class="bubble">4</span><span class="bubble">5</span></span></div>
+        <div class="omr-row"><span class="omr-q">04</span><span class="bubbles"><span class="bubble">1</span><span class="bubble">2</span><span class="bubble is-marked" style="--d:.54s">3</span><span class="bubble">4</span><span class="bubble">5</span></span></div>
+        <figcaption class="as-legend">
+          <span class="lg"><span class="mark is-fill" style="--mk:var(--ok)"></span> 채운 원 = 완료</span>
+          <span class="lg"><span class="mark is-dot" style="--mk:var(--wait)"></span> 가운데 점 = 진행·대기</span>
+          <span class="lg"><span class="mark" style="--mk:var(--no)"></span> 빈 원 = 미표기·미승인</span>
+        </figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 방향성 ============ -->
+<section class="section" id="direction" aria-labelledby="dir-h">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-idx" aria-hidden="true">§ 01</span>
+      <div>
+        <h2 class="sec-title" id="dir-h">방향성</h2>
+        <p class="sec-note">아카플로우·유튜브·결제선생·카카오톡으로 흩어졌던 업무를 한 화면에 모으는 서비스입니다. 화려함보다 <b>일관성과 신뢰</b>가 가치이므로, 시각 언어도 학원의 실제 재료 — 답안지, 흑연, 채점펜 — 에서 출발했습니다.</p>
+      </div>
+    </div>
+
+    <div class="principles">
+      <article class="principle">
+        <div class="p-mark"><span class="mark is-fill" style="--mk:currentColor"></span></div>
+        <h3>표기가 곧 상태다</h3>
+        <p>승인·대기·완료·결제 — 모든 상태를 OMR ‘표기’ 하나로 말합니다. 채운 원은 완료, 빈 원은 미표기. 학생도 관리자도 색을 몰라도 형태로 읽습니다.</p>
+      </article>
+      <article class="principle">
+        <div class="p-mark" style="font-family:var(--font-mono);font-weight:600;font-size:.95rem">92</div>
+        <h3>숫자는 성적표처럼</h3>
+        <p>원점수·회차·석차·등급은 고정폭 서체와 tabular-nums로 자리를 맞춥니다. 누적 성적표가 한 눈에 정렬돼 읽히도록.</p>
+      </article>
+      <article class="principle">
+        <div class="p-mark">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="14" rx="2.5"/><path d="M3 9h18"/></svg>
+        </div>
+        <h3>단일 진입점</h3>
+        <p>여러 외부 서비스의 기능을 한 규칙 안에 담습니다. 학생은 헤매지 않고, 관리자는 카카오톡·수동 권한 부여 같은 반복을 덜어냅니다.</p>
+      </article>
+      <article class="principle">
+        <div class="p-mark">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 14.5A8 8 0 019.5 4a7 7 0 108.5 10.5z"/></svg>
+        </div>
+        <h3>낮과 밤 모두</h3>
+        <p>야간 자습·심야 복습영상 시청을 고려해 라이트/다크를 동등하게 설계했습니다. 두 테마 모두 대비와 위계를 지킵니다.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 색상 ============ -->
+<section class="section" id="color" aria-labelledby="col-h">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-idx" aria-hidden="true">§ 02</span>
+      <div>
+        <h2 class="sec-title" id="col-h">색상 토큰</h2>
+        <p class="sec-note">‘답안지(종이)’ 위 ‘흑연·잉크’라는 기준. 브랜드는 깊은 보라빛 인디고, 상태색은 통과의 초록·형광펜의 꿀빛·채점펜의 빨강에서 가져왔습니다. 아래 값은 <b id="themeLabelInline">라이트</b> 테마 기준이며, 상단 토글로 다크 값을 확인할 수 있습니다.</p>
+      </div>
+    </div>
+
+    <p class="pair-note"><span class="mark is-fill" style="--mk:var(--brand)"></span> 서피스 · 잉크</p>
+    <div class="swatch-grid" style="margin-bottom:1.4rem">
+      <div class="swatch"><div class="chip" style="background:var(--paper)"></div><div class="meta"><div class="nm">답안지 <span class="en">paper</span></div><div class="val"><span>--paper</span><b class="tnum" data-hex="paper"></b></div></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--surface); border-bottom:1px solid var(--line)"></div><div class="meta"><div class="nm">표면 <span class="en">surface</span></div><div class="val"><span>--surface</span><b class="tnum" data-hex="surface"></b></div></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--ink)"></div><div class="meta"><div class="nm">흑연 <span class="en">ink</span></div><div class="val"><span>--ink</span><b class="tnum" data-hex="ink"></b></div></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--ink-2)"></div><div class="meta"><div class="nm">보조 잉크 <span class="en">ink-2</span></div><div class="val"><span>--ink-2</span><b class="tnum" data-hex="ink-2"></b></div></div></div>
+    </div>
+
+    <p class="pair-note"><span class="mark is-fill" style="--mk:var(--brand)"></span> 브랜드 잉크 · 상태</p>
+    <div class="swatch-grid">
+      <div class="swatch"><div class="chip" style="background:var(--brand)"><span class="dotmark"><span class="mark is-fill" style="--mk:#fff"></span></span></div><div class="meta"><div class="nm">잉크(브랜드) <span class="en">brand</span></div><div class="val"><span>--brand</span><b class="tnum" data-hex="brand"></b></div></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--ok)"><span class="dotmark"><span class="mark is-fill" style="--mk:#fff"></span></span></div><div class="meta"><div class="nm">승인 <span class="en">ok</span></div><div class="val"><span>--ok</span><b class="tnum" data-hex="ok"></b></div></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--wait)"><span class="dotmark"><span class="mark is-dot" style="--mk:#fff"></span></span></div><div class="meta"><div class="nm">대기 <span class="en">wait</span></div><div class="val"><span>--wait</span><b class="tnum" data-hex="wait"></b></div></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--no)"><span class="dotmark"><span class="mark" style="--mk:#fff"></span></span></div><div class="meta"><div class="nm">미승인·채점 <span class="en">no</span></div><div class="val"><span>--no</span><b class="tnum" data-hex="no"></b></div></div></div>
+    </div>
+    <div class="app-note"><span class="mark is-fill" style="--mk:var(--brand)"></span><span>모든 상태색은 옅은 배경(<code>*-tint</code>)과 짙은 텍스트(<code>*-ink</code>) 짝을 함께 정의해, 필/배지에서 대비를 보장합니다.</span></div>
+  </div>
+</section>
+
+<!-- ============ 타이포그래피 ============ -->
+<section class="section" id="type" aria-labelledby="type-h">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-idx" aria-hidden="true">§ 03</span>
+      <div>
+        <h2 class="sec-title" id="type-h">타이포그래피</h2>
+        <p class="sec-note">두 개의 목소리. 사람에게 말하는 <b>휴머니스트 고딕</b>(시스템: Apple SD Gothic Neo · 맑은 고딕)과, 데이터를 말하는 <b>고정폭</b>. 성적·회차·날짜는 언제나 고정폭으로 성적표처럼 정렬됩니다. 웹폰트 없이 시스템 스택만 사용합니다.</p>
+      </div>
+    </div>
+
+    <div class="type-list">
+      <div class="type-row">
+        <div class="t-display">누적 성적표</div>
+        <div class="type-spec"><b>Display</b> · 고딕<br>800 · clamp 2.0–2.9rem<br>tracking −0.035em · 히어로</div>
+      </div>
+      <div class="type-row">
+        <div class="t-h1">복습영상 신청 현황</div>
+        <div class="type-spec"><b>Heading 1</b> · 고딕<br>760 · 1.7rem · −0.022em<br>섹션·화면 제목</div>
+      </div>
+      <div class="type-row">
+        <div class="t-h2">7월 1주차 주간테스트</div>
+        <div class="type-spec"><b>Heading 2</b> · 고딕<br>700 · 1.25rem<br>카드·블록 제목</div>
+      </div>
+      <div class="type-row">
+        <div class="t-body">승인된 영상은 다른 사이트로 이동하지 않고 LMS 화면 안에서 바로 재생됩니다. 수강 기간이 끝나면 재생 권한이 자동으로 만료됩니다.</div>
+        <div class="type-spec"><b>Body</b> · 고딕<br>420 · 1rem / 1.6<br>본문·설명</div>
+      </div>
+      <div class="type-row">
+        <div class="t-caption">담당 직원 배정 후 입장 링크가 생성됩니다 · D-2</div>
+        <div class="type-spec"><b>Caption</b> · 고딕<br>420 · 0.8rem<br>보조·메타</div>
+      </div>
+      <div class="type-row">
+        <div class="t-num tnum">92.5<span class="u">점</span> <span style="color:var(--ink-3)">·</span> 3<span class="u">등급</span> <span style="color:var(--ink-3)">·</span> 12<span class="u">/248</span></div>
+        <div class="type-spec"><b>Numeric / Data</b> · 고정폭<br>600 · tabular-nums<br>성적·회차·석차·ID·날짜</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 컴포넌트 ============ -->
+<section class="section" id="components" aria-labelledby="cmp-h">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-idx" aria-hidden="true">§ 04</span>
+      <div>
+        <h2 class="sec-title" id="cmp-h">핵심 컴포넌트</h2>
+        <p class="sec-note">실제 LMS 화면을 구성하는 최소 단위. 라디오·체크박스는 OMR 표기 형태를 그대로 씁니다.</p>
+      </div>
+    </div>
+
+    <div class="demo-grid">
+      <!-- 버튼 -->
+      <div class="panel">
+        <span class="p-label">버튼 · Buttons</span>
+        <div class="stack">
+          <div class="row-wrap">
+            <button class="btn" type="button"><span class="mark is-fill"></span> 신청 승인</button>
+            <button class="btn btn--secondary" type="button">임시 저장</button>
+            <button class="btn btn--danger" type="button">신청 거절</button>
+          </div>
+          <div class="row-wrap">
+            <button class="btn btn--ghost btn--sm" type="button">자세히 보기</button>
+            <button class="btn btn--secondary btn--sm" type="button">성적표 인쇄</button>
+            <button class="btn btn--sm" type="button" disabled>배정 대기 중</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 상태 필 -->
+      <div class="panel">
+        <span class="p-label">상태 필 · Status</span>
+        <div class="pills-wrap">
+          <span class="pill pill--ok"><span class="mark is-fill"></span>승인완료</span>
+          <span class="pill pill--ok"><span class="mark is-fill"></span>배정완료</span>
+          <span class="pill pill--ok"><span class="mark is-fill"></span>결제완료</span>
+          <span class="pill pill--brand"><span class="mark is-fill"></span>수강중</span>
+          <span class="pill pill--wait"><span class="mark is-dot"></span>대기중</span>
+          <span class="pill pill--wait"><span class="mark is-dot"></span>미배정</span>
+          <span class="pill pill--no"><span class="mark"></span>미승인</span>
+          <span class="pill pill--no"><span class="mark"></span>미결제</span>
+          <span class="pill pill--mute"><span class="mark is-x"></span>수강만료</span>
+        </div>
+        <div class="divider"></div>
+        <p class="muted" style="font-size:.8rem">채운 원 = 완료 계열 · 가운데 점 = 대기 계열 · 빈 원 = 미표기 · ✕ = 만료.</p>
+      </div>
+
+      <!-- 폼 필드 -->
+      <div class="panel">
+        <span class="p-label">입력 필드 · Form</span>
+        <div class="field">
+          <label for="f-name">학생 이름</label>
+          <input class="input" id="f-name" type="text" value="김서연" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="f-type">신청 유형</label>
+          <select class="select" id="f-type">
+            <option>복습영상</option><option>결석보강</option><option>클리닉(1:1 화상)</option>
+          </select>
+          <span class="hint">복습영상과 결석보강은 하나의 승인 플로우로 관리됩니다.</span>
+        </div>
+        <div class="field field--err">
+          <label for="f-date">희망 일시</label>
+          <input class="input" id="f-date" type="text" value="2026-07-09" aria-invalid="true" aria-describedby="f-date-err">
+          <span class="err" id="f-date-err"><span class="mark" style="--mk:var(--no)"></span>선택하신 시간대에 배정 가능한 직원이 없습니다.</span>
+        </div>
+      </div>
+
+      <!-- OMR 선택 -->
+      <div class="panel">
+        <span class="p-label">선택 · OMR 라디오 / 체크</span>
+        <p class="muted" style="font-size:.82rem; margin-bottom:.8rem">대상 강의(차시)를 선택하세요.</p>
+        <div class="omr-choice">
+          <label class="choice"><input type="radio" name="lec"><span class="bub"><span class="fill"></span></span> 미적분 11강 · 여러 가지 함수의 미분</label>
+          <label class="choice"><input type="radio" name="lec" checked><span class="bub"><span class="fill"></span></span> 미적분 12강 · 극한의 응용</label>
+          <label class="choice"><input type="radio" name="lec"><span class="bub"><span class="fill"></span></span> 확률과 통계 7강 · 조건부확률</label>
+        </div>
+        <div class="divider"></div>
+        <label class="choice chk"><input type="checkbox" checked><span class="bub"><span class="fill"></span></span> 성적 등록 시 알림톡으로 알려주기</label>
+      </div>
+
+      <!-- 데이터 표 -->
+      <div class="panel" style="grid-column:1 / -1">
+        <span class="p-label">데이터 표 · 누적 성적 (회차별)</span>
+        <div class="table-scroll">
+          <table class="data">
+            <thead>
+              <tr><th>회차</th><th>시험명</th><th class="num">원점수</th><th class="num">반평균</th><th>등급</th><th class="num">석차</th><th>상태</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="num">08</td><td>7월 1주차 주간테스트</td><td class="num">92.5</td><td class="num">78.3</td><td><span class="grade-tag">3등급</span></td><td class="num">12 / 248</td><td><span class="pill pill--ok"><span class="mark is-fill"></span>등록완료</span></td></tr>
+              <tr><td class="num">07</td><td>6월 전국모의고사</td><td class="num">88.0</td><td class="num">74.1</td><td><span class="grade-tag">3등급</span></td><td class="num">19 / 251</td><td><span class="pill pill--ok"><span class="mark is-fill"></span>등록완료</span></td></tr>
+              <tr><td class="num">06</td><td>미적분 단원평가 Ⅱ</td><td class="num">85.0</td><td class="num">71.9</td><td><span class="grade-tag">4등급</span></td><td class="num">33 / 246</td><td><span class="pill pill--wait"><span class="mark is-dot"></span>채점중</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 앱 내비 -->
+      <div class="panel">
+        <span class="p-label">내비게이션 · LMS 메뉴</span>
+        <nav class="appnav" aria-label="LMS 메뉴 예시">
+          <a href="#components" class="on"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg> 대시보드</a>
+          <a href="#components"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h10"/></svg> 누적 성적표</a>
+          <a href="#components"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M10 9l5 3-5 3z" fill="currentColor" stroke="none"/></svg> 복습영상·보강</a>
+          <a href="#components"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2.5" y="6" width="13" height="12" rx="2"/><path d="M15.5 10l6-3v10l-6-3z"/></svg> 1:1 클리닉</a>
+          <a href="#components"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="M4 10h16"/></svg> 교재 결제</a>
+          <a href="#components">문의<span class="cnt tnum">2</span></a>
+        </nav>
+      </div>
+
+      <!-- 카드 -->
+      <div class="panel">
+        <span class="p-label">카드 · Cards</span>
+        <div class="ucard" style="box-shadow:none; margin-bottom:.8rem">
+          <h4>이번 주 클리닉 <span class="pill pill--ok" style="font-size:.68rem"><span class="mark is-fill"></span>배정완료</span></h4>
+          <div style="font-family:var(--font-mono); font-weight:600; font-size:1.02rem">07/09 (수) 19:00</div>
+          <p class="muted" style="font-size:.82rem; margin-top:.25rem">담당 · 박지훈 선생님 · 수학 심화</p>
+        </div>
+        <div class="upload">
+          <div class="uic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M8 8l4-4 4 4"/><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg></div>
+          <div class="ut">
+            <b>6월_전국모의고사_채점결과.xlsx</b>
+            <div class="bar"><i></i></div>
+            <span class="tnum">업로드 중 · 72% · 248명 성적 반영 예정</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============ 적용 화면 ============ -->
+<section class="section" id="applied" aria-labelledby="app-h">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-idx" aria-hidden="true">§ 05</span>
+      <div>
+        <h2 class="sec-title" id="app-h">적용 화면</h2>
+        <p class="sec-note">토큰과 컴포넌트를 실제 LMS 흐름에 얹은 두 화면. 학생의 대시보드와 관리자의 승인·배정 화면입니다.</p>
+      </div>
+    </div>
+
+    <!-- 학생 대시보드 -->
+    <div class="app-frame" style="margin-bottom:1.6rem">
+      <div class="app-bar">
+        <span class="app-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="app-url">lms.edujc.kr / 대시보드</span>
+        <span class="app-role">학생</span>
+      </div>
+      <div class="app-body">
+        <aside class="app-side">
+          <div class="who">
+            <span class="avatar">김</span>
+            <span><b style="font-size:.9rem">김서연</b><br><span class="muted" style="font-size:.74rem">고3 · 수학 심화반</span></span>
+          </div>
+          <nav class="appnav" aria-label="학생 메뉴">
+            <a class="on" href="#applied"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg> 대시보드</a>
+            <a href="#applied"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h10"/></svg> 누적 성적표</a>
+            <a href="#applied"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M10 9l5 3-5 3z" fill="currentColor" stroke="none"/></svg> 복습영상·보강</a>
+            <a href="#applied"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2.5" y="6" width="13" height="12" rx="2"/><path d="M15.5 10l6-3v10l-6-3z"/></svg> 1:1 클리닉</a>
+            <a href="#applied"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="M4 10h16"/></svg> 교재 결제</a>
+          </nav>
+        </aside>
+
+        <div class="app-main">
+          <div>
+            <h3 class="app-h">안녕하세요, 김서연 학생 👋</h3>
+            <p class="app-sub">이번 주 예정된 클리닉이 배정되었어요. 복습영상 1건은 수강 기간이 5일 남았습니다.</p>
+          </div>
+
+          <div class="cards2">
+            <!-- 누적 성적 -->
+            <div class="ucard">
+              <h4>누적 성적 · 최근 회차 <a class="link" href="#applied">전체 성적표 →</a></h4>
+              <div class="score-head">
+                <div class="score-big tnum">92.5<span class="u">점</span></div>
+                <span class="delta up tnum">▲ 4.5 <span style="font-weight:500">직전 대비</span></span>
+              </div>
+              <div class="score-meta">
+                <span class="m">반평균<b class="tnum">78.3</b></span>
+                <span class="m">석차<b class="tnum">12 / 248</b></span>
+                <span class="m">등급<b class="tnum">3</b></span>
+              </div>
+              <!-- 회차 추이 스파크라인 -->
+              <div class="spark">
+                <svg viewBox="0 0 260 66" width="100%" height="66" role="img" aria-label="1회차부터 8회차까지 원점수 추이: 76, 79, 82, 80, 85, 88, 88, 92.5">
+                  <defs>
+                    <linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0" stop-color="var(--brand)" stop-opacity=".22"/>
+                      <stop offset="1" stop-color="var(--brand)" stop-opacity="0"/>
+                    </linearGradient>
+                  </defs>
+                  <path d="M6,44 L42,38 L78,30 L114,33 L150,24 L186,17 L222,17 L254,8 L254,60 L6,60 Z" fill="url(#sg)"/>
+                  <path d="M6,44 L42,38 L78,30 L114,33 L150,24 L186,17 L222,17 L254,8" fill="none" stroke="var(--brand)" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+                  <circle cx="254" cy="8" r="4.5" fill="var(--brand)" stroke="var(--surface)" stroke-width="2"/>
+                </svg>
+                <div class="spark-x"><span>1회</span><span>3회</span><span>5회</span><span>7회</span><span>8회</span></div>
+              </div>
+            </div>
+
+            <!-- 클리닉 + 결제 -->
+            <div style="display:flex; flex-direction:column; gap:1rem">
+              <div class="clinic">
+                <div class="c-when">07/09 (수) 19:00</div>
+                <div class="c-who">담당 · 박지훈 선생님 · 미적분 오답 클리닉</div>
+                <span class="c-pill"><span class="mark is-fill" style="--mk:currentColor"></span> 승인·배정완료</span>
+                <button class="btn" type="button" data-toast="입장 시간 10분 전부터 활성화됩니다.">화상 클리닉 입장</button>
+              </div>
+              <div class="ucard" style="padding-top:.9rem;padding-bottom:.9rem">
+                <h4 style="margin-bottom:.4rem">교재 결제</h4>
+                <div class="payline">
+                  <span class="bk" aria-hidden="true"></span>
+                  <span class="pt"><b>수학Ⅱ 심화 워크북</b><span>결제선생 · 07/01 결제</span></span>
+                  <span class="pill pill--ok"><span class="mark is-fill"></span>결제완료</span>
+                </div>
+                <div class="payline">
+                  <span class="bk" aria-hidden="true"></span>
+                  <span class="pt"><b>미적분 기출 문제집</b><span>결제선생 · 청구서 발송됨</span></span>
+                  <span class="pill pill--no"><span class="mark"></span>미결제</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 신청 현황 -->
+          <div class="ucard" style="margin-top:1rem">
+            <h4>복습영상 · 결석보강 신청 현황 <a class="link" href="#applied">신청하기 →</a></h4>
+            <div class="reqlist">
+              <div class="req">
+                <span class="rtype">복습영상</span>
+                <span class="rbody"><span class="rtitle">미적분 12강 · 극한의 응용</span><br><span class="rmeta">수강기간 07/04–07/11</span></span>
+                <span class="rstat"><span class="pill pill--brand"><span class="mark is-fill"></span>수강중 · D-5</span></span>
+              </div>
+              <div class="req">
+                <span class="rtype">결석보강</span>
+                <span class="rbody"><span class="rtitle">확률과 통계 7강 · 조건부확률</span><br><span class="rmeta">신청일 07/06</span></span>
+                <span class="rstat"><span class="pill pill--wait"><span class="mark is-dot"></span>승인 대기중</span></span>
+              </div>
+              <div class="req">
+                <span class="rtype">복습영상</span>
+                <span class="rbody"><span class="rtitle">미적분 9강 · 도함수의 활용</span><br><span class="rmeta">수강기간 06/20–06/27</span></span>
+                <span class="rstat"><span class="pill pill--mute"><span class="mark is-x"></span>수강만료</span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 관리자 화면 -->
+    <div class="app-frame">
+      <div class="app-bar">
+        <span class="app-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="app-url">lms.edujc.kr / 관리 / 승인·배정</span>
+        <span class="app-role admin">관리자 · 연구실</span>
+      </div>
+      <div class="app-body">
+        <aside class="app-side">
+          <div class="who">
+            <span class="avatar" style="background:var(--wait); color:#2a1c04">최</span>
+            <span><b style="font-size:.9rem">최은영</b><br><span class="muted" style="font-size:.74rem">연구실 · 운영</span></span>
+          </div>
+          <nav class="appnav" aria-label="관리자 메뉴">
+            <a class="on" href="#applied"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h9"/></svg> 승인 대기<span class="cnt tnum">4</span></a>
+            <a href="#applied"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2.5" y="6" width="13" height="12" rx="2"/><path d="M15.5 10l6-3v10l-6-3z"/></svg> 클리닉 배정</a>
+            <a href="#applied"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M8 8l4-4 4 4"/><path d="M4 20h16"/></svg> 성적 업로드</a>
+            <a href="#applied"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="M4 10h16"/></svg> 결제 현황</a>
+            <a href="#applied"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h10"/></svg> 공지·정오표</a>
+          </nav>
+        </aside>
+
+        <div class="app-main">
+          <div>
+            <h3 class="app-h">승인 대기 <span class="pill pill--wait" style="vertical-align:middle"><span class="mark is-dot"></span>4건</span></h3>
+            <p class="app-sub">복습영상·결석보강·클리닉 신청을 확인하고 승인/거절하세요. 클리닉은 담당 직원 배정이 필요합니다.</p>
+          </div>
+
+          <div class="table-scroll" style="margin-top:1.1rem">
+            <table class="data">
+              <thead>
+                <tr><th>유형</th><th>학생</th><th>대상 · 희망일시</th><th>신청일</th><th>상태</th><th style="text-align:right">처리</th></tr>
+              </thead>
+              <tbody>
+                <tr data-row>
+                  <td><span class="req" style="padding:0"><span class="rtype">복습영상</span></span></td>
+                  <td>이수민 <span class="muted tnum">고2</span></td>
+                  <td>확률과 통계 7강 · 조건부확률</td>
+                  <td class="num">07/06</td>
+                  <td data-pill><span class="pill pill--wait"><span class="mark is-dot"></span>대기중</span></td>
+                  <td style="text-align:right"><span class="row-wrap" style="justify-content:flex-end; gap:.35rem" data-actions><button class="btn btn--sm" data-act="ok" type="button">승인</button><button class="btn btn--secondary btn--sm" data-act="no" type="button">거절</button></span></td>
+                </tr>
+                <tr data-row>
+                  <td><span class="rtype clinic">클리닉</span></td>
+                  <td>정민호 <span class="muted tnum">고3</span></td>
+                  <td>07/09 (수) 20:00 · 미적분 오답</td>
+                  <td class="num">07/06</td>
+                  <td data-pill><span class="pill pill--wait"><span class="mark is-dot"></span>배정 필요</span></td>
+                  <td style="text-align:right"><span class="row-wrap" style="justify-content:flex-end; gap:.35rem" data-actions><button class="btn btn--sm" data-act="ok" type="button">배정</button><button class="btn btn--secondary btn--sm" data-act="no" type="button">거절</button></span></td>
+                </tr>
+                <tr data-row>
+                  <td><span class="rtype">결석보강</span></td>
+                  <td>박준영 <span class="muted tnum">고3</span></td>
+                  <td>미적분 12강 · 극한의 응용</td>
+                  <td class="num">07/05</td>
+                  <td data-pill><span class="pill pill--wait"><span class="mark is-dot"></span>대기중</span></td>
+                  <td style="text-align:right"><span class="row-wrap" style="justify-content:flex-end; gap:.35rem" data-actions><button class="btn btn--sm" data-act="ok" type="button">승인</button><button class="btn btn--secondary btn--sm" data-act="no" type="button">거절</button></span></td>
+                </tr>
+                <tr data-row>
+                  <td><span class="rtype clinic">클리닉</span></td>
+                  <td>김서연 <span class="muted tnum">고3</span></td>
+                  <td>07/09 (수) 19:00 · 미적분 오답</td>
+                  <td class="num">07/05</td>
+                  <td data-pill><span class="pill pill--ok"><span class="mark is-fill"></span>배정완료 · 박지훈T</span></td>
+                  <td style="text-align:right"><span class="row-wrap" style="justify-content:flex-end; gap:.35rem" data-actions><button class="btn btn--secondary btn--sm" type="button" disabled>처리완료</button></span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 클리닉 배정 현황 -->
+          <div class="ucard" style="margin-top:1.1rem">
+            <h4>07/09 (수) 클리닉 화상 배정 현황 <span class="muted tnum" style="font-weight:500">가능 직원 3명</span></h4>
+            <div class="assign">
+              <div class="slot">
+                <span class="time">19:00</span>
+                <span class="flow"><span class="stu">김서연</span><span class="arw">→</span><span class="tut">박지훈 선생님</span></span>
+                <span class="act"><span class="pill pill--ok"><span class="mark is-fill"></span>방 생성됨</span></span>
+              </div>
+              <div class="slot">
+                <span class="time">20:00</span>
+                <span class="flow"><span class="stu">정민호</span><span class="arw">→</span><span class="tut muted">담당 미지정</span></span>
+                <span class="act"><button class="btn btn--sm" type="button" data-toast="배정 가능한 직원: 박지훈, 최은영">직원 배정</button></span>
+              </div>
+              <div class="slot">
+                <span class="time">20:00</span>
+                <span class="flow"><span class="stu">이수민</span><span class="arw">→</span><span class="tut">최은영 선생님</span></span>
+                <span class="act"><span class="pill pill--wait"><span class="mark is-dot"></span>입장 대기</span></span>
+              </div>
+            </div>
+            <div class="app-note"><span class="mark is-fill" style="--mk:var(--brand)"></span><span>배정 확정 시 학생·담당 직원만 입장 가능한 WebRTC 화상방이 자동 생성됩니다. (외부 툴 연동 없음)</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+</main>
+
+<!-- ============ 푸터 ============ -->
+<footer class="foot">
+  <div class="wrap foot-in">
+    <span class="fmark">
+      <svg width="20" height="20" viewBox="0 0 26 26" fill="none" aria-hidden="true"><rect x="1" y="1" width="24" height="24" rx="7" fill="var(--brand)"/><circle cx="13" cy="13" r="7" fill="none" stroke="var(--on-brand)" stroke-width="2.4"/><circle cx="13" cy="13" r="3" fill="var(--on-brand)"/></svg>
+      에듀제이씨 학원 · LMS 디자인 시스템
+    </span>
+    <span>문서 <code>v1.0</code> · 단일 HTML · 시스템 폰트 · 라이트/다크 · 2026</span>
+  </div>
+</footer>
+
+<!-- ============ 토스트 ============ -->
+<div id="toast" role="status" aria-live="polite" style="position:fixed;left:50%;bottom:26px;transform:translate(-50%,140%);background:var(--ink);color:var(--paper);font-size:.85rem;font-weight:560;padding:.7rem 1.1rem;border-radius:999px;box-shadow:var(--shadow-2);z-index:80;transition:transform .3s cubic-bezier(.2,.8,.3,1.1);max-width:90vw"></div>
+
+<script>
+(function(){
+  "use strict";
+  var root = document.documentElement;
+  var KEY = "ejc-theme";
+
+  /* ---- 테마 토글 ---- */
+  var saved = null;
+  try { saved = localStorage.getItem(KEY); } catch(e){}
+  if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+
+  var btn = document.getElementById("themeBtn");
+  var lbl = document.getElementById("themeLbl");
+  var inlineLbl = document.getElementById("themeLabelInline");
+
+  function osDark(){ return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches; }
+  function current(){
+    var t = root.getAttribute("data-theme");
+    if (t === "light" || t === "dark") return t;
+    return osDark() ? "dark" : "light";
+  }
+  function sync(){
+    var isDark = current() === "dark";
+    if (lbl) lbl.textContent = isDark ? "라이트" : "다크";
+    if (btn) btn.setAttribute("aria-pressed", String(isDark));
+    if (inlineLbl) inlineLbl.textContent = isDark ? "다크" : "라이트";
+    paintHex();
+  }
+  if (btn) btn.addEventListener("click", function(){
+    var next = current() === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem(KEY, next); } catch(e){}
+    sync();
+  });
+
+  /* ---- 색상 토큰: 실제 계산값을 hex로 표기 ---- */
+  function toHex(v){
+    v = (v||"").trim();
+    if (v.charAt(0) === "#") return v.toUpperCase();
+    var m = v.match(/rgba?\(([^)]+)\)/i);
+    if (!m) return v;
+    var p = m[1].split(/[ ,\/]+/).filter(Boolean).map(Number);
+    function h(n){ n = Math.max(0, Math.min(255, Math.round(n))); return (n<16?"0":"")+n.toString(16); }
+    return ("#"+h(p[0])+h(p[1])+h(p[2])).toUpperCase();
+  }
+  function paintHex(){
+    var cs = getComputedStyle(root);
+    document.querySelectorAll("[data-hex]").forEach(function(el){
+      var name = el.getAttribute("data-hex");
+      el.textContent = toHex(cs.getPropertyValue("--" + name));
+    });
+  }
+
+  /* ---- 스크롤 스파이 ---- */
+  var links = Array.prototype.slice.call(document.querySelectorAll(".navlink"));
+  var map = {};
+  links.forEach(function(a){ map[a.getAttribute("href").slice(1)] = a; });
+  if ("IntersectionObserver" in window){
+    var obs = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        var a = map[en.target.id];
+        if (!a) return;
+        if (en.isIntersecting){
+          links.forEach(function(l){ l.classList.remove("is-active"); });
+          a.classList.add("is-active");
+        }
+      });
+    }, { rootMargin: "-45% 0px -50% 0px", threshold: 0 });
+    ["direction","color","type","components","applied"].forEach(function(id){
+      var s = document.getElementById(id); if (s) obs.observe(s);
+    });
+  }
+
+  /* ---- 관리자 승인/거절: 표기가 곧 상태 ---- */
+  function setPill(cell, kind){
+    var html = {
+      ok: '<span class="pill pill--ok"><span class="mark is-fill"></span>승인완료</span>',
+      no: '<span class="pill pill--no"><span class="mark"></span>거절됨</span>'
+    }[kind];
+    cell.innerHTML = html;
+  }
+  document.querySelectorAll("[data-act]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var row = b.closest("[data-row]");
+      if (!row) return;
+      var pill = row.querySelector("[data-pill]");
+      var acts = row.querySelector("[data-actions]");
+      var kind = b.getAttribute("data-act");
+      if (pill) setPill(pill, kind);
+      if (acts) acts.innerHTML = '<button class="btn btn--secondary btn--sm" type="button" disabled>처리완료</button>';
+      toast(kind === "ok" ? "신청을 승인했습니다. 학생에게 알림톡이 발송됩니다." : "신청을 거절했습니다.");
+    });
+  });
+
+  /* ---- 토스트 ---- */
+  var toastEl = document.getElementById("toast");
+  var toastT;
+  function toast(msg){
+    if (!toastEl) return;
+    toastEl.textContent = msg;
+    toastEl.style.transform = "translate(-50%, 0)";
+    clearTimeout(toastT);
+    toastT = setTimeout(function(){ toastEl.style.transform = "translate(-50%, 140%)"; }, 2600);
+  }
+  document.querySelectorAll("[data-toast]").forEach(function(el){
+    el.addEventListener("click", function(){ toast(el.getAttribute("data-toast")); });
+  });
+
+  sync();
+  if (window.matchMedia){
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    (mq.addEventListener ? mq.addEventListener.bind(mq,"change") : mq.addListener.bind(mq))(sync);
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,164 @@
+/* =========================================================================
+   LMS 개선 보고 — 공유 디자인 시스템 (담백 / 워크플로우 비교형)
+   원칙: As-is·To-be를 세로 워크플로우로 나란히 비교. 장식 최소화, 가독성 우선.
+   ⚠️ 모든 페이지의 유일한 스타일 소스. 페이지에 <style>/인라인 스타일 추가 금지.
+   ========================================================================= */
+
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css');
+
+:root{
+  --paper:#FFFFFF;
+  --ink:#16181D;
+  --ink-soft:#565E6C;
+  --ink-faint:#98A0AC;
+  --line:#E6E8EC;
+  --surface:#F7F8FA;
+  --navy:#1E3A63;
+  --navy-soft:#33507D;
+  --navy-line:#D8E1EF;
+  --wrap:1080px;
+  --font:'Pretendard Variable','Pretendard',-apple-system,BlinkMacSystemFont,system-ui,'Segoe UI','Malgun Gothic',sans-serif;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;font-family:var(--font);background:var(--paper);color:var(--ink);
+  font-size:16px;line-height:1.65;font-weight:400;letter-spacing:-0.006em;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  font-variant-numeric:tabular-nums;
+}
+h1,h2,h3,p,ul,ol{margin:0}
+ul,ol{padding:0;list-style:none}
+a{color:inherit;text-decoration:none}
+strong{font-weight:640}
+:focus-visible{outline:2px solid var(--navy);outline-offset:3px;border-radius:3px}
+
+/* ---------- masthead ---------- */
+.masthead{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+  padding:14px clamp(20px,5vw,48px);border-bottom:1px solid var(--line);
+}
+.masthead__home{font-weight:680;font-size:.9rem;color:var(--ink);display:inline-flex;align-items:center;gap:8px}
+.masthead__home::before{content:"";width:8px;height:8px;border-radius:2px;background:var(--navy)}
+.masthead__nav{display:flex;gap:2px;flex-wrap:wrap}
+.masthead__nav a{font-size:.82rem;font-weight:520;color:var(--ink-soft);padding:5px 10px;border-radius:6px}
+.masthead__nav a:hover{background:var(--surface);color:var(--ink)}
+.masthead__nav a[aria-current="page"]{color:var(--navy);font-weight:660}
+
+/* ---------- layout ---------- */
+.wrap{max-width:var(--wrap);margin:0 auto;padding:clamp(36px,5vw,60px) clamp(20px,5vw,48px) 40px}
+section{margin-top:clamp(36px,5vw,56px)}
+section:first-child{margin-top:0}
+
+.eyebrow{font-size:.74rem;font-weight:640;letter-spacing:.06em;color:var(--navy-soft);margin-bottom:12px}
+
+/* ---------- document head ---------- */
+.doc-head{max-width:62ch}
+.doc-title{font-weight:760;letter-spacing:-0.026em;line-height:1.12;font-size:clamp(1.7rem,3.6vw,2.5rem)}
+.doc-title .accent{color:var(--navy)}
+.lead{margin-top:14px;font-size:clamp(1rem,1.5vw,1.14rem);color:var(--ink-soft);line-height:1.55;max-width:64ch}
+
+/* =========================================================================
+   FLOW COMPARE — As-is / To-be 세로 워크플로우 나란히
+   ========================================================================= */
+.flowcompare{display:grid;grid-template-columns:1fr 1fr;gap:clamp(20px,3.5vw,40px);align-items:start}
+
+.flow{min-width:0}
+.flow__cap{
+  display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;
+  padding-bottom:12px;margin-bottom:22px;border-bottom:1px solid var(--line);
+}
+.flow__cap b{font-size:.98rem;font-weight:700;letter-spacing:.01em}
+.flow__cap span{font-size:.8rem;color:var(--ink-faint)}
+.flow--asis .flow__cap b{color:var(--ink-soft)}
+.flow--tobe .flow__cap b{color:var(--navy)}
+
+/* nodes */
+.flowlist{display:flex;flex-direction:column}
+.node{position:relative;border:1px solid var(--line);border-radius:10px;padding:14px 16px 14px 46px;background:#fff}
+.node + .node{margin-top:30px}
+.node:not(:last-child)::after{
+  content:"↓";position:absolute;left:0;right:0;bottom:-23px;
+  text-align:center;color:var(--ink-faint);font-size:.9rem;line-height:1;
+}
+.node__n{
+  position:absolute;left:14px;top:13px;width:22px;height:22px;border-radius:6px;
+  display:grid;place-items:center;font-size:.74rem;font-weight:680;
+}
+.node__t{font-size:.95rem;line-height:1.5}
+.node__t strong{color:var(--ink)}
+
+.flow--asis .node{background:var(--surface);border-color:var(--line)}
+.flow--asis .node__t{color:#565E6C}
+.flow--asis .node__n{background:#E4E7EC;color:#727A86}
+
+.flow--tobe .node{background:#fff;border-color:var(--navy-line);border-left:3px solid var(--navy);padding-left:44px}
+.flow--tobe .node__t{color:var(--ink)}
+.flow--tobe .node__n{background:var(--navy);color:#fff}
+
+/* =========================================================================
+   GAINS — 개선 효과 (담백한 목록, 가독성 우선)
+   ========================================================================= */
+.gains{border-top:1px solid var(--line);padding-top:clamp(28px,3.5vw,40px)}
+.gainlist{margin-top:16px;display:grid;gap:11px;max-width:74ch}
+.gain{position:relative;padding-left:20px;color:var(--ink-soft);line-height:1.55}
+.gain::before{content:"";position:absolute;left:2px;top:.62em;width:6px;height:6px;border-radius:50%;background:var(--navy)}
+.gain strong{color:var(--ink);font-weight:620}
+
+/* ---------- caveats (참고/제약, 아주 담백) ---------- */
+.caveats{margin-top:26px;max-width:74ch;color:var(--ink-faint);font-size:.87rem;line-height:1.55}
+.caveats__label{font-weight:620;color:var(--ink-soft);margin-right:4px}
+.caveat + .caveat{margin-top:6px}
+
+/* =========================================================================
+   INDEX — 개요 (담백)
+   ========================================================================= */
+.overview{max-width:70ch;display:grid;gap:14px;margin-top:22px}
+.overview p{color:var(--ink-soft);line-height:1.6}
+.overview .label{font-size:.74rem;font-weight:660;letter-spacing:.06em;color:var(--navy-soft);margin-bottom:2px}
+
+.syslist{border-top:1px solid var(--line);margin-top:8px}
+.sysrow{display:flex;gap:16px;align-items:baseline;padding:18px 2px;border-bottom:1px solid var(--line)}
+.sysrow:hover{background:var(--surface)}
+.sysrow__n{font-size:.78rem;font-weight:680;color:var(--ink-faint);white-space:nowrap;min-width:64px}
+.sysrow__t{font-weight:660;font-size:1.05rem;letter-spacing:-0.01em;white-space:nowrap}
+.sysrow__d{color:var(--ink-soft);font-size:.92rem;flex:1;line-height:1.5}
+.sysrow__go{color:var(--navy);font-weight:600;font-size:.9rem}
+.sysrow__go::after{content:" →"}
+
+.threads{margin-top:8px;display:grid;gap:9px;max-width:74ch}
+.thread{position:relative;padding-left:20px;color:var(--ink-soft);line-height:1.55}
+.thread::before{content:"";position:absolute;left:2px;top:.62em;width:6px;height:6px;border-radius:50%;background:var(--navy)}
+.thread strong{color:var(--ink);font-weight:620}
+
+/* ---------- pager ---------- */
+.pager{display:flex;justify-content:space-between;gap:14px;border-top:1px solid var(--line);padding-top:22px;margin-top:clamp(36px,5vw,56px)}
+.pager a{display:flex;flex-direction:column;gap:2px;font-size:.9rem;font-weight:580;color:var(--ink)}
+.pager a:hover{color:var(--navy)}
+.pager__k{font-size:.72rem;font-weight:600;color:var(--ink-faint)}
+.pager__next{text-align:right;margin-left:auto}
+
+/* ---------- footer ---------- */
+.foot{border-top:1px solid var(--line);color:var(--ink-faint);font-size:.8rem;
+  padding:22px clamp(20px,5vw,48px);max-width:var(--wrap);margin:32px auto 0;
+  display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+
+/* =========================================================================
+   RESPONSIVE
+   ========================================================================= */
+@media (max-width:760px){
+  .flowcompare{grid-template-columns:1fr;gap:34px}
+  .sysrow{flex-wrap:wrap;gap:4px 12px}
+  .sysrow__d{flex-basis:100%;order:3}
+}
+
+/* ---------- print ---------- */
+@media print{
+  .masthead,.pager,.sysrow__go{display:none}
+  body{font-size:11pt}
+  .wrap{padding:0}
+  section{margin-top:20px;break-inside:avoid}
+  .node,.sysrow{break-inside:avoid}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
