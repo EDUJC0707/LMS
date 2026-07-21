@@ -52,6 +52,9 @@ LOCAL_APPS = [
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
+# 커스텀 유저 모델 (accounts.User, 세션 인증 — docs/db 도메인 1 · PRD §5)
+AUTH_USER_MODEL = "accounts.User"
+
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",  # CORS 는 가능한 상단에
     "django.middleware.security.SecurityMiddleware",
@@ -132,9 +135,11 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 20,
 }
 
-# --- CORS ---------------------------------------------------------------
+# --- CORS / CSRF --------------------------------------------------------
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=["http://localhost:5173"])
 CORS_ALLOW_CREDENTIALS = True
+# Vite(5173) → Django 세션 인증 쓰기 요청이 CSRF 403으로 막히는 것 실측 → 신뢰 오리진 등록.
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=["http://localhost:5173"])
 
 # --- 오브젝트 스토리지 (Tigris/S3, django-storages) ----------------------
 # 버킷명이 있으면 S3(Tigris) 사용, 없으면 로컬 파일시스템(MEDIA_ROOT).

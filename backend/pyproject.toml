@@ -39,3 +39,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "DJ"]
+
+[tool.ruff.lint.per-file-ignores]
+# 마이그레이션은 자동 생성물 — 손편집하지 않으므로 포맷 규칙에서 제외.
+"**/migrations/*" = ["E501", "I001"]

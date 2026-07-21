@@ -24,5 +24,5 @@ COPY backend/ /app/
 EXPOSE 8000
 
 # 웹 프로세스 기본 커맨드(워커는 fly.toml [processes] 에서 커맨드만 교체).
-# collectstatic 은 릴리즈 커맨드에서 수행 권장.
-CMD ["uv", "run", "gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3"]
+# .venv 바이너리 직접 실행 — uv run 의 부팅 시 재동기화/다운로드 지연 제거.
+CMD [".venv/bin/gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3"]

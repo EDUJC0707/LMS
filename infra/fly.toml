@@ -14,13 +14,15 @@ primary_region = "nrt"     # 도쿄
   PORT = "8000"
 
 # 배포마다 1회 실행(웹/워커 교체 전) — DB 마이그레이션. Postgres attach 후부터 성공.
+# .venv 바이너리 직접 실행(=uv run 재동기화/다운로드 회피 → 빠른 부팅).
 [deploy]
-  release_command = "uv run python manage.py migrate --noinput"
+  release_command = ".venv/bin/python manage.py migrate --noinput"
 
 # 프로세스 그룹: web(gunicorn) + worker(celery). 동일 이미지, 커맨드만 다름.
+# .venv 바이너리 직접 실행 — uv run 이 부팅마다 dev deps 재설치/바이트컴파일하는 지연 제거.
 [processes]
-  web = "uv run gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
-  worker = "uv run celery -A config worker -l info"
+  web = ".venv/bin/gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+  worker = ".venv/bin/celery -A config worker -l info"
 
 [http_service]
   internal_port = 8000
@@ -35,9 +37,9 @@ primary_region = "nrt"     # 도쿄
   [[http_service.checks]]
     method = "GET"
     path = "/healthz"
-    interval = "15s"
-    timeout = "2s"
-    grace_period = "10s"
+    interval = "20s"
+    timeout = "5s"
+    grace_period = "40s"   # 첫 부팅(psycopg/celery import 등) 여유
 
 [[vm]]
   size = "shared-cpu-1x"

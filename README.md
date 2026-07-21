@@ -19,7 +19,6 @@
 .
 ├── docker-compose.yml     # 로컬 인프라: PostgreSQL + Redis
 ├── Makefile               # up/down/dev-backend/dev-frontend/migrate/test/worker
-├── .env.example           # 백엔드 env 템플릿
 ├── backend/               # Django 프로젝트
 │   ├── pyproject.toml     # uv 기반 의존성
 │   ├── manage.py
@@ -45,9 +44,10 @@ docker compose up -d          # 또는: make up
 
 ```bash
 cd backend
-cp ../.env.example .env        # 값 확인/수정 (기본값이 docker-compose와 일치)
 uv sync                        # .venv 생성 + 의존성 설치
-uv run python manage.py migrate
+# .env 없이도 기동된다 — settings 기본값이 docker-compose 자격증명과 일치.
+# 값을 바꿀 때만 backend/.env 를 만들어 DATABASE_URL 등을 재정의한다.
+uv run python manage.py migrate   # 모델(마이그레이션)이 있는 상태에서 실행
 uv run python manage.py runserver
 # Celery 워커는 별도 터미널: uv run celery -A config worker -l info  (또는 make worker)
 ```
