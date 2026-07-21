@@ -1,6 +1,6 @@
 # 한종철 LMS — 데이터베이스 설계 (2026-07-15 개정)
 
-> **기준**: 2026-07-14 baseline 설계(`impact-report/lms-db-spec.html`, 7 도메인 24표)를 **2026-07-15 방향확정 회의**의 확정/변경 45건(서브시스템 13개)으로 **증분 확장(delta)**한 문서.
+> **기준**: 2026-07-14 baseline 설계(`lms-db-spec.html`, 7 도메인 24표)를 **2026-07-15 방향확정 회의**의 확정/변경 45건(서브시스템 13개)으로 **증분 확장(delta)**한 문서.
 > **DBMS**: PostgreSQL. 프레임워크 비종속 — 순수 SQL DDL + 논리 스키마(Django ORM / SQLAlchemy 어느 쪽으로도 매핑 가능).
 > **설계 원칙**(`.claude/database-designer/SKILL.md` 준수): 정규화 3NF/BCNF 지향, 계산값만 선택적 비정규화(캐시), FK/UQ/NOT NULL 명시, 복합 인덱스는 선택도 높은 컬럼 우선, 스키마 변경은 expand-contract(무중단), 큰 파일은 경로만 저장, 상태·유형은 값 집합(CHECK 하드코딩 지양 → 값 추가 시 무마이그레이션).
 > **허브 2개 유지**: `users`(계정) · `students`(학생/원번). 원번 `unique_id`는 단독 UQ가 아닌 **이름과 함께 쓰는 매칭키**, PK는 대리키(surrogate) `student_id` 유지.

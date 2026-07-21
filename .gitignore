@@ -1,3 +1,19 @@
-temp/
 .DS_Store
-EduJC AI.pptx
+
+# 의존성
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+
+# 환경변수·시크릿
+.env
+.env.local
+
+# 아카이브 — 과거 산출물·리서치·회의록·디자인 원본·RPA 프로토타입
+# (로그인 쿠키가 든 chrome-profile, 대용량 이미지 포함. 로컬 보관, git 제외)
+archive/
+
+# .claude/ 는 커밋 대상이다 (CLAUDE.md = 프로젝트 규칙). 무시하지 말 것.
+# 단, 기기별 로컬 설정만 제외.
+.claude/settings.local.json

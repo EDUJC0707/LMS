@@ -29,10 +29,8 @@ backend/staticfiles/
 
 # 문서 · 산출물 · 실험(런타임 불필요)
 docs/
-deck/
-report/
-temp/
 *.pptx
 *.pdf
 README.md
 Makefile
+archive/

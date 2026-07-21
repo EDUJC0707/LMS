@@ -6,7 +6,8 @@ app = "edujc-lms"          # LMS 백엔드 앱. (문제툴은 별도 레포/앱 
 primary_region = "nrt"     # 도쿄
 
 [build]
-  dockerfile = "infra/Dockerfile"
+  # fly.toml 위치(infra/) 기준 상대경로. 빌드 컨텍스트는 실행 위치(레포 루트).
+  dockerfile = "Dockerfile"
 
 [env]
   DJANGO_SETTINGS_MODULE = "config.settings.prod"
