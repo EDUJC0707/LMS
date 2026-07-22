@@ -2,6 +2,18 @@
 
 > 완료 기록 누적. 최신이 위.
 
+## 2026-07-22 (오후) — 백엔드 API 완주
+
+- **API 슬라이스 1~8 전부 구현·커밋** (외부 연동 제외 백엔드 완료, 테스트 587건):
+  ①인증(로그인 3종·/me 기능목록=메뉴계약·권한부품) ②학생/학부모 홈(게이팅 7지점)
+  ③출결 SSOT+트리거(출석→영상 자동지급·결석→상담 대기열·동보 체인)
+  ④동보·클리닉 신청(정원 잠금·8시 마감·노쇼) ⑤성적표(PRD 3.2.1 ①~⑤, 캐시 우선→조회 계산)
+  ⑥게시판(권한 매트릭스·비밀글 마스킹) ⑦워크북(업로드·원번+이름 매칭·열람)
+  ⑧관리자 운영(권한 매트릭스 IsOwner·계정 일괄발급 행단위 savepoint·클리닉 배정/노쇼 2회 밴·상담 대기열·알림 내역)
+- 임시 정책(외부 연동 대기): 초기 비밀번호는 응답 반환(알림톡 연동 시 발송 전환), meet_url 수동 입력(Meet API 후순위), 알림은 행 기록만(발송 배치가 소비)
+- 프런트 A/B/C: 로고(유리 원자)·개명 적용 완료, dev 서버는 사용자 확인 후 종료. 선택 대기
+- 사건: Antigravity 폭주(CPU 770%·load 50)로 테스트가 기던 것 진단·해소
+
 ## 2026-07-22
 
 - **grades 앱 구현 완료** (Fable 5 에이전트, TDD): 도메인 2 전체 12개 표(class_sessions, attendances, exams, questions, answer_sheets, sheet_answers, scores, assignments, question_bank_items, question_similar_maps, weakness_check_pdfs, workbook_submissions). Attendance SSOT 계약 docstring+테스트 고정, '퇴원' 값 부재 테스트 강제, 부분 인덱스·GIN 반영. 테스트 47건(curr 19+grades 28) 통과.

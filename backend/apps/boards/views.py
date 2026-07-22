@@ -19,8 +19,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import board
-from .models import Post
+from apps.accounts.features import FeatureKey
+from apps.accounts.permissions import FeatureRequired
+
+from . import board, counseling
+from .models import AbsenceCounseling, Post
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
 # 자격 없음 — 기능 존재를 특정하지 않는 단일 메시지(accounts.permissions 와 동일)
@@ -216,3 +219,59 @@ class CommentDeleteView(APIView):
             return _denied()
         comment.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# --- 결석 상담(8차) — counseling_urls.py 마운트 ---------------------------
+
+
+class CounselingQueueView(APIView):
+    """GET /api/admin/counseling/queue — 결석 상담 대기열 (상담기록).
+
+    출결 트리거(3차)가 만든 대기 카드 + 시도 횟수 표시(counseling 서비스의
+    행=시도 이력 계약). 상담 기록은 관리자 전용(PRD 3.1.9) — 기능 키 게이트.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.COUNSEL_RECORD)]
+
+    def get(self, request):
+        return Response({"queue": counseling.queue_rows()})
+
+
+class CounselingRecordView(APIView):
+    """PATCH /api/admin/counseling/{counsel_id} — 통화 결과 기록 (상담기록)."""
+
+    permission_classes = [FeatureRequired(FeatureKey.COUNSEL_RECORD)]
+
+    def patch(self, request, counsel_id):
+        card = (
+            AbsenceCounseling.objects.select_related("student__user", "attendance")
+            .filter(pk=counsel_id)
+            .first()
+        )
+        if card is None:
+            return _not_found()
+        body = request.data if isinstance(request.data, dict) else {}
+        result = body.get("result")
+        if result not in ("연결", "미연결"):
+            return _bad_request("result는 연결 또는 미연결이어야 합니다.")
+        if "makeup_requested" in body and not isinstance(body["makeup_requested"], bool):
+            return _bad_request("makeup_requested는 true/false여야 합니다.")
+        for name in ("absence_reason", "call_memo", "follow_up_action"):
+            if name in body and not isinstance(body[name], str):
+                return _bad_request(f"{name}은 문자열이어야 합니다.")
+        try:
+            card, attempts, next_card, closed = counseling.record_call(
+                card, result, body, request.user
+            )
+        except counseling.CounselingError as error:
+            return _bad_request(error.message)
+        return Response(
+            {
+                "counsel_id": card.counsel_id,
+                "status": card.status,
+                "attempts": attempts,
+                "next_counsel_id": next_card.counsel_id if next_card else None,
+                "closed_by_sms": closed,
+                "makeup_requested": card.makeup_requested,
+            }
+        )

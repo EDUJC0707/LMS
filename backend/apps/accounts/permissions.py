@@ -57,6 +57,19 @@ class IsStaffRole(_RolePermission):
     allowed_roles = STAFF_ROLES
 
 
+class IsOwner(_RolePermission):
+    """대표 역할만 허용 — 대표 전용 화면(권한 매트릭스·노쇼 해제 등)의 게이트.
+
+    기능 키(FeatureRequired)가 아니라 **역할 게이트**다 — 권한 매트릭스는
+    role=대표만 허용이 과제 명세(PRD §4·key_considerations §2)라서, 관리자가
+    delta 로 `권한부여` 키를 받아도 이 게이트는 열리지 않는다. 대표 전용
+    민감 기능 범위가 확정되면(OWNER_ONLY_FEATURES) 기능 키 축과의 통합을
+    검토한다.
+    """
+
+    allowed_roles = frozenset({User.Role.OWNER})
+
+
 def FeatureRequired(feature_key):  # noqa: N802 — 퍼미션 클래스 팩토리(클래스처럼 사용)
     """기능 키 게이트 팩토리 — `permission_classes = [FeatureRequired("성적처리")]`.
 

@@ -1,9 +1,21 @@
-"""accounts 뷰 — 인증 3종 로그인·로그아웃·비밀번호 변경·CSRF (PRD §4).
+"""accounts 뷰 — 인증 3종(1차) + 관리자 운영(8차, PRD §4·3.1.5).
 
-세션 인증 전제. 쓰기 요청은 Django 기본 CSRF 계약(쿠키 csrftoken →
-헤더 X-CSRFToken)을 따르며, 프런트는 GET /api/auth/csrf 로 쿠키를 먼저 받는다.
+1차: 로그인 3종·로그아웃·비밀번호 변경·CSRF·/me. 세션 인증 전제. 쓰기 요청은
+Django 기본 CSRF 계약(쿠키 csrftoken → 헤더 X-CSRFToken)을 따르며, 프런트는
+GET /api/auth/csrf 로 쿠키를 먼저 받는다.
+
+8차(관리자 운영 — admin_urls.py 마운트):
+- GET/POST /api/admin/staff                    권한 매트릭스·직원 생성 (대표 전용)
+- PUT      /api/admin/staff/{id}/features      기능 delta upsert (대표 전용)
+- PATCH    /api/admin/staff/{id}/deactivate    직원 비활성 (대표 전용)
+- POST     /api/admin/accounts/bulk            계정 일괄 발급 (계정관리)
+- POST     /api/admin/accounts/{id}/register   예비등록→등록 전환 (계정관리)
+
+게이트·입력 검증·상태 코드만 여기서, DB 쓰기·페이로드 조립은 staff_admin·
+provisioning 서비스가 담당한다(attendance_admin 선례).
 """
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import status
@@ -11,9 +23,17 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .features import effective_features
+from . import provisioning, staff_admin
+from .features import FeatureKey, effective_features
 from .models import Parent, ParentStudent, Student, User
-from .permissions import STAFF_ROLES, IsParent, IsStaffRole, IsStudent
+from .permissions import (
+    STAFF_ROLES,
+    FeatureRequired,
+    IsOwner,
+    IsParent,
+    IsStaffRole,
+    IsStudent,
+)
 from .serializers import LoginSerializer, PasswordChangeSerializer, user_summary
 
 # 실패 사유(계정 없음/비밀번호 오류/비활성/역할 불일치)를 구분하지 않는 단일 메시지 —
@@ -167,6 +187,161 @@ class MeView(APIView):
             }
             for link in links
         ]
+
+
+# --- 관리자 운영(8차) — 권한 매트릭스·직원 계정 (대표 전용) ----------------
+
+_NOT_FOUND_MESSAGE = "찾을 수 없습니다."
+
+
+def _load_managed_staff(user_id):
+    """매트릭스 관리 대상(관리자·조교) 로드 — (user, error_response).
+
+    - 없는 user_id → 404.
+    - 대표 → 400(대상 변경 금지 — 대표는 전권 고정, 매트릭스 행이 아님).
+    - 학생·학부모 → 404(직원 아님 — 존재를 특정하지 않는다).
+    """
+    target = User.objects.filter(pk=user_id).first()
+    if target is None:
+        return None, Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+    if target.role == User.Role.OWNER:
+        return None, Response(
+            {"detail": "대표 계정은 변경 대상이 아닙니다."}, status=status.HTTP_400_BAD_REQUEST
+        )
+    if target.role not in staff_admin.MANAGED_ROLES:
+        return None, Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+    return target, None
+
+
+class StaffMatrixView(APIView):
+    """GET·POST /api/admin/staff — 매트릭스 조회·직원 계정 생성 (대표 전용)."""
+
+    permission_classes = [IsOwner]
+
+    def get(self, request):
+        return Response(staff_admin.build_matrix())
+
+    def post(self, request):
+        body = request.data if isinstance(request.data, dict) else {}
+        name = body.get("name")
+        phone = body.get("phone")
+        role = body.get("role")
+        if not (isinstance(name, str) and name.strip()):
+            return Response({"detail": "name이 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
+        if not (isinstance(phone, str) and phone.strip()):
+            return Response({"detail": "phone이 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
+        if role not in staff_admin.MANAGED_ROLES:
+            # 대표 계정은 이 API 로 만들지 않는다(대표 전용 기능의 자기 증식 차단).
+            return Response(
+                {"detail": "role은 관리자 또는 조교여야 합니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user, initial_password = staff_admin.create_staff(name.strip(), phone.strip(), role)
+        if user is None:
+            return Response(
+                {"detail": "이미 사용 중인 전화번호(아이디)입니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        payload = staff_admin.matrix_row(user)
+        payload["initial_password"] = initial_password
+        return Response(payload, status=status.HTTP_201_CREATED)
+
+
+class StaffFeaturesView(APIView):
+    """PUT /api/admin/staff/{user_id}/features — 기능 delta upsert (대표 전용)."""
+
+    permission_classes = [IsOwner]
+
+    def put(self, request, user_id):
+        if request.user.pk == user_id:
+            # 자기 자신 대상 금지 — 대표 스스로의 권한 축소·조작 실수 방지.
+            return Response(
+                {"detail": "자기 자신의 권한은 변경할 수 없습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        target, error = _load_managed_staff(user_id)
+        if error is not None:
+            return error
+        feature_map = request.data
+        if not isinstance(feature_map, dict) or not feature_map:
+            return Response(
+                {"detail": "요청 본문은 {기능키: bool} 맵이어야 합니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        for key, value in feature_map.items():
+            # 기능 키는 개방 값집합(StaffFeatureGrant 계약) — enum 밖 키도
+            # 형식만 맞으면 통과시킨다(키 추가 시 무마이그레이션·무배포 원칙).
+            if not (isinstance(key, str) and key.strip() and len(key) <= 50):
+                return Response(
+                    {"detail": "기능 키가 올바르지 않습니다."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not isinstance(value, bool):
+                return Response(
+                    {"detail": "부여 값은 true/false여야 합니다."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        return Response(staff_admin.apply_feature_map(target, feature_map, request.user))
+
+
+class StaffDeactivateView(APIView):
+    """PATCH /api/admin/staff/{user_id}/deactivate — is_active=false (대표 전용).
+
+    직원 퇴사는 실삭제가 아니라 비활성(StaffFeatureGrant 모델 계약 —
+    이력·FK 보존). ModelBackend 가 is_active=false 로그인을 차단한다.
+    """
+
+    permission_classes = [IsOwner]
+
+    def patch(self, request, user_id):
+        target, error = _load_managed_staff(user_id)
+        if error is not None:
+            return error
+        target.is_active = False
+        target.save(update_fields=["is_active"])
+        return Response(staff_admin.matrix_row(target))
+
+
+class AccountBulkIssueView(APIView):
+    """POST /api/admin/accounts/bulk — 학생 명단 일괄 발급 (계정관리).
+
+    본문은 행 리스트(출결 PUT 선례). 행 내부 오류(중복·누락)는 400 이 아니라
+    **행 단위 실패 리포트**로 나간다 — 형식 오류(리스트 아님·빈 명단)만 400.
+    초기 비밀번호는 응답으로 1회 반환(임시 정책 — provisioning 모듈 docstring).
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.ACCOUNT_ADMIN)]
+
+    def post(self, request):
+        rows = request.data
+        if not isinstance(rows, list) or not rows:
+            return Response(
+                {"detail": "요청 본문은 학생 명단 리스트여야 합니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(provisioning.bulk_issue(rows))
+
+
+class AccountRegisterView(APIView):
+    """POST /api/admin/accounts/{student_id}/register — 등록 전환 (계정관리)."""
+
+    permission_classes = [FeatureRequired(FeatureKey.ACCOUNT_ADMIN)]
+
+    def post(self, request, student_id):
+        student = Student.objects.filter(pk=student_id).first()
+        if student is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            provisioning.register_student(student)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                "student_id": student.student_id,
+                "enrollment_status": student.enrollment_status,
+                "registered_at": timezone.localtime(student.registered_at).isoformat(),
+            }
+        )
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")

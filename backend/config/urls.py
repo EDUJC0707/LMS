@@ -32,6 +32,14 @@ api_urlpatterns = [
     path("", include("apps.videos.makeup_urls")),
     # 클리닉 신청(/api/student/clinic*) — 역할 경로 직결(PRD 3.2.4)
     path("", include("apps.clinic.consumer_urls")),
+    # 관리자 운영(/api/admin/staff*·/api/admin/accounts*) — 8차(PRD §4·3.1.5)
+    path("", include("apps.accounts.admin_urls")),
+    # 클리닉 관리자(/api/admin/clinic/*) — 8차(PRD 3.2.4)
+    path("", include("apps.clinic.admin_urls")),
+    # 결석 상담(/api/admin/counseling/*) — 8차(PRD 3.1.9·8-18)
+    path("", include("apps.boards.counseling_urls")),
+    # 내 알림 내역(/api/me/notifications) — 8차(설계 도메인 8)
+    path("", include("apps.notifications.me_urls")),
     path("accounts/", include("apps.accounts.urls")),
     path("grades/", include("apps.grades.urls")),
     path("curriculum/", include("apps.curriculum.urls")),
