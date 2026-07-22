@@ -20,8 +20,9 @@
 - [x] 백엔드: curriculum 주차 게이팅(release_at + released() 계약) + grades 앱 12개 모델(출결 SSOT) — 완료(2026-07-22), 테스트 47건·전 검증 통과, 재검증 완료. 커밋 대기
 - [x] 백엔드 모델 계층 완성(2026-07-22): 8개 앱 중 7개 구현(accounts·curriculum·grades·clinic·boards·payments·notifications), 테스트 118건. **videos만 남음**(DRM 재설계와 묶어 마지막)
 - [x] DB 설계 재검토 완료(2026-07-22): 정합성 어긋남 7건, videos 3표 재설계안, staff_feature_grants 설계안, 누락 8건 분류
-- [ ] **진행 중**: 재검토 필수 5건 구현 에이전트 — videos 3표(Video/VideoGrant/MakeupGrant, Provider 중립)·youtube_email 삭제·staff_feature_grants+features.py·워크북 OCR 컬럼·parents.credentials_sent_at·설계 문서 도메인 4 개정
-- [ ] 그다음: **API 계층** — 로그인 3종·세션 → /me(유효 기능 목록) → 학생 홈 데이터 API(캘린더·released()·active() 계약 소비) → 출결 입력 API 순 권장
+- [x] 재검토 필수 5건 구현 완료(2026-07-22, `4e6d8da`): 8개 앱 스키마 100%, 테스트 163건, 설계 문서 도메인 4 개정
+- [ ] **진행 중**: API 슬라이스 1 — 로그인 3종·로그아웃·비번변경·CSRF·`/api/me`(유효 기능 목록 = 메뉴 계약)·권한 부품(IsRole·FeatureRequired)
+- [ ] API 슬라이스 2 이후: 학생 홈 데이터(캘린더 — released()·active() 소비) → 출결 입력(SSOT 쓰기+자동지급 트리거) → 학부모 홈 → 관리자 대기열류
 - [ ] 계정 일괄생성 배치 (아이디=전화번호, PRD 8-4)
 - [ ] 백엔드 플러그인 설치 검토: pyright-lsp, context7 (사용자 승인 대기)
 - [ ] 첫 실배포 전: prod SECRET_KEY fail-fast, whitenoise, `UV_NO_DEV=1`, uv 이미지 태그 고정, CI `FLY_API_TOKEN`

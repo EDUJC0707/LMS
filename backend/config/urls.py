@@ -16,6 +16,8 @@ def healthz(_request):
 
 # /api/ 하위 도메인 라우터. 각 앱의 urls.py 는 DefaultRouter placeholder.
 api_urlpatterns = [
+    # 인증(/api/auth/*)·/api/me — 도메인 prefix 없이 직결(PRD §4 로그인 3종)
+    path("", include("apps.accounts.auth_urls")),
     path("accounts/", include("apps.accounts.urls")),
     path("grades/", include("apps.grades.urls")),
     path("curriculum/", include("apps.curriculum.urls")),
