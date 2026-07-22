@@ -2,7 +2,8 @@
 from django.db import IntegrityError
 from django.test import TestCase
 
-from .models import Parent, ParentStudent, Student, User
+from .features import OWNER_ONLY_FEATURES, ROLE_PRESETS, FeatureKey, effective_features
+from .models import Parent, ParentStudent, StaffFeatureGrant, Student, User
 
 
 class UserManagerTests(TestCase):
@@ -53,3 +54,104 @@ class ParentStudentTests(TestCase):
         ParentStudent.objects.create(parent=parent, student=student, relation="모")
         with self.assertRaises(IntegrityError):
             ParentStudent.objects.create(parent=parent, student=student, relation="부")
+
+
+class YoutubeCleanupTests(TestCase):
+    def test_student_youtube_email_removed(self):
+        # PRD 3.1.3(2026-07-21 유튜브 폐기): 종속 컬럼 정리 시점 이행
+        field_names = {f.name for f in Student._meta.get_fields()}
+        self.assertNotIn("youtube_email", field_names)
+
+
+class ParentCredentialsTests(TestCase):
+    def test_credentials_sent_at_null_until_batch(self):
+        # D-1 계정 발급 배치의 대상 판정(students 와 동일 패턴) — 발송 전 NULL
+        parent = Parent.objects.create(phone="010-1234-5678")
+        self.assertIsNone(parent.credentials_sent_at)
+
+
+def make_staff(login_id, role):
+    return User.objects.create_user(login_id=login_id, password="pw-1!", name="직원", role=role)
+
+
+class StaffFeatureGrantTests(TestCase):
+    def test_table_follows_design(self):
+        self.assertEqual(StaffFeatureGrant._meta.db_table, "staff_feature_grants")
+
+    def test_user_feature_key_unique(self):
+        # UQ(user, feature_key) — 직원당 기능 키 delta 1줄
+        staff = make_staff("adm1", User.Role.ADMIN)
+        StaffFeatureGrant.objects.create(
+            user=staff, feature_key=FeatureKey.GRADE_PROCESSING, is_granted=True
+        )
+        with self.assertRaises(IntegrityError):
+            StaffFeatureGrant.objects.create(
+                user=staff, feature_key=FeatureKey.GRADE_PROCESSING, is_granted=False
+            )
+
+    def test_feature_key_is_open_value_set(self):
+        # 개방 값집합(notifications.type 선례) — choices 를 필드에 바인딩하지 않는다
+        field = StaffFeatureGrant._meta.get_field("feature_key")
+        self.assertIsNone(field.choices)
+
+
+class EffectiveFeaturesTests(TestCase):
+    """프리셋 ⊕ delta(2026-07-22 확정, PRD §4 직원 기능 권한) 계약."""
+
+    def test_assistant_preset_is_minimal(self):
+        # PRD 2장: 조교 = 워크북 사진 업로드·클리닉 배정 수행 정도
+        assistant = make_staff("as1", User.Role.ASSISTANT)
+        self.assertEqual(
+            effective_features(assistant),
+            {FeatureKey.WORKBOOK_UPLOAD, FeatureKey.CLINIC_ASSIGN},
+        )
+
+    def test_admin_preset_covers_operations_but_not_grant_admin(self):
+        # PRD 2장: 관리자 = 운영 전반. 권한부여는 대표 전용 후보(key_considerations §2)
+        # 라 프리셋에 없다 — 대표가 개별 부여로만 열 수 있다.
+        admin = make_staff("adm2", User.Role.ADMIN)
+        features = effective_features(admin)
+        self.assertIn(FeatureKey.GRADE_PROCESSING, features)
+        self.assertIn(FeatureKey.ATTENDANCE_ENTRY, features)
+        self.assertIn(FeatureKey.VIDEO_GRANT_ADMIN, features)
+        self.assertIn(FeatureKey.PAYMENT_CHECK, features)
+        self.assertNotIn(FeatureKey.FEATURE_GRANT_ADMIN, features)
+
+    def test_delta_grant_adds_to_preset(self):
+        # is_granted=true → 프리셋에 추가
+        assistant = make_staff("as2", User.Role.ASSISTANT)
+        StaffFeatureGrant.objects.create(
+            user=assistant, feature_key=FeatureKey.ATTENDANCE_ENTRY, is_granted=True
+        )
+        self.assertIn(FeatureKey.ATTENDANCE_ENTRY, effective_features(assistant))
+
+    def test_delta_revoke_removes_from_preset(self):
+        # is_granted=false → 프리셋에서 회수
+        assistant = make_staff("as3", User.Role.ASSISTANT)
+        StaffFeatureGrant.objects.create(
+            user=assistant, feature_key=FeatureKey.WORKBOOK_UPLOAD, is_granted=False
+        )
+        self.assertNotIn(FeatureKey.WORKBOOK_UPLOAD, effective_features(assistant))
+
+    def test_owner_has_all_features(self):
+        # 대표는 전권 — delta 무관
+        owner = make_staff("own1", User.Role.OWNER)
+        StaffFeatureGrant.objects.create(
+            user=owner, feature_key=FeatureKey.GRADE_PROCESSING, is_granted=False
+        )
+        self.assertEqual(effective_features(owner), set(FeatureKey))
+
+    def test_non_staff_roles_have_no_features(self):
+        # 소비자(학생·학부모)는 직원 기능 없음 — 닫힘이 기본값
+        student = make_staff("stu9", User.Role.STUDENT)
+        parent = make_staff("par9", User.Role.PARENT)
+        self.assertEqual(effective_features(student), set())
+        self.assertEqual(effective_features(parent), set())
+
+    def test_role_presets_cover_admin_and_assistant(self):
+        self.assertIn(User.Role.ADMIN, ROLE_PRESETS)
+        self.assertIn(User.Role.ASSISTANT, ROLE_PRESETS)
+
+    def test_owner_only_placeholder_is_empty(self):
+        # 대표 전용 범위는 추후 결정(key_considerations §2) — 자리만, 값은 비움
+        self.assertEqual(OWNER_ONLY_FEATURES, frozenset())

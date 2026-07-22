@@ -73,8 +73,8 @@ class Attendance(models.Model):
     """`attendances` — 출결 **SSOT** (설계 문서 도메인 2 `attendances`, PRD 3.1.6).
 
     **계약: 이 표가 출결의 단일 원천(SSOT)이다.** 담임이 입력한 status 한 번이
-      (1) 복습영상 자동지급 — `출석` 확정 시 video_requests(source=출석자동)
-          자동 생성 (PRD 3.1.4)
+      (1) 복습영상 자동지급 — `출석` 확정 시 videos.VideoGrant(source=출석자동)
+          자동 생성 (PRD 3.1.4, 출석 1건당 1건 — uq_video_grants_attendance)
       (2) 클리닉 대상 판정 전제 — 출석 + 응시(scores.is_taken/exam_taken)
           + 평균미달 → clinic_eligibilities (PRD 3.2.4)
       (3) 캘린더 홈 출석/결석 도장 (PRD 3.2.0)
@@ -195,9 +195,9 @@ class Question(models.Model):
     - theme_tag: 누적 테마별 정답률 집계축(PRD 3.2.1) -- 잠정: 중단원 재사용
       vs 신규 태그.
     - study_guide: 오답 시 학습가이드(성적표 학습동선, 첫해 수기 → AI 학습데이터).
-    - guide_video_id: 학습가이드가 가리키는 복습영상 -- 잠정: 텍스트 vs 엔티티
-      참조. 설계는 FK videos 이나 videos 앱이 아직 placeholder(모델 없음)라
-      FK 제약 없는 BIGINT 로 구현 — videos.Video 구현 시 FK 승격.
+    - guide_video: 학습가이드가 가리키는 복습영상(설계 FK videos — 2026-07-22
+      videos.Video 구현으로 BIGINT 잠정치에서 FK 승격 완료, 각주 ① 이행).
+      영상 삭제로 문항(채점기준)이 사라지면 안 되므로 SET_NULL.
     - question_format: 내신형/수능형 — 유사문항 조회 대상 문제은행 선택.
     - 문항은 시험의 구성요소(CASCADE).
     """
@@ -224,7 +224,15 @@ class Question(models.Model):
     )
     theme_tag = models.CharField("테마", max_length=50, null=True, blank=True)  # noqa: DJ001
     study_guide = models.TextField("오답 학습가이드", null=True, blank=True)  # noqa: DJ001
-    guide_video_id = models.BigIntegerField("학습가이드 복습영상", null=True, blank=True)
+    guide_video = models.ForeignKey(
+        "videos.Video",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_column="guide_video_id",
+        related_name="guided_questions",
+        verbose_name="학습가이드 복습영상",
+    )
     question_format = models.CharField(  # noqa: DJ001
         "문항 유형", max_length=10, choices=Format.choices, null=True, blank=True
     )
@@ -608,9 +616,13 @@ class WeaknessCheckPdf(models.Model):
 class WorkbookSubmission(models.Model):
     """`workbook_submissions` — 워크북 사진 업로드 (도메인 2 신규, PRD 3.1.7).
 
-    워크북 마지막 페이지 사진(OCR 불필요) + 수행도 ABC 도장. 학부모 리포트의
-    "과제 수행=사진 링크"로 연결(PRD 3.1.1).
-    - student: -- 잠정 매핑키(조교 수동 지정 vs 원번 인식).
+    워크북 마지막 페이지 사진(수기 코멘트는 OCR 대상 아님 — 사진 그대로 노출)
+    + 수행도 ABC 도장. 학부모 리포트의 "과제 수행=사진 링크"로 연결(PRD 3.1.1).
+    - student 매핑은 **원번 기입칸 OCR 자동 매핑**(8-9 결정 2026-07-21): 지면에
+      인쇄된 원번 기입칸(조교가 기입)을 OCR 인식 → recognized_unique_id 로 학생
+      자동 매칭(`자동매칭`), 인식 실패(`인식실패`)·매칭 실패(`불일치`) 시 관리자
+      수동 지정(`수동확정`)으로 보정. answer_sheets 대조 패턴 재사용.
+    - match_status NULL = OCR 파이프라인 밖(조교 수동 지정 업로드 병행 운영).
     - session: 어느 수업분인지(NULL 허용). 회차 삭제 시 사진 기록 유지(SET_NULL).
     """
 
@@ -618,6 +630,12 @@ class WorkbookSubmission(models.Model):
         A = "A", "A"
         B = "B", "B"
         C = "C", "C"
+
+    class MatchStatus(models.TextChoices):
+        AUTO_MATCHED = "자동매칭", "자동매칭"
+        MANUAL_CONFIRMED = "수동확정", "수동확정"
+        MISMATCH = "불일치", "불일치"
+        OCR_FAILED = "인식실패", "인식실패"
 
     submission_id = models.BigAutoField(primary_key=True)
     student = models.ForeignKey(
@@ -640,6 +658,13 @@ class WorkbookSubmission(models.Model):
     admin_original_text = models.TextField("관리용 원본 텍스트", null=True, blank=True)  # noqa: DJ001
     performance_grade = models.CharField(  # noqa: DJ001
         "수행도", max_length=1, choices=PerformanceGrade.choices, null=True, blank=True
+    )
+    recognized_unique_id = models.CharField(  # noqa: DJ001
+        "인식된 원번", max_length=10, null=True, blank=True
+    )
+    recognized_name = models.CharField("인식된 이름", max_length=50, null=True, blank=True)  # noqa: DJ001
+    match_status = models.CharField(  # noqa: DJ001
+        "대조 상태", max_length=20, choices=MatchStatus.choices, null=True, blank=True
     )
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

@@ -136,8 +136,8 @@ class Student(models.Model):
     clinic_banned = models.BooleanField("클리닉 이용 정지", default=False)
     credentials_sent_at = models.DateTimeField("계정정보 발송 시각", null=True, blank=True)
     # 아래 문자열 컬럼들은 설계 문서가 NULL로 명시 — ''와 미입력을 구분한다.
+    # (youtube_email 은 2026-07-22 삭제 — 유튜브 방식 폐기(PRD 3.1.3)의 잔재 정리)
     current_class = models.CharField("현재 반", max_length=50, null=True, blank=True)  # noqa: DJ001
-    youtube_email = models.EmailField("유튜브 계정", null=True, blank=True)  # noqa: DJ001
     enrollment_status = models.CharField(
         "등록 상태",
         max_length=15,
@@ -170,7 +170,10 @@ class Parent(models.Model):
     """`parents` — 학부모 (설계 문서 도메인 1 `parents`, PRD 3.4).
 
     - user는 null 허용: 학생과 동일하게 연락처(사람 행)가 먼저 입력되고
-      계정은 출석일 1일 전 자동 발급된다(PRD 3.1.5·3.4).
+      계정은 출석일 1일 전 자동 발급된다(PRD 3.1.5·3.4). D-1 플로우상 사람 행이
+      계정에 선행하므로 설계 초판의 "NULL→NN 승격"은 하지 않는다(영구 NULL 유지).
+    - credentials_sent_at: D-1 계정 발급 배치의 대상 판정(NULL=미발송) —
+      students.credentials_sent_at 과 동일 패턴.
     - 학생 결합(student_id/relation/is_primary)은 parent_students로 이관된
       최종 상태로 구현(그린필드).
     """
@@ -187,6 +190,7 @@ class Parent(models.Model):
     )
     name = models.CharField("이름", max_length=50, null=True, blank=True)  # noqa: DJ001  (설계상 NULL)
     phone = models.CharField("연락처", max_length=20)  # 청구서·리포트·SMS 수신(NN)
+    credentials_sent_at = models.DateTimeField("계정정보 발송 시각", null=True, blank=True)
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)
 
     class Meta:
@@ -238,3 +242,58 @@ class ParentStudent(models.Model):
 
     def __str__(self):
         return f"{self.parent_id}↔{self.student_id}({self.relation or '관계미상'})"
+
+
+class StaffFeatureGrant(models.Model):
+    """`staff_feature_grants` — 직원 기능 권한 delta (2026-07-22 확정, PRD §4).
+
+    **프리셋 ⊕ delta 계약**: 기능 키 목록·역할(관리자/조교) 프리셋은 코드가 정의
+    (`accounts/features.py`), 이 표는 대표가 매트릭스 UI 에서 가감한 **개별 편차만**
+    저장한다 — is_granted true=프리셋에 추가, false=프리셋에서 회수. 유효 기능
+    산출은 `features.effective_features(user)` 가 유일 준거(대표는 전권).
+    강제는 API 레벨(퍼미션 클래스), 프런트 메뉴 숨김은 보조.
+
+    - feature_key 는 **개방 값집합**(notifications.type 선례) — choices 를 필드에
+      바인딩하지 않아 기능 키 추가 시 마이그레이션이 없다. 알려진 값은
+      `features.FeatureKey` 상수가 준거.
+    - 행은 계정의 구성요소(CASCADE) — 직원 퇴사는 users.is_active=false 로
+      처리하므로 실삭제 자체가 예외 상황.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        db_column="user_id",
+        related_name="feature_grants",
+        verbose_name="직원",
+    )
+    feature_key = models.CharField("기능 키", max_length=50)  # 개방 값집합 — FeatureKey 참조
+    is_granted = models.BooleanField("부여 여부")  # true=추가/false=회수 (delta)
+    granted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_column="granted_by",
+        related_name="given_feature_grants",
+        verbose_name="부여자",
+    )
+    created_at = models.DateTimeField("생성 시각", auto_now_add=True)
+    updated_at = models.DateTimeField("변경 시각", auto_now=True)
+
+    class Meta:
+        db_table = "staff_feature_grants"
+        verbose_name = "직원 기능 권한"
+        verbose_name_plural = "직원 기능 권한"
+        constraints = [
+            # 직원당 기능 키 delta 1줄 — 매트릭스 UI 토글이 upsert 하는 단위
+            models.UniqueConstraint(
+                fields=["user", "feature_key"],
+                name="uq_staff_feature_grants_user_key",
+            ),
+        ]
+
+    def __str__(self):
+        sign = "+" if self.is_granted else "-"
+        return f"{self.user_id} {sign}{self.feature_key}"

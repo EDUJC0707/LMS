@@ -16,7 +16,7 @@
 2. **출결(attendances)이 단일 원천(SSOT)으로 승격**: 출석 입력 한 번이 (a)복습영상 자동지급 (b)클리닉 대상 판정 (c)캘린더 도장 (d)학부모 리포트 대상의 **공통 트리거**. baseline의 신청기반 영상권한 흐름과 **자동지급 분기**를 병존.
 3. **커리큘럼/일정 도메인 신설**: 강좌·주차·Day 학습계획·주차공지 → 로그인 후 **캘린더 홈**의 데이터 소스.
 4. **문제은행 + 유사문항 파이프라인 신설**: 내신형/수능형 2종 문제은행, 문항→유사문항 2개 사전매칭, 오답·추가마킹 기반 **약점체크 PDF** 생성.
-5. **관계 관리(결석상담·동보·수강료) 신설**: 결석 → 전화상담 기록 → 동보 체크 → 영상 자동지급 → 수강료 청구로 이어지는 체인.
+5. **관계 관리(결석상담·동보) 신설**: 결석 → 전화상담 기록 → 동보 체크 → 영상 자동지급으로 이어지는 체인. (~~수강료 청구~~ 는 동보 무과금 확정[헤더 노트 ②·8-8]으로 체인에서 제거 — 2026-07-22)
 
 ### 1.2 신규 표 (16)
 
@@ -50,7 +50,7 @@
 | 5 | `attendances` | SSOT화 — `marked_by`·`updated_at`·`exam_taken`(현장 응시) 추가 |
 | 6 | `questions` | `theme_tag`(잠정)·`study_guide`(오답 학습가이드)·`question_format`(내신/수능)·`guide_video_id` |
 | 7 | `sheet_answers` | `extra_practice_marked`(더 풀고 싶은 문항 추가마킹) 인식·저장 |
-| 8 | `video_requests` | `source`(학생신청/출석자동/동보)·`attendance_id`·`makeup_id`·`auto_granted` 분기 |
+| 8 | ~~`video_requests`~~ | **(폐기 2026-07-22)** 유튜브 흐름 전제가 소멸 — 도메인 4 [전면 개정] 참조, `video_grants` 가 대체 |
 | 9 | `clinic_requests` | `slot_id`·`exam_id`·`cancelled_at`, 상태값 `취소` 추가 |
 | 10 | `orders` | 학생·학부모 양측 결제(`initiated_by_user_id`·`billed_to_parent_id`), 청구 sync(`is_billed`·`charge_trigger`·부분 UQ) |
 | 11 | `posts` | `course_week_id`(주차공지→캘린더), 카테고리 값 확장(질답/자유/이벤트굿즈) |
@@ -58,7 +58,7 @@
 ### 1.4 값만 추가(스키마 불변) · 참조 유지 표
 
 - `notifications` — 대상 3분기(student/parent/user)와 `type`/`channel`/`status` **값 집합**이 이미 유연. 동보·수강료·상담·노쇼 등 신규 `type` 값만 추가(무마이그레이션). **신설 불필요, 그대로 재사용.**
-- 변경 없음(참조만): `exams`, `answer_sheets`, `scores`, `assignments`, `videos`, `products`, `payments`, `clinic_eval_criteria`, `clinic_evaluations`(녹음경로·AI요약 이미 보유), `clinic_evaluation_items`, `inquiries`, `inquiry_messages`.
+- 변경 없음(참조만): `exams`, `answer_sheets`, `scores`, `assignments`, ~~`videos`~~(**2026-07-22 전면 개정 — 도메인 4 참조**), `products`, `payments`, `clinic_eval_criteria`, `clinic_evaluations`(녹음경로·AI요약 이미 보유), `clinic_evaluation_items`, `inquiries`, `inquiry_messages`.
 
 ### 1.5 잠정(TBD) 8건 — 본문에서 `-- 잠정` 주석으로 표기
 학부모 write 범위 · 테마 태그 정의 · 질답↔문의 관계 · 클리닉 평균컷 기준 · 워크북 매핑키 · 동보 수강료 채널 · 퇴원 정의 · 결석생 답안직접입력(구현 보류). → 6장 참조.
@@ -83,7 +83,7 @@ baseline 컬럼 유지(`user_id` PK, `login_id` UQ, `password_hash`, `role`, `na
 - **[구현 각주 2026-07-21]** Django `AbstractBaseUser`/`PermissionsMixin` 채택으로 위 명세 외 표준 컬럼 `last_login`(TIMESTAMP NULL), `is_superuser`(BOOLEAN NN)와 M2M 조인테이블 `users_groups`, `users_user_permissions`가 실제 DB에 추가로 생성된다(admin 운영·Django 권한 체계에 필요한 의도된 편차). `is_staff`는 컬럼으로 두지 않고 role 기반 property(대표·관리자·조교)로 산출한다. `password_hash`는 Django 관례 필드 `password`에 `db_column="password_hash"`로 매핑.
 
 #### ✏️ `students` (변경)
-baseline 컬럼 유지(`student_id` PK, `user_id` FK·UQ, `unique_id` 원번·매칭키, `grade`, `school`, `is_registered`, `registered_at`, `noshow_count`, `clinic_banned`, `credentials_sent_at`, `current_class`, `youtube_email`). 아래 추가.
+baseline 컬럼 유지(`student_id` PK, `user_id` FK·UQ, `unique_id` 원번·매칭키, `grade`, `school`, `is_registered`, `registered_at`, `noshow_count`, `clinic_banned`, `credentials_sent_at`, `current_class`, ~~`youtube_email`~~ **← 삭제 2026-07-22**(유튜브 방식 폐기[PRD 3.1.3]의 종속 컬럼 정리 — 도메인 4 [전면 개정] 참조)). 아래 추가.
 
 | 컬럼 | 자료형 | 제약 | 설명 |
 |---|---|---|---|
@@ -101,9 +101,10 @@ baseline: `parent_id` PK, `student_id` FK(NN), `name`, `relation`, `phone`, `is_
 | 컬럼 | 자료형 | 제약 | 설명 |
 |---|---|---|---|
 | parent_id | BIGINT | PK | 학부모(사람/계정) 내부번호 |
-| user_id | BIGINT | FK users, UQ, NULL→NN | 학부모 로그인 계정(1:1). 마이그레이션 중 NULL 허용 후 NN |
+| user_id | BIGINT | FK users, UQ, NULL | 학부모 로그인 계정(1:1). **[구현 각주 2026-07-22: 영구 NULL 유지 — "NULL→NN 승격"은 하지 않는다. D-1 계정 발급 플로우(PRD 3.1.5)상 사람 행(연락처)이 계정보다 선행하므로 NULL 이 정상 상태(=계정 미발급). 발급 대상 판정은 `credentials_sent_at`(TIMESTAMP NULL, students 와 동일 패턴 — 2026-07-22 추가)]** |
 | name | VARCHAR(50) | NULL | 학부모 이름 |
 | phone | VARCHAR(20) | NN | 청구서·리포트·SMS 수신 연락처 |
+| credentials_sent_at | TIMESTAMP | NULL | 계정정보(SMS) 발송 시각 — D-1 발급 배치 대상 판정, students 와 동일 패턴 **(2026-07-22 추가)** |
 | created_at | TIMESTAMP | NN, 기본 now | |
 | ~~student_id~~ | — | (폐기 예정) | → `parent_students`로 이관 |
 | ~~relation~~ / ~~is_primary~~ | — | (폐기 예정) | → `parent_students`(자녀별로 다름) |
@@ -119,6 +120,20 @@ baseline: `parent_id` PK, `student_id` FK(NN), `name`, `relation`, `phone`, `is_
 
 - 다자녀 드롭다운 = `SELECT ... FROM parent_students JOIN students WHERE parent_id=?`. 형제는 동일 학부모 연락처로 자동 그룹핑 가능(계정발급 로직 소관).
 - **[구현 각주 2026-07-21]** Django 5.1에는 복합 PK(CompositePrimaryKey, 5.2+)가 없어 구현은 대리 PK `id` + `UNIQUE(parent_id, student_id)`로 동일한 유일성을 보장한다. Django 5.2 승급 시 복합 PK 전환을 재검토.
+
+#### 🆕 `staff_feature_grants` — 직원 기능 권한 delta **(신설 2026-07-22)**
+직원(관리자·조교) 세부 기능 접근의 **프리셋 ⊕ 개별 가감** 방식(PRD §4 2026-07-22 결정, key_considerations §2). 기능 키·역할 프리셋은 코드(`backend/apps/accounts/features.py`)가 정의하고, 이 표는 대표가 매트릭스 UI에서 가감한 **편차(delta)만** 저장한다. 유효 기능 = `effective_features(user)`(대표는 전권), 강제는 API 퍼미션 레벨.
+
+| 컬럼 | 자료형 | 제약 | 설명 |
+|---|---|---|---|
+| id | BIGINT | PK | |
+| user_id | BIGINT | FK users, NN | 대상 직원 |
+| feature_key | VARCHAR(50) | NN | 기능 키 — **개방 값집합**(CHECK 없음, notifications.type 선례). 준거는 `features.FeatureKey` |
+| is_granted | BOOLEAN | NN | true=프리셋에 추가 / false=프리셋에서 회수 (delta) |
+| granted_by | BIGINT | FK users, NULL | 부여자(대표) |
+| created_at / updated_at | TIMESTAMP | NN | |
+
+- UQ(user_id, feature_key) — 직원당 기능 키 delta 1줄(매트릭스 토글의 upsert 단위). 대표 전용 민감 기능 범위는 추후 결정 — `features.OWNER_ONLY_FEATURES` 자리만 두고 값은 비움.
 
 ### 도메인 2 — 성적 / OMR / 과제
 
@@ -142,7 +157,7 @@ baseline(`id` PK, `session_id` FK, `student_id` FK, `status`, `created_at`, UQ(s
 | updated_at | TIMESTAMP | NULL | 정정 추적(권한 회수 트리거 근거) |
 
 - `status` 값집합: `출석`/`결석`/`지각`(baseline 유지). **와야 하는데 안 온 날 = status `결석` 레코드 존재**로 캘린더 결석 도장 판정(별도 스케줄 마스터 불필요 — 담임이 결석분도 입력).
-- **트리거 관계(앱 레이어)**: `출석` 확정 → `video_requests`(source=`출석자동`) 자동 생성 / `clinic_eligibilities` 판정 입력 / 캘린더 도장 / 리포트 대상.
+- **트리거 관계(앱 레이어)**: `출석` 확정 → `video_grants`(source=`출석자동`, 2026-07-22 — 구 ~~video_requests~~ 폐기) 자동 생성 / `clinic_eligibilities` 판정 입력 / 캘린더 도장 / 리포트 대상.
 
 #### ✏️ `questions` (변경)
 baseline(`question_id` PK, `exam_id` FK, `q_number`, `answer`, `points`, `unit_major`, `unit_minor`, `wrong_rate`, UQ(exam_id, q_number)). 추가:
@@ -209,17 +224,21 @@ baseline(`id` PK, `sheet_id` FK, `question_id` FK, `marked`, `result`, `is_corre
 | 컬럼 | 자료형 | 제약 | 설명 |
 |---|---|---|---|
 | submission_id | BIGINT | PK | |
-| student_id | BIGINT | FK students, NN | -- 잠정 매핑키: 조교 수동 지정 vs 원번 인식 |
+| student_id | BIGINT | FK students, NN | 매핑키 — **원번 기입칸 OCR 자동 매핑으로 확정(8-9, 2026-07-21)**, 인식 실패 시 관리자 수동 지정 |
 | session_id | BIGINT | FK class_sessions, NULL | 어느 수업분 |
-| image_path | VARCHAR(500) | NN | 워크북 마지막 페이지 사진(스토리지). OCR 불필요 |
+| image_path | VARCHAR(500) | NN | 워크북 마지막 페이지 사진(스토리지). 수기 코멘트는 OCR 대상 아님(사진 그대로 노출) |
 | admin_original_text | TEXT | NULL | 관리용 원본 텍스트칸(조교 정서, 학생당 1개) |
 | performance_grade | CHAR(1) | NULL | 수행도 ABC 도장(A/B/C) |
+| recognized_unique_id | VARCHAR(10) | NULL | OCR 인식된 원번(지면 인쇄 기입칸 — 조교가 기입) **(2026-07-22 추가)** |
+| recognized_name | VARCHAR(50) | NULL | OCR 인식된 이름 **(2026-07-22 추가)** |
+| match_status | VARCHAR(20) | NULL | `자동매칭`/`수동확정`/`불일치`/`인식실패` — answer_sheets 대조 패턴 재사용. NULL=OCR 파이프라인 밖(수동 지정 업로드 병행) **(2026-07-22 추가)** |
 | uploaded_by | BIGINT | FK users, NULL | 업로드 조교 |
 | created_at | TIMESTAMP | NN, 기본 now | |
 
 - 학부모 리포트의 "과제 수행=사진 링크"로 연결. 과제 수행여부 플래그(`assignments.done`)는 baseline 유지(이원 관리).
+- OCR 매핑 3컬럼은 §6 TBD 5(워크북 매핑키)의 8-9 결정 이행 — 예고대로 answer_sheets 패턴(recognized_*·match_status) 가산.
 
-- **[구현 각주 2026-07-22]** 도메인 2 전체를 `backend/apps/grades`에 그린필드 최종 상태로 구현. 명세 대비 편차 3건: ① `questions.guide_video_id`는 videos 앱이 미구현(placeholder)이라 FK 제약 없는 BIGINT로 두고 `videos.Video` 구현 시 FK 승격. ② `question_similar_maps.ordinal`의 CHECK 1..2는 DB CHECK 금지 원칙(값 추가 시 무마이그레이션)에 따라 앱 레벨 choices(1/2)로 강제. ③ §4의 단일 FK 컬럼 인덱스(`idx_attendances_student`, `idx_qsm_bank`, `idx_class_sessions_week`)는 Django FK 자동 인덱스와 컬럼이 동일해 별도 생성하지 않음(course_weeks 선례와 동일 원칙). `attendances.updated_at`은 명세(NULL=정정 이력 없음)대로 auto_now 없이 정정 시 앱 레이어에서 갱신.
+- **[구현 각주 2026-07-22]** 도메인 2 전체를 `backend/apps/grades`에 그린필드 최종 상태로 구현. 명세 대비 편차 3건: ① `questions.guide_video_id`는 videos 앱이 미구현(placeholder)이라 FK 제약 없는 BIGINT로 두고 `videos.Video` 구현 시 FK 승격. **→ 이행 완료(2026-07-22): `videos.Video` 구현으로 FK(videos, SET_NULL — 영상 삭제에도 문항 보존) 승격, 컬럼명 `guide_video_id` 유지.** ② `question_similar_maps.ordinal`의 CHECK 1..2는 DB CHECK 금지 원칙(값 추가 시 무마이그레이션)에 따라 앱 레벨 choices(1/2)로 강제. ③ §4의 단일 FK 컬럼 인덱스(`idx_attendances_student`, `idx_qsm_bank`, `idx_class_sessions_week`)는 Django FK 자동 인덱스와 컬럼이 동일해 별도 생성하지 않음(course_weeks 선례와 동일 원칙). `attendances.updated_at`은 명세(NULL=정정 이력 없음)대로 auto_now 없이 정정 시 앱 레이어에서 갱신.
 
 ### 도메인 3 — 커리큘럼 / 일정 (신규 도메인)
 
@@ -272,19 +291,46 @@ baseline(`id` PK, `sheet_id` FK, `question_id` FK, `marked`, `result`, `is_corre
 
 - UQ(student_id, course_id). 캘린더가 "이 학생이 어느 강좌 몇 주차인지" 렌더하는 근거.
 
-### 도메인 4 — 영상 / 동보
+### 도메인 4 — 영상 / 동보 **[전면 개정 2026-07-22]**
 
-#### ⚪ `videos` (불변, 참조) · ✏️ `video_requests` (변경)
-baseline(`request_id` PK, `student_id` FK, `video_id` FK, `request_type`, `youtube_email`, `status`, `requested_at`, `approved_at`, `expires_at`, `grant_status`, `granted_at`, `revoked_at`, `link_active`, `created_at`). 추가:
+> **개정 근거**: 2026-07-21 YouTube+RPA 폐기·외부 DRM 호스팅(Mux/VdoCipher 미정) 전환 확정(PRD 3.1.3·6-7) + 2026-07-22 DB 재검토. 구 절(⚪ videos 불변 · ✏️ video_requests 변경)은 **전부 폐기**한다:
+> - ~~`video_requests`~~ — 유튜브 계정 수동 권한 부여/삭제 흐름(`youtube_email`·`grant_status` 대기→부여완료→삭제필요→삭제완료·`link_active`·`auto_granted`) 전제가 소멸. **만들지 않는다.** 권한의 원천은 신 `video_grants`(지급·만료·회수 이력)이며, 실제 부여/회수는 호스팅 API 반영(`sync_status`)으로 대체.
+> - ~~`students.youtube_email`~~ — 유튜브 종속 컬럼 정리 시점(PRD 3.1.3) 이행, 2026-07-22 마이그레이션으로 **삭제**.
+> - 아래 3표(`videos`·`video_grants`·`makeup_grants`)가 최종 상태. 구현: `backend/apps/videos/models.py`(§5의 구 도메인 4 DDL 은 폐기 — Django migration 이 스키마 원천).
 
+#### 🆕 `videos` — 복습영상 마스터 (구 videos 표 대체, Provider 중립)
 | 컬럼 | 자료형 | 제약 | 설명 |
 |---|---|---|---|
-| source | VARCHAR(15) | NN, 기본 `학생신청` | `학생신청`/`출석자동`/`동보` — 지급 경로 분기 |
-| auto_granted | BOOLEAN | NN, 기본 false | 출석/동보 트리거 자동생성 여부 |
-| attendance_id | BIGINT | FK attendances, NULL | 출석 자동지급의 근거 회차 |
-| makeup_id | BIGINT | FK makeup_grants, NULL | 동보 지급의 근거 |
+| video_id | BIGINT | PK | |
+| course_week_id | BIGINT | FK course_weeks, NULL | 강의/차시 분류 축(PRD 3.1.3)·지급 단위(주차)의 대상. NULL=주차 무관 특강 |
+| title | VARCHAR(200) | NN | |
+| sequence_no | SMALLINT | NULL | 차시 |
+| provider | VARCHAR(20) | NULL | `mux`/`vdocipher` — **업체 미정이라 NULL 허용**. Provider 중립(payments 선례): 업체 종속 컬럼 금지, 확정·교체 시 값만 추가 |
+| external_ref | VARCHAR(200) | NULL | 중립 외부 참조(Mux asset id / VdoCipher video id) |
+| duration_seconds | INT | NULL | |
+| status | VARCHAR(15) | NN, 기본 `준비중` | `준비중`/`공개`/`아카이브` — 소비자 노출은 `공개`+권한 이중 게이트, 시즌 종료 후 전량 보관은 아카이브(8-16) |
+| created_at | TIMESTAMP | NN, 기본 now | |
 
-- `request_type` 값 확장: `복습영상`/`결석보강(동보)`. **유튜브 계정 권한 부여/삭제는 수동**(할일·이력 보조)이라는 baseline 제약 유지 — `source`가 자동이라도 `grant_status` 흐름(대기→부여완료→삭제필요→삭제완료)은 동일.
+- **부분 UQ**(provider, external_ref) WHERE external_ref IS NOT NULL — 연동 전(NULL) 다건 허용, 연동 후 동일 자산 이중 등록 차단.
+
+#### 🆕 `video_grants` — 시청 권한 지급·만료·회수 이력 (구 video_requests 대체)
+| 컬럼 | 자료형 | 제약 | 설명 |
+|---|---|---|---|
+| grant_id | BIGINT | PK | |
+| student_id | BIGINT | FK students, NN | |
+| course_week_id | BIGINT | FK course_weeks, NN | **지급 단위 = 주차**("그 주 복습영상" 묶음 — 영상별 행 복제 없음) |
+| source | VARCHAR(15) | NN | `출석자동`(3.1.4 ①)/`동보`(3.2.3)/`학생신청`/`수동` |
+| attendance_id | BIGINT | FK attendances, NULL, **부분 UQ** WHERE NOT NULL | 출석 자동지급 근거 — 출석 1건당 자동지급 1건 |
+| makeup_id | BIGINT | FK makeup_grants, NULL, **부분 UQ** WHERE NOT NULL | 동보 지급 근거 — 동보 1건당 지급 1건 |
+| granted_by | BIGINT | FK users, NULL | 수동 지급 처리자 |
+| granted_at | TIMESTAMP | NN | 지급(부여일) |
+| expires_at | TIMESTAMP | NN | 만료 예정 — **지급+7일 기본**(관리자 설정 변경 가능, PRD 3.1.4 ⑥). 기본값 산정은 앱 레이어(DB default 없음) |
+| revoked_at | TIMESTAMP | NULL | 수동 회수(예외 처리) |
+| sync_status | VARCHAR(15) | NULL | `대기`/`부여반영`/`회수반영`/`실패` — 호스팅 API 반영 상태. **연동 전 NULL 운영**(연동 후순위) |
+| synced_at | TIMESTAMP | NULL | |
+| created_at | TIMESTAMP | NN, 기본 now | |
+
+- **소비자 API 유일 진입 = `VideoGrant.objects.active(at)`** (revoked_at IS NULL AND expires_at > at) — PRD §4 "권한 지급된 주차만"(curriculum `released()` 선례와 동일 계약). 인덱스 (student_id, expires_at) — 시청 페이지·만료 배치 축.
 
 #### 🆕 `makeup_grants` — 동보(동영상 보강) 기록
 | 컬럼 | 자료형 | 제약 | 설명 |
@@ -295,11 +341,11 @@ baseline(`request_id` PK, `student_id` FK, `video_id` FK, `request_type`, `youtu
 | source | VARCHAR(15) | NN | `관리자체크`(전화상담 후)/`학생신청`(연락두절)/`학부모신청` |
 | requested_by | BIGINT | FK users, NULL | 신청 주체(학생/학부모 계정) |
 | status | VARCHAR(15) | NN, 기본 `신청` | `신청`/`승인`/`지급완료`/`거절` |
-| is_tuition_billable | BOOLEAN | NN, 기본 true | 영상 지급 → 수강료 대상 |
+| ~~is_tuition_billable~~ | — | **(삭제 2026-07-22)** | 동보 무과금(헤더 노트 ②·8-8) — 수강료 체인 폐기로 미구현 |
 | granted_at | TIMESTAMP | NULL | |
 | created_at | TIMESTAMP | NN, 기본 now | |
 
-- 동보 체크 → `video_requests`(source=동보) 자동 생성 + `is_tuition_billable=true`면 `tuition_charges` 생성.
+- 동보 `지급완료` 전이 → `video_grants`(source=동보) 자동 생성(부분 UQ 가 1:1 백스톱). ~~`is_tuition_billable=true`면 `tuition_charges` 생성~~ **(폐기 — 동보 무과금)**.
 
 ### 도메인 5 — 결제 / 수강료
 
@@ -470,20 +516,20 @@ erDiagram
     answer_sheets ||--o{ sheet_answers : ""
     questions ||--o{ sheet_answers : ""
 
+    videos ||--o{ questions : "학습가이드"
     questions ||--o{ question_similar_maps : "오답→유사"
     question_bank_items ||--o{ question_similar_maps : ""
     students ||--o{ weakness_check_pdfs : ""
     students ||--o{ workbook_submissions : ""
     class_sessions ||--o{ workbook_submissions : ""
 
-    students ||--o{ video_requests : ""
-    videos ||--o{ video_requests : ""
-    attendances ||--o{ video_requests : "출석자동"
+    course_weeks ||--o{ videos : "차시분류"
+    students ||--o{ video_grants : ""
+    course_weeks ||--o{ video_grants : "지급주차"
+    attendances ||--o| video_grants : "출석자동(1:1)"
     students ||--o{ makeup_grants : ""
     attendances ||--o{ makeup_grants : "결석분"
-    makeup_grants ||--o| video_requests : "동보지급"
-    makeup_grants ||--o| tuition_charges : "수강료"
-    students ||--o{ tuition_charges : ""
+    makeup_grants ||--o| video_grants : "동보지급(1:1)"
 
     students ||--o{ orders : ""
     products ||--o{ orders : ""
@@ -647,13 +693,14 @@ ALTER TABLE sheet_answers
   ADD COLUMN extra_practice_marked BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN extra_mark_corrected  BOOLEAN NOT NULL DEFAULT false;
 
--- video_requests: 지급 경로 분기(출석자동/동보)
-ALTER TABLE video_requests
-  ADD COLUMN source        VARCHAR(15) NOT NULL DEFAULT '학생신청', -- 학생신청/출석자동/동보
-  ADD COLUMN auto_granted  BOOLEAN NOT NULL DEFAULT false,
-  ADD COLUMN attendance_id BIGINT REFERENCES attendances(id),
-  ADD COLUMN makeup_id     BIGINT REFERENCES makeup_grants(makeup_id);
--- request_type 값에 '동보' 추가. 유튜브 권한 부여/삭제 수동 제약 유지.
+-- [폐기 2026-07-22] video_requests ALTER — 표 자체를 만들지 않는다(유튜브 흐름
+-- 소멸, 도메인 4 [전면 개정] 참조). 신 videos/video_grants 스키마의 원천은
+-- Django migration(backend/apps/videos/migrations/0001_initial.py).
+-- ALTER TABLE video_requests
+--   ADD COLUMN source        VARCHAR(15) NOT NULL DEFAULT '학생신청',
+--   ADD COLUMN auto_granted  BOOLEAN NOT NULL DEFAULT false,
+--   ADD COLUMN attendance_id BIGINT REFERENCES attendances(id),
+--   ADD COLUMN makeup_id     BIGINT REFERENCES makeup_grants(makeup_id);
 
 -- clinic_requests: 슬롯/대상시험/취소
 ALTER TABLE clinic_requests
@@ -777,7 +824,11 @@ CREATE TABLE workbook_submissions (
     created_at          TIMESTAMP NOT NULL DEFAULT now()
 );
 
--- 영상/동보 & 수강료 ---------------------------------------------------
+-- 영상/동보 -----------------------------------------------------------
+-- [전면 개정 2026-07-22] 도메인 4 신 3표(videos·video_grants·makeup_grants)의
+-- DDL 원천은 Django migration(backend/apps/videos/migrations/0001_initial.py).
+-- makeup_grants 는 is_tuition_billable 제거(동보 무과금 — 헤더 노트 ②) 외에
+-- 위 명세와 동일. tuition_charges 는 미구현(헤더 노트 ② 삭제 처리).
 CREATE TABLE makeup_grants (
     makeup_id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     student_id          BIGINT NOT NULL REFERENCES students(student_id),
@@ -785,22 +836,11 @@ CREATE TABLE makeup_grants (
     source              VARCHAR(15) NOT NULL,     -- 관리자체크/학생신청/학부모신청
     requested_by        BIGINT REFERENCES users(user_id),
     status              VARCHAR(15) NOT NULL DEFAULT '신청',
-    is_tuition_billable BOOLEAN NOT NULL DEFAULT true,
+    -- is_tuition_billable [삭제 2026-07-22 — 동보 무과금(8-8)]
     granted_at          TIMESTAMP,
     created_at          TIMESTAMP NOT NULL DEFAULT now()
 );
-CREATE TABLE tuition_charges (
-    charge_id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    student_id         BIGINT NOT NULL REFERENCES students(student_id),
-    makeup_id          BIGINT UNIQUE REFERENCES makeup_grants(makeup_id),
-    amount             INT,                       -- 잠정: 산정 기준
-    billed_to_parent_id BIGINT REFERENCES parents(parent_id),
-    channel            VARCHAR(20),               -- 잠정: 결제선생 재사용
-    status             VARCHAR(15) NOT NULL DEFAULT '청구대기',
-    billed_at          TIMESTAMP,
-    paid_at            TIMESTAMP,
-    created_at         TIMESTAMP NOT NULL DEFAULT now()
-);
+-- CREATE TABLE tuition_charges (...) [삭제 — 헤더 노트 ② 참조]
 
 -- 클리닉 ---------------------------------------------------------------
 CREATE TABLE clinic_slots (
@@ -859,7 +899,7 @@ CREATE TABLE parent_counsel_requests (
 );
 ```
 
-> **주의(생성 순서)**: `course_weeks`는 `class_sessions.course_week_id`·`posts.course_week_id` ALTER보다 먼저 생성. `makeup_grants`는 `video_requests.makeup_id` ALTER보다 먼저 생성(순환 참조 회피 위해 video_requests의 makeup_id FK는 makeup_grants 생성 후 ALTER). baseline PK는 `BIGINT`(자동증가) — 신규 표는 `GENERATED ALWAYS AS IDENTITY`로 통일(baseline SERIAL/IDENTITY와 논리 동일).
+> **주의(생성 순서)**: `course_weeks`는 `class_sessions.course_week_id`·`posts.course_week_id` ALTER보다 먼저 생성. ~~`makeup_grants`는 `video_requests.makeup_id` ALTER보다 먼저 생성~~ (video_requests 폐기 — 2026-07-22. 신 도메인 4의 생성 순서는 Django migration 의존성이 관리: videos·makeup_grants → video_grants → questions.guide_video_id FK). baseline PK는 `BIGINT`(자동증가) — 신규 표는 `GENERATED ALWAYS AS IDENTITY`로 통일(baseline SERIAL/IDENTITY와 논리 동일).
 
 ---
 
@@ -871,14 +911,14 @@ CREATE TABLE parent_counsel_requests (
 | 2 | **테마(theme_tag) 정의** | `questions.theme_tag` nullable 신규 태그 축 신설(중단원과 별개) | "중단원 재사용"으로 확정 시 `theme_tag` 폐기하고 `unit_minor` 집계로 전환 → 뷰/쿼리 변경, 컬럼 DROP. `question_bank_items.theme_tag`도 동일 — **중위험** |
 | 3 | **질답 게시판 ↔ 문의 관계** | `posts.category='질답'` + `post_comments`로 공개 Q&A, `inquiries`는 1:1 문의로 별개 유지 | "통합"으로 확정 시 `post_comments`↔`inquiry_messages` 병합 마이그레이션 → 데이터 이관 필요 — **중위험** |
 | 4 | **클리닉 평균 미달 기준** | `clinic_eligibilities.cutoff_score`에 관리자 입력 컷값 저장(전체평균과 분리) | "전체평균(=exams.avg_score) 자동판정"으로 확정 시 `cutoff_score` nullable 유지·앱에서 자동계산 → **저위험**(컬럼 불변) |
-| 5 | **워크북 사진 매핑키** | `workbook_submissions.student_id` = 조교 수동 지정(업로드 시 학생 선택) | "원번 인식 자동매핑"으로 확정 시 `recognized_unique_id`/`recognized_name`·`match_status` 컬럼 추가(answer_sheets 패턴 재사용) — **저위험**(가산 컬럼) |
+| 5 | **워크북 사진 매핑키** | ~~조교 수동 지정~~ **→ 해소(8-9 결정 2026-07-21, 구현 2026-07-22)**: 원번 기입칸 OCR 자동매핑 확정 | 예고대로 `recognized_unique_id`/`recognized_name`/`match_status` 3컬럼 가산 완료(도메인 2 workbook_submissions 절 참조) — 수동 지정 업로드는 match_status NULL 로 병행 |
 | 6 | **동보 수강료 청구 채널** | `tuition_charges` 독립 표 + `channel`(결제선생 가정) | "결제선생/PG 재사용"으로 확정 시 `payments`(provider 추상화)에 tuition FK 연결 또는 `orders` 일반화 → **중위험**(결제 도메인 통합) |
 | 7 | **퇴원 '등록 안 한 학생' 정의** | `students.enrollment_status='퇴원'` + `withdrawn_reason`에 자유서술 | (a)재등록 미완료 vs (b)1주차 미출석 미전환 확정 시 `withdrawn_reason` 값집합/자동판정 로직만 조정 → **저위험** |
 | 8 | **결석생 답안 직접입력→성적표 (구현 보류)** | 스키마 여지만: `answer_sheets.student_id`는 NULL 허용·`scan_image_path` NOT NULL이 제약. 직접입력은 미구현 | 구현 확정 시 `answer_sheets.scan_image_path`를 nullable로 완화 + `entry_source`(스캔/수기) 컬럼 추가 → **저위험**(가산) |
 
 ### 6.1 부수 설계 결정(회의 근거)
-- **출결이 SSOT**: 출석 확정이 영상·클리닉·캘린더·리포트의 공통 트리거. 트리거 실행은 앱 레이어(RPA 봇/할일 생성)이며 DB는 `video_requests.source`·`attendance_id`로 근거만 기록. 유튜브 50계정 한도(8-2)·수동 권한 부여 병목은 앱 운영 이슈(스키마 무관).
-- **감사(audit) 이력**: 상담(`absence_counselings`/`parent_counsel_requests`), 알림(`notifications`), 영상권한(`video_requests` grant 흐름), 퇴원(`withdrawn_*`), 클리닉 판정(`clinic_eligibilities.determined_*`)에 처리자·시각을 남김.
+- **출결이 SSOT**: 출석 확정이 영상·클리닉·캘린더·리포트의 공통 트리거. 트리거 실행은 앱 레이어이며 DB는 `video_grants.source`·`attendance_id`로 근거만 기록(2026-07-22 — 구 video_requests 폐기). ~~유튜브 50계정 한도(8-2)·수동 권한 부여 병목~~ 은 DRM 전환(6-7)으로 소멸.
+- **감사(audit) 이력**: 상담(`absence_counselings`/`parent_counsel_requests`), 알림(`notifications`), 영상권한(`video_grants` 지급·만료·회수 이력 — 2026-07-22 대체), 퇴원(`withdrawn_*`), 클리닉 판정(`clinic_eligibilities.determined_*`)에 처리자·시각을 남김.
 - **soft-delete/상태 전이**: 등록(`enrollment_status`), 영상 만료(`link_active`/`expires_at`), 결제·청구(`status`/`is_billed`), 노쇼 제한(`clinic_banned`/`noshow_count`)은 상태 컬럼으로 관리(물리 삭제 지양).
 - **보안**: 비밀번호는 `password_hash`만(원문 금지), 큰 파일(OMR·워크북·녹음·PDF)은 경로만, 개인정보(원번=전화기반·녹음)는 8-1 개인정보 처리방침과 연계(파기·동의). 접근은 RBAC(대표/관리자/조교/학생/학부모)로 최소권한.
 ```

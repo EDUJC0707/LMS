@@ -295,3 +295,54 @@ class WorkbookSubmissionTests(TestCase):
     def test_table_and_pk_column_follow_design(self):
         self.assertEqual(WorkbookSubmission._meta.db_table, "workbook_submissions")
         self.assertEqual(WorkbookSubmission._meta.pk.column, "submission_id")
+
+    def test_ocr_columns_null_before_recognition(self):
+        # 8-9 결정: 원번 기입칸 OCR 자동 매핑 — 인식 전(수기 플로우 포함) NULL
+        submission = WorkbookSubmission.objects.create(
+            student=make_student(), image_path="workbook/2026/0722/3_1234.jpg"
+        )
+        self.assertIsNone(submission.recognized_unique_id)
+        self.assertIsNone(submission.recognized_name)
+        self.assertIsNone(submission.match_status)
+
+    def test_match_status_value_set(self):
+        # answer_sheets 패턴 참조 — OCR 자동매칭/인식실패·불일치/수동확정 분기
+        self.assertEqual(
+            set(WorkbookSubmission.MatchStatus.values),
+            {"자동매칭", "수동확정", "불일치", "인식실패"},
+        )
+
+    def test_ocr_recognition_recorded(self):
+        submission = WorkbookSubmission.objects.create(
+            student=make_student(),
+            image_path="workbook/2026/0722/3_1234.jpg",
+            recognized_unique_id="3_1234",
+            match_status=WorkbookSubmission.MatchStatus.AUTO_MATCHED,
+        )
+        self.assertEqual(submission.match_status, "자동매칭")
+
+
+class QuestionGuideVideoTests(TestCase):
+    """grades 각주 ① 이행 — guide_video 를 videos.Video FK 로 승격."""
+
+    def test_guide_video_is_fk_to_videos(self):
+        from apps.videos.models import Video
+
+        field = Question._meta.get_field("guide_video")
+        self.assertEqual(field.related_model, Video)
+        self.assertEqual(field.column, "guide_video_id")  # 설계 컬럼명 유지
+        self.assertTrue(field.null)
+
+    def test_question_survives_video_deletion(self):
+        # 영상 삭제로 문항(채점기준)이 사라지면 안 된다 — SET_NULL
+        from apps.videos.models import Video
+
+        exam = make_exam()
+        video = Video.objects.create(title="1주차 복습영상")
+        question = Question.objects.create(
+            exam=exam, q_number=1, answer="3", points=Decimal("3.0"),
+            unit_major="화학 반응의 규칙성", guide_video=video,
+        )
+        video.delete()
+        question.refresh_from_db()
+        self.assertIsNone(question.guide_video)
