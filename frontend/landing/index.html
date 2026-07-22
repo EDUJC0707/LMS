@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>한종철 통합과학 — 히어로 시안</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  /* ── 시안 전환: ?v=dna-gate 처럼 쿼리로 고른다 ───────────────────── */
+  :root{
+    --ink:#0B0C0F;          /* 히어로 배경 (시안별로 JS가 덮어씀) */
+    --fg:#F4F5F7;
+    --muted:#9AA1AC;
+    --accent:#C9D4FF;
+    --pad: clamp(20px, 4vw, 64px);
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--ink); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Pretendard","Apple SD Gothic Neo",
+                "Noto Sans KR",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ── 스크롤 트랙: 이 높이만큼 스크롤하는 동안 히어로가 고정된다 ──── */
+  .track{ position:relative; height:250vh; }
+  .stage{ position:sticky; top:0; height:100svh; overflow:hidden; }
+
+  /* 레이어 0 — 프레임 시퀀스가 화면 전체를 덮는다 (풀블리드) */
+  #seq{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+
+  /* 레이어 1 — 가독성 스크림.
+     시퀀스가 밝아지는 구간에서 우측 텍스트가 묻힌다(유튭 영상도 여기서 터졌다).
+     우측에서만 배경색이 배어 나오게 해 좌측 그래픽은 손대지 않는다. */
+  .scrim{
+    position:absolute; inset:0; pointer-events:none; z-index:1;
+    background:linear-gradient(
+      100deg,
+      transparent 0%, transparent 34%,
+      color-mix(in srgb, var(--ink) 55%, transparent) 58%,
+      color-mix(in srgb, var(--ink) 82%, transparent) 100%);
+  }
+
+  /* 레이어 2 — 그 위에 얹히는 것들 */
+  .overlay{
+    position:absolute; inset:0; z-index:3; display:grid; align-items:center;
+    grid-template-columns: 1fr minmax(300px, 46%);
+    padding: 0 var(--pad); gap: var(--pad);
+    pointer-events:none;
+  }
+  .overlay > *{ pointer-events:auto }
+  .left{}   /* 그래픽 자리 — 비워둔다. 시퀀스가 여기를 채운다 */
+
+  .right{ max-width:34rem; }
+  .eyebrow{
+    font-size:.8rem; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--muted); margin:0 0 1.1rem;
+  }
+  h1{
+    font-family:"Instrument Serif",serif; font-weight:400;
+    font-size:clamp(2.4rem, 5.4vw, 4.4rem); line-height:1.06;
+    letter-spacing:-.01em; margin:0 0 1.2rem;
+  }
+  h1 em{ font-style:italic; color:var(--accent) }
+  .sub{ color:var(--muted); font-size:clamp(.95rem,1.3vw,1.08rem); line-height:1.75; margin:0 0 2.2rem }
+  .cta{
+    display:inline-flex; align-items:center; gap:.6rem;
+    padding:.95rem 1.7rem; border-radius:999px;
+    background:var(--fg); color:var(--ink);
+    font-weight:600; font-size:1rem; text-decoration:none;
+    transition:transform .18s ease, box-shadow .18s ease;
+  }
+  .cta:hover{ transform:translateY(-2px); box-shadow:0 10px 30px rgba(0,0,0,.35) }
+  .cta span{ transition:transform .18s ease }
+  .cta:hover span{ transform:translateX(3px) }
+
+  /* 강사 누끼 — 우측 하단에 세워 시퀀스와 한 장면이 되게 */
+  .teacher{
+    position:absolute; right:calc(var(--pad) * .2); bottom:0;
+    height:min(78svh, 720px); width:auto; object-fit:contain;
+    pointer-events:none; z-index:2; opacity:.98;   /* 스크림 위, 텍스트 아래 */
+    filter: drop-shadow(0 24px 60px rgba(0,0,0,.55));
+  }
+
+  /* 진행 표시 (검수용) */
+  .hud{
+    position:fixed; left:12px; bottom:12px; z-index:99;
+    font:600 11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+    color:var(--muted); background:rgba(0,0,0,.5);
+    padding:6px 9px; border-radius:7px; backdrop-filter:blur(6px);
+  }
+
+  /* 아래 섹션 — 윤도영식 단순 구성, 더 정갈하게 */
+  .after{ padding: clamp(72px,12vh,160px) var(--pad); }
+  .after h2{
+    font-family:"Instrument Serif",serif; font-weight:400;
+    font-size:clamp(1.7rem,3.4vw,2.6rem); margin:0 0 2.6rem;
+  }
+  .cards{ display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)) }
+  .card{
+    border:1px solid rgba(255,255,255,.13); border-radius:16px;
+    padding:26px; background:rgba(255,255,255,.02);
+  }
+  .card h3{ margin:0 0 .5rem; font-size:1.05rem; font-weight:600 }
+  .card p{ margin:0; color:var(--muted); font-size:.92rem; line-height:1.7 }
+
+  @media (max-width:820px){
+    .track{ height:200vh }
+    .overlay{ grid-template-columns:1fr; align-content:end; padding-bottom:12svh }
+    .teacher{ height:46svh; right:-6% ; opacity:.5 }
+  }
+  @media (prefers-reduced-motion:reduce){
+    .track{ height:100svh }   /* 스크럽을 끄고 첫 프레임만 */
+  }
+</style>
+</head>
+<body>
+
+<section class="track" id="track">
+  <div class="stage">
+    <canvas id="seq"></canvas>
+    <div class="scrim"></div>
+    <img class="teacher" id="teacher" alt="한종철 선생님">
+    <div class="overlay">
+      <div class="left"></div>
+      <div class="right">
+        <p class="eyebrow" id="eyebrow">2028 수능 · 통합과학</p>
+        <h1 id="headline">엉킨 것부터<br><em>푼다</em></h1>
+        <p class="sub" id="sub">
+          결석하면 직접 연락하고, 틀린 문항은 유사문항으로 다시 냅니다.<br>
+          가르치고 끝내지 않는 관리를 확인해 보세요.
+        </p>
+        <a class="cta" href="#contact">상담 신청하기 <span>→</span></a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="after">
+  <h2>여기부터는 단순하게</h2>
+  <div class="cards">
+    <div class="card"><h3>출결 관리</h3><p>결석하면 그날 연락이 갑니다. 보강 영상은 신청 없이 지급됩니다.</p></div>
+    <div class="card"><h3>약점 체크</h3><p>틀린 문항에서 유사문항 2개가 자동으로 만들어집니다.</p></div>
+    <div class="card"><h3>학부모 리포트</h3><p>성적·출결·과제 검사 결과를 따로 묻지 않아도 받습니다.</p></div>
+  </div>
+</section>
+
+<div class="hud" id="hud">frame — / —</div>
+
+<script type="module">
+import { ScrubSequence } from './scrub.js';
+
+// 시안 정의 — 프롬프트 팩이 확정되면 여기에 5개가 채워진다.
+const VARIANTS = {
+  'test': {
+    dir: 'rehearsal/frames-test', count: 96, pad: 3,
+    ink: '#0B0C0F', teacher: 'assets/teacher/nobg/01-검정수트-팔짱.webp',
+    headline: '엉킨 것부터<br><em>푼다</em>',
+  },
+};
+
+const key = new URLSearchParams(location.search).get('v') || 'test';
+const V = VARIANTS[key] ?? VARIANTS.test;
+
+document.documentElement.style.setProperty('--ink', V.ink);
+if (V.teacher) document.getElementById('teacher').src = V.teacher;
+if (V.headline) document.getElementById('headline').innerHTML = V.headline;
+
+const hud = document.getElementById('hud');
+const seq = new ScrubSequence({
+  canvas: document.getElementById('seq'),
+  track: document.getElementById('track'),
+  count: V.count,
+  src: i => `${V.dir}/f_${String(i).padStart(V.pad, '0')}.webp`,
+  window: 12,
+  onProgress: p => {
+    const i = Math.round(p * (V.count - 1));
+    hud.textContent = `${key} · frame ${i + 1}/${V.count} · ${(p * 100).toFixed(0)}%`;
+  },
+});
+seq.start();
+</script>
+</body>
+</html>
