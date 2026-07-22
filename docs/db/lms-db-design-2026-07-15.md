@@ -333,6 +333,8 @@ baseline(`order_id` PK, `student_id` FK, `product_id` FK, `amount`, `status`, `b
 
 - 교재(`orders`)와 분리. 결제 provider 추상화(`payments`)는 향후 확장 시 재사용 가능(TBD).
 
+- **[구현 각주 2026-07-22]** 도메인 5를 `backend/apps/payments`에 그린필드 최종 상태로 구현(products·orders·payments 3표 + `uq_orders_active` 부분 UQ·`idx_orders_status`). 편차 3건: ① `tuition_charges`는 헤더 노트 ②(동보 무과금)대로 **미구현** — §4.7의 `idx_tuition_student_status`도 함께 소멸. ② `orders.status` 값집합에 `취소` 추가 — 부분 UQ `WHERE status <> '취소'`(§4.7)가 전제하는 값인데 baseline 값집합(미결제/결제완료/배부완료)에 누락되어 있어 보완(값 추가라 스키마 불변). ③ `payments.order` FK는 PROTECT — 결제 트랜잭션은 감사 기록이므로 주문 실삭제를 차단(파괴적 작업 수동 원칙, key_considerations §5).
+
 ### 도메인 6 — 클리닉
 
 #### ⚪ `clinic_eval_criteria`, `clinic_evaluations`(녹음경로·AI요약 보유), `clinic_evaluation_items` (불변, 참조)
@@ -373,6 +375,8 @@ baseline(`clinic_id` PK, `student_id` FK, `requested_date`, `requested_time`, `s
 
 - UQ(exam_id, student_id). 전제 = 출석(`attendances`) + 응시(`scores.is_taken`/`attendances.exam_taken`) + 평균미달.
 
+- **[구현 각주 2026-07-22]** 도메인 6 전체를 `backend/apps/clinic`에 그린필드 최종 상태로 구현(슬롯·신청·판정 + baseline 평가 3표, §4.8 인덱스 포함). 편차·확정 2건: ① `clinic_evaluations`는 baseline 문구("클리닉 1건당 1개")를 OneToOne(UQ)로 DB 강제. ② 출석·응시 값은 `clinic_eligibilities`에 복사하지 않고 grades(`attendances`/`scores.is_taken`/`exams.avg_score`) 참조·계산 경로를 모델 docstring 계약으로 명시(cutoff_score NULL=전체평균 자동 판정 — 헤더 노트 ⑤). 정원 마감(활성 신청 수 ≥ capacity)·당일 8시 마감·노쇼 누적(`students.noshow_count`/`clinic_banned`가 원천)은 앱 레이어 계약.
+
 ### 도메인 7 — 게시판 · 문의 · 상담
 
 #### ⚪ `inquiries`, `inquiry_messages` (불변, 참조) · ✏️ `posts` (변경)
@@ -394,6 +398,8 @@ baseline(`post_id` PK, `category`, `title`, `body`, `author_id` FK, `is_publishe
 | created_at | TIMESTAMP | NN, 기본 now | |
 
 - 질답 답변·자유/이벤트 댓글용. -- 잠정: 질답 게시판이 `inquiries`(1:1 문의)와 별개인지 통합인지 관계 TBD.
+
+- **[구현 각주 2026-07-22]** 도메인 7을 `backend/apps/boards`에 구현(posts·post_comments·absence_counselings·parent_counsel_requests). 편차 2건: ① `posts`에 `is_secret`(BOOLEAN NN 기본 false) 추가 — 2026-07-22 결정(PRD 3.3.1: 질답 **기본 공개 + 작성 시 비밀글 옵션**, 비밀글은 작성자·관리자만 열람). ② `inquiries`/`inquiry_messages`는 **미구현** — 헤더 노트 ③(질답↔문의 일단 통합, 단일 창구)에 따라 1:1 문의를 질답 비밀글로 흡수(위 TBD 를 통합으로 해소). 공개 Q&A/1:1 분리 재확정 시 표 신설로 대응(가산, 저위험 — §6 TBD 3 갱신).
 
 #### 🆕 `absence_counselings` — 결석 전화상담 기록(관리자용)
 | 컬럼 | 자료형 | 제약 | 설명 |
@@ -428,6 +434,8 @@ baseline(`post_id` PK, `category`, `title`, `body`, `author_id` FK, `is_publishe
 
 #### ⚪ `notifications` (불변, 참조 — 값만 추가)
 baseline 그대로 사용(`notif_id` PK, `student_id`/`parent_id`/`user_id` 3분기 FK, `channel`, `type`, `title/body`, `ref_type/ref_id` soft-link, `sent_at`, `status`, `error_msg`, `created_at`). `type`에 `동보`/`수강료`/`결석상담`/`상담신청`/`클리닉리마인더` 등 값만 추가. `parent_id` FK는 계정화된 `parents` 재사용.
+
+- **[구현 각주 2026-07-22]** `backend/apps/notifications`에 baseline 명세대로 생성(그린필드라 "재사용"이 아닌 신규 CREATE, §4.5 부분 인덱스 3종 포함). 편차 3건: ① `type`은 choices 를 필드에 바인딩하지 않는 **개방 값집합** — 발송 시점 확정 목록이 미결 8-17(2026-07-29 수신 예정)이라 값 추가 시 AlterField 마이그레이션조차 없게 함(알려진 값은 `Notification.Type` 상수로 제공, `수강료`는 tuition 삭제로 제외). ② 대상 3분기 "셋 중 하나만"은 DB CHECK 금지 원칙에 따라 앱 레벨 `clean()`으로 강제. ③ 대상 FK 3종은 PROTECT — 발송 이력은 감사 기록(파기는 8-1 수동 절차 소관).
 
 ---
 
