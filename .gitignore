@@ -27,3 +27,6 @@ local/
 
 # Playwright MCP 캡처 산출물 (로컬 전용)
 .playwright-mcp/
+
+# 랜딩 리허설 실험 산출물 (영상·프레임 — 로컬 전용)
+frontend/landing/rehearsal/
