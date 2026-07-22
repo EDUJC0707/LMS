@@ -85,6 +85,30 @@
     filter: drop-shadow(0 24px 60px rgba(0,0,0,.55));
   }
 
+  /* sequence-light 전용 — 모티프가 영상이 아니라 DOM이라 형태가 훼손될 수 없다.
+     변하는 것은 밝기와 글자뿐이고, 그 값이 스크롤의 순수 함수라 왕복이 대칭이다. */
+  .lamps{
+    position:absolute; inset:0; z-index:2; pointer-events:none;
+    display:none;                      /* 해당 시안에서만 켠다 */
+  }
+  .lamps.on{ display:block }
+  .lamp{
+    position:absolute; width:min(26vw,300px); aspect-ratio:1;
+    display:grid; place-items:center;
+    filter:brightness(var(--b,.25)) saturate(calc(.4 + var(--b,.25) * .8));
+    transition:filter .12s linear;
+  }
+  .lamp img{ width:100%; height:100%; object-fit:contain; display:block }
+  .lamp b{
+    position:absolute; left:50%; bottom:-2.1rem; transform:translateX(-50%);
+    white-space:nowrap; font-size:.82rem; font-weight:600; letter-spacing:.04em;
+    color:var(--fg); opacity:calc((var(--b,.25) - .35) * 2.2);
+  }
+  .lamp:nth-child(1){ left:6%;  top:14% }
+  .lamp:nth-child(2){ left:24%; top:38% }
+  .lamp:nth-child(3){ left:8%;  top:60% }
+  @media (max-width:820px){ .lamp{ width:34vw } .lamp b{ font-size:.7rem } }
+
   /* 시안 전환 바 (검수용 — 최종본에는 없다) */
   .switch{
     position:fixed; top:12px; left:50%; transform:translateX(-50%); z-index:99;
@@ -136,6 +160,11 @@
 <section class="track" id="track">
   <div class="stage">
     <canvas id="seq"></canvas>
+    <div class="lamps" id="lamps">
+      <div class="lamp"><img src="assets/motifs/atom.webp" alt=""><b>개념 · 물질과 규칙성</b></div>
+      <div class="lamp"><img src="assets/motifs/dna-2.webp" alt=""><b>약점 · 생명 시스템</b></div>
+      <div class="lamp"><img src="assets/motifs/earth-system.webp" alt=""><b>복습 · 지구 시스템</b></div>
+    </div>
     <div class="scrim"></div>
     <img class="teacher" id="teacher" alt="한종철 선생님">
     <div class="overlay">
@@ -180,6 +209,7 @@ const VARIANTS = {
   },
   'sequence-light': {
     label: '순서대로 켜진다',
+    lamps: true,                       // 모티프 3개를 DOM으로 얹고 스크롤에 따라 점등
     ink: '#08090C', teacher: '02-검정티-턱손', flipTeacher: true,
     eyebrow: '2028 수능 · 통합과학',
     headline: '순서가 있는<br><em>관리</em>',
@@ -241,6 +271,22 @@ const meta = manifest[key];
 const dir = V.dir ?? `frames/${key}`;
 const count = V.count ?? meta?.count;
 
+/* sequence-light: 모티프를 차례로 점등한다.
+   구간을 겹치지 않게 나눠 '무작정 다 켜지는 게 아니라 정해진 차례가 있다'가 읽히게 한다.
+   조명값이 스크롤의 순수 함수라 역스크롤이 정확히 역순 소등이 된다. */
+const lampsEl = document.getElementById('lamps');
+const LAMP_SPANS = [[0.00, 0.30], [0.30, 0.60], [0.60, 0.85]];
+const DIM = 0.25;
+function lightLamps(p) {
+  const items = lampsEl.children;
+  for (let i = 0; i < items.length; i++) {
+    const [a, b] = LAMP_SPANS[i];
+    const t = Math.max(0, Math.min(1, (p - a) / (b - a)));
+    items[i].style.setProperty('--b', (DIM + (1 - DIM) * t).toFixed(3));
+  }
+}
+if (V.lamps) { lampsEl.classList.add('on'); lightLamps(0); }
+
 const hud = document.getElementById('hud');
 if (!count) {
   hud.textContent = `${key} · 프레임 없음 — build-frames.py 실행 필요`;
@@ -254,6 +300,7 @@ if (!count) {
     onProgress: p => {
       const i = Math.round(p * (count - 1));
       hud.textContent = `${key} · frame ${i + 1}/${count} · ${(p * 100).toFixed(0)}%`;
+      if (V.lamps) lightLamps(p);
     },
   });
   seq.start();
