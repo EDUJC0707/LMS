@@ -85,6 +85,20 @@
     filter: drop-shadow(0 24px 60px rgba(0,0,0,.55));
   }
 
+  /* 시안 전환 바 (검수용 — 최종본에는 없다) */
+  .switch{
+    position:fixed; top:12px; left:50%; transform:translateX(-50%); z-index:99;
+    display:flex; gap:4px; padding:5px; border-radius:999px;
+    background:rgba(20,22,28,.72); backdrop-filter:blur(10px);
+    border:1px solid rgba(255,255,255,.1);
+  }
+  .switch a{
+    padding:7px 13px; border-radius:999px; text-decoration:none;
+    font-size:12px; font-weight:600; color:#C6CBD4; white-space:nowrap;
+  }
+  .switch a.on{ background:#F4F5F7; color:#14161A }
+  @media (max-width:820px){ .switch{ display:none } }
+
   /* 진행 표시 (검수용) */
   .hud{
     position:fixed; left:12px; bottom:12px; z-index:99;
@@ -153,35 +167,97 @@
 <script type="module">
 import { ScrubSequence } from './scrub.js';
 
-// 시안 정의 — 프롬프트 팩이 확정되면 여기에 5개가 채워진다.
+/* 5개 안의 연출별 설정.
+   프레임 장수는 build-frames.py가 굽고 frames/manifest.json에 기록한다.
+   여기에는 그림으로 표현되지 않는 것 — 배경색·강사사진·카피 — 만 둔다. */
 const VARIANTS = {
-  'test': {
-    dir: 'rehearsal/frames-test', count: 96, pad: 3,
-    ink: '#0B0C0F', teacher: 'assets/teacher/nobg/01-검정수트-팔짱.webp',
+  'dna-gate': {
+    label: '열린 사이로',
+    ink: '#05060A', teacher: '01-검정수트-팔짱',
+    eyebrow: '2028 수능 · 통합과학',
     headline: '엉킨 것부터<br><em>푼다</em>',
+    sub: '결석하면 그날 연락이 갑니다.<br>틀린 문항은 유사문항으로 다시 나옵니다.',
   },
+  'sequence-light': {
+    label: '순서대로 켜진다',
+    ink: '#08090C', teacher: '02-검정티-턱손', flipTeacher: true,
+    eyebrow: '2028 수능 · 통합과학',
+    headline: '순서가 있는<br><em>관리</em>',
+    sub: '개념 · 약점 · 복습이 정해진 차례로 켜집니다.<br>빠지는 학생이 없도록.',
+  },
+  'ruled-layout': {
+    label: '누워서 선이 된다',
+    ink: '#EDEAE4', light: true, teacher: '03-흰니트-손얼굴',
+    eyebrow: '2028 수능 · 통합과학',
+    headline: '흩어진 것에<br><em>축을 세운다</em>',
+    sub: '무엇을 언제 어디까지 할지 먼저 정합니다.<br>공부는 그다음입니다.',
+  },
+  'right-angle': {
+    label: '각도가 맞으면 읽힌다',
+    ink: '#14161A', teacher: '02-검정티-턱손',
+    eyebrow: '2028 수능 · 통합과학',
+    headline: '못 푸는 게 아니라<br><em>각도가 다른 것</em>',
+    sub: '어디서 막히는지 먼저 봅니다.<br>그 지점부터 다시 세웁니다.',
+  },
+  'pull-back': {
+    label: '물러서야 보인다',
+    ink: '#EFECE6', light: true, teacher: '01-검정수트-팔짱',
+    eyebrow: '2028 수능 · 통합과학',
+    headline: '안에 있으면<br><em>안 보인다</em>',
+    sub: '전 범위를 한 사람이 통째로 봅니다.<br>방향은 저희가 잡습니다.',
+  },
+  'test': { label: '엔진 테스트', ink: '#0B0C0F', teacher: '01-검정수트-팔짱', dir: 'rehearsal/frames-test', count: 96 },
 };
 
-const key = new URLSearchParams(location.search).get('v') || 'test';
-const V = VARIANTS[key] ?? VARIANTS.test;
+const key = new URLSearchParams(location.search).get('v') || 'dna-gate';
+const V = VARIANTS[key] ?? VARIANTS['dna-gate'];
 
+// 라이트 톤이면 글자·스크림 색을 뒤집는다.
+if (V.light) {
+  const r = document.documentElement.style;
+  r.setProperty('--fg', '#14161A');
+  r.setProperty('--muted', '#6A6F78');
+  r.setProperty('--accent', '#3A4A8C');
+}
 document.documentElement.style.setProperty('--ink', V.ink);
-if (V.teacher) document.getElementById('teacher').src = V.teacher;
-if (V.headline) document.getElementById('headline').innerHTML = V.headline;
+
+const t = document.getElementById('teacher');
+t.src = `assets/teacher/nobg/${V.teacher}.webp`;
+if (V.flipTeacher) t.style.transform = 'scaleX(-1)';
+for (const [id, val] of [['eyebrow', V.eyebrow], ['headline', V.headline], ['sub', V.sub]]) {
+  if (val) document.getElementById(id).innerHTML = val;
+}
+
+// 시안 전환 바
+const bar = document.createElement('nav');
+bar.className = 'switch';
+bar.innerHTML = Object.entries(VARIANTS)
+  .filter(([k]) => k !== 'test')
+  .map(([k, v]) => `<a href="?v=${k}" class="${k === key ? 'on' : ''}">${v.label}</a>`).join('');
+document.body.appendChild(bar);
+
+const manifest = await fetch('frames/manifest.json').then(r => r.ok ? r.json() : {}).catch(() => ({}));
+const meta = manifest[key];
+const dir = V.dir ?? `frames/${key}`;
+const count = V.count ?? meta?.count;
 
 const hud = document.getElementById('hud');
-const seq = new ScrubSequence({
-  canvas: document.getElementById('seq'),
-  track: document.getElementById('track'),
-  count: V.count,
-  src: i => `${V.dir}/f_${String(i).padStart(V.pad, '0')}.webp`,
-  window: 12,
-  onProgress: p => {
-    const i = Math.round(p * (V.count - 1));
-    hud.textContent = `${key} · frame ${i + 1}/${V.count} · ${(p * 100).toFixed(0)}%`;
-  },
-});
-seq.start();
+if (!count) {
+  hud.textContent = `${key} · 프레임 없음 — build-frames.py 실행 필요`;
+} else {
+  const seq = new ScrubSequence({
+    canvas: document.getElementById('seq'),
+    track: document.getElementById('track'),
+    count,
+    src: i => `${dir}/f_${String(i).padStart(3, '0')}.webp`,
+    window: 12,
+    onProgress: p => {
+      const i = Math.round(p * (count - 1));
+      hud.textContent = `${key} · frame ${i + 1}/${count} · ${(p * 100).toFixed(0)}%`;
+    },
+  });
+  seq.start();
+}
 </script>
 </body>
 </html>
