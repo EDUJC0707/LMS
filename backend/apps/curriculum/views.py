@@ -1,1 +1,106 @@
-"""curriculum 뷰 — DRF ViewSet/APIView 정의 위치(현재 비어 있음)."""
+"""curriculum 뷰 — 캘린더 홈 API 2차 슬라이스 (PRD 3.2.0·3.4·§4).
+
+- GET /api/student/home?month=YYYY-MM  로그인 학생 본인 홈 (IsStudent)
+- GET /api/parent/home?student_id=&month=  자녀 홈 조회 (IsParent, 읽기 전용)
+
+페이로드 조립은 home.build_home_payload 공용 서비스가 담당한다 — 뷰는
+역할 게이트·입력 검증·대상 학생 결정(학부모는 자녀 소유 검증)만 한다.
+"""
+import datetime
+
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from apps.accounts.models import Parent, ParentStudent, Student
+from apps.accounts.permissions import IsParent, IsStudent
+
+from .home import build_home_payload
+
+# 404 단일 메시지 — 타인 자녀·미존재를 구분해 주지 않는다(존재 비노출,
+# 로그인 실패 단일 메시지와 같은 방향).
+_NOT_FOUND_MESSAGE = "찾을 수 없습니다."
+_MONTH_FORMAT_MESSAGE = "month 형식은 YYYY-MM 입니다."
+
+
+def _parse_month(raw):
+    """`YYYY-MM` 문자열 → (year, month). 형식 오류는 ValueError 전파."""
+    parsed = datetime.datetime.strptime(raw, "%Y-%m")
+    return parsed.year, parsed.month
+
+
+class StudentHomeView(APIView):
+    """GET /api/student/home — 로그인 학생 본인의 캘린더 홈."""
+
+    permission_classes = [IsStudent]
+
+    def get(self, request):
+        raw_month = request.query_params.get("month")
+        month = None
+        if raw_month:
+            try:
+                month = _parse_month(raw_month)
+            except ValueError:
+                return Response(
+                    {"detail": _MONTH_FORMAT_MESSAGE}, status=status.HTTP_400_BAD_REQUEST
+                )
+        student = Student.objects.select_related("user").filter(user=request.user).first()
+        if student is None:
+            # 학생 role 인데 students 행이 없는 예외 상태 — 닫힘으로 방어
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return Response(build_home_payload(student, month=month))
+
+
+class ParentHomeView(APIView):
+    """GET /api/parent/home — 자녀 캘린더 홈 + 결제·결석/동보 (읽기 전용).
+
+    자녀 소유 검증: parent_students 에 연결된 자녀만 조회 가능. 밖의
+    student_id 는 존재 여부와 무관하게 404 — 타인 자녀 존재를 노출하지
+    않는다(PRD §4). student_id 생략 시 첫 자녀(student_id 오름차순 —
+    /api/me children 드롭다운 순서와 동일).
+    """
+
+    permission_classes = [IsParent]
+
+    def get(self, request):
+        raw_month = request.query_params.get("month")
+        month = None
+        if raw_month:
+            try:
+                month = _parse_month(raw_month)
+            except ValueError:
+                return Response(
+                    {"detail": _MONTH_FORMAT_MESSAGE}, status=status.HTTP_400_BAD_REQUEST
+                )
+        raw_student_id = request.query_params.get("student_id")
+        student_id = None
+        if raw_student_id:
+            try:
+                student_id = int(raw_student_id)
+            except ValueError:
+                return Response(
+                    {"detail": "student_id가 올바르지 않습니다."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        parent = Parent.objects.filter(user=request.user).first()
+        if parent is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        links = list(
+            ParentStudent.objects.filter(parent=parent)
+            .select_related("student__user")
+            .order_by("student_id")
+        )
+        student = self._select_child(links, student_id)
+        if student is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return Response(build_home_payload(student, month=month, include_billing=True))
+
+    @staticmethod
+    def _select_child(links, student_id):
+        """student_id 미지정 → 첫 자녀, 지정 → 소유 자녀 중 일치만(없으면 None)."""
+        if student_id is None:
+            return links[0].student if links else None
+        for link in links:
+            if link.student_id == student_id:
+                return link.student
+        return None

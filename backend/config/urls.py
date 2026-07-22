@@ -18,6 +18,8 @@ def healthz(_request):
 api_urlpatterns = [
     # 인증(/api/auth/*)·/api/me — 도메인 prefix 없이 직결(PRD §4 로그인 3종)
     path("", include("apps.accounts.auth_urls")),
+    # 캘린더 홈(/api/student/home·/api/parent/home) — 역할 경로 직결(PRD 3.2.0)
+    path("", include("apps.curriculum.home_urls")),
     path("accounts/", include("apps.accounts.urls")),
     path("grades/", include("apps.grades.urls")),
     path("curriculum/", include("apps.curriculum.urls")),
