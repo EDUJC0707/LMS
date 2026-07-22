@@ -1,0 +1,17 @@
+/* bare 프런트 최소 CSS — 표 보더·간격·가독 최소치만(디자인 금지). */
+.bare { max-width: 1100px; margin: 0 auto; padding: 12px; font-family: sans-serif; }
+.bare table { border-collapse: collapse; margin: 8px 0; }
+.bare th, .bare td { border: 1px solid #999; padding: 4px 8px; text-align: left; vertical-align: top; }
+.bare nav a { margin-right: 12px; }
+.bare form { margin: 8px 0; }
+.bare fieldset { margin: 8px 0; max-width: 480px; }
+.bare .error { color: #b00020; }
+.bare .ok { color: #1a6b1a; }
+.bare .muted { color: #666; }
+.bare .cal td { width: 90px; height: 60px; }
+.bare .today { outline: 2px solid #333; }
+.bare details.debug { margin-top: 32px; border-top: 1px solid #999; padding-top: 8px; }
+.bare details.debug pre { max-height: 320px; overflow: auto; background: #f2f2f2; padding: 8px; }
+.bare img.thumb { max-width: 120px; border: 1px solid #999; }
+.bare .inline input, .bare .inline select, .bare .inline button { margin-right: 6px; }
+.bare textarea { width: 100%; max-width: 640px; }

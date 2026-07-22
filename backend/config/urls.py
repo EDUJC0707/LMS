@@ -5,6 +5,8 @@
 - /api/<도메인>/   도메인별 DRF 라우터(각 앱 urls.py 에서 마운트)
 - /api-auth/       DRF 브라우저블 API 로그인
 """
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.http import JsonResponse
 from django.urls import include, path
@@ -56,3 +58,7 @@ urlpatterns = [
     path("api/", include(api_urlpatterns)),
     path("api-auth/", include("rest_framework.urls")),
 ]
+
+# 개발 편의: DEBUG 에서만 로컬 미디어(워크북 사진 등) 서빙 — 운영은 S3(Tigris) url().
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
