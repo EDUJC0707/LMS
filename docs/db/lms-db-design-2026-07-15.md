@@ -219,6 +219,8 @@ baseline(`id` PK, `sheet_id` FK, `question_id` FK, `marked`, `result`, `is_corre
 
 - 학부모 리포트의 "과제 수행=사진 링크"로 연결. 과제 수행여부 플래그(`assignments.done`)는 baseline 유지(이원 관리).
 
+- **[구현 각주 2026-07-22]** 도메인 2 전체를 `backend/apps/grades`에 그린필드 최종 상태로 구현. 명세 대비 편차 3건: ① `questions.guide_video_id`는 videos 앱이 미구현(placeholder)이라 FK 제약 없는 BIGINT로 두고 `videos.Video` 구현 시 FK 승격. ② `question_similar_maps.ordinal`의 CHECK 1..2는 DB CHECK 금지 원칙(값 추가 시 무마이그레이션)에 따라 앱 레벨 choices(1/2)로 강제. ③ §4의 단일 FK 컬럼 인덱스(`idx_attendances_student`, `idx_qsm_bank`, `idx_class_sessions_week`)는 Django FK 자동 인덱스와 컬럼이 동일해 별도 생성하지 않음(course_weeks 선례와 동일 원칙). `attendances.updated_at`은 명세(NULL=정정 이력 없음)대로 auto_now 없이 정정 시 앱 레이어에서 갱신.
+
 ### 도메인 3 — 커리큘럼 / 일정 (신규 도메인)
 
 #### 🆕 `courses` — 강좌 마스터
@@ -242,6 +244,7 @@ baseline(`id` PK, `sheet_id` FK, `question_id` FK, `marked`, `result`, `is_corre
 | end_date | DATE | NULL | |
 
 - UQ(course_id, week_no).
+- **[구현 각주 2026-07-22]** 컬럼 추가: `release_at`(TIMESTAMP NULL) — 소비자(학생·학부모) 공개 시점. 근거: PRD §4 상태 기반 노출 원칙(콘텐츠 단위 — 커리큘럼·학습계획·주차 공지는 시작된 주차까지만, 관리자 조기 공개 오버라이드 가능)·PRD 3.2.0. 의미: NULL이면 `start_date`(주 시작일) 자정부터 공개(값 복제 없이 시작일 변경을 자동 추종), 설정 시 그 시각이 `start_date`보다 우선(조기 공개·연기), `start_date`까지 NULL이면 무기한 비공개(닫힘이 안전 기본값). 소비자용 API는 전부 `CourseWeek.objects.released()`(backend/apps/curriculum/models.py)를 거쳐 주차를 노출한다는 계약 — 강제 지점은 API 응답 레벨(§4).
 
 #### 🆕 `week_day_plans` — Day 학습계획
 | 컬럼 | 자료형 | 제약 | 설명 |
