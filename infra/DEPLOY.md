@@ -15,8 +15,11 @@ Fly org (도쿄 nrt)
 ├─ pg   edujc-pg      ← Postgres 1클러스터        · database: lms / qbank
 ├─ storage edujc-lms-storage    (Tigris/S3)     · OMR·워크북·PDF
 ├─ storage edujc-qbank-storage  (Tigris/S3)     · 문제·선지·표 이미지·원천PDF
-└─ redis edujc-redis  (Upstash)                 · Celery (일단 LMS)
+└─ redis edujc-redis  (Upstash)                 · Celery (일단 LMS) ⛔ **미생성 — 6장 참조**
 ```
+
+> **실제 가동 현황(2026-07-22 확인)**: `edujc-lms` web 1대 + `edujc-pg` primary 1대만 떠 있다.
+> **Celery worker와 Redis는 의도적으로 미가동** — 이유·복구 절차는 [6장](#6-celery-워커--redis--미가동-보류-2026-07-22).
 
 ---
 
@@ -48,8 +51,9 @@ fly apps create edujc-lms --org EduJC
 fly postgres create --name edujc-pg --org EduJC --region nrt --vm-size shared-cpu-1x --volume-size 10
 fly postgres attach edujc-pg -a edujc-lms --database-name lms --database-user lms
 #   (참고: PRD는 Managed Postgres[MPG] 명시 — 안정화 시 `fly mpg create`로 대체 가능)
+#   ⚠️ 실제 생성된 것은 shared-cpu-1x:256MB + 볼륨 3GB(--volume-size 10 아님). 2026-07-22 확인.
 
-# 2-3) Redis (Upstash) — REDIS_URL 자동 주입
+# 2-3) Redis (Upstash) — ⛔ 아직 실행하지 않음. 6장의 보류 결정을 먼저 읽을 것.
 fly redis create --org EduJC --region nrt --name edujc-redis
 fly secrets set REDIS_URL="<위 출력의 redis:// URL>" CELERY_BROKER_URL="<동일>" -a edujc-lms
 
@@ -131,6 +135,93 @@ class AnswerSheet(models.Model):
     scan = models.FileField(upload_to="omr/%(exam_id)s/")   # → Tigris 자동 업로드
     # DB엔 이 필드의 경로 문자열만 저장됨
 ```
+
+---
+
+## 6. Celery 워커 / Redis — 미가동 (보류, 2026-07-22)
+
+**결정: 아직 띄우지 않는다.** 첫 Celery 태스크를 실제로 작성할 때 Redis와 묶어 한 번에 올린다.
+
+### 경위 (추측 금지 — 실제 확인된 사실)
+
+- 2026-07-21 15:09 KST 배포로 worker 머신(`8747747f672698`)이 생성됐다.
+- Redis가 없어서 Celery가 기본값 `redis://localhost:6379`로 붙으려다 **72회 재시도**하며 에러 로그만 쌓았다.
+- 2026-07-21 15:43 KST **`SOURCE=user`로 destroy** — 크래시가 아니라 사람이 명령으로 지웠다.
+  (머신 이벤트 로그 `destroying │ destroy │ user` 로 확인. flyd 자동 정리가 아님.)
+- 현재 `fly scale show`에 **worker 그룹 자체가 없다**(web 1대만).
+
+### 왜 지금 안 띄우나
+
+1. **할 일이 없다** — `@shared_task` 정의 0건, `tasks.py` 파일 0개. 워커가 떠도 idle.
+2. **auto-stop이 안 먹는다** — `fly.toml`의 `auto_stop_machines`는 `[http_service]`에만 걸린다.
+   워커는 HTTP로 깨우는 대상이 아니라 **한번 띄우면 24시간 계속 돈다.**
+3. 즉 지금 띄우면 **아무 일도 안 하는 머신에 월 ~$3.3**을 낸다.
+
+### 비용 (fly.io/docs/about/pricing, 2026-07-22 확인 — Fly 무료 티어 없음)
+
+| 리소스 | 사양 | 월 |
+|---|---|---|
+| `edujc-lms` web (상시, `min_machines_running=1`) | shared-cpu-1x 512MB | ~$3.32 |
+| `edujc-pg` | shared-cpu-1x 256MB | ~$2.02 |
+| pg 볼륨 | 3GB × $0.15 | $0.45 |
+| **현재 합계** | | **~$5.8** |
+| *(추가 시)* worker | shared-cpu-1x 512MB | +~$3.32 |
+| *(추가 시)* Upstash Redis | pay-as-you-go, 최소요금 없음 | $0.20 / 100k 요청 |
+
+Redis는 부담이 아니다 — 최소요금이 없어 요청이 없으면 사실상 $0. **비용은 워커 머신 쪽**이다.
+
+### 해제 트리거
+
+**첫 `@shared_task` 를 작성하는 시점.** (알림톡 발송 / 영상 처리 등)
+
+### 복구 절차 (트리거 도달 시, 3단계)
+
+```bash
+export PATH="$HOME/.fly/bin:$PATH"
+cd /path/to/LMS
+
+# 1) Redis 생성 (--plan 미지정 시 pay-as-you-go)
+fly redis create --org EduJC --region nrt --name edujc-redis
+#    → 출력된 redis://... URL 을 복사
+
+# 2) secret 주입 (base.py 는 REDIS_URL 을 읽고 CELERY_BROKER_URL 기본값으로 재사용)
+fly secrets set REDIS_URL="redis://..." -a edujc-lms
+
+# 3) 워커 기동 — fly.toml 의 [processes] worker 정의는 그대로 살아 있으므로 count 만 올리면 된다
+fly scale count worker=1 -a edujc-lms
+
+# 검증: 아래에 Redis 재시도 에러가 없고 "celery@... ready." 가 떠야 성공
+fly logs -a edujc-lms
+fly scale show -a edujc-lms          # worker 그룹이 COUNT 1 로 보여야 함
+```
+
+> 되돌리기: `fly scale count worker=0 -a edujc-lms`
+
+---
+
+## 7. 로컬에서 DB 접속 (DBeaver 등) — 함정 2개
+
+`edujc-pg`에는 **private IPv6(`fdaa:...`)밖에 없다.** 공인 IP가 없으므로 인터넷에서 직접 못 붙고
+**반드시 `fly proxy`(WireGuard 터널)를 거쳐야 한다.**
+
+```bash
+export PATH="$HOME/.fly/bin:$PATH"
+fly proxy 15432:5432 -a edujc-pg      # 이 터미널은 켜둔 채로 유지
+```
+
+DBeaver 설정: Host `localhost` / Port **`15432`** / DB `lms` / User `lms` / SSL 끄기
+비밀번호: `fly ssh console -a edujc-lms -C "printenv DATABASE_URL"` 로 확인
+
+**함정 1 — 프록시는 조용히 죽는다.** 포그라운드 프로세스라 터미널을 닫거나 맥이 절전에 들어가면
+사라진다. "어제까진 됐는데 안 된다"의 대부분이 이것이다. 먼저 확인:
+```bash
+lsof -nP -iTCP:15432 -sTCP:LISTEN     # 아무것도 안 나오면 프록시가 죽은 것
+```
+
+**함정 2 — 5432를 쓰지 말 것.** 로컬 `docker-compose.yml`의 postgres(OrbStack)가 5432를 점유한다.
+- `fly proxy 5432:5432` → bind 실패
+- DBeaver가 `localhost:5432`로 붙으면 fly DB가 아니라 **로컬 도커 DB(lms/lms/lms)에 조용히 연결된다**
+  → "연결은 되는데 테이블이 비어 있다" 증상의 정체. 반드시 **15432** 같은 다른 포트를 쓴다.
 
 ---
 

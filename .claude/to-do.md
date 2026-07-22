@@ -4,7 +4,7 @@
 
 ## 진행 중
 
-- [ ] **A/B/C 실험 2라운드** (2026-07-22): 세 에이전트 재개 — 각자 디자인 언어 유지하며 학부모 홈(/parent) + 관리자 홈(/admin) + 출결 입력(/admin/attendance) 추가. 완료 후 역할별 3자 비교 → 사용자 최종 선택
+- [x] **A/B/C 실험 2라운드 완료** (2026-07-22): 3안 모두 학부모 홈·관리자 홈·출결 입력 추가, build·typecheck 통과, 학생 홈 회귀 없음. **→ 사용자 최종 선택 대기** (A 단일 통일 vs 역할 분리)
 - [ ] 라이브 비교: A=5173(worktree로 전환) · B=5199 · C=5210
 
 ## 완료 (2026-07-21~22 1라운드)
@@ -18,11 +18,13 @@
 - [ ] **Carbon MCP 연결** — IBM 인바이트 승인 대기(2026-07-22 액세스 요청 제출, seanpark98@gmail.com로 인바이트 코드 수신 예정). 코드 수신 → `claude mcp add-json carbon-mcp '{"type":"http","url":"https://mcp.carbondesignsystem.com/mcp","headers":{"Authorization":"Bearer <토큰>","X-MCP-Session":"<세션>"}}'` → 세션 재시작(진행 중 에이전트 없는 때에). 연결 후 C안 정제 2차 패스
 - [x] 프런트 **C-1안**(@carbon/react + DESIGN.md 기준) — 완료(2026-07-22). build·typecheck 통과, DESIGN.md 검수 위반 2건 자체 수정, 스크린샷 저장. **→ A/B/C 3자 비교 후 사용자 선택 대기.** MCP 키 수신 시 C-2 정제 패스
 - [x] 백엔드: curriculum 주차 게이팅(release_at + released() 계약) + grades 앱 12개 모델(출결 SSOT) — 완료(2026-07-22), 테스트 47건·전 검증 통과, 재검증 완료. 커밋 대기
-- [ ] 백엔드 다음 순서: grades(출결 SSOT) → clinic → boards → payments → videos(마지막)
+- [x] 백엔드 모델 계층 완성(2026-07-22): 8개 앱 중 7개 구현(accounts·curriculum·grades·clinic·boards·payments·notifications), 테스트 118건. **videos만 남음**(DRM 재설계와 묶어 마지막)
+- [ ] 다음 백엔드 단계: DB 설계 재검토(사용자 예고 — DRM·최근 결정 반영) → videos 스키마 → API 계층(DRF 뷰·시리얼라이저·상태 기반 노출 강제)
 - [ ] videos 착수 전: DB 설계의 `youtube_email`·유튜브 권한 상태기계를 DRM 전제로 정리
 - [ ] 계정 일괄생성 배치 (아이디=전화번호, PRD 8-4)
 - [ ] 백엔드 플러그인 설치 검토: pyright-lsp, context7 (사용자 승인 대기)
 - [ ] 첫 실배포 전: prod SECRET_KEY fail-fast, whitenoise, `UV_NO_DEV=1`, uv 이미지 태그 고정, CI `FLY_API_TOKEN`
+- [ ] **Celery 워커 + Redis 기동 — 아직 아님(2026-07-22 결정, 보류 유지)**. 현재 Fly에 worker 그룹 자체가 없고 Redis 미생성. 이유: `@shared_task` 0건이라 할 일이 없고, 워커는 `auto_stop` 대상이 아니라 24시간 돌며 월 ~$3.3만 나감. **해제 트리거 = 첫 `@shared_task` 작성 시점**(알림톡 발송[7/29 리스트 수신] 또는 영상 처리). 복구는 3단계(`fly redis create` → `REDIS_URL` secret → `fly scale count worker=1`) — 절차·비용·경위 전문은 `infra/DEPLOY.md` 6장
 
 ## 외부 대기 (날짜 확정)
 
