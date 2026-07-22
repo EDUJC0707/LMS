@@ -1,9 +1,22 @@
-"""grades 뷰 — 출결 입력 API 3차 슬라이스 (PRD 3.1.6·3.1.4①·3.2.3).
+"""grades 뷰 — 출결 입력 3차 + 성적·성적표 조회 5차 슬라이스.
 
+3차(PRD 3.1.6·3.1.4①·3.2.3):
 - GET  /api/admin/attendance/sessions            회차 목록 (출결입력)
 - GET  /api/admin/attendance/sessions/{id}       회차 명단 + 출결 + 집계 (출결입력)
 - PUT  /api/admin/attendance/sessions/{id}       출결 upsert + 파생 트리거 (출결입력)
 - POST /api/admin/attendance/makeup              동보 관리자 체크 (영상지급관리)
+
+5차(PRD 3.2.1·3.1.1·§4 — 전부 조회 전용):
+- GET /api/student/grades                        내 시험 목록 + 회차별 추이 (IsStudent)
+- GET /api/student/grades/{exam_id}              성적표 상세 (IsStudent)
+- GET /api/parent/grades[?student_id=]           자녀 성적 목록 (IsParent, 읽기 전용)
+- GET /api/parent/grades/{exam_id}[?student_id=] 자녀 성적표 상세 (IsParent)
+- GET /api/admin/exams                           시험 목록 (성적처리)
+- GET /api/admin/exams/{exam_id}                 시험 상세 (성적처리)
+
+페이로드 조립은 report(소비자)·exam_admin(관리자) 서비스가 담당 — 뷰는
+역할·기능 키 게이트, 입력 검증, 대상 학생 결정(학부모는 자녀 소유 검증 —
+2차 슬라이스 home 선례)만 한다.
 
 **동보 기능 키 판단**: 동보 체크는 곧 영상 권한 지급 행위다(PRD 3.2.3 "체크하면
 즉시 복습영상 권한 자동 부여") — 출결입력이 아니라 `영상지급관리`(FeatureKey.
@@ -22,10 +35,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.features import FeatureKey
-from apps.accounts.permissions import FeatureRequired
+from apps.accounts.models import Parent, ParentStudent, Student
+from apps.accounts.permissions import FeatureRequired, IsParent, IsStudent
 from apps.videos.models import MakeupGrant
 
-from . import attendance_admin
+from . import attendance_admin, exam_admin, report
 from .models import Attendance, ClassSession
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
@@ -199,3 +213,123 @@ class MakeupCheckView(APIView):
 def timezone_iso(value):
     """aware datetime → Asia/Seoul 로컬 ISO 문자열(2차 슬라이스 표기 선례)."""
     return timezone.localtime(value).isoformat() if value else None
+
+
+# --- 5차 슬라이스: 성적·성적표 조회 --------------------------------------
+
+
+def _my_student(request):
+    """로그인 학생의 students 행. 없으면 None(예외 상태 — 닫힘 방어, 2차 선례)."""
+    return Student.objects.select_related("user").filter(user=request.user).first()
+
+
+def _resolve_child(request):
+    """학부모의 대상 자녀 결정 — (student, error_response) (2차 슬라이스 패턴).
+
+    parent_students 에 연결된 자녀만 조회 가능. 소유 밖 student_id 는 존재
+    여부와 무관하게 404 — 타인 자녀 존재를 노출하지 않는다(§4). student_id
+    생략 시 첫 자녀(student_id 오름차순 — /api/me children 드롭다운 순서).
+    """
+    raw_student_id = request.query_params.get("student_id")
+    student_id = None
+    if raw_student_id:
+        try:
+            student_id = int(raw_student_id)
+        except ValueError:
+            return None, Response(
+                {"detail": "student_id가 올바르지 않습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    parent = Parent.objects.filter(user=request.user).first()
+    if parent is None:
+        return None, Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+    links = list(
+        ParentStudent.objects.filter(parent=parent)
+        .select_related("student__user")
+        .order_by("student_id")
+    )
+    if student_id is None:
+        student = links[0].student if links else None
+    else:
+        student = next((link.student for link in links if link.student_id == student_id), None)
+    if student is None:
+        return None, Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+    return student, None
+
+
+class StudentGradeListView(APIView):
+    """GET /api/student/grades — 내 시험 목록(회차순) + 회차별 추이."""
+
+    permission_classes = [IsStudent]
+
+    def get(self, request):
+        student = _my_student(request)
+        if student is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return Response(report.build_grades_list(student))
+
+
+class StudentGradeReportView(APIView):
+    """GET /api/student/grades/{exam_id} — 내 성적표 상세.
+
+    내 성적이 없는 시험은 404 — 시험 존재를 노출하지 않는다(§4).
+    """
+
+    permission_classes = [IsStudent]
+
+    def get(self, request, exam_id):
+        student = _my_student(request)
+        if student is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        payload = report.build_report(student, exam_id)
+        if payload is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return Response(payload)
+
+
+class ParentGradeListView(APIView):
+    """GET /api/parent/grades?student_id= — 자녀 성적 목록(읽기 전용, PRD 3.4)."""
+
+    permission_classes = [IsParent]
+
+    def get(self, request):
+        student, error = _resolve_child(request)
+        if error is not None:
+            return error
+        return Response(report.build_grades_list(student))
+
+
+class ParentGradeReportView(APIView):
+    """GET /api/parent/grades/{exam_id}?student_id= — 자녀 성적표 상세."""
+
+    permission_classes = [IsParent]
+
+    def get(self, request, exam_id):
+        student, error = _resolve_child(request)
+        if error is not None:
+            return error
+        payload = report.build_report(student, exam_id)
+        if payload is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return Response(payload)
+
+
+class AdminExamListView(APIView):
+    """GET /api/admin/exams — 시험 목록(응시자 수·평균·처리 상태)."""
+
+    permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
+
+    def get(self, request):
+        return Response(exam_admin.build_exam_list())
+
+
+class AdminExamDetailView(APIView):
+    """GET /api/admin/exams/{exam_id} — 학생별 점수 테이블 + 문항별 정답률."""
+
+    permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
+
+    def get(self, request, exam_id):
+        exam = exam_admin.load_exam(exam_id)
+        if exam is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return Response(exam_admin.build_exam_detail(exam))

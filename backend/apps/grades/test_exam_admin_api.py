@@ -1,0 +1,242 @@
+"""관리자 시험 조회 API 5차 슬라이스 테스트 — 성적처리 화면 근거 (PRD 3.1.1).
+
+검증 축:
+- 기능 키 게이트(FeatureRequired 성적처리): 프리셋(관리자)·delta(조교 부여)·대표 전권
+- 시험 목록: 응시자 수·평균(저장값 우선)·처리 상태(파생값 — 조회 시 계산)
+- 시험 상세: 학생별 점수 테이블(점수 내림차순·동점 공동 석차·미응시 후순위),
+  문항별 정답률·결과 분포(무응답·복수마킹 — 보정 화면 근거, PRD 마킹 이상 경고)
+- 조회 전용: GET 외 메서드 차단(성적 수정·OMR 업로드는 이번 범위 아님)
+
+픽스처·검산 값은 test_grade_report_api.GradeFixtureMixin(모듈 docstring) 공용.
+"""
+from django.test import TestCase
+
+from apps.accounts.features import FeatureKey
+from apps.accounts.models import StaffFeatureGrant, User
+
+from .test_grade_report_api import GradeFixtureMixin, make_user
+
+ADMIN_EXAMS = "/api/admin/exams"
+
+
+class ExamAdminFixtureMixin(GradeFixtureMixin):
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.admin = make_user("adm-exam", User.Role.ADMIN, name="관리자")
+        cls.owner = make_user("own-exam", User.Role.OWNER, name="대표")
+        cls.assistant = make_user("ast-exam", User.Role.ASSISTANT, name="조교")
+        cls.granted_assistant = make_user("ast-exam-ok", User.Role.ASSISTANT, name="부여조교")
+        StaffFeatureGrant.objects.create(
+            user=cls.granted_assistant,
+            feature_key=FeatureKey.GRADE_PROCESSING,
+            is_granted=True,
+        )
+
+    def login_admin(self):
+        self.client.force_login(self.admin)
+
+    def detail_url(self, exam):
+        return f"{ADMIN_EXAMS}/{exam.pk}"
+
+
+class ExamAdminAccessTests(ExamAdminFixtureMixin, TestCase):
+    """기능 키 게이트 — 성적처리 보유자만(§4 직원 기능 권한)."""
+
+    def test_anonymous_denied(self):
+        self.assertEqual(self.client.get(ADMIN_EXAMS).status_code, 403)
+
+    def test_consumer_roles_denied(self):
+        for user in (self.student_a.user, self.parent_user):
+            self.client.force_login(user)
+            self.assertEqual(self.client.get(ADMIN_EXAMS).status_code, 403)
+            self.assertEqual(self.client.get(self.detail_url(self.exam2)).status_code, 403)
+
+    def test_assistant_without_feature_denied(self):
+        """조교 프리셋에는 성적처리가 없다 — delta 부여 전 차단."""
+        self.client.force_login(self.assistant)
+        self.assertEqual(self.client.get(ADMIN_EXAMS).status_code, 403)
+
+    def test_assistant_with_delta_allowed(self):
+        self.client.force_login(self.granted_assistant)
+        self.assertEqual(self.client.get(ADMIN_EXAMS).status_code, 200)
+
+    def test_admin_preset_allowed(self):
+        self.login_admin()
+        self.assertEqual(self.client.get(ADMIN_EXAMS).status_code, 200)
+
+    def test_owner_allowed(self):
+        self.client.force_login(self.owner)
+        self.assertEqual(self.client.get(self.detail_url(self.exam2)).status_code, 200)
+
+    def test_write_methods_not_allowed(self):
+        """조회 전용 — 성적 수정·OMR 업로드는 이번 범위 아님."""
+        self.login_admin()
+        self.assertEqual(self.client.post(ADMIN_EXAMS).status_code, 405)
+        self.assertEqual(self.client.put(self.detail_url(self.exam2)).status_code, 405)
+
+
+class ExamAdminListTests(ExamAdminFixtureMixin, TestCase):
+    """GET /api/admin/exams — 응시자 수·평균·처리 상태."""
+
+    def get_list(self):
+        self.login_admin()
+        res = self.client.get(ADMIN_EXAMS)
+        self.assertEqual(res.status_code, 200)
+        return res.json()["exams"]
+
+    def test_ordering_latest_first(self):
+        rows = self.get_list()
+        self.assertEqual(
+            [r["exam_id"] for r in rows],
+            [self.exam3.pk, self.exam2.pk, self.exam1.pk, self.exam0.pk],
+        )
+
+    def test_row_fields_and_derived_status(self):
+        """처리 상태는 파생값 — 성적 없음=채점전, 미보정 답안지 존재=보정필요, 그 외=완료."""
+        rows = {r["exam_id"]: r for r in self.get_list()}
+        self.assertEqual(
+            rows[self.exam3.pk],
+            {
+                "exam_id": self.exam3.pk,
+                "name": "오메가블랙 3회",
+                "exam_date": "2026-07-15",
+                "round_no": 3,
+                "target_grade": None,
+                "taker_count": 1,
+                "score_count": 2,
+                "average": 90.0,
+                "processing_status": "보정필요",  # 불일치·미보정 답안지 1건
+                "pending_sheet_count": 1,
+            },
+        )
+        e2 = rows[self.exam2.pk]
+        self.assertEqual(e2["taker_count"], 4)
+        self.assertEqual(e2["score_count"], 4)
+        self.assertEqual(e2["average"], 70.0)  # 캐시 없음 → 집계
+        self.assertEqual(e2["processing_status"], "완료")
+        self.assertEqual(e2["pending_sheet_count"], 0)
+        e1 = rows[self.exam1.pk]
+        self.assertEqual(e1["taker_count"], 1)
+        self.assertEqual(e1["average"], 25.0)  # 저장 캐시 우선(실측 20 아님)
+        self.assertEqual(e1["processing_status"], "완료")
+        e0 = rows[self.exam0.pk]
+        self.assertEqual(e0["taker_count"], 0)
+        self.assertEqual(e0["score_count"], 0)
+        self.assertIsNone(e0["average"])
+        self.assertEqual(e0["processing_status"], "채점전")
+
+    def test_query_budget(self):
+        self.login_admin()
+        # 세션인증 2 + 기능키 1 + 시험·성적 annotate 1 + 보정대기 집계 1
+        with self.assertNumQueries(5):
+            self.assertEqual(self.client.get(ADMIN_EXAMS).status_code, 200)
+
+
+class ExamAdminDetailTests(ExamAdminFixtureMixin, TestCase):
+    """GET /api/admin/exams/{exam_id} — 학생별 점수 테이블 + 문항별 정답률."""
+
+    def get_detail(self, exam):
+        self.login_admin()
+        res = self.client.get(self.detail_url(exam))
+        self.assertEqual(res.status_code, 200)
+        return res.json()
+
+    def test_unknown_exam_404(self):
+        self.login_admin()
+        self.assertEqual(self.client.get(f"{ADMIN_EXAMS}/999999").status_code, 404)
+
+    def test_exam_and_stats_blocks(self):
+        body = self.get_detail(self.exam2)
+        self.assertEqual(
+            body["exam"],
+            {
+                "exam_id": self.exam2.pk,
+                "name": "오메가블랙 2회",
+                "exam_date": "2026-07-08",
+                "round_no": 2,
+                "target_grade": None,
+                "notice": "7월 성적표 공지",
+            },
+        )
+        self.assertEqual(
+            body["stats"],
+            {
+                "taker_count": 4,
+                "score_count": 4,
+                "average": 70.0,
+                "stddev": 10.0,
+                "highest_score": 80.0,
+                "top30_score": 80.0,
+                "processing_status": "완료",
+                "pending_sheet_count": 0,
+            },
+        )
+
+    def test_student_table_sorted_with_ranks(self):
+        """점수 내림차순, 동점 공동 석차(1·1·3·3), 동점 내 student_id 순."""
+        students = self.get_detail(self.exam2)["students"]
+        self.assertEqual(
+            [(s["student_id"], s["total_score"], s["rank"]) for s in students],
+            [
+                (self.student_b.student_id, 80.0, 1),
+                (self.student_c.student_id, 80.0, 1),
+                (self.student_a.student_id, 60.0, 3),
+                (self.student_d.student_id, 60.0, 3),
+            ],
+        )
+        first = students[0]
+        self.assertEqual(first["name"], "이민준")
+        self.assertEqual(first["unique_id"], self.student_b.unique_id)
+        self.assertEqual(first["max_score"], 100.0)
+        self.assertTrue(first["is_taken"])
+        self.assertIsNone(first["percentile"])  # 저장 전 — 표시만(계산·저장은 성적처리 슬라이스)
+
+    def test_untaken_student_listed_last_without_rank(self):
+        """미응시는 표 하단·석차 없음(PRD 3.1.1 미응시 표기)."""
+        students = self.get_detail(self.exam3)["students"]
+        self.assertEqual(
+            [(s["student_id"], s["total_score"], s["rank"], s["is_taken"]) for s in students],
+            [
+                (self.student_b.student_id, 90.0, 1, True),
+                (self.student_a.student_id, None, None, False),
+            ],
+        )
+
+    def test_question_stats(self):
+        """문항별 정답률·결과 분포 — 보정 화면 근거(전량 조회 시 계산)."""
+        rows = self.get_detail(self.exam2)["questions"]
+        self.assertEqual(
+            [
+                (
+                    r["q_number"],
+                    r["answered_count"],
+                    r["correct_count"],
+                    r["wrong_count"],
+                    r["blank_count"],
+                    r["multi_count"],
+                    r["correct_rate"],
+                )
+                for r in rows
+            ],
+            [
+                (1, 4, 3, 1, 0, 0, 75.0),
+                (2, 4, 2, 2, 0, 0, 50.0),
+                (3, 4, 4, 0, 0, 0, 100.0),
+                (4, 4, 3, 1, 0, 0, 75.0),
+                (5, 4, 2, 0, 1, 1, 50.0),
+            ],
+        )
+        q1 = rows[0]
+        self.assertEqual(q1["question_id"], self.q1.pk)
+        self.assertEqual(q1["unit_major"], "산염기")
+        self.assertEqual(q1["unit_minor"], "중화")
+        self.assertEqual(q1["points"], 20.0)
+        self.assertEqual(q1["answer"], "1")
+
+    def test_query_budget(self):
+        self.login_admin()
+        # 세션인증 2 + 기능키 1 + 시험 annotate 1 + 보정대기 1 + 요약 집계 1
+        # + 상위30 1 + 학생별 성적 1 + 문항 1 + 문항 집계 1
+        with self.assertNumQueries(10):
+            self.assertEqual(self.client.get(self.detail_url(self.exam2)).status_code, 200)

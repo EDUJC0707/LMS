@@ -22,6 +22,10 @@ api_urlpatterns = [
     path("", include("apps.curriculum.home_urls")),
     # 관리자 출결(/api/admin/attendance/*) — 역할 경로 직결(PRD 3.1.6)
     path("", include("apps.grades.admin_urls")),
+    # 성적·성적표 조회(/api/student/grades* · /api/parent/grades*) — PRD 3.2.1
+    path("", include("apps.grades.report_urls")),
+    # 관리자 성적처리 조회(/api/admin/exams*) — 역할 경로 직결(PRD 3.1.1)
+    path("", include("apps.grades.exam_admin_urls")),
     # 동보 신청(/api/student·parent/makeup-request, /api/admin/makeup-requests)
     path("", include("apps.videos.makeup_urls")),
     # 클리닉 신청(/api/student/clinic*) — 역할 경로 직결(PRD 3.2.4)
