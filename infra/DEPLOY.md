@@ -205,8 +205,8 @@ fly scale show -a edujc-lms          # worker 그룹이 COUNT 1 로 보여야 �
 **반드시 `fly proxy`(WireGuard 터널)를 거쳐야 한다.**
 
 ```bash
-export PATH="$HOME/.fly/bin:$PATH"
-fly proxy 15432:5432 -a edujc-pg      # 이 터미널은 켜둔 채로 유지
+make db-proxy        # 레포 루트에서. 이 터미널은 켜둔 채로 유지
+#   └ 실제 실행: PATH="$HOME/.fly/bin:$PATH" fly proxy 15432:5432 -a edujc-pg
 ```
 
 DBeaver 설정: Host `localhost` / Port **`15432`** / DB `lms` / User `lms` / SSL 끄기
