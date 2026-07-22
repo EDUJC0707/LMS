@@ -35,12 +35,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.features import FeatureKey
-from apps.accounts.models import Parent, ParentStudent, Student
+from apps.accounts.models import Parent, ParentStudent, Student, User
 from apps.accounts.permissions import FeatureRequired, IsParent, IsStudent
 from apps.videos.models import MakeupGrant
 
-from . import attendance_admin, exam_admin, report
-from .models import Attendance, ClassSession
+from . import attendance_admin, exam_admin, report, workbook, workbook_admin
+from .models import Attendance, ClassSession, WorkbookSubmission
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
 _STATUS_VALUES = set(Attendance.Status.values)
@@ -312,6 +312,194 @@ class ParentGradeReportView(APIView):
         if payload is None:
             return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
         return Response(payload)
+
+
+# --- 7차 슬라이스: 워크북 사진 업로드·열람 --------------------------------
+
+
+def _to_int(value):
+    """요청 파라미터 → int(실패 시 None). 멀티파트·쿼리 문자열 공용."""
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+class AdminWorkbookUploadView(APIView):
+    """POST /api/admin/workbook/upload — 워크북 마지막 페이지 사진 업로드.
+
+    멀티파트 `images`(복수 허용) + `student_id`(잠정 매핑 — 설계 NN) +
+    `session_id`(선택). 저장·검증 계약은 workbook_admin 모듈 docstring.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.WORKBOOK_UPLOAD)]
+
+    def post(self, request):
+        files = request.FILES.getlist("images")
+        error = workbook_admin.validate_files(files)
+        if error is not None:
+            return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
+        student_id = _to_int(request.data.get("student_id"))
+        if student_id is None:
+            return Response(
+                {"detail": "student_id가 올바르지 않습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        student = Student.objects.filter(pk=student_id).first()
+        if student is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        session = None
+        raw_session_id = request.data.get("session_id")
+        if raw_session_id not in (None, ""):
+            session_id = _to_int(raw_session_id)
+            if session_id is None:
+                return Response(
+                    {"detail": "session_id가 올바르지 않습니다."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            session = ClassSession.objects.filter(pk=session_id).first()
+            if session is None:
+                return Response(
+                    {"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND
+                )
+        submissions = workbook_admin.create_submissions(files, student, session, request.user)
+        return Response(
+            {"submissions": [workbook_admin.admin_row(s) for s in submissions]},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class AdminWorkbookListView(APIView):
+    """GET /api/admin/workbook?session_id=&status= — 목록·미매핑 카운트(보정 화면)."""
+
+    permission_classes = [FeatureRequired(FeatureKey.WORKBOOK_UPLOAD)]
+
+    def get(self, request):
+        session_id = None
+        raw_session_id = request.query_params.get("session_id")
+        if raw_session_id:
+            session_id = _to_int(raw_session_id)
+            if session_id is None:
+                return Response(
+                    {"detail": "session_id가 올바르지 않습니다."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        status_param = request.query_params.get("status") or None
+        valid_statuses = set(WorkbookSubmission.MatchStatus.values) | {
+            workbook_admin.PENDING_STATUS
+        }
+        if status_param is not None and status_param not in valid_statuses:
+            return Response(
+                {
+                    "detail": (
+                        "status 값이 올바르지 않습니다"
+                        "(대기/자동매칭/수동확정/불일치/인식실패)."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(workbook_admin.build_admin_list(session_id, status_param))
+
+
+class AdminWorkbookMatchView(APIView):
+    """PATCH /api/admin/workbook/{submission_id}/match — 인식 결과 수용·수동확정.
+
+    두 모드 중 정확히 하나만(8-9 결정 — 매칭 계약은 workbook_admin docstring):
+    - `student_id`: 관리자 수동 지정 → 수동확정
+    - `recognized_unique_id`(+`recognized_name`): 원번+이름 대조 자동 매칭
+      시도 → 성공 자동매칭 / 실패 불일치. OCR 엔진(후속 슬라이스)과 관리자
+      수동 입력이 같은 수용 계약을 쓴다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.WORKBOOK_UPLOAD)]
+
+    def patch(self, request, submission_id):
+        submission = (
+            WorkbookSubmission.objects.select_related("student__user", "session", "uploaded_by")
+            .filter(pk=submission_id)
+            .first()
+        )
+        if submission is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        body = request.data if isinstance(request.data, dict) else {}
+        raw_student_id = body.get("student_id")
+        raw_unique_id = body.get("recognized_unique_id")
+        unique_id = raw_unique_id.strip() if isinstance(raw_unique_id, str) else ""
+        if (raw_student_id is not None) == bool(unique_id):
+            return Response(
+                {"detail": "student_id 또는 recognized_unique_id 중 하나만 보내야 합니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if raw_student_id is not None:
+            student_id = _to_int(raw_student_id)
+            if student_id is None:
+                return Response(
+                    {"detail": "student_id가 올바르지 않습니다."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            student = Student.objects.select_related("user").filter(pk=student_id).first()
+            if student is None:
+                return Response(
+                    {"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND
+                )
+            workbook_admin.apply_manual_match(submission, student)
+        else:
+            raw_name = body.get("recognized_name")
+            name = raw_name.strip() if isinstance(raw_name, str) else ""
+            workbook_admin.apply_recognition(submission, unique_id, name or None)
+        return Response({"submission": workbook_admin.admin_row(submission)})
+
+
+class AdminWorkbookDetailView(APIView):
+    """DELETE /api/admin/workbook/{submission_id} — 잘못 올린 사진 삭제.
+
+    객체 권한: **업로더 본인 또는 상위 직원(관리자·대표)**만. 조교가 남의
+    업로드를 지우는 것은 차단 — 파괴적 작업 최소 권한(key_considerations §5).
+    파일도 함께 제거된다(workbook_admin.delete_submission).
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.WORKBOOK_UPLOAD)]
+
+    def delete(self, request, submission_id):
+        submission = WorkbookSubmission.objects.filter(pk=submission_id).first()
+        if submission is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        is_uploader = submission.uploaded_by_id == request.user.pk
+        if not is_uploader and request.user.role not in (User.Role.OWNER, User.Role.ADMIN):
+            return Response(
+                {"detail": "접근 권한이 없습니다."}, status=status.HTTP_403_FORBIDDEN
+            )
+        workbook_admin.delete_submission(submission)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class StudentWorkbookView(APIView):
+    """GET /api/student/workbook — 내 확정 워크북 사진(노출 규칙은 workbook 모듈)."""
+
+    permission_classes = [IsStudent]
+
+    def get(self, request):
+        student = _my_student(request)
+        if student is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return Response(workbook.build_workbook_payload(student))
+
+
+class ParentWorkbookView(APIView):
+    """GET /api/parent/workbook?student_id= — 자녀 워크북(소유 검증 — 2차 선례).
+
+    학생과 같은 조립 함수 — PRD 3.1.1 리포트 '워크북 사진 링크'의 데이터 원천.
+    """
+
+    permission_classes = [IsParent]
+
+    def get(self, request):
+        student, error = _resolve_child(request)
+        if error is not None:
+            return error
+        return Response(workbook.build_workbook_payload(student))
 
 
 class AdminExamListView(APIView):
