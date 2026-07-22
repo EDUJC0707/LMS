@@ -35,6 +35,11 @@ export class ScrubSequence {
     this.win = opt.window ?? 12;
     this.eager = opt.eager ?? 8;
     this.onProgress = opt.onProgress;
+    // 소스 프레임은 좌측 배치로 생성됐다(우측에 텍스트를 얹던 시절 규칙).
+    // 순수 애니메이션으로 시작하는 지금은 주인공이 중앙에 와야 하므로
+    // 그리기 원점을 오른쪽으로 밀어 보정한다. 값은 캔버스 폭 대비 비율.
+    this.offsetX = opt.offsetX ?? 0;
+    this.fill = opt.fill ?? '#000';
 
     this.bitmaps = new Map();   // index → ImageBitmap
     this.pending = new Map();   // index → Promise
@@ -132,7 +137,14 @@ export class ScrubSequence {
     // cover 피팅 — 히어로를 꽉 채우고 넘치는 쪽을 잘라낸다.
     const s = Math.max(cw / bmp.width, ch / bmp.height);
     const w = bmp.width * s, h = bmp.height * s;
-    this.ctx.drawImage(bmp, (cw - w) / 2, (ch - h) / 2, w, h);
+    const dx = this.offsetX * cw;
+    if (dx) {
+      // 오른쪽으로 밀면 왼쪽에 빈 띠가 생긴다. 프레임 배경이 단색이므로
+      // 같은 색으로 채우면 이어져 보인다.
+      this.ctx.fillStyle = this.fill;
+      this.ctx.fillRect(0, 0, cw, ch);
+    }
+    this.ctx.drawImage(bmp, (cw - w) / 2 + dx, (ch - h) / 2, w, h);
     this.current = i;
   }
 
