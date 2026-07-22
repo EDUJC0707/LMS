@@ -24,3 +24,6 @@ local/
 # .claude/ 는 커밋 대상이다 (CLAUDE.md = 프로젝트 규칙). 무시하지 말 것.
 # 단, 기기별 로컬 설정만 제외.
 .claude/settings.local.json
+
+# Playwright MCP 캡처 산출물 (로컬 전용)
+.playwright-mcp/
