@@ -36,21 +36,19 @@ DB 레벨에서 이중 생성을 차단한다(get_or_create 패턴 — 조회 �
 선례 — Asia/Seoul). 만료 = 지급 + 7일 기본(2026-07-15 회의, 관리자 설정 변경은
 후순위 — 기본값 산정은 앱 레이어 몫이라는 VideoGrant 모델 계약 이행).
 """
-import datetime
-
 from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.models import Student
 from apps.boards.models import AbsenceCounseling
 from apps.curriculum.models import CourseEnrollment
+
+# GRANT_DURATION(시청 기간 기본 7일)은 동보 지급 체인과 공유하는 단일 기본값 —
+# videos.makeup 이 원천이다(4차 슬라이스 공용 서비스 추출).
+from apps.videos.makeup import GRANT_DURATION, complete_makeup
 from apps.videos.models import MakeupGrant, VideoGrant
 
 from .models import Attendance, ClassSession
-
-# 시청 기간 기본 7일(PRD 3.1.4 ⑥) — 관리자 설정화 전까지의 앱 레이어 기본값.
-GRANT_DURATION = datetime.timedelta(days=7)
-
 
 # --- 조회 ----------------------------------------------------------------
 
@@ -288,13 +286,13 @@ def _sync_counseling_queue(attendances, triggers):
 
 
 def grant_makeup(attendance, actor):
-    """동보 지급 체인 — MakeupGrant(관리자체크→지급완료) + VideoGrant(동보).
+    """동보 지급 체인 — MakeupGrant(관리자체크) 생성 + 지급완료 전이.
 
-    MakeupGrant 모델의 지급 체인 계약 이행: status 가 `지급완료` 로 전이될 때
-    VideoGrant(source=동보, makeup=이 레코드) 를 같은 트랜잭션에서 생성한다
-    (출석생과 동일한 그 주 권한 — PRD 3.2.3 1차 경로). requested_by 에는 체크한
-    관리자를 남긴다(신청 주체 감사 이력). 중복은 뷰의 지급완료 선재 검사 +
-    부분 UQ(uq_video_grants_makeup)가 이중 방어.
+    지급완료 전이·VideoGrant(동보) 생성은 videos.makeup.complete_makeup 공용
+    서비스가 담당한다(신청 승인 경로와 단일 구현 — 4차 슬라이스 추출, 같은
+    트랜잭션 계약 유지). requested_by 에는 체크한 관리자를 남긴다(신청 주체
+    감사 이력). 중복은 뷰의 지급완료 선재 검사 + 부분 UQ(uq_video_grants_
+    makeup)가 이중 방어.
     """
     now = timezone.now()
     with transaction.atomic():
@@ -303,16 +301,6 @@ def grant_makeup(attendance, actor):
             attendance=attendance,
             source=MakeupGrant.Source.ADMIN_CHECK,
             requested_by=actor,
-            status=MakeupGrant.Status.GRANTED,
-            granted_at=now,
         )
-        grant = VideoGrant.objects.create(
-            student_id=attendance.student_id,
-            course_week=attendance.session.course_week,
-            source=VideoGrant.Source.MAKEUP,
-            makeup=makeup,
-            granted_by=actor,
-            granted_at=now,
-            expires_at=now + GRANT_DURATION,
-        )
+        grant = complete_makeup(makeup, actor, now)
     return makeup, grant

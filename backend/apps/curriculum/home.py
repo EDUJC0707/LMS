@@ -23,15 +23,16 @@ from django.db.models import Prefetch
 from django.utils import timezone
 
 from apps.accounts.models import Student
+
+# 미트 링크 활성화 선행 시간(시작 5분 전, PRD 3.2.4) — 클리닉 신청 서비스와
+# 공유하는 단일 상수. 원천은 clinic.booking(4차 슬라이스 추출).
+from apps.clinic.booking import CLINIC_LINK_LEAD
 from apps.clinic.models import ClinicRequest
 from apps.grades.models import Attendance, ClassSession
 from apps.payments.models import Order, Product
 from apps.videos.models import MakeupGrant, VideoGrant
 
 from .models import CourseEnrollment, WeekDayPlan
-
-# 클리닉 미트 링크 활성화 선행 시간 — 시작 5분 전(PRD 3.2.4).
-CLINIC_LINK_LEAD = datetime.timedelta(minutes=5)
 
 
 def build_home_payload(student, month=None, include_billing=False):
