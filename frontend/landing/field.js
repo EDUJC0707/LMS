@@ -1,58 +1,67 @@
 /**
- * 히어로 배경 — 먼지밭에 바람이 불고, 아주 작은 손전등이 지나간다.
+ * 히어로 배경 — 화면이 빛을 받고, 천천히 어두워진다.
  *
- * 두 겹이다.
+ * 원판을 커서에 못 박아 두지 않는다. 그건 아무리 부드럽게 해도 원이었다
+ * (사용자 판정 2026-07-28: "이게 찐 손전등이 아니라... 진짜 원이 아니라").
  *
- * ① **먼지** 4000개가 화면 전체에 상시 떠 있다. 커서는 먼지를 끌고 오지 않는다.
- *    밀어낸다 — 지나가는 자리의 먼지가 밖으로 밀려나고 동시에 옅어지면서 빈 자리가
- *    생기고, 커서가 떠나면 서서히 되메워진다. 강사 뒤도 지난다(금지구역 없음).
+ * 대신 **빛 밭(light field)** 을 하나 둔다. 화면을 12px 격자로 덮은 스칼라 장이고,
+ * 매 프레임 두 가지가 일어난다.
  *
- * ② **모티프**는 한자리에 고정돼 있고, 커서가 닿은 **픽셀만** 드러난다.
- *    한 개가 통째로 뜨는 것이 아니라 "조금씩" 보여야 하므로(사용자 지시 2026-07-28:
- *    "굉장히 작은 flashlight"), 반응 단위가 개체가 아니라 픽셀이어야 한다.
+ *   ① 전체가 조금씩 어두워진다        F *= exp(-decay·dt)
+ *   ② 커서 자리에 빛을 바른다          F += 덩어리 3개
  *
- *    그래서 DOM 요소 10개를 캔버스 한 장으로 바꿨다. 모티프를 오프스크린에 **한 번**
- *    구워 두고, 매 프레임 커서 자리에 작은 방사 그라디언트를 칠한 뒤
- *    `source-in` 으로 그 잉크를 찍어낸다. 프레임당 비용은 손전등 사각형(약 130×130)
- *    두 번뿐이고, 화면 전체를 다시 그리지 않는다.
+ * 그래서 밝은 모양은 원이 아니라 **커서가 지나간 길**이다. 빠르게 그으면 길게
+ * 번지고, 천천히 움직이면 뭉치고, 멈추면 그 자리가 포화돼 계속 밝다. 손을 떼면
+ * 그 길이 천천히 검정으로 돌아간다(잔광 3초+).
  *
- *    개체별 opacity 로는 이게 불가능하다 — opacity 는 요소 전체에 걸리므로
- *    "원자의 왼쪽 고리만 보인다" 를 표현할 방법이 없다.
+ * 멈춰 있어도 원이 되지 않게, 빛은 완벽한 원 하나가 아니라 **느리게 도는 어긋난
+ * 덩어리 셋**으로 바른다. 그래서 정지 상태에서도 모양이 계속 일렁인다.
  *
- * 손전등은 바람 창보다 **작다**. 바람이 부드럽게 걷어낸 자리 안에서, 그보다 좁은
- * 빛이 잉크를 훑는다 — 걷힌 자리에서만 보인다는 인과는 그대로다.
+ * **이 밭 하나가 세 가지를 다 몰아준다**(사용자 확인) — 장치가 셋이면 셋으로 읽힌다.
+ *   · 광량   — 밭을 그대로 옅게 깔면 "화면이 빛을 받은" 것이 된다
+ *   · 모티프 — 밭을 문턱(감마)에 통과시켜 마스크로 쓴다. 그래서 조금씩만 드러난다
+ *   · 먼지   — 밭의 **기울기**를 밀어내는 방향으로 쓴다. 방사 대칭이 아니라
+ *             빛이 번진 모양을 따라 걷히므로 여기서도 원이 나오지 않는다
+ *
+ * 밭은 JS 배열로 돌린다. 캔버스에 두고 getImageData 로 읽으면 GPU→CPU 회수가
+ * 매 프레임 끼어들어 프레임이 튄다. 화면에 올릴 때만 작은 ImageData 로 옮긴다.
  */
 
 const CFG = {
-  /* 먼지 — 값은 사용자가 디버그 패널에서 맞춰 확정(2026-07-28) */
+  /* 먼지 — 사용자가 패널에서 맞춰 확정(2026-07-28) */
   dust: 4000,
   dMin: 1.0, dMax: 4.0,
   aMin: 0.10, aMax: 0.40,
-  twinkle: 0.40,     // 밝기 흔들림 폭(비율) — "살짝살짝씩 보이게"
+  twinkle: 0.40,     // 밝기 흔들림 폭(비율)
   buckets: 8,        // 알파를 8단으로 양자화해 globalAlpha 쓰기를 8회로 묶는다
-  home: 10,          // 바람이 없을 때의 자율 부유 반경(px)
+  home: 10,          // 빛이 없을 때의 자율 부유 반경(px)
 
-  /* 바람 — 걷히는 범위. 손전등보다 넓다 */
-  R: 0.10,           // 창 반경 = min(W,H) × 이 값
+  /* 빛 */
+  R: 0.10,           // 붓 반경 = min(W,H) × 이 값
   Rmin: 70, Rmax: 130,
-  push: 0.85,        // 밀어내는 거리 = R × 이 값
-  sweep: 0.16,       // 커서 속도를 얼마나 물고 가는가(진행 방향 쓸림)
-  swirl: 0.22,       // 접선 성분 — 완벽한 원형 링이 생기는 것을 깬다
-  fade: 0.85,        // 걷힌 자리에서 먼지가 얼마나 옅어지는가
-  kOut: 9.0,         // 밀릴 때(빠르게)
-  kIn: 1.6,          // 되메워질 때(느리게) — 여기서 "되메워진다"가 보인다
+  decay: 0.40,       // 초당 감쇠. 3초 뒤 30%, 6초 뒤 9% — "천천히 어두워진다"
+  deposit: 2.8,      // 초당 바르는 양. decay 보다 커야 멈춘 자리가 포화돼 계속 밝다
+  diffuse: 4.0,      // 번짐(셀²/초). 빛이 옆으로 스며든다
+  dwellMax: 5.0,     // 머무름을 이 초까지 센다
+  dwellGain: 2.0,    // 끝까지 머물면 붓이 3배 — 실측 반치반경 150 → 270px.
+                     // 1.15 로는 28% 성장이라 눈에 띄지 않았다
+  moveHold: 70,      // 이 속도(px/s) 아래면 "머문다"로 본다
+  cell: 12,          // 밭 격자(px). 작을수록 곱지만 셀 수가 제곱으로 는다
 
-  /* 손전등 — 모티프가 드러나는 범위. 아주 작다 */
-  flash: 0.062,      // 반경 = min(W,H) × 이 값 (900 → 56px)
-  flashMin: 34, flashMax: 92,
-  soft: 0.42,        // 이 비율까지는 온전히 밝고, 그 밖은 가장자리로 사그라든다
-  ink: 0.62,         // 손전등 한복판 모티프 불투명도. 피크 렌더휘도 ≈68
-  lag: 11,           // 손전등이 커서를 따라붙는 속도. 붙으면 UI, 뒤처지면 물질
+  /* 빛을 받아 일어나는 것들 */
+  glowAmt: 0.13,     // 광량 — 밭을 그대로 옅게 깐다
+  ink: 0.62,         // 모티프 최대 불투명도. 피크 렌더휘도 ≈68 < 헤드라인 110
+  gMotif: 1.7,       // 모티프 문턱(감마). 클수록 아주 밝은 데서만 드러난다 = 조금씩
+  push: 0.85,        // 먼지를 밀어내는 거리 = R × 이 값
+  sweep: 0.16,       // 커서 속도를 얼마나 물고 가는가
+  swirl: 0.22,       // 접선 성분
+  fade: 0.85,        // 밝은 자리에서 먼지가 얼마나 옅어지는가
+  kOut: 9.0,         // 밀릴 때(빠르게)
+  kIn: 1.6,          // 되메워질 때(느리게) — 이 비대칭이 "걷힌다"를 만든다
 };
 
-/* 먼지·워시 색. 에셋 심부 청색(H236)에서 조금 더 차가운 H224 '로열' 로 확정.
-   **값은 CSS 의 --glow 가 원본이다.** 여기 상수는 그게 없을 때의 대비책일 뿐 —
-   색을 두 파일에 적어 두면 반드시 한쪽만 고치는 날이 온다. */
+/* 먼지·빛 색. 에셋 심부 청색(H236)에서 조금 더 차가운 H224 '로열' 로 확정.
+   **값은 CSS 의 --glow 가 원본이다.** 여기 상수는 그게 없을 때의 대비책일 뿐. */
 const GLOW_FALLBACK = '#9EAEE1';
 const readGlow = () => {
   const v = getComputedStyle(document.documentElement).getPropertyValue('--glow').trim();
@@ -61,21 +70,16 @@ const readGlow = () => {
 const rgb = hex => [1, 3, 5].map(i => parseInt(hex.substr(i, 2), 16));
 
 /* 정적 먼지 캔버스들의 다시 그리기 콜백. nav 처럼 히어로 밖에 있는 조각이
-   여기 등록되고, 디버그 패널이 먼지 값을 바꾸면 같이 다시 그려진다 —
-   따로 두면 히어로만 바뀌어 이어짐이 깨진다. */
+   여기 등록되고, 디버그 패널이 먼지 값을 바꾸면 같이 다시 그려진다. */
 const statics = [];
 
 /* 에셋별 톤. 중간휘도를 실측해 피크 렌더휘도를 전부 ≈68 로 맞춘 계수.
    element·tectonics 는 원래 어두워서(134·146) 계수가 높다. data.js UNITS 순서. */
 const TONE = [0.61, 0.53, 0.61, 0.63, 0.58, 0.59, 0.61, 0.84, 0.78, 0.61];
 
-/* 배치는 pack-layout.py 가 계산한다 — 손으로 잡지 않는다.
-   존을 먼저 정하고 그 안에서 흔든다. 순수 난수는 고르게 흩어져 평평하고,
-   군집 선호만 주면 한쪽으로 쏠린다. 순서는 data.js 의 UNITS 와 1:1.
-
-   **크기는 전부 같고 자리는 고정이다**(데스크탑 15vw / 모바일 16vw). 리듬은
-   자리와 회전에서만 나온다 — 회전은 난수가 아니라 사다리(±33°, 0° 근처는 빔)를
-   섞어 좌우 균형과 분산을 강제한다. 난수로 뽑으면 뭉친다(실측: 10개 중 5개가 16~17°).
+/* 배치는 pack-layout.py 가 계산한다 — 손으로 잡지 않는다. 순서는 UNITS 와 1:1.
+   크기는 전부 같고 자리는 고정이다(데스크탑 15vw / 모바일 16vw). 리듬은 자리와
+   회전에서만 나온다 — 회전은 난수가 아니라 사다리(±33°, 0° 근처는 빔)를 섞는다.
    강사와 그 오른쪽은 금지구역이라 데스크탑 좌표가 전부 좌측 절반에 모인다. */
 const LAYOUT = [
   { x: 46, y: 21, size: 15, rot: 24,  dim: 1 },   // atom
@@ -109,55 +113,40 @@ const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 export function mountField(root, units) {
   const GLOW = readGlow();
+  const [GR, GG, GB] = rgb(GLOW);
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  /* 포인터가 바람을 일으킬 자격이 있는가 — **실제 이벤트로만 판정한다.**
+  /* 포인터가 빛을 바를 자격이 있는가 — **실제 이벤트로만 판정한다.**
      마운트 시점 matchMedia('(hover:hover) and (pointer:fine)') 는 터치 노트북과
      헤드리스에서 참이라, 그걸 믿으면 영영 오지 않을 pointermove 를 기다리며
-     히어로가 검정으로 남는다. 기본값은 false(=자율 배회가 대신 분다)이고,
-     마우스/펜 pointermove 가 한 번 들어온 뒤에야 바람이 커서 소유로 넘어간다. */
+     히어로가 검정으로 남는다. 기본값은 false(=자율 배회가 대신 바른다)이고,
+     마우스/펜 pointermove 가 한 번 들어온 뒤에야 붓이 커서 소유로 넘어간다. */
   let FINE = false;
 
-  /* ── 워시 — 바람이 지나간 자리의 옅은 빛 ── */
-  const wash = document.createElement('canvas');
-  wash.className = 'wash';
-  wash.width = wash.height = 256;
-  root.append(wash);
-  {
-    const wctx = wash.getContext('2d');
-    // 색은 팔레트에서 파생한다 — rgb 를 여기 적어 두면 팔레트를 바꿔도 빛만 옛 색이다
-    const [r0, g0, b0] = rgb(GLOW);
-    const g = wctx.createRadialGradient(112, 104, 0, 128, 128, 128);
-    g.addColorStop(0, `rgba(${r0},${g0},${b0},.070)`);
-    g.addColorStop(.42, `rgba(${Math.round(r0 * .78)},${Math.round(g0 * .8)},${b0},.030)`);
-    g.addColorStop(1, 'rgba(0,0,0,0)');
-    wctx.fillStyle = g;
-    wctx.fillRect(0, 0, 256, 256);
-  }
+  /* ── 레이어. 아래에서 위로: 광량 → 모티프 → 먼지 ──
+     먼지가 맨 위인 이유는 덮개이기 때문이다. */
+  const mk = cls => { const c = document.createElement('canvas'); c.className = cls; root.append(c); return c; };
+  const glowCv = mk('glow'), litCv = mk('motifs'), dustCv = mk('dust');
+  const gctx = glowCv.getContext('2d');
+  const lctx = litCv.getContext('2d');
+  const dctx = dustCv.getContext('2d');
 
-  /* ── 모티프 — 캔버스 두 장.
-     ink 는 오프스크린이고 한 번만 굽는다(자리가 고정이라 다시 구울 일이 없다).
-     lit 은 화면에 붙어 매 프레임 손전등 모양으로 ink 를 찍어낸다. */
-  const lit = document.createElement('canvas');
-  lit.className = 'motifs';
-  root.append(lit);
-  const lctx = lit.getContext('2d');
+  // 모티프 원판. 자리가 고정이라 한 번만 굽는다
   const ink = document.createElement('canvas');
   const ictx = ink.getContext('2d');
   const imgs = [];
   let baked = false;
 
-  /* ── 먼지 ────────────────────────────────────────────────
-     DPR 은 1 로 고정한다. 매 프레임 지우고 4000번 찍는 레이어라 백킹 픽셀 수가
-     곧 프레임 비용이고, 1~4px 짜리 점에 2배 해상도는 아무 의미가 없다. */
-  const dustCv = document.createElement('canvas');
-  dustCv.className = 'dust';
-  root.append(dustCv);
-  const dctx = dustCv.getContext('2d');
+  /* 빛 밭을 화면에 올리는 작은 캔버스 둘. 같은 밭에서 나오지만 하나는 선형(광량),
+     하나는 감마를 먹인 것(모티프 마스크)이다 — 한 장으로 둘 다 하려면 그릴 때
+     감마를 걸 방법이 없다. 셀 수가 만 개 남짓이라 두 번 쓰는 비용은 없는 셈이다. */
+  const fA = document.createElement('canvas'), fB = document.createElement('canvas');
+  const faCtx = fA.getContext('2d'), fbCtx = fB.getContext('2d');
+  let F = null, Fs = null, FW = 0, FH = 0, imgA = null, imgB = null;
 
   const makeDust = n => Array.from({ length: n }, () => {
-    // 중심에서 밀어낼 방향이 정해지지 않는 입자(d≈0)를 위한 고정 탈출 방향.
-    // 이게 없으면 커서 정중앙의 먼지가 제자리에 남아 구멍 한가운데 점이 박힌다.
+    // 밭의 기울기가 0 인 자리(빛의 한복판)에서 밀어낼 방향이 없다 — 입자마다
+    // 고정 탈출 방향을 줘서 구멍 한가운데 점이 박히는 것을 막는다
     const a = rand(0, Math.PI * 2);
     return {
       u: Math.random(), v: Math.random(),        // 홈 위치(정규화) — resize 에 견딘다
@@ -172,11 +161,8 @@ export function mountField(root, units) {
   let dust = makeDust(CFG.dust);
   const bucket = Array.from({ length: CFG.buckets }, () => []);
 
-  let W = 0, H = 0, R = 100, R2 = 1, FR = 56;
+  let W = 0, H = 0, R = 100;
 
-  /* 모티프를 오프스크린에 굽는다. 자리가 고정이므로 resize 때만 다시 굽는다.
-     톤은 canvas filter 로 미리 태운다 — 매 프레임 filter 를 거는 것과 달리
-     한 번만 래스터되므로 프레임 비용이 0 이다. */
   const bake = () => {
     if (!imgs.length || !W || !H) return;
     const L = isSmall() ? LAYOUT_SM : LAYOUT;
@@ -205,25 +191,33 @@ export function mountField(root, units) {
   const fit = () => {
     const r = root.getBoundingClientRect();
     W = r.width; H = r.height;
+    R = Math.max(CFG.Rmin, Math.min(CFG.Rmax, CFG.R * Math.min(W, H)));
 
-    // 창 반경. 화면이 좁으면 같이 좁아진다 — vw 로 고정하면 모바일에서 화면
-    // 절반이 통째로 걷힌다
-    const m = Math.min(W, H);
-    R = Math.max(CFG.Rmin, Math.min(CFG.Rmax, CFG.R * m));
-    R2 = 2 * R * R;
-    FR = Math.max(CFG.flashMin, Math.min(CFG.flashMax, CFG.flash * m));
-
-    const ws = 2.6 * R;
-    wash.style.width = wash.style.height = ws + 'px';
-    wash.style.margin = `${-ws / 2}px 0 0 ${-ws / 2}px`;
-
-    for (const cv of [dustCv, lit]) {
+    for (const cv of [glowCv, litCv, dustCv]) {
       cv.width = Math.round(W);
       cv.height = Math.round(H);
       cv.style.width = W + 'px';
       cv.style.height = H + 'px';
     }
     dctx.fillStyle = GLOW;                 // resize 가 컨텍스트 상태를 지운다
+
+    // 밭 격자. 셀은 정사각에 가깝게 — 가로세로 비가 다르면 빛이 타원으로 번진다
+    const nw = Math.max(24, Math.round(W / CFG.cell));
+    const nh = Math.max(16, Math.round(H / CFG.cell));
+    if (nw !== FW || nh !== FH) {
+      FW = nw; FH = nh;
+      F = new Float32Array(FW * FH);
+      fA.width = fB.width = FW;
+      fA.height = fB.height = FH;
+      Fs = new Float32Array(FW * FH);      // 번짐 계산용 여벌
+      imgA = faCtx.createImageData(FW, FH);
+      imgB = fbCtx.createImageData(FW, FH);
+      // RGB 는 한 번만 채운다 — 매 프레임 다시 쓰면 픽셀당 3배를 헛되이 쓴다
+      for (const im of [imgA, imgB]) {
+        const d = im.data;
+        for (let i = 0; i < FW * FH; i++) { d[i * 4] = GR; d[i * 4 + 1] = GG; d[i * 4 + 2] = GB; }
+      }
+    }
 
     for (const p of dust) { p.hx = p.u * W; p.hy = p.v * H; p.x = p.hx; p.y = p.hy; }
     bake();
@@ -243,82 +237,160 @@ export function mountField(root, units) {
   addEventListener('resize', fit);
 
   /* ── 입력 — 이벤트에서는 기록만. 물리는 rAF 에서만 돈다 ── */
-  let pxN = .5, pyN = .5, idle = 99, wgt = 0, scrollP = 0;
+  let pxN = .5, pyN = .5, scrollP = 0;
   root.parentElement.addEventListener('pointermove', e => {
-    // 손가락은 바람을 일으키지 않는다 — 스크롤 중 pointermove 가 쏟아진다
+    // 손가락은 빛을 바르지 않는다 — 스크롤 중 pointermove 가 쏟아진다
     if (e.pointerType === 'touch') return;
     const r = root.getBoundingClientRect();
     pxN = clamp01((e.clientX - r.left) / r.width);
     pyN = clamp01((e.clientY - r.top) / r.height);
-    idle = 0;
-    if (!FINE) { FINE = true; wgt = 1; }   // 첫 마우스 입력에서 인계 — 깜빡이지 않게
+    FINE = true;
   }, { passive: true });
   addEventListener('scroll', () => { scrollP = clamp01(scrollY / innerHeight); }, { passive: true });
 
+  /* ── 밭 읽기 — 이중선형. 최근접으로 하면 12px 계단이 먼지 움직임에 드러난다 ── */
+  const sample = (x, y) => {
+    const u = x / CFG.cell - .5, v = y / CFG.cell - .5;
+    let i = Math.floor(u), j = Math.floor(v);
+    const fx = u - i, fy = v - j;
+    if (i < 0) i = 0; else if (i > FW - 2) i = FW - 2;
+    if (j < 0) j = 0; else if (j > FH - 2) j = FH - 2;
+    const k = j * FW + i;
+    const a = F[k], b = F[k + 1], c = F[k + FW], d = F[k + FW + 1];
+    return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy;
+  };
+
   /* ── 렌더 ───────────────────────────────────────────────── */
-  let sx = .5, sy = .5, fx = .5, fy = .5;    // 바람의 눈(정규화)
-  let lx = .5, ly = .5;                      // 손전등(정규화) — 바람보다 조금 빠르다
-  let vx = 0, vy = 0;                        // 바람의 속도(px/s) — 진행 방향 쓸림용
+  let cx = .5, cy = .5;                      // 붓 위치(정규화)
+  let vx = 0, vy = 0;                        // 그 속도(px/s) — 진행 방향 쓸림용
+  let dwell = 0;                             // 한자리에 머문 시간(초)
   let raf = 0, t0 = 0, prev = 0;
-  let prevRect = null;
 
   const paint = (t, dt) => {
-    /* ① 바람의 눈. 포인터가 있으면 포인터가 전부 가져간다 */
+    /* ① 붓 위치. 포인터가 있으면 포인터가 전부 가져간다 */
     let tx, ty;
-    if (FINE) {
-      idle += dt;
-      // 2.5초 정지하면 바람이 잦아든다. 켜질 때 빠르고 꺼질 때 느리다
-      wgt = clamp01(wgt + (idle < 2.5 ? 3.0 : -0.9) * dt);
-      fx += (pxN - fx) * (1 - Math.exp(-9.0 * dt));
-      fy += (pyN - fy) * (1 - Math.exp(-9.0 * dt));
-      tx = fx; ty = fy;
-    } else {
+    if (FINE) { tx = pxN; ty = pyN; }
+    else {
       // 주기가 비배수라 눈이 루프를 못 찾는다
       tx = .50 + .30 * Math.sin(t * .110) + .07 * Math.sin(t * .041) + .18 * scrollP;
       ty = .46 + .20 * Math.sin(t * .170 + 1.1) + .06 * Math.sin(t * .067) + .30 * scrollP;
-      wgt = 1;
     }
-    const nsx = sx + (tx - sx) * (1 - Math.exp(-6.0 * dt));
-    const nsy = sy + (ty - sy) * (1 - Math.exp(-6.0 * dt));
+    const ncx = cx + (tx - cx) * (1 - Math.exp(-11 * dt));
+    const ncy = cy + (ty - cy) * (1 - Math.exp(-11 * dt));
     // 속도는 정규화 좌표가 아니라 px/s 로 — 화면 비율에 따라 쓸림이 달라지면 안 된다
-    const nvx = dt > 0 ? (nsx - sx) * W / dt : 0;
-    const nvy = dt > 0 ? (nsy - sy) * H / dt : 0;
-    vx += (nvx - vx) * (1 - Math.exp(-7.0 * dt));
-    vy += (nvy - vy) * (1 - Math.exp(-7.0 * dt));
-    sx = nsx; sy = nsy;
-    lx += (tx - lx) * (1 - Math.exp(-CFG.lag * dt));
-    ly += (ty - ly) * (1 - Math.exp(-CFG.lag * dt));
+    const nvx = dt > 0 ? (ncx - cx) * W / dt : 0;
+    const nvy = dt > 0 ? (ncy - cy) * H / dt : 0;
+    vx += (nvx - vx) * (1 - Math.exp(-7 * dt));
+    vy += (nvy - vy) * (1 - Math.exp(-7 * dt));
+    cx = ncx; cy = ncy;
+    const CX = cx * W, CY = cy * H;
 
-    const SX = sx * W, SY = sy * H;
+    /* 머무름 — 오래 있을수록 붓이 커진다(사용자 지시 2026-07-28:
+       "같은 곳에 머무른게 커지면 그 자리가 커지게").
+       번짐만으로는 2.25초에 18px 밖에 안 자랐다 — 확산은 퍼지면서 동시에 묽어져
+       가장자리가 문턱을 못 넘기 때문이다. 붓 자체를 키우는 쪽이 눈에 보인다.
+       빠져나갈 때는 2.5배 빠르게 — 움직이기 시작하면 곧바로 붓이 작아져야
+       "긋는 선"이 굵어지지 않는다. */
+    const speed = Math.hypot(vx, vy);
+    dwell = Math.max(0, Math.min(CFG.dwellMax,
+      dwell + (speed < CFG.moveHold ? dt : -dt * 2.5)));
+    const Rb = R * (1 + CFG.dwellGain * (dwell / CFG.dwellMax));
 
-    /* ② 워시 */
-    wash.style.transform = `translate3d(${SX.toFixed(1)}px,${SY.toFixed(1)}px,0)`;
-    wash.style.opacity = wgt.toFixed(3);
+    /* ② 밭 — 전체가 어두워지고, 커서 자리에 빛을 바른다 */
+    const dec = Math.exp(-CFG.decay * dt);
+    for (let i = 0; i < F.length; i++) F[i] *= dec;
 
-    /* ③ 먼지 — 밀려나고, 쓸려가고, 옅어진다 */
+    // 완벽한 원 하나가 아니라 느리게 도는 어긋난 덩어리 셋. 멈춰 있어도 일렁인다
+    const add = CFG.deposit * dt;
+    for (let k = 0; k < 3; k++) {
+      const ph = t * (.23 + k * .17) + k * 2.1;
+      const off = Rb * (.20 + k * .13);
+      const bx = CX + Math.cos(ph) * off, by = CY + Math.sin(ph * 1.31) * off * .8;
+      const br = Rb * (1.0 - k * .19);
+      const rc = br / CFG.cell;
+      const i0 = Math.max(0, Math.floor(bx / CFG.cell - rc)), i1 = Math.min(FW - 1, Math.ceil(bx / CFG.cell + rc));
+      const j0 = Math.max(0, Math.floor(by / CFG.cell - rc)), j1 = Math.min(FH - 1, Math.ceil(by / CFG.cell + rc));
+      const inv = 1 / (br * br);
+      for (let j = j0; j <= j1; j++) {
+        const dy = (j + .5) * CFG.cell - by;
+        for (let i = i0; i <= i1; i++) {
+          const dx = (i + .5) * CFG.cell - bx;
+          const q = (dx * dx + dy * dy) * inv;
+          if (q > 1) continue;
+          const w = 1 - q;                       // 부드럽게 떨어진다
+          const idx = j * FW + i;
+          const nv = F[idx] + add * w * w;
+          F[idx] = nv > 1 ? 1 : nv;              // 포화 — 멈춘 자리가 계속 밝다
+        }
+      }
+    }
+
+    /* ②-b 번짐 — 빛이 옆으로 스며든다. 머문 자리가 시간이 갈수록 넓어지고
+       (사용자 지시 2026-07-28: "같은 곳에 머무른게 커지면 그 자리가 커지게"),
+       덩어리의 기하학이 뭉개져 원으로 읽힐 여지가 더 줄어든다.
+       명시적 확산이라 D·dt ≤ 0.25 를 넘으면 발산한다 — 그래서 한 프레임에 쓸 수
+       있는 양을 잘라 둔다. dt 가 튀는 프레임(탭 복귀 직후)에서 화면이 하얗게
+       타 버리는 것을 막는 안전장치다. */
+    const D = Math.min(CFG.diffuse * dt, 0.24);
+    if (D > 1e-4) {
+      Fs.set(F);
+      for (let j = 1; j < FH - 1; j++) {
+        const row = j * FW;
+        for (let i = 1; i < FW - 1; i++) {
+          const k = row + i;
+          F[k] = Fs[k] + D * (Fs[k - 1] + Fs[k + 1] + Fs[k - FW] + Fs[k + FW] - 4 * Fs[k]);
+        }
+      }
+    }
+
+    /* ③ 밭을 화면에 올린다. 선형은 광량, 감마 먹인 것은 모티프 마스크 */
+    const da = imgA.data, db = imgB.data, g = CFG.gMotif;
+    for (let i = 0; i < F.length; i++) {
+      const f = F[i];
+      da[i * 4 + 3] = f * 255;
+      db[i * 4 + 3] = Math.pow(f, g) * 255;
+    }
+    faCtx.putImageData(imgA, 0, 0);
+    fbCtx.putImageData(imgB, 0, 0);
+
+    gctx.clearRect(0, 0, W, H);
+    gctx.globalAlpha = CFG.glowAmt;
+    gctx.drawImage(fA, 0, 0, W, H);          // 업스케일 — 부드러운 장이라 티가 안 난다
+    gctx.globalAlpha = 1;
+
+    lctx.clearRect(0, 0, W, H);
+    if (baked) {
+      lctx.globalAlpha = CFG.ink;
+      lctx.drawImage(fB, 0, 0, W, H);
+      lctx.globalAlpha = 1;
+      // source-in: 방금 깐 빛의 알파로 잉크를 오려낸다. 결과 알파 = 빛 × 잉크
+      lctx.globalCompositeOperation = 'source-in';
+      lctx.drawImage(ink, 0, 0);
+      lctx.globalCompositeOperation = 'source-over';
+    }
+
+    /* ④ 먼지 — 밭의 **기울기**를 타고 밀려난다. 방사 대칭이 아니라 빛이 번진
+       모양을 따라 걷히므로 여기서도 원이 나오지 않는다 */
     for (const b of bucket) b.length = 0;
     const push = CFG.push * R, sweep = CFG.sweep, swirl = CFG.swirl * R;
     const NB = CFG.buckets, aTop = CFG.aMax * (1 + CFG.twinkle);
+    const hcell = CFG.cell;
 
     for (const p of dust) {
-      // 홈은 가만히 있지 않는다 — 바람이 없어도 아주 느리게 부유한다
+      // 홈은 가만히 있지 않는다 — 빛이 없어도 아주 느리게 부유한다
       const hx = p.hx + Math.sin(t * p.s1 + p.ph) * CFG.home;
       const hy = p.hy + Math.cos(t * p.s2 + p.ph * 1.7) * CFG.home * .8;
 
-      const gx = SX - hx, gy = SY - hy;
-      const d2 = gx * gx + gy * gy;
-      const w = Math.exp(-d2 / R2) * wgt;
-
+      const w = sample(hx, hy);
       let tgx = hx, tgy = hy;
       if (w > .004) {
-        const d = Math.sqrt(d2);
-        const inv = 1 / (d + 1e-3);
-        let ux = -gx * inv, uy = -gy * inv;    // 커서 반대 방향
-        // 정중앙에서는 방향이 정의되지 않는다 — 입자 고유의 탈출 방향으로 대체
-        const c = Math.exp(-d2 / (0.05 * R2));
-        ux = ux * (1 - c) + p.ex * c;
-        uy = uy * (1 - c) + p.ey * c;
-        // 접선 성분은 완벽한 방사 대칭을 깬다. 없으면 구멍이 정확한 원이 된다
+        // 기울기는 밝은 쪽을 가리킨다 — 밀어낼 방향은 그 반대다
+        const gx = sample(hx + hcell, hy) - sample(hx - hcell, hy);
+        const gy = sample(hx, hy + hcell) - sample(hx, hy - hcell);
+        const len = Math.hypot(gx, gy);
+        let ux, uy;
+        if (len > 1e-4) { ux = -gx / len; uy = -gy / len; }
+        else { ux = p.ex; uy = p.ey; }          // 한복판 — 기울기가 0 이다
         tgx = hx + (ux * push - uy * swirl + vx * sweep) * w;
         tgy = hy + (uy * push + ux * swirl + vy * sweep) * w;
       }
@@ -329,7 +401,7 @@ export function mountField(root, units) {
       p.x += (tgx - p.x) * e;
       p.y += (tgy - p.y) * e;
 
-      // 밀려나면서 옅어진다. 이게 없으면 밀린 먼지가 경계에 쌓여 링이 보인다
+      // 밝은 자리에서 옅어진다. 이게 없으면 밀린 먼지가 경계에 쌓여 링이 보인다
       const a = p.a0 * (1 + CFG.twinkle * Math.sin(t * p.tw + p.tph)) * (1 - CFG.fade * w);
       if (a <= 0.004) continue;
       bucket[Math.min(NB - 1, (a / aTop * NB) | 0)].push(p);
@@ -343,29 +415,6 @@ export function mountField(root, units) {
       for (const p of b) dctx.fillRect(p.x - p.d / 2, p.y - p.d / 2, p.d, p.d);
     }
     dctx.globalAlpha = 1;
-
-    /* ④ 손전등 — 커서가 닿은 픽셀의 잉크만 찍어낸다.
-       화면 전체가 아니라 손전등 사각형만 건드린다. 지난 프레임 자리도 함께
-       지워야 잔상이 남지 않는다. */
-    const LX = lx * W, LY = ly * H;
-    const r = FR, pad = 2;
-    const rect = [LX - r - pad, LY - r - pad, 2 * (r + pad), 2 * (r + pad)];
-    if (prevRect) lctx.clearRect(...prevRect);
-    lctx.clearRect(...rect);
-    if (baked && wgt > .004) {
-      const a = CFG.ink * wgt;
-      const g = lctx.createRadialGradient(LX, LY, 0, LX, LY, r);
-      g.addColorStop(0, `rgba(255,255,255,${a})`);
-      g.addColorStop(CFG.soft, `rgba(255,255,255,${a * .82})`);
-      g.addColorStop(1, 'rgba(255,255,255,0)');
-      lctx.fillStyle = g;
-      lctx.fillRect(...rect);
-      // source-in: 방금 칠한 빛의 알파로 잉크를 오려낸다. 결과 알파 = 빛 × 잉크
-      lctx.globalCompositeOperation = 'source-in';
-      lctx.drawImage(ink, rect[0], rect[1], rect[2], rect[3], rect[0], rect[1], rect[2], rect[3]);
-      lctx.globalCompositeOperation = 'source-over';
-    }
-    prevRect = rect;
   };
 
   const frame = now => {
@@ -389,10 +438,10 @@ export function mountField(root, units) {
 
   if (reduce) {
     /* 움직임만 없다. 구도는 완성돼 보여야 한다.
-       포인터 분기를 끄면 자율항이 wgt 1 로 돌아 한 프레임에 구도가 잡힌다.
-       커서로 걷어내는 연출을 그대로 두면 이 사용자에게는 먼지밭만 남는다. */
+       밭이 비어 있으면 검은 화면만 남으므로, 자율 위치에 빛을 한 번 충분히 발라
+       한 프레임으로 구도를 만든다. */
     FINE = false;
-    paint(0, 1);
+    for (let i = 0; i < 30; i++) paint(0, .12);
   } else {
     raf = requestAnimationFrame(frame);
     // 히어로가 화면에서 나가면 멈춘다
