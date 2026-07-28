@@ -292,6 +292,47 @@
 
 /* ═══ 예약 후 패널 ═══════════════════════════════════════════════════ */
 
+/* 예약이 잡히면 달력이 사라지고 이 패널만 남는다(고를 게 없는데 격자를 세우면
+   칸 하나만 칠한 채 아래가 비어 버린다 — TSX 의 같은 주석 참조).
+   폭을 좁히지 않고 카드를 다 쓴다 — 좁히면 카드 오른쪽 절반이 그대로 빈다. */
+.cl-done {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+}
+
+/* 예약 상태는 한 줄로 눕는다 — [뱃지·날짜·시각] ······ [입장] .
+   세로로 쌓으면 폭이 남고, 가로로 누우면 카드가 상태 띠가 된다. */
+.cl-done .cl-booked__card {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-lg);
+}
+
+/* 뱃지·날짜·시각은 왼쪽에 붙어 한 문장처럼 읽힌다. 미트 링크만 오른쪽 끝. */
+.cl-done .cl-booked__link {
+  margin-left: auto;
+}
+
+/* 좁은 폭에서는 눕히지 않고 원래대로 쌓는다. */
+@media (max-width: 40rem) {
+  .cl-done .cl-booked__card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-xs);
+  }
+  .cl-done .cl-booked__link {
+    margin-left: 0;
+  }
+}
+
+/* 버튼이 폭을 나눠 먹으면 "시간 변경"이 340px 짜리 덩어리가 된다 —
+   2단일 때는 좁은 열을 채우는 게 맞았지만 여기서는 글자 폭이면 된다. */
+.cl-done .cl-booked__acts > * {
+  flex: 0 0 auto;
+}
+
 .cl-booked {
   display: flex;
   min-width: 0;

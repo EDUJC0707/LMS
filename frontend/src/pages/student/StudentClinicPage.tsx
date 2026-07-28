@@ -471,78 +471,80 @@ export default function StudentClinicPage() {
 
     const booked = active !== null && !changing;
 
+    // 예약이 잡힌 뒤에는 달력을 세우지 않는다. 고를 게 없는데 한 달치 격자를
+    // 그리면 칸 하나만 칠한 채 우측 열 아래로 빈 자리가 350px 남는다 —
+    // 내용 없는 구조다. 캘린들리도 예약 후에는 달력 대신 확인 화면을 보인다.
+    // [시간 변경]을 누르면 changing 이 서면서 달력이 돌아온다.
+    if (booked && active) {
+      return (
+        <div className="cl-done">
+          <div className="cl-booked__card">
+            <StatusBadge status={active.status} />
+            <p className="cl-booked__day">{dayLabel(active.requested_date)}</p>
+            <p className="cl-booked__time">
+              {active.requested_time}
+              {activeEnd ? ` – ${activeEnd}` : ""}
+            </p>
+            {active.meet_url && (
+              <div className="cl-booked__link">
+                <a
+                  className="ui-btn ui-btn--primary ui-btn--sm"
+                  href={active.meet_url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  클리닉 입장
+                </a>
+              </div>
+            )}
+          </div>
+          <div className="cl-booked__acts">
+            {!judged.clinic_banned && (
+              <Button size="sm" onClick={startChange}>
+                시간 변경
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" onClick={() => setCancelling(active)}>
+              취소
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="cl-split">
         <MonthCalendar
           month={shownMonth}
-          open={booked && active ? new Set([active.requested_date]) : openDates}
-          selected={booked && active ? active.requested_date : day}
+          open={openDates}
+          selected={day}
           onMonth={(delta) => setMonth(shiftMonth(shownMonth, delta))}
-          onSelect={
-            booked
-              ? undefined
-              : (date) => {
-                  setDay(date);
-                  setPicked(null);
-                }
-          }
+          onSelect={(date) => {
+            setDay(date);
+            setPicked(null);
+          }}
           busy={busy}
         />
 
-        {booked && active ? (
-          <div className="cl-booked">
-            <div className="cl-booked__card">
-              <StatusBadge status={active.status} />
-              <p className="cl-booked__day">{dayLabel(active.requested_date)}</p>
-              <p className="cl-booked__time">
-                {active.requested_time}
-                {activeEnd ? ` – ${activeEnd}` : ""}
-              </p>
-              {active.meet_url && (
-                <div className="cl-booked__link">
-                  <a
-                    className="ui-btn ui-btn--primary ui-btn--sm"
-                    href={active.meet_url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    클리닉 입장
-                  </a>
-                </div>
-              )}
-            </div>
-            <div className="cl-booked__acts">
-              {!judged.clinic_banned && (
-                <Button size="sm" onClick={startChange}>
-                  시간 변경
-                </Button>
-              )}
-              <Button size="sm" variant="ghost" onClick={() => setCancelling(active)}>
-                취소
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <TimeColumn
-            date={day}
-            times={times}
-            picked={picked}
-            pending={book.pending || change.pending}
-            changingFrom={changing ? active : null}
-            busy={busy}
-            onPick={(slotId) => {
-              // 새로 고르기 시작하면 직전 결과 문장은 시효가 끝난다.
-              setDone(null);
-              setPicked(slotId);
-            }}
-            onConfirm={confirm}
-            onBack={() => {
-              setChanging(false);
-              setPicked(null);
-              change.clearError();
-            }}
-          />
-        )}
+        <TimeColumn
+          date={day}
+          times={times}
+          picked={picked}
+          pending={book.pending || change.pending}
+          changingFrom={changing ? active : null}
+          busy={busy}
+          onPick={(slotId) => {
+            // 새로 고르기 시작하면 직전 결과 문장은 시효가 끝난다.
+            setDone(null);
+            setPicked(slotId);
+          }}
+          onConfirm={confirm}
+          onBack={() => {
+            setChanging(false);
+            setPicked(null);
+            change.clearError();
+          }}
+        />
       </div>
     );
   };
@@ -592,7 +594,10 @@ export default function StudentClinicPage() {
         )}
 
         {!blocked && (
-          <Card title={chosen?.name ?? ""} aside={chosen?.exam_date} padding="none">
+          // 선택 상자가 있으면 회차명은 거기 있다 — 카드 머리가 같은 문장을
+          // 반복하지 않는다. 회차가 하나뿐이면 여기가 유일한 이름 자리다.
+          // 시험일(aside)은 예약하는 데 쓰이지 않아 뺐다.
+          <Card title={exams.length > 1 ? undefined : chosen?.name} padding="none">
             {body()}
           </Card>
         )}
