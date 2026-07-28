@@ -109,7 +109,9 @@ export default function WorkbookManagePage() {
           {/* 상태 탭과 회차는 같은 일(보드 좁히기)을 한다 — 16px 으로 묶고
               보드와는 24px 로 띄운다. */}
           <div className="ui-stack ui-stack--md">
-            <Tabs items={STATUS_TABS} value={tab} onChange={setTab} label="매칭 상태" />
+            <div className="ui-tabbar">
+              <Tabs items={STATUS_TABS} value={tab} onChange={setTab} label="매칭 상태" />
+            </div>
 
             {sessions.data && sessions.data.length > 0 && (
               <div className="pm-toolbar">

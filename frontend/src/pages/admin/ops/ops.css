@@ -19,11 +19,12 @@
   border-bottom: 1px solid var(--color-rule-2);
 }
 
-/* 탭 띠는 .ui-tabs 가 이미 아래 선을 갖는다. 좌우 여백을 탭 자체 여백(12px)
-   만큼만 덜어 내면, 그 선은 카드 머리의 구분선처럼 폭을 다 지나면서
-   탭 글자는 열 이름과 같은 24px 세로선에서 시작한다. */
+/* 탭 띠는 .ui-tabs 가 이미 아래 선과 좌우 여백(24px 기준선)을 갖는다.
+   여기서는 위 여백만 주고 좌우는 0 으로 둔다 — 그래야 그 선이 카드 머리의
+   구분선처럼 폭을 다 지난다(전에는 여기서 12px 을 더해 선이 좌우 12px 씩
+   짧았다: 277→1403, 카드는 265→1415). */
 .ops-cardbar--tabs {
-  padding: var(--space-sm) var(--space-sm) 0;
+  padding: var(--space-sm) 0 0;
   border-bottom: none;
 }
 
@@ -255,6 +256,30 @@
   border-radius: var(--radius-md);
   background: var(--color-paper);
   box-shadow: var(--shadow-whisper);
+}
+
+/* 이 바는 상단바 아래에 한 겹 더 고정된다. 그래서 이 화면의 표는 다른 화면보다
+   바 높이만큼 낮아야 한다 — 안 그러면 표가 화면보다 길 때 페이지가 그만큼 더
+   밀리고, 표의 열 이름(wrapper 위쪽에 붙는다)이 이 바 뒤로 들어가 보이지 않는다
+   (2026-07-29 실측: 페이지 끝에서 표 위쪽 87 < 바 아래 137).
+
+   빼야 할 양은 "바 높이 − 32" 다. 페이지를 끝까지 내리면 표 바닥이 화면 밑에서
+   --space-3xl(64) 뜨므로 표 위쪽 = 100dvh − 64 − 표높이 이고, 이것이 상단바(56)
+   + 바 아래로 내려오려면 표높이 ≤ 100dvh − 120 − 바높이. 기본식이
+   100dvh − 152 − extra 이니 extra ≥ 바높이 − 32. 실제로는 카드 아래 테두리가
+   1px 더 끼므로 딱 32 를 빼면 1px 모자란다 — --space-xl 이 아니라
+   --space-lg(24) 를 빼서 8px 을 남긴다.
+
+   바는 flex-wrap 이라 그 높이가 폭·내용에 따라 변한다(실측 82·134·194·254px,
+   회차 메모가 길면 넓은 폭에서도 한 줄 더 늘어난다). 상수로 잡으면 좁은 폭에서
+   모자란다 — 96 으로 뒀을 때 375 에서 열 이름이 통째로 바 뒤에 숨었다.
+   그래서 바가 스스로 높이를 재서 --ops-bar-height 로 알린다
+   (AttendanceSessionPage). 첫 프레임 대비 기본값은 --space-4xl. */
+.ops-bar ~ * {
+  --table-extra-chrome: max(
+    0px,
+    calc(var(--ops-bar-height, var(--space-4xl)) - var(--space-lg))
+  );
 }
 
 .ops-bar__actions {

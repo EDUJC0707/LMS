@@ -719,9 +719,39 @@
 
 /* ═══ Table ══════════════════════════════════════════════════════════ */
 
+/* 표는 자기 안에서 스크롤한다 — 그래야 열 이름(thead th)의 sticky 가 먹는다.
+   sticky 는 가장 가까운 스크롤 컨테이너 기준이고 이 wrapper 가 이미 그 컨테이너였다
+   (overflow-x: auto 를 걸면 overflow-y 도 auto 로 계산된다 — 실측 computed
+   "auto/auto"). 다만 높이 상한이 없어 세로로 넘칠 일이 없었고, 그래서 열 이름이
+   움직일 일도 없었다(2026-07-28 실측: 열 이름 top -217.6 → 표가 페이지와 함께 올라감).
+
+   상한 = 100dvh 에서 표 위아래에 늘 붙는 것들을 뺀 값.
+     상단바 --topbar-height(56) + 페이지 위 여백 --space-xl(32)
+     + 카드 머리·아래 숨 --space-3xl(64) = 152
+   이 값이면 페이지를 끝까지 내렸을 때도 wrapper 전체가 상단바 아래에 들어온다:
+   .ui-page 아래 여백이 --space-3xl 이라 wrapper 바닥이 화면 밑에서 64 떠 있고,
+   56 + 64 = 120 < 152 이므로 wrapper 위쪽이 상단바에 가리지 않는다.
+   100vh 가 아니라 100dvh 다 — 모바일 주소창이 접힐 때 상한이 같이 줄어야 한다.
+
+   상단바 말고 고정 바를 하나 더 붙이는 화면은 --table-extra-chrome 로 그만큼
+   더 뺀다(출결 입력의 .ops-bar — ops.css). 안 그러면 페이지가 그만큼 더 밀려
+   열 이름이 그 바 뒤로 숨는다.
+
+   상한에 못 미치는 짧은 표는 스크롤 막대가 생기지 않아 전과 똑같이 보인다. */
 .ui-tablewrap {
+  /* relative 가 없으면 표 안의 절대배치 요소(.sr-only 캡션·행마다 붙는 읽기용
+     라벨)의 기준 상자가 문서가 된다. 기준 상자가 바깥이면 wrapper 의 overflow 가
+     그것들을 자르지 못해, 잘려 보이는 표의 실제 바닥까지 문서 높이가 늘어난다.
+     30명 명단에서 페이지 아래에 845px 짜리 빈 자리가 생기고 페이지를 그만큼 더
+     내릴 수 있었다(2026-07-29 실측: 문서 1922 vs 내용 1077). 여기서 기준 상자를
+     잡아 준다 — .sr-only 는 top/left 를 주지 않아 자리는 그대로다. */
+  position: relative;
   width: 100%;
-  overflow-x: auto;
+  max-height: calc(
+    100dvh - var(--topbar-height) - var(--space-xl) - var(--space-3xl) -
+      var(--table-extra-chrome, 0px)
+  );
+  overflow: auto;
 }
 
 .ui-table {
@@ -738,21 +768,18 @@
   line-height: var(--leading-snug);
 }
 
-/* ⚠ 이 sticky 는 지금 어느 화면에서도 붙지 않는다(2026-07-28 통합 단계 실측).
-   .ui-tablewrap 이 overflow-x: auto 라 그 wrapper 가 스크롤 컨테이너가 되고
-   sticky 는 wrapper 기준으로 계산된다. 그런데 wrapper 는 세로로 넘치지 않아
-   열 이름이 그 안에서 움직일 일이 없다 — 표 전체가 페이지와 함께 올라간다.
-   (검증: 런타임에 wrapper 를 overflow:visible 로 바꾸면 열 이름의 top 이
-   -217.6 → 138 로 즉시 붙는다.)
-   CSS 상 overflow-x 만 auto 로 둘 수 없다 — 한 축이 visible 이 아니면 다른
-   축도 auto 로 계산된다. 살리려면 wrapper 에 max-height 를 줘 세로 스크롤
-   영역으로 만들어야 하고, 그건 레이아웃 구조 변경이라 여기서 손대지 않았다. */
+/* 열 이름은 wrapper 위에 붙는다. 본문 행이 그 아래로 지나가므로 배경은 반드시
+   불투명해야 한다(--color-paper-3 는 alpha 없는 값이다).
+   아래 경계선은 border 가 아니라 box-shadow 로 그린다 — border-collapse:collapse
+   에서 붙은 th 의 아래 border 는 지워질 수 있고(셀 사이에서 공유되는 선이라
+   본문 첫 행이 같이 가져간다), shadow 는 th 자신이 그리므로 항상 남는다. */
 .ui-table thead th {
   position: sticky;
   top: 0;
   z-index: var(--z-base);
   background: var(--color-paper-3);
-  border-bottom-color: var(--color-rule);
+  border-bottom-color: transparent;
+  box-shadow: inset 0 -1px 0 var(--color-rule);
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
   color: var(--color-ink-2);
@@ -827,12 +854,27 @@
 
 /* ═══ Tabs ═══════════════════════════════════════════════════════════ */
 
+/* 탭 띠는 카드 머리와 같은 물건이다 — 아래 선이 면의 폭을 다 지나고, 라벨은
+   그 면의 기준선(24px)에서 시작한다(.ui-card__head 가 padding 16 24 로 하는 것과
+   같다). 탭 자체가 좌우 12px 을 갖고 있으니 띠는 그 차이인 12px 만 준다:
+   12 + 12 = 24. padding 은 border 안쪽이라 아래 선은 그대로 상자 폭을 다 지난다.
+   전에는 이 값이 0 이라 라벨이 264+12=276 에 서서 바로 아래 카드 내용(289)과
+   13px 어긋났다(2026-07-28 실측). 띠의 상자를 면 가장자리에 세우는 건 쓰는
+   쪽 몫이다 — 카드 본문 안에 넣을 때는 .ui-tabbar 로 감싼다. */
 .ui-tabs {
   display: flex;
   gap: var(--space-2xs);
+  padding-inline: calc(var(--space-lg) - var(--space-sm));
   padding-bottom: var(--space-3xs);
   border-bottom: 1px solid var(--color-rule);
   overflow-x: auto;
+}
+
+/* 좌우 여백을 가진 카드 본문 안에 탭 띠를 놓을 때. 본문 좌우 여백은 어느
+   변형이든 --space-lg 하나라 그만큼 되밀면 띠가 카드 가장자리까지 펴진다.
+   (표를 붙인 카드에서 ops-cardbar 가 하는 일을, 여백 있는 본문에서 한다.) */
+.ui-tabbar {
+  margin-inline: calc(-1 * var(--space-lg));
 }
 
 .ui-tabs__tab {
@@ -852,6 +894,13 @@
     color: var(--color-ink);
     background: var(--color-paper-2);
   }
+}
+
+/* 띠가 가로로 넘칠 수 있어 overflow-x: auto 다 — 세로도 auto 로 계산되므로
+   탭 바깥으로 나가는 초점 링은 위아래가 잘린다(2026-07-29: 링 네 변 중 좌변만
+   보였다). 링을 탭 안쪽에 그려 잘릴 여지를 없앤다. 굵기·색은 그대로다. */
+.ui-tabs__tab:focus-visible {
+  outline-offset: calc(-1 * var(--space-3xs));
 }
 
 .ui-tabs__tab[aria-selected="true"] {
@@ -1113,6 +1162,13 @@
   overflow-y: auto;
   min-height: 0;
   flex: 1 1 auto;
+}
+
+/* 모달 안에서는 표가 스스로 스크롤하지 않는다 — 스크롤 면은 모달 본문 하나다.
+   두 겹이면 안쪽 표를 끝까지 내려도 모달 푸터가 나오지 않는다.
+   (지금 모달에 든 표는 없다. 나중에 넣더라도 겹치지 않게 미리 막아 둔다.) */
+.ui-modal .ui-tablewrap {
+  max-height: none;
 }
 
 .ui-modal__foot {

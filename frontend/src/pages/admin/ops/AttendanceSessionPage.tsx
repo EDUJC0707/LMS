@@ -11,7 +11,7 @@
  * - 저장 응답의 triggers 를 문장으로 옮긴다 — 이 시스템의 자동화를 사람이
  *   체감하는 유일한 지점이다.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { http, useApi, useApiAction } from "../../../api";
@@ -87,6 +87,32 @@ export default function AttendanceSessionPage() {
   const [saved, setSaved] = useState<AttendanceTriggers | null>(null);
 
   const students = useMemo(() => detail.data?.students ?? [], [detail.data]);
+
+  // 집계 바는 상단바 아래에 한 겹 더 고정된다. 아래 표는 자기 높이를 그만큼
+  // 더 줄여야 페이지를 끝까지 내렸을 때 열 이름이 이 바 뒤로 들어가지 않는다
+  // (계산은 ops.css `--table-extra-chrome`).
+  // 이 바는 flex-wrap 이라 높이가 폭과 내용에 따라 변한다 — 실측 82px(1280↑)
+  // ·134px(768~1024)·194px(375~414)·254px(320), 게다가 회차 메모가 길면 넓은
+  // 폭에서도 한 줄 더 늘어난다. 상수로 잡을 수 없어 바가 스스로 재서 알린다.
+  const barRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const node = barRef.current;
+    if (!node) return;
+    const root = document.documentElement;
+    // offsetHeight 는 소수를 버린다(82.4 → 82). 올려 잡아야 모자라지 않는다.
+    const write = () =>
+      root.style.setProperty(
+        "--ops-bar-height",
+        `${Math.ceil(node.getBoundingClientRect().height)}px`,
+      );
+    write();
+    const observer = new ResizeObserver(write);
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--ops-bar-height");
+    };
+  }, [detail.data]);
 
   useEffect(() => {
     if (!detail.data) return;
@@ -319,7 +345,7 @@ export default function AttendanceSessionPage() {
   // "회차 목록" 링크는 뺐다 — 좌측 레일의 활성 항목이 바로 그 경로다.
   return (
     <>
-      <div className="ops-bar">
+      <div className="ops-bar" ref={barRef}>
         <div className="ops-id">
           <span className="ops-id__title">{longDate(session.session_date)}</span>
           <span className="ops-id__meta">

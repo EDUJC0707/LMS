@@ -118,16 +118,18 @@ export default function ExamDetailPage() {
 
       <Card title="학생별 점수" aside="석차순" padding="none">
         <div className="pm-cardpad ui-stack ui-stack--md">
-          <Tabs
-            items={[
-              { key: "응시", label: "응시", count: takenCount },
-              { key: "미응시", label: "미응시", count: missingCount },
-              { key: "전체", label: "전체", count: takenCount + missingCount },
-            ]}
-            value={tab}
-            onChange={setTab}
-            label="응시 여부"
-          />
+          <div className="ui-tabbar">
+            <Tabs
+              items={[
+                { key: "응시", label: "응시", count: takenCount },
+                { key: "미응시", label: "미응시", count: missingCount },
+                { key: "전체", label: "전체", count: takenCount + missingCount },
+              ]}
+              value={tab}
+              onChange={setTab}
+              label="응시 여부"
+            />
+          </div>
           <div className="pm-toolbar">
             <Field label="학생 찾기">
               {(props) => (
