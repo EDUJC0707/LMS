@@ -37,19 +37,20 @@ const CFG = {
   home: 10,          // 빛이 없을 때의 자율 부유 반경(px)
 
   /* 빛 */
-  R: 0.10,           // 붓 반경 = min(W,H) × 이 값
-  Rmin: 70, Rmax: 130,
+  /* 붓은 작다. 다만 **머물러서 다다르는 최대치는 그대로**다(사용자 지시
+     2026-07-28: "붓은 더 작게 최대한 커진건 max 는 같게") — R 을 90→54 로 줄인
+     만큼 dwellGain 을 2.0→4.0 으로 올려 Rb_max = 270px 을 유지한다. */
+  R: 0.06,           // 붓 반경 = min(W,H) × 이 값 (900 → 54px)
+  Rmin: 40, Rmax: 90,
   decay: 0.40,       // 초당 감쇠. 3초 뒤 30%, 6초 뒤 9% — "천천히 어두워진다"
   deposit: 2.8,      // 초당 바르는 양. decay 보다 커야 멈춘 자리가 포화돼 계속 밝다
   diffuse: 4.0,      // 번짐(셀²/초). 빛이 옆으로 스며든다
   dwellMax: 5.0,     // 머무름을 이 초까지 센다
-  dwellGain: 2.0,    // 끝까지 머물면 붓이 3배 — 실측 반치반경 150 → 270px.
-                     // 1.15 로는 28% 성장이라 눈에 띄지 않았다
+  dwellGain: 4.0,    // 끝까지 머물면 붓이 5배 — 54 → 270px. 최대치는 예전과 같다
   moveHold: 70,      // 이 속도(px/s) 아래면 "머문다"로 본다
   cell: 12,          // 밭 격자(px). 작을수록 곱지만 셀 수가 제곱으로 는다
 
   /* 빛을 받아 일어나는 것들 */
-  glowAmt: 0.13,     // 광량 — 밭을 그대로 옅게 깐다
   ink: 0.62,         // 모티프 최대 불투명도. 피크 렌더휘도 ≈68 < 헤드라인 110
   gMotif: 1.7,       // 모티프 문턱(감마). 클수록 아주 밝은 데서만 드러난다 = 조금씩
   push: 0.85,        // 먼지를 밀어내는 거리 = R × 이 값
@@ -78,33 +79,36 @@ const statics = [];
 const TONE = [0.61, 0.53, 0.61, 0.63, 0.58, 0.59, 0.61, 0.84, 0.78, 0.61];
 
 /* 배치는 pack-layout.py 가 계산한다 — 손으로 잡지 않는다. 순서는 UNITS 와 1:1.
-   크기는 전부 같고 자리는 고정이다(데스크탑 15vw / 모바일 16vw). 리듬은 자리와
+   크기는 전부 같고 자리는 고정이다(데스크탑 12vw / 모바일 13vw). **에셋 자체도
+   잉크 긴 변이 캔버스의 95% 가 되게 통일해 구워 두었다** — 같은 vw 를 줘도 여백이
+   제각각이면 보이는 크기가 다르다(정규화 전 DNA 는 74% 라 혼자 22% 작았다).
+   리듬은 자리와
    회전에서만 나온다 — 회전은 난수가 아니라 사다리(±33°, 0° 근처는 빔)를 섞는다.
    강사와 그 오른쪽은 금지구역이라 데스크탑 좌표가 전부 좌측 절반에 모인다. */
 const LAYOUT = [
-  { x: 46, y: 21, size: 15, rot: 24,  dim: 1 },   // atom
-  { x: 32, y: 64, size: 15, rot: -5,  dim: 1 },   // dna
-  { x: 9,  y: 22, size: 15, rot: -20, dim: 1 },   // chromosome
-  { x: 22, y: 20, size: 15, rot: -31, dim: 1 },   // mitochondria
-  { x: 35, y: 38, size: 15, rot: 13,  dim: 1 },   // chloroplast
-  { x: 48, y: 47, size: 15, rot: -24, dim: 1 },   // synapse
-  { x: 14, y: 45, size: 15, rot: 5,   dim: 1 },   // population
-  { x: 25, y: 83, size: 15, rot: -11, dim: 1 },   // element
-  { x: 43, y: 81, size: 15, rot: 19,  dim: 1 },   // tectonics
-  { x: 10, y: 84, size: 15, rot: 33,  dim: 1 },   // universe
+  { x: 37, y: 21, size: 12, rot: -10, dim: 1 },   // atom
+  { x: 37, y: 66, size: 12, rot: -17, dim: 1 },   // dna
+  { x: 52, y: 61, size: 12, rot: 28,  dim: 1 },   // chromosome
+  { x: 11, y: 72, size: 12, rot: -32, dim: 1 },   // mitochondria
+  { x: 49, y: 37, size: 12, rot: 8,   dim: 1 },   // chloroplast
+  { x: 12, y: 43, size: 12, rot: -27, dim: 1 },   // synapse
+  { x: 32, y: 44, size: 12, rot: 12,  dim: 1 },   // population
+  { x: 24, y: 80, size: 12, rot: 18,  dim: 1 },   // element
+  { x: 18, y: 22, size: 12, rot: -7,  dim: 1 },   // tectonics
+  { x: 42, y: 81, size: 12, rot: 31,  dim: 1 },   // universe
 ];
 
 const LAYOUT_SM = [
-  { x: 18, y: 20, size: 16, rot: 5,   dim: 1 },   // atom
-  { x: 23, y: 41, size: 16, rot: 21,  dim: 1 },   // dna
-  { x: 15, y: 73, size: 16, rot: -29, dim: 1 },   // chromosome
-  { x: 34, y: 85, size: 16, rot: 9,   dim: 1 },   // mitochondria
-  { x: 20, y: 59, size: 16, rot: -14, dim: 1 },   // chloroplast
-  { x: 15, y: 80, size: 16, rot: -33, dim: 1 },   // synapse
-  { x: 34, y: 72, size: 16, rot: -17, dim: 1 },   // population
-  { x: 34, y: 34, size: 16, rot: -6,  dim: 1 },   // element
-  { x: 15, y: 30, size: 16, rot: 30,  dim: 1 },   // tectonics
-  { x: 19, y: 92, size: 16, rot: 27,  dim: 1 },   // universe
+  { x: 34, y: 45, size: 13, rot: -17, dim: 1 },   // atom
+  { x: 35, y: 69, size: 13, rot: 8,   dim: 1 },   // dna
+  { x: 30, y: 20, size: 13, rot: -10, dim: 1 },   // chromosome
+  { x: 14, y: 43, size: 13, rot: -7,  dim: 1 },   // mitochondria
+  { x: 29, y: 54, size: 13, rot: 31,  dim: 1 },   // chloroplast
+  { x: 15, y: 92, size: 13, rot: 11,  dim: 1 },   // synapse
+  { x: 21, y: 35, size: 13, rot: 26,  dim: 1 },   // population
+  { x: 19, y: 81, size: 13, rot: -27, dim: 1 },   // element
+  { x: 33, y: 89, size: 13, rot: -32, dim: 1 },   // tectonics
+  { x: 15, y: 68, size: 13, rot: 16,  dim: 1 },   // universe
 ];
 
 const isSmall = () => matchMedia('(max-width: 860px)').matches;
@@ -123,11 +127,13 @@ export function mountField(root, units) {
      마우스/펜 pointermove 가 한 번 들어온 뒤에야 붓이 커서 소유로 넘어간다. */
   let FINE = false;
 
-  /* ── 레이어. 아래에서 위로: 광량 → 모티프 → 먼지 ──
-     먼지가 맨 위인 이유는 덮개이기 때문이다. */
+  /* ── 레이어. 아래에서 위로: 모티프 → 먼지. 먼지가 맨 위인 이유는 덮개라서다.
+     **광량 레이어는 없다**(사용자 지시 2026-07-28: "왜 흰색 원이 커지지 뒤에?
+     이거 그냥 흰색만 없애자"). 밭을 그대로 옅게 깔면 아무리 낮춰도 커다란 흰
+     원반으로 읽힌다 — 원을 없애려고 시작한 일인데 원을 다시 그리고 있었다.
+     빛은 이제 드러내고 걷어내기만 한다. */
   const mk = cls => { const c = document.createElement('canvas'); c.className = cls; root.append(c); return c; };
-  const glowCv = mk('glow'), litCv = mk('motifs'), dustCv = mk('dust');
-  const gctx = glowCv.getContext('2d');
+  const litCv = mk('motifs'), dustCv = mk('dust');
   const lctx = litCv.getContext('2d');
   const dctx = dustCv.getContext('2d');
 
@@ -137,12 +143,10 @@ export function mountField(root, units) {
   const imgs = [];
   let baked = false;
 
-  /* 빛 밭을 화면에 올리는 작은 캔버스 둘. 같은 밭에서 나오지만 하나는 선형(광량),
-     하나는 감마를 먹인 것(모티프 마스크)이다 — 한 장으로 둘 다 하려면 그릴 때
-     감마를 걸 방법이 없다. 셀 수가 만 개 남짓이라 두 번 쓰는 비용은 없는 셈이다. */
-  const fA = document.createElement('canvas'), fB = document.createElement('canvas');
-  const faCtx = fA.getContext('2d'), fbCtx = fB.getContext('2d');
-  let F = null, Fs = null, FW = 0, FH = 0, imgA = null, imgB = null;
+  // 빛 밭을 모티프 마스크로 올리는 작은 캔버스
+  const fB = document.createElement('canvas');
+  const fbCtx = fB.getContext('2d');
+  let F = null, Fs = null, FW = 0, FH = 0, imgB = null;
 
   const makeDust = n => Array.from({ length: n }, () => {
     // 밭의 기울기가 0 인 자리(빛의 한복판)에서 밀어낼 방향이 없다 — 입자마다
@@ -193,7 +197,7 @@ export function mountField(root, units) {
     W = r.width; H = r.height;
     R = Math.max(CFG.Rmin, Math.min(CFG.Rmax, CFG.R * Math.min(W, H)));
 
-    for (const cv of [glowCv, litCv, dustCv]) {
+    for (const cv of [litCv, dustCv]) {
       cv.width = Math.round(W);
       cv.height = Math.round(H);
       cv.style.width = W + 'px';
@@ -207,16 +211,12 @@ export function mountField(root, units) {
     if (nw !== FW || nh !== FH) {
       FW = nw; FH = nh;
       F = new Float32Array(FW * FH);
-      fA.width = fB.width = FW;
-      fA.height = fB.height = FH;
       Fs = new Float32Array(FW * FH);      // 번짐 계산용 여벌
-      imgA = faCtx.createImageData(FW, FH);
+      fB.width = FW; fB.height = FH;
       imgB = fbCtx.createImageData(FW, FH);
       // RGB 는 한 번만 채운다 — 매 프레임 다시 쓰면 픽셀당 3배를 헛되이 쓴다
-      for (const im of [imgA, imgB]) {
-        const d = im.data;
-        for (let i = 0; i < FW * FH; i++) { d[i * 4] = GR; d[i * 4 + 1] = GG; d[i * 4 + 2] = GB; }
-      }
+      const d = imgB.data;
+      for (let i = 0; i < FW * FH; i++) { d[i * 4] = GR; d[i * 4 + 1] = GG; d[i * 4 + 2] = GB; }
     }
 
     for (const p of dust) { p.hx = p.u * W; p.hy = p.v * H; p.x = p.hx; p.y = p.hy; }
@@ -343,25 +343,16 @@ export function mountField(root, units) {
       }
     }
 
-    /* ③ 밭을 화면에 올린다. 선형은 광량, 감마 먹인 것은 모티프 마스크 */
-    const da = imgA.data, db = imgB.data, g = CFG.gMotif;
-    for (let i = 0; i < F.length; i++) {
-      const f = F[i];
-      da[i * 4 + 3] = f * 255;
-      db[i * 4 + 3] = Math.pow(f, g) * 255;
-    }
-    faCtx.putImageData(imgA, 0, 0);
+    /* ③ 밭에 감마를 먹여 모티프 마스크로 올린다. 문턱이 높아 아주 밝은 데서만
+       드러나므로 한 개가 통째로 뜨지 않고 조금씩 보인다 */
+    const db = imgB.data, g = CFG.gMotif;
+    for (let i = 0; i < F.length; i++) db[i * 4 + 3] = Math.pow(F[i], g) * 255;
     fbCtx.putImageData(imgB, 0, 0);
-
-    gctx.clearRect(0, 0, W, H);
-    gctx.globalAlpha = CFG.glowAmt;
-    gctx.drawImage(fA, 0, 0, W, H);          // 업스케일 — 부드러운 장이라 티가 안 난다
-    gctx.globalAlpha = 1;
 
     lctx.clearRect(0, 0, W, H);
     if (baked) {
       lctx.globalAlpha = CFG.ink;
-      lctx.drawImage(fB, 0, 0, W, H);
+      lctx.drawImage(fB, 0, 0, W, H);   // 업스케일 — 부드러운 장이라 티가 안 난다
       lctx.globalAlpha = 1;
       // source-in: 방금 깐 빛의 알파로 잉크를 오려낸다. 결과 알파 = 빛 × 잉크
       lctx.globalCompositeOperation = 'source-in';

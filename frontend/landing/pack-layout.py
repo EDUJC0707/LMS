@@ -38,7 +38,7 @@ NAV = 64
 # 잉크 사이 최소 여백. **런타임 상대 이동을 여기서 덮는다** — field.js 가 개체마다
 # 위상이 다른 자율 부유(±6px)를 주므로 이웃 둘이 서로에게 최대 12px 다가온다.
 # 시차는 전원이 같은 방향이라 상대 거리를 바꾸지 않는다. 12px + 여유 = 24.
-GAP = 18 if MOBILE else 24
+GAP = 22 if MOBILE else 30
 # 가장자리 여유. field.js 가 런타임에 개체를 최대 ±15px 흔들기 때문에(시차 8px +
 # 자율부유 6px) 여기서 그만큼을 미리 빼둬야 한다. 10px 로 두면 왼쪽·위가 잘렸다.
 EDGE = 30
@@ -67,19 +67,30 @@ TEACHER_PAD = 26          # 인물 실루엣 주변 여유(px)
 GW, GH = VW // CELL, VH // CELL
 rng = np.random.default_rng(20260728)
 
-# 임계값을 12 로 낮춰 **실제 렌더보다 넓게** 잡는다. 화면에서는 CSS mask-image 가
-# 실루엣 최외곽을 한 번 더 깎으므로, 여기서 넉넉히 잡으면 항상 안전한 쪽으로 틀린다.
-MASKS = {n: (np.array(Image.open(MOTIFS / f"{n}.webp").convert("RGBA").split()[3]) > 12)
+# 임계값 6 — **실제 렌더보다 넓게** 잡는다. 브라우저는 768px 원본을 216px 로 줄이면서
+# 가느다란 끝단을 조금 더 퍼뜨리는데, 여기서 넉넉히 잡아야 그 차이를 덮는다.
+# (임계 12 + 여백 24px 로는 atom↔synapse 가 81px² 겹쳤다 — 브라우저 실측으로 확인)
+MASKS = {n: (np.array(Image.open(MOTIFS / f"{n}.webp").convert("RGBA").split()[3]) > 6)
          for n in NAMES}
 
 
 def stamp(n, size_px, deg):
-    """회전·축소한 잉크 마스크 + 여백 팽창."""
-    img = Image.fromarray(MASKS[n].astype(np.uint8) * 255)
-    if deg:
-        img = img.rotate(deg, resample=Image.BILINEAR, expand=True, fillcolor=0)
-    g = max(4, size_px // CELL)
-    m = np.array(img.resize((g, g), Image.BILINEAR)) > 90
+    """회전·축소한 잉크 마스크 + 여백 팽창.
+
+    **회전으로 캔버스가 커진 만큼 격자도 키워야 한다.** expand=True 는 그림을
+    담으려고 캔버스를 최대 1.41배까지 늘리는데, 그걸 회전 전 크기(size_px)의
+    격자로 줄이면 발자국이 그 배수만큼 작아진다 — 화면에서는 회전 후 크기로
+    자리를 차지하므로 패커만 "안 겹친다"고 믿게 된다.
+    (이 버그로 여백을 24 → 30px 까지 키워도 dna↔element 가 1215px² 겹쳤다.
+     브라우저에서 잉크 픽셀로 재서 잡았다.)
+    """
+    base = Image.fromarray(MASKS[n].astype(np.uint8) * 255)
+    img = base.rotate(deg, resample=Image.BILINEAR, expand=True, fillcolor=0) if deg else base
+    grow = img.width / base.width          # 회전으로 커진 배수
+    g = max(4, int(round(size_px * grow / CELL)))
+    # 줄일 때의 문턱도 낮게. 90 으로 자르면 가느다란 가지가 통째로 사라져
+    # "여기는 비었다" 고 잘못 판정한다
+    m = np.array(img.resize((g, g), Image.BILINEAR)) > 40
     pad = max(1, GAP // CELL)
     out = np.zeros_like(m)
     for dy in range(-pad, pad + 1):

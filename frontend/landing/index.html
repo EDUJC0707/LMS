@@ -89,9 +89,9 @@
      아니라 개체별 스칼라로 옮겨 화면에 남는 경계선을 모티프 실루엣뿐으로 만든다.
      피크 렌더휘도 68 < 헤드라인 110 — 배경이 전경보다 어두워야 위계가 선다. */
   .field{ position:absolute; inset:0; z-index:0; overflow:hidden; contain:paint }
-  /* 아래에서 위로: 광량 → 모티프 → 먼지. 먼지가 맨 위인 이유는 덮개이기 때문이다 */
-  .glow, .motifs, .dust{ position:absolute; inset:0; pointer-events:none; display:block }
-  .glow, .dust{ mix-blend-mode:screen }   /* 검정 위에서 빛으로 읽힌다 */
+  /* 아래에서 위로: 모티프 → 먼지. 먼지가 맨 위인 이유는 덮개이기 때문이다 */
+  .motifs, .dust{ position:absolute; inset:0; pointer-events:none; display:block }
+  .dust{ mix-blend-mode:screen }   /* 검정 위에서 먼지가 빛으로 읽힌다 */
 
   /* 모티프는 DOM 요소가 아니라 캔버스 한 장이다. 개체별 opacity 로는 "원자의
      왼쪽 고리만 보인다" 를 표현할 수 없어서 — 반응 단위가 개체가 아니라
