@@ -12,19 +12,17 @@
  *   40% 미만에는 표시를 남긴다(기준은 색이 아니라 라벨로도 읽힌다).
  */
 import { useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 
 import { http, useApi } from "../../../api";
 import {
   Badge,
-  Button,
   Card,
   EmptyState,
   ErrorState,
   Field,
   Input,
   Loading,
-  PageHeader,
   StatusBadge,
   Table,
   Tabs,
@@ -59,94 +57,67 @@ export default function ExamDetailPage() {
   const takenCount = (detail.data?.students ?? []).filter((s) => s.is_taken).length;
   const missingCount = (detail.data?.students ?? []).length - takenCount;
 
-  if (detail.loading) {
-    return (
-      <>
-        <PageHeader title="시험 상세" />
-        <Loading label="시험 결과를 불러오는 중…" />
-      </>
-    );
-  }
+  if (detail.loading) return <Loading label="시험 결과를 불러오는 중…" />;
 
   if (detail.error || !detail.data) {
-    return (
-      <>
-        <PageHeader
-          title="시험 상세"
-          actions={
-            <Link to="/admin/exams">
-              <Button>회차 목록으로</Button>
-            </Link>
-          }
-        />
-        <ErrorState description={detail.error ?? undefined} onRetry={detail.reload} />
-      </>
-    );
+    return <ErrorState description={detail.error ?? undefined} onRetry={detail.reload} />;
   }
 
   const { exam, stats, questions } = detail.data;
 
   return (
-    <>
-      <PageHeader
-        title={exam.name}
-        description={
-          <>
-            {exam.exam_date}
-            {exam.round_no ? ` · ${exam.round_no}회차` : ""}
-            {exam.target_grade ? ` · 고${exam.target_grade} 대상` : ""}
-          </>
-        }
-        actions={
-          <Link to="/admin/exams">
-            <Button>회차 목록으로</Button>
-          </Link>
-        }
-      />
-
-      <Card
-        title="채점 현황"
-        aside={<StatusBadge status={stats.processing_status} />}
-      >
-        <dl className="pm-stats">
-          <div>
-            <dt>응시</dt>
-            <dd className="num">{stats.taker_count}명</dd>
-          </div>
-          <div>
-            <dt>성적 행</dt>
-            <dd className="num">{stats.score_count}</dd>
-          </div>
-          <div>
-            <dt>평균</dt>
-            <dd className="num">{score(stats.average)}</dd>
-          </div>
-          <div>
-            <dt>표준편차</dt>
-            <dd className="num">{score(stats.stddev)}</dd>
-          </div>
-          <div>
-            <dt>최고점</dt>
-            <dd className="num">{score(stats.highest_score)}</dd>
-          </div>
-          <div>
-            <dt>상위 30% 컷</dt>
-            <dd className="num">{score(stats.top30_score)}</dd>
-          </div>
-          <div>
-            <dt>미대조 답안지</dt>
-            <dd className="num">{stats.pending_sheet_count}장</dd>
-          </div>
-        </dl>
-        {exam.notice && (
-          <p style={{ margin: "var(--space-md) 0 0", color: "var(--color-ink-2)" }}>
-            성적표 안내 문구 — {exam.notice}
+    <div className="ui-stack">
+      {/* 상단바는 "시험·성적"까지만 말한다 — 어느 회차인지는 첫 카드가 든다. */}
+      <Card title={exam.name} aside={<StatusBadge status={stats.processing_status} />}>
+        <div className="ui-stack ui-stack--md">
+          <p className="pm-meta">
+            <span className="num">{exam.exam_date}</span>
+            {exam.round_no ? <span>{exam.round_no}회차</span> : null}
+            {exam.target_grade ? <span>고{exam.target_grade} 대상</span> : null}
           </p>
-        )}
+
+          <dl className="pm-stats">
+            <div>
+              <dt>응시</dt>
+              <dd className="num">{stats.taker_count}명</dd>
+            </div>
+            <div>
+              <dt>성적 행</dt>
+              <dd className="num">{stats.score_count}</dd>
+            </div>
+            <div>
+              <dt>평균</dt>
+              <dd className="num">{score(stats.average)}</dd>
+            </div>
+            <div>
+              <dt>표준편차</dt>
+              <dd className="num">{score(stats.stddev)}</dd>
+            </div>
+            <div>
+              <dt>최고점</dt>
+              <dd className="num">{score(stats.highest_score)}</dd>
+            </div>
+            <div>
+              <dt>상위 30% 컷</dt>
+              <dd className="num">{score(stats.top30_score)}</dd>
+            </div>
+            <div>
+              <dt>미대조 답안지</dt>
+              <dd className="num">{stats.pending_sheet_count}장</dd>
+            </div>
+          </dl>
+
+          {exam.notice && (
+            <dl className="pm-defs">
+              <dt>성적표 안내</dt>
+              <dd>{exam.notice}</dd>
+            </dl>
+          )}
+        </div>
       </Card>
 
       <Card title="학생별 점수" aside="석차순" padding="none">
-        <div style={{ padding: "var(--space-lg) var(--space-lg) 0" }} className="ui-stack--md">
+        <div className="pm-cardpad ui-stack ui-stack--md">
           <Tabs
             items={[
               { key: "응시", label: "응시", count: takenCount },
@@ -222,7 +193,7 @@ export default function ExamDetailPage() {
                 row.is_taken ? (
                   <>
                     {score(row.total_score)}
-                    <span style={{ color: "var(--color-muted)" }}>
+                    <span className="pm-none">
                       {" / "}
                       {score(row.max_score)}
                     </span>
@@ -344,6 +315,6 @@ export default function ExamDetailPage() {
           ]}
         />
       </Card>
-    </>
+    </div>
   );
 }

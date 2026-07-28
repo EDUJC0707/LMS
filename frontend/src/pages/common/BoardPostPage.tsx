@@ -12,6 +12,10 @@
  *   "없는 글"과 "권한 없는 글"을 구분하지 않고 한 문장으로 안내한다.
  * - 삭제는 되돌릴 수 없다(서버 하드 삭제) — 글은 확인 모달, 댓글은 그 자리에서
  *   한 번 더 묻는다.
+ *
+ * 상단바는 여기서도 "게시판"까지만 말한다 — 어느 게시판의 무슨 글인지는 본문이
+ * 들고 있어야 한다. 글 제목은 첫 카드의 제목, 카테고리·작성자·시각은 그 옆
+ * aside 다. 수정·삭제는 그 글을 가진 카드의 액션으로 붙는다.
  */
 import { FormEvent, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -29,7 +33,6 @@ import {
   Input,
   Loading,
   Modal,
-  PageHeader,
   Textarea,
 } from "../../components";
 import {
@@ -54,12 +57,9 @@ export default function BoardPostPage() {
 
   if (!isBoardCategory(decoded) || !Number.isInteger(id)) {
     return (
-      <>
-        <PageHeader title="게시글" />
-        <Card>
-          <EmptyState title="없는 주소입니다" />
-        </Card>
-      </>
+      <Card>
+        <EmptyState title="없는 주소입니다" />
+      </Card>
     );
   }
 
@@ -94,68 +94,61 @@ function BoardPost({ category, postId }: { category: BoardCategory; postId: numb
   const canDelete = !!data && (data.is_mine || canModerateBoard(me));
 
   if (post.loading) {
-    return (
-      <>
-        <PageHeader title={category} />
-        <Loading label="글을 불러오는 중…" />
-      </>
-    );
+    return <Loading label="글을 불러오는 중…" />;
   }
 
   if (post.error || !data) {
     const gone = post.error === GONE;
-    return (
-      <>
-        <PageHeader title={category} />
-        <Card>
-          {gone ? (
-            <EmptyState
-              title="글을 열 수 없습니다"
-              description={GONE}
-              action={
-                <Button variant="primary" onClick={() => navigate(listPath)}>
-                  목록으로
-                </Button>
-              }
-            />
-          ) : (
-            <ErrorState description={post.error ?? undefined} onRetry={post.reload} />
-          )}
-        </Card>
-      </>
+    return gone ? (
+      <Card>
+        <EmptyState
+          title="글을 열 수 없습니다"
+          description={GONE}
+          action={
+            <Button variant="primary" onClick={() => navigate(listPath)}>
+              목록으로
+            </Button>
+          }
+        />
+      </Card>
+    ) : (
+      <ErrorState description={post.error ?? undefined} onRetry={post.reload} />
     );
   }
 
   return (
     <>
-      <PageHeader
-        title={data.title}
-        description={
-          <>
-            {data.author_name} · {formatStamp(data.created_at)}
-            {data.updated_at && ` · ${formatStamp(data.updated_at)} 수정`}
-            {data.course_week &&
-              ` · ${data.course_week.course_name} ${data.course_week.week_no}주차 공지`}
-          </>
-        }
-        actions={
-          <>
-            <Button onClick={() => navigate(listPath)}>목록으로</Button>
-            {canEdit && !editing && <Button onClick={() => setEditing(true)}>수정</Button>}
-            {canDelete && (
-              <Button variant="danger" onClick={() => setConfirmDelete(true)}>
-                삭제
-              </Button>
-            )}
-          </>
-        }
-      />
-
       <div className="ui-stack cm-measure">
-        <Card>
+        <Card
+          title={data.title}
+          aside={
+            <>
+              {category} · {data.author_name} · {formatStamp(data.created_at)}
+              {data.updated_at && ` · ${formatStamp(data.updated_at)} 수정`}
+              {data.course_week &&
+                ` · ${data.course_week.course_name} ${data.course_week.week_no}주차`}
+            </>
+          }
+          actions={
+            editing || !(canEdit || canDelete) ? undefined : (
+              <>
+                {canEdit && (
+                  <Button size="sm" onClick={() => setEditing(true)}>
+                    수정
+                  </Button>
+                )}
+                {canDelete && (
+                  <Button size="sm" variant="danger" onClick={() => setConfirmDelete(true)}>
+                    삭제
+                  </Button>
+                )}
+              </>
+            )
+          }
+        >
           {(data.is_secret || !data.is_published) && (
-            <p className="ui-row" style={{ marginBottom: "var(--space-md)" }}>
-              {data.is_secret && <Badge tone="neutral">비밀글 — 작성자와 직원만 볼 수 있습니다</Badge>}
+            <p className="ui-row cm-flags">
+              {data.is_secret && <Badge tone="neutral">비밀글</Badge>}
               {!data.is_published && <Badge tone="warning">미게시</Badge>}
             </p>
           )}
@@ -208,10 +201,11 @@ function BoardPost({ category, postId }: { category: BoardCategory; postId: numb
           </>
         }
       >
-        {remove.error && <Alert tone="danger">{remove.error}</Alert>}
-        <p>
-          지운 글과 댓글은 되돌릴 수 없습니다. 「{data.title}」을(를) 지웁니다.
-        </p>
+        {/* 모달 본문은 block 이라 형제끼리 붙는다 — 오류줄이 뜨면 문장과 맞닿는다. */}
+        <div className="ui-stack ui-stack--sm">
+          {remove.error && <Alert tone="danger">{remove.error}</Alert>}
+          <p>지운 글과 댓글은 되돌릴 수 없습니다. 「{data.title}」을(를) 지웁니다.</p>
+        </div>
       </Modal>
     </>
   );
@@ -339,11 +333,9 @@ function Comments({
       className="cm-clip"
     >
       {post.comments.length === 0 ? (
-        <div style={{ padding: "var(--space-lg)" }}>
-          <EmptyState
-            title={post.category === "질답" ? "아직 답변이 없습니다" : "아직 댓글이 없습니다"}
-          />
-        </div>
+        <EmptyState
+          title={post.category === "질답" ? "아직 답변이 없습니다" : "아직 댓글이 없습니다"}
+        />
       ) : (
         <ul className="cm-comments">
           {post.comments.map((comment) => (

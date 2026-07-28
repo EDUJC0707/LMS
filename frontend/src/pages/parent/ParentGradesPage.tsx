@@ -7,15 +7,7 @@
 import { Link } from "react-router-dom";
 
 import { http, useApi } from "../../api";
-import {
-  Badge,
-  Card,
-  EmptyState,
-  ErrorState,
-  Loading,
-  PageHeader,
-  Table,
-} from "../../components";
+import { Badge, Card, EmptyState, ErrorState, Loading, ScopeBar, Table } from "../../components";
 import { NO_CHILD_TITLE, useChild } from "./childContext";
 import { PreEnrollNotice } from "./PreEnrollNotice";
 import { score, shortDay } from "./format";
@@ -39,33 +31,22 @@ export default function ParentGradesPage() {
 
   return (
     <>
-      <PageHeader
-        title="자녀 성적"
-        actions={picker}
-      />
+      {picker && <ScopeBar>{picker}</ScopeBar>}
 
       {studentId === null ? (
-        <Card>
+        <Card padding="none">
           <EmptyState title={NO_CHILD_TITLE} />
         </Card>
       ) : !enrolled ? (
         <PreEnrollNotice child={child} what="성적 확인" />
       ) : grades.loading ? (
-        <Loading />
+        <Loading label="성적을 불러오는 중…" />
       ) : grades.error ? (
         <ErrorState description={grades.error} onRetry={grades.reload} />
       ) : grades.data && student ? (
         <div className="ui-stack">
-          <Card
-            title={`${student.name}${student.current_class ? ` · ${student.current_class}` : ""}`}
-            aside={
-              <>
-                원번 <span className="num">{student.unique_id}</span>
-                {student.school ? ` · ${student.school}` : ""}
-              </>
-            }
-            padding="none"
-          >
+          {/* 원번·학교는 인쇄해서 들고 다니는 성적표 상세에만 필요하다 — 목록에는 두지 않는다. */}
+          <Card title={student.name} aside={student.current_class ?? undefined} padding="none">
             <Table
               rows={grades.data.exams}
               rowKey={(row) => row.exam_id}
@@ -136,7 +117,7 @@ export default function ParentGradesPage() {
               rows={grades.data.trend}
               rowKey={(row) => row.exam_id}
               caption="회차별 점수·백분위 추이"
-              empty="추이를 그릴 만큼 시험을 보지 않았습니다."
+              empty="추이를 그릴 만큼 시험을 보지 않았습니다"
               columns={[
                 {
                   key: "round",

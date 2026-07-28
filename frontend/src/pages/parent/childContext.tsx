@@ -64,7 +64,10 @@ export interface ChildContext {
    * 자녀가 없으면 false.
    */
   enrolled: boolean;
-  /** 자녀 2명 이상일 때만 요소가 있다. PageHeader actions 에 넣는다. */
+  /**
+   * 자녀 2명 이상일 때만 요소가 있다. 화면 전체의 범위를 바꾸는 스위처이므로
+   * 본문 첫 줄 `<ScopeBar>` 안에 넣는다(카드 하나만 바꾸는 컨트롤이 아니다).
+   */
   picker: ReactNode;
 }
 
@@ -78,26 +81,22 @@ export function useChild(): ChildContext {
   const studentId = known ? stored : (children[0]?.student_id ?? null);
   const child = children.find((entry) => entry.student_id === studentId) ?? null;
 
+  // "자녀" 라벨은 붙이지 않는다 — 고를 수 있는 값이 자기 자녀 이름이라 보면 안다.
   const picker =
     children.length <= 1 ? null : (
-      <div className="parent-childpick">
-        <label className="parent-childpick__label" htmlFor="parent-child">
-          자녀
-        </label>
-        <Select
-          id="parent-child"
-          className="parent-childpick__select"
-          value={studentId === null ? "" : String(studentId)}
-          onChange={(event) => selectChild(Number(event.target.value))}
-        >
-          {children.map((entry) => (
-            <option key={entry.student_id} value={entry.student_id}>
-              {entry.name ?? `학생 ${entry.student_id}`} · {entry.grade}
-              {entry.enrollment_status === "등록" ? "" : ` · ${entry.enrollment_status}`}
-            </option>
-          ))}
-        </Select>
-      </div>
+      <Select
+        id="parent-child"
+        aria-label="자녀 선택"
+        value={studentId === null ? "" : String(studentId)}
+        onChange={(event) => selectChild(Number(event.target.value))}
+      >
+        {children.map((entry) => (
+          <option key={entry.student_id} value={entry.student_id}>
+            {entry.name ?? `학생 ${entry.student_id}`} · {entry.grade}
+            {entry.enrollment_status === "등록" ? "" : ` · ${entry.enrollment_status}`}
+          </option>
+        ))}
+      </Select>
     );
 
   return { studentId, child, children, enrolled: child?.enrollment_status === "등록", picker };

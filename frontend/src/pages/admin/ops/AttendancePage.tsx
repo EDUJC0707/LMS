@@ -9,16 +9,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { http, useApi } from "../../../api";
-import {
-  Button,
-  Card,
-  ErrorState,
-  Loading,
-  PageHeader,
-  Select,
-  Table,
-  Tabs,
-} from "../../../components";
+import { Button, Card, ErrorState, Loading, Select, Table, Tabs } from "../../../components";
 import type { Column } from "../../../components";
 import { relativeDay, sessionLabel, shortDate, todayISO } from "./format";
 import "./ops.css";
@@ -119,67 +110,64 @@ export default function AttendancePage() {
     },
   ];
 
+  // 필터·탭·표를 카드 하나에 넣는다. 전에는 필터가 따로 뜬 카드(flat)였고
+  // 불러오는 동안 표 카드가 통째로 사라져 로딩 문구가 종이 위에 홀로 떴다.
+  // 지금은 조건 줄이 제자리에 남고 그 아래에서만 내용이 바뀐다.
   return (
-    <>
-      <PageHeader
-        title="출결 입력"
-      />
+    <div className="ui-stack">
+      <Card padding="none" className="ops-tablecard">
+        <div className="ops-toolbar ops-cardbar">
+          <label className="ops-toolbar__field">
+            <span className="ops-toolbar__label">수업일</span>
+            <input
+              className="ui-input"
+              type="date"
+              value={date}
+              onChange={(event) => setDate(event.target.value)}
+            />
+          </label>
 
-      <div className="ui-stack">
-        <Card padding="sm" flat>
-          <div className="ops-toolbar">
+          {courses.length > 1 && (
             <label className="ops-toolbar__field">
-              <span className="ops-toolbar__label">수업일</span>
-              <input
-                className="ui-input"
-                type="date"
-                value={date}
-                onChange={(event) => setDate(event.target.value)}
-              />
+              <span className="ops-toolbar__label">강좌</span>
+              <Select value={courseId} onChange={(event) => setCourseId(event.target.value)}>
+                <option value="">전체 강좌</option>
+                {courses.map((course) => (
+                  <option key={course.id} value={String(course.id)}>
+                    {course.name}
+                  </option>
+                ))}
+              </Select>
             </label>
+          )}
 
-            {courses.length > 1 && (
-              <label className="ops-toolbar__field">
-                <span className="ops-toolbar__label">강좌</span>
-                <Select value={courseId} onChange={(event) => setCourseId(event.target.value)}>
-                  <option value="">전체 강좌</option>
-                  {courses.map((course) => (
-                    <option key={course.id} value={String(course.id)}>
-                      {course.name}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-            )}
-
-            <div className="ui-row">
-              <Button size="sm" onClick={() => setDate(today)}>
-                오늘
+          <div className="ui-row">
+            <Button size="sm" onClick={() => setDate(today)}>
+              오늘
+            </Button>
+            {(date || courseId) && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setDate("");
+                  setCourseId("");
+                }}
+              >
+                조건 지우기
               </Button>
-              {(date || courseId) && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setDate("");
-                    setCourseId("");
-                  }}
-                >
-                  조건 지우기
-                </Button>
-              )}
-            </div>
+            )}
           </div>
-        </Card>
+        </div>
 
         {sessions.loading ? (
           <Loading label="회차를 불러오는 중…" />
         ) : sessions.error ? (
           <ErrorState description={sessions.error} onRetry={sessions.reload} />
         ) : (
-          <Card padding="none">
+          <>
             {!date && (
-              <div style={{ padding: "var(--space-sm) var(--space-md) 0" }}>
+              <div className="ops-cardbar ops-cardbar--tabs">
                 <Tabs
                   label="회차 범위"
                   value={range}
@@ -208,9 +196,9 @@ export default function AttendancePage() {
                     : "표시할 회차가 없습니다"
               }
             />
-          </Card>
+          </>
         )}
-      </div>
-    </>
+      </Card>
+    </div>
   );
 }

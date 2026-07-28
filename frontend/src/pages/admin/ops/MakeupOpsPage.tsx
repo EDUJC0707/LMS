@@ -18,7 +18,6 @@ import {
   ErrorState,
   Loading,
   Modal,
-  PageHeader,
   StatusBadge,
   Table,
   Tabs,
@@ -167,10 +166,6 @@ export default function MakeupOpsPage() {
 
   return (
     <>
-      <PageHeader
-        title="동보 관리"
-      />
-
       <div className="ui-stack">
         {approve.error && <Alert tone="danger">{approve.error}</Alert>}
         {reject.error && !rejecting && <Alert tone="danger">{reject.error}</Alert>}
@@ -185,8 +180,8 @@ export default function MakeupOpsPage() {
         ) : list.error ? (
           <ErrorState description={list.error} onRetry={list.reload} />
         ) : (
-          <Card padding="none">
-            <div style={{ padding: "var(--space-sm) var(--space-md) 0" }}>
+          <Card padding="none" className="ops-tablecard">
+            <div className="ops-cardbar ops-cardbar--tabs">
               <Tabs
                 label="신청 상태"
                 value={tab}

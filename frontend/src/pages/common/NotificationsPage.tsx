@@ -14,15 +14,7 @@ import { Link } from "react-router-dom";
 
 import { http, useApi } from "../../api";
 import { useMe } from "../../auth";
-import {
-  Badge,
-  Card,
-  EmptyState,
-  ErrorState,
-  Loading,
-  PageHeader,
-  Pagination,
-} from "../../components";
+import { Badge, Card, EmptyState, ErrorState, Loading, Pagination } from "../../components";
 import { API_PAGE_SIZE, Paged, formatDay, formatTime, groupByDay } from "./boards";
 import "./common.css";
 
@@ -61,8 +53,6 @@ export default function NotificationsPage() {
 
   return (
     <>
-      <PageHeader title="알림" />
-
       {list.loading ? (
         <Loading label="알림을 불러오는 중…" />
       ) : list.error ? (
@@ -127,10 +117,6 @@ function NotificationItem({
       </span>
 
       {row.body && <p className="cm-notif__body">{row.body}</p>}
-
-      {failed && (
-        <p className="cm-notif__body">알림톡 발송 실패</p>
-      )}
 
       {showGradeLink && (
         <p className="cm-notif__link">

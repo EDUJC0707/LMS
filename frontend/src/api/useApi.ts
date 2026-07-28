@@ -21,6 +21,15 @@ export interface ApiState<T> {
   data: T | null;
   error: string | null;
   loading: boolean;
+  /**
+   * 처음 불러오는 중(아직 보여줄 데이터가 없음)에만 true.
+   *
+   * 화면 전체를 로딩으로 덮을지 판단할 때 `loading` 대신 이걸 쓴다. `loading`
+   * 으로 덮으면 필터·달 이동처럼 deps 만 바뀌는 재조회에서도 페이지가 통째로
+   * 사라졌다 돌아와, 안 바뀌는 영역(제목·마감 카드)까지 깜빡인다.
+   * 재조회 중임을 알리려면 `loading` 을 바뀌는 영역에만 쓰라.
+   */
+  initialLoading: boolean;
   reload: () => Promise<void>;
   /** 낙관적 갱신용 — 서버 재조회 없이 화면 데이터를 갈아끼운다. */
   setData: (next: T | null) => void;
@@ -62,7 +71,7 @@ export function useApi<T>(loader: () => Promise<T>, deps: DependencyList): ApiSt
     void reload();
   }, [reload]);
 
-  return { data, error, loading, reload, setData };
+  return { data, error, loading, initialLoading: loading && data === null, reload, setData };
 }
 
 export interface ApiAction<Args extends unknown[], R> {

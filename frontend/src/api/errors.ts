@@ -41,7 +41,23 @@ function fromBody(data: unknown): string | null {
       for (const item of value) if (typeof item === "string") messages.push(item);
     }
   }
-  return messages.length > 0 ? messages.join(" ") : null;
+  if (messages.length === 0) return null;
+
+  // 같은 문구가 필드 수만큼 반복되는 것을 막는다 — 빈 폼을 제출하면 DRF 가
+  // 필드마다 같은 메시지를 주므로 그대로 이으면 "…없습니다. …없습니다." 가 된다.
+  const unique = [...new Set(messages.map(humanize))];
+  return unique.join(" ");
+}
+
+/** DRF 기본 문구 중 사용자가 읽으면 안 되는 것들을 사람 말로 바꾼다. */
+function humanize(message: string): string {
+  const trimmed = message.trim();
+  // "이 필드는 blank일 수 없습니다."(영단어가 한국어 문장에 섞인 DRF 기본값),
+  // "이 필드는 필수 항목입니다." 등 — 학부모·학생이 그대로 보면 안 된다.
+  if (/blank|필수 항목|필수입니다|null.*없습니다/i.test(trimmed)) {
+    return "입력하지 않은 칸이 있습니다.";
+  }
+  return trimmed;
 }
 
 /** 어떤 예외든 화면에 그대로 띄울 수 있는 한 문장으로 만든다. */

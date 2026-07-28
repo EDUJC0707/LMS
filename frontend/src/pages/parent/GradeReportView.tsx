@@ -11,6 +11,10 @@ import "./parent.css";
 import { ReportGuide, ReportQuestion, ReportSummary, ReportUnit, ThemeTrend } from "./types";
 
 export interface GradeReportViewProps {
+  /** 첫 카드 제목 — 시험 이름. 상단바는 "성적"만 말하므로 본문이 들고 있어야 한다. */
+  examName: string;
+  /** 첫 카드 aside — 회차·응시일·자녀 이름·원번. */
+  identity: string;
   summary: ReportSummary;
   units: ReportUnit[];
   questions: ReportQuestion[];
@@ -19,6 +23,8 @@ export interface GradeReportViewProps {
 }
 
 export function GradeReportView({
+  examName,
+  identity,
   summary,
   units,
   questions,
@@ -27,7 +33,8 @@ export function GradeReportView({
 }: GradeReportViewProps) {
   return (
     <div className="ui-stack">
-      <Card title="총평">
+      {/* 옛 "총평" 라벨 대신 시험 이름이 제목이 된다 — 표 내용이 곧 총평이다. */}
+      <Card title={examName} aside={identity}>
         <dl className="parent-facts">
           <div>
             <dt className="parent-facts__term">받은 점수</dt>
@@ -64,7 +71,7 @@ export function GradeReportView({
           rows={units}
           rowKey={(row) => row.unit_major}
           caption="대단원별 점수와 정답률"
-          empty="이 시험에는 단원이 나뉘어 있지 않습니다."
+          empty="이 시험에는 단원이 나뉘어 있지 않습니다"
           columns={[
             { key: "unit", header: "단원", cell: (row) => row.unit_major },
             {
@@ -103,12 +110,10 @@ export function GradeReportView({
       <Card
         title="틀린 문항과 다음 학습"
         aside={guides.length > 0 ? `${guides.length}문항` : undefined}
-        padding={guides.length === 0 ? "md" : "none"}
+        padding="none"
       >
         {guides.length === 0 ? (
-          <EmptyState
-            title="틀린 문항이 없습니다"
-          />
+          <EmptyState title="틀린 문항이 없습니다" />
         ) : (
           <Table
             rows={guides}
@@ -159,7 +164,7 @@ export function GradeReportView({
           rowKey={(row) => row.q_number}
           dense
           caption="문항별 정답·자녀 답안·결과"
-          empty="문항 정보가 아직 등록되지 않았습니다."
+          empty="문항 정보가 아직 등록되지 않았습니다"
           columns={[
             {
               key: "q",
@@ -220,9 +225,15 @@ export function GradeReportView({
         />
       </DetailsPanel>
 
-      <Card title="주제별 누적 정답률" aside={`${themeTrends.length}개 주제`}>
+      {/* 비어 있으면 EmptyState 가 자기 여백을 갖는다 — 카드 패딩을 겹쳐 주면
+          한 줄짜리 안내가 72px 안쪽에 갇힌다(다른 빈 카드와 값이 어긋난다). */}
+      <Card
+        title="주제별 누적 정답률"
+        aside={themeTrends.length > 0 ? `${themeTrends.length}개 주제` : undefined}
+        padding={themeTrends.length === 0 ? "none" : "md"}
+      >
         {themeTrends.length === 0 ? (
-          <p className="parent-note">아직 주제별로 쌓인 기록이 없습니다.</p>
+          <EmptyState title="아직 주제별로 쌓인 기록이 없습니다" />
         ) : (
           <div className="ui-stack ui-stack--sm">
             {themeTrends.map((trend) => {

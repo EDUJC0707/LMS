@@ -36,7 +36,6 @@ import {
   Field,
   Input,
   Loading,
-  PageHeader,
   Radio,
   Select,
   StatusBadge,
@@ -103,24 +102,29 @@ export default function ClinicManagePage() {
   }, [me, rows, staffList.data]);
 
   return (
-    <>
-      <PageHeader
-        title="클리닉 배정"
-      />
+    <div className="ui-stack">
+      {/* 상태 탭과 날짜는 같은 일(대기열 좁히기)을 한다 — 한 덩어리로 묶어
+          16px 으로 붙이고, 대기열·처리판과는 24px 로 띄운다. */}
+      <div className="ui-stack ui-stack--md">
+        <Tabs items={TABS} value={tab} onChange={setTab} label="신청 상태" />
 
-      <Tabs items={TABS} value={tab} onChange={setTab} label="신청 상태" />
-
-      <div className="pm-toolbar">
-        <Field label="날짜">
-          {(props) => (
-            <Input {...props} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        <div className="pm-toolbar">
+          <Field label="날짜">
+            {(props) => (
+              <Input
+                {...props}
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            )}
+          </Field>
+          {date && (
+            <Button variant="ghost" onClick={() => setDate("")}>
+              날짜 조건 지우기
+            </Button>
           )}
-        </Field>
-        {date && (
-          <Button variant="ghost" onClick={() => setDate("")}>
-            날짜 조건 지우기
-          </Button>
-        )}
+        </div>
       </div>
 
       <div className="pm-split">
@@ -158,9 +162,7 @@ export default function ClinicManagePage() {
                   cell: (row) => (
                     <>
                       {row.student.name}{" "}
-                      <span className="num" style={{ color: "var(--color-muted)" }}>
-                        {row.student.unique_id}
-                      </span>
+                      <span className="num pm-none">{row.student.unique_id}</span>
                       {row.student.clinic_banned && (
                         <>
                           {" "}
@@ -199,7 +201,7 @@ export default function ClinicManagePage() {
                     row.attendance_status ? (
                       <StatusBadge status={row.attendance_status} />
                     ) : (
-                      <span style={{ color: "var(--color-muted)" }}>—</span>
+                      <span className="pm-none">—</span>
                     ),
                 },
               ]}
@@ -232,19 +234,17 @@ export default function ClinicManagePage() {
         {criteria.error ? (
           <Alert tone="danger">{criteria.error}</Alert>
         ) : (
-          <ol className="ui-stack--sm" style={{ margin: 0, paddingLeft: "1.2rem" }}>
+          <ol className="pm-numlist">
             {(criteria.data ?? []).map((item) => (
               <li key={item.criteria_id}>
                 <b>{item.item}</b>
-                {item.description && (
-                  <span style={{ color: "var(--color-muted)" }}> — {item.description}</span>
-                )}
+                {item.description && <span> — {item.description}</span>}
               </li>
             ))}
           </ol>
         )}
       </DetailsPanel>
-    </>
+    </div>
   );
 }
 
@@ -303,7 +303,7 @@ function RequestPanel({
       title={`${request.student.name} 학생 신청`}
       aside={`신청 번호 ${request.clinic_id}`}
     >
-      <div className="ui-stack--md">
+      <div className="ui-stack ui-stack--md">
         <dl className="pm-defs">
           <dt>원번</dt>
           <dd className="num">{request.student.unique_id}</dd>
@@ -357,7 +357,7 @@ function RequestPanel({
         )}
 
         {canAssign && (
-          <div className="ui-stack--sm pm-actionblock">
+          <div className="ui-stack ui-stack--sm pm-actionblock">
             {(assign.error || reject.error) && (
               <Alert tone="danger">{assign.error ?? reject.error}</Alert>
             )}
@@ -411,7 +411,7 @@ function RequestPanel({
         )}
 
         {canMarkAttendance && (
-          <div className="ui-stack--sm pm-actionblock">
+          <div className="ui-stack ui-stack--sm pm-actionblock">
             {attend.error && <Alert tone="danger">{attend.error}</Alert>}
             {request.student.noshow_count >= 1 && (
               <Alert tone="warning">
@@ -482,23 +482,11 @@ function EvaluationForm({
       summary="조교 수행 평가"
       aside={saved ? "저장됨" : `${answered}/${criteria.length} 항목`}
     >
-      <div className="ui-stack--sm">
+      <div className="ui-stack ui-stack--sm">
         {submit.error && <Alert tone="danger">{submit.error}</Alert>}
         {criteria.map((item) => (
-          <fieldset
-            key={item.criteria_id}
-            style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
-          >
-            <legend
-              style={{
-                padding: 0,
-                color: "var(--color-ink)",
-                fontSize: "var(--text-sm)",
-                fontWeight: "var(--weight-medium)",
-              }}
-            >
-              {item.item}
-            </legend>
+          <fieldset key={item.criteria_id} className="pm-critset">
+            <legend>{item.item}</legend>
             <div className="ui-row">
               {(["충족", "미충족"] as const).map((value) => (
                 <Radio

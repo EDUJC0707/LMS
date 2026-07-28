@@ -29,7 +29,6 @@ import {
   Field,
   Input,
   Loading,
-  PageHeader,
   Select,
   StatusBadge,
   Table,
@@ -159,11 +158,7 @@ export default function AccountsPage() {
   };
 
   return (
-    <>
-      <PageHeader
-        title="계정 발급"
-      />
-
+    <div className="ui-stack">
       <Card
         title="새 학생 명단"
         aside={filled.length > 0 ? `입력 ${filled.length}명` : undefined}
@@ -176,47 +171,51 @@ export default function AccountsPage() {
           </>
         }
       >
-        <div className="ui-stack--md">
+        <div className="ui-stack ui-stack--md">
           {issue.error && <Alert tone="danger">{issue.error}</Alert>}
 
-          <div className="pm-entry" aria-hidden="true">
-            {COLUMNS.map((column) => (
-              <span key={column.field} className="pm-entry__head">
-                {column.label}
-              </span>
+          {/* 머리줄과 입력 행은 한 격자다 — 행 간격을 칸 간격(8px)과 맞춰야
+              세로도 가로도 같은 눈금으로 읽힌다. */}
+          <div className="ui-stack ui-stack--sm">
+            <div className="pm-entry" aria-hidden="true">
+              {COLUMNS.map((column) => (
+                <span key={column.field} className="pm-entry__head">
+                  {column.label}
+                </span>
+              ))}
+              <span className="pm-entry__head" />
+            </div>
+
+            {rows.map((row, index) => (
+              <div className="pm-entry" key={row.key}>
+                {COLUMNS.map((column) => (
+                  <Input
+                    key={column.field}
+                    value={row[column.field]}
+                    onChange={(e) => update(row.key, column.field, e.target.value)}
+                    placeholder={column.placeholder}
+                    aria-label={`${index + 1}번째 학생 ${column.label}`}
+                    autoComplete="off"
+                  />
+                ))}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    setRows((prev) =>
+                      prev.length === 1 ? [blankRow()] : prev.filter((r) => r.key !== row.key),
+                    )
+                  }
+                  aria-label={`${index + 1}번째 행 비우기`}
+                >
+                  삭제
+                </Button>
+              </div>
             ))}
-            <span className="pm-entry__head" />
           </div>
 
-          {rows.map((row, index) => (
-            <div className="pm-entry" key={row.key}>
-              {COLUMNS.map((column) => (
-                <Input
-                  key={column.field}
-                  value={row[column.field]}
-                  onChange={(e) => update(row.key, column.field, e.target.value)}
-                  placeholder={column.placeholder}
-                  aria-label={`${index + 1}번째 학생 ${column.label}`}
-                  autoComplete="off"
-                />
-              ))}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  setRows((prev) =>
-                    prev.length === 1 ? [blankRow()] : prev.filter((r) => r.key !== row.key),
-                  )
-                }
-                aria-label={`${index + 1}번째 행 비우기`}
-              >
-                삭제
-              </Button>
-            </div>
-          ))}
-
           <DetailsPanel summary="엑셀에서 붙여넣기" aside="한 줄에 한 명">
-            <div className="ui-stack--sm">
+            <div className="ui-stack ui-stack--sm">
               <Field label="이름 · 학생 휴대폰 · 학부모 휴대폰 · 원번 · 학년 · 학교">
                 {(props) => (
                   <Textarea
@@ -262,7 +261,7 @@ export default function AccountsPage() {
           }
           padding="none"
         >
-          <div style={{ padding: "var(--space-lg) var(--space-lg) 0" }}>
+          <div className="pm-cardpad">
             <Alert tone="warning">초기 비밀번호는 이 화면에서만 보입니다</Alert>
           </div>
           <Table<BulkResultRow>
@@ -335,9 +334,7 @@ export default function AccountsPage() {
                 header: "실패 사유",
                 cell: (row) =>
                   row.error ? (
-                    <span style={{ color: "var(--color-danger)" }}>
-                      {ROW_ERROR_KO[row.error] ?? row.error}
-                    </span>
+                    <span className="pm-rowerror">{ROW_ERROR_KO[row.error] ?? row.error}</span>
                   ) : (
                     ""
                   ),
@@ -348,7 +345,7 @@ export default function AccountsPage() {
       )}
 
       <PreRegisteredPanel canReadRoster={hasFeature("출결입력")} reloadToken={issuedCount} />
-    </>
+    </div>
   );
 }
 
@@ -411,49 +408,54 @@ function PreRegisteredPanel({
 
   const rows = mergePreRegistered(waiting.data?.results ?? [], roster.data);
 
+  // 표 위에 얹는 줄. 셋 다 없을 수 있어(권한 있음 + 회차 없음 + 오류 없음)
+  // 미리 만들어 두고, 있을 때만 여백 있는 칸을 세운다 — 빈 칸이 표를 밀어내지 않게.
+  const above = !canReadRoster ? (
+    <Alert tone="info">출결 입력 권한이 없어 출석 여부를 함께 볼 수 없습니다</Alert>
+  ) : sessions.error ? (
+    <Alert tone="danger">{sessions.error}</Alert>
+  ) : (sessions.data ?? []).length > 0 ? (
+    <div className="pm-toolbar">
+      <div className="pm-toolbar__wide">
+        <Field label="출석을 확인할 회차">
+          {(props) => (
+            <Select
+              {...props}
+              value={chosen ?? ""}
+              onChange={(e) => setSessionId(Number(e.target.value))}
+            >
+              {(sessions.data ?? []).map((session) => (
+                <option key={session.session_id} value={session.session_id}>
+                  {session.session_date}
+                  {session.session_no ? ` · ${session.session_no}회차` : ""}
+                  {session.week_no ? ` (${session.week_no}주차)` : ""}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <Card
       title="등록 전환 대기"
       aside={waiting.data ? `예비등록 ${waiting.data.count}명` : undefined}
       padding="none"
     >
-      <div style={{ padding: "var(--space-lg) var(--space-lg) 0" }} className="ui-stack--md">
-        {register.error && (
-          <Alert tone="danger" onClose={register.clearError}>
-            {register.error}
-          </Alert>
-        )}
-
-        {canReadRoster ? (
-          sessions.error ? (
-            <Alert tone="danger">{sessions.error}</Alert>
-          ) : (sessions.data ?? []).length > 0 ? (
-            <div className="pm-toolbar">
-              <div className="pm-toolbar__wide">
-                <Field label="출석을 확인할 회차">
-                  {(props) => (
-                    <Select
-                      {...props}
-                      value={chosen ?? ""}
-                      onChange={(e) => setSessionId(Number(e.target.value))}
-                    >
-                      {(sessions.data ?? []).map((session) => (
-                        <option key={session.session_id} value={session.session_id}>
-                          {session.session_date}
-                          {session.session_no ? ` · ${session.session_no}회차` : ""}
-                          {session.week_no ? ` (${session.week_no}주차)` : ""}
-                        </option>
-                      ))}
-                    </Select>
-                  )}
-                </Field>
-              </div>
-            </div>
-          ) : null
-        ) : (
-          <Alert tone="info">출결 입력 권한이 없어 출석 여부를 함께 볼 수 없습니다</Alert>
-        )}
-      </div>
+      {/* 시험·성적 화면과 같은 규격(.pm-cardpad)으로 얹는다 — 예전에는 아래
+          여백이 0 이라 회차 선택 상자가 표 머리에 붙어 있었다. */}
+      {(register.error || above) && (
+        <div className="pm-cardpad ui-stack ui-stack--md">
+          {register.error && (
+            <Alert tone="danger" onClose={register.clearError}>
+              {register.error}
+            </Alert>
+          )}
+          {above}
+        </div>
+      )}
 
       {waiting.loading ? (
         <Loading label="전환 대기 명부를 불러오는 중…" />

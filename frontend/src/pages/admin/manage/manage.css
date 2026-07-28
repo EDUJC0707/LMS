@@ -11,6 +11,15 @@
 
 /* ═══ 공통 · 툴바 ═══════════════════════════════════════════════════ */
 
+/* padding="none" 카드 안에서 표 위에 얹는 줄(툴바·경고)의 안쪽 여백.
+   위아래를 같은 값으로 둔다 — 카드 머리 선과 표 머리 사이가 대칭이 된다.
+   좌우는 카드 머리(--space-lg)와 맞춰 글자 시작선을 하나로 세운다.
+   (예전에는 페이지마다 inline style 로 `lg lg 0` 을 적어 아래가 0 이었고,
+    검색 칸이 표 머리에 붙어 있었다.)                                   */
+.pm-cardpad {
+  padding: var(--space-md) var(--space-lg);
+}
+
 /* 필터·검색 줄. 카드 헤더 아래 첫 요소로 쓴다. */
 .pm-toolbar {
   display: flex;
@@ -44,6 +53,12 @@
   margin-left: auto;
 }
 
+/* 표 안의 "없음 · —" 자리. 값이 아니라 빈 자리라는 뜻이라 한 단계 흐리다.
+   (페이지마다 inline style 로 흩어져 있던 색을 한 곳으로 모았다.) */
+.pm-none {
+  color: var(--color-muted);
+}
+
 /* 라벨 없이 값만 늘어놓는 메타 줄 */
 .pm-meta {
   display: flex;
@@ -57,6 +72,41 @@
 .pm-meta b {
   color: var(--color-ink-2);
   font-weight: var(--weight-semibold);
+}
+
+/* 평가 항목 한 줄(제목 + 충족/미충족 라디오). fieldset 기본 여백을 지우고
+   legend 를 Field 라벨과 같은 규격으로 맞춘다 — 옆 Field 와 줄이 선다. */
+.pm-critset {
+  border: 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.pm-critset legend {
+  padding: 0;
+  margin-bottom: var(--space-2xs);
+  color: var(--color-ink-2);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-snug);
+}
+
+/* 번호가 뜻을 갖는 목록(평가 기준 1·2·3…). 마커를 지켜야 해서 flex/grid 로
+   만들지 않고 형제 여백으로 띄운다. */
+/* base.css 가 ol/ul 의 마커를 전부 끈다 — 번호가 그려지지 않으므로 마커 자리
+   24px 는 빈 들여쓰기였다. 걷어내 항목 글이 패널 제목과 같은 선에서 시작한다. */
+.pm-numlist {
+  margin: 0;
+  color: var(--color-ink-2);
+}
+
+.pm-numlist li + li {
+  margin-top: var(--space-xs);
+}
+
+.pm-numlist span {
+  color: var(--color-muted);
 }
 
 /* 읽는 영역과 처리 영역을 가르는 선 — 실수로 누르는 일을 줄인다. */
@@ -128,6 +178,17 @@
   padding: var(--space-xs) var(--space-sm);
   text-align: left;
   vertical-align: top;
+}
+
+/* 손으로 짠 표라 components.css 의 .ui-card__body--flush 규칙이 닿지 않는다.
+   카드에 붙는 표는 바깥 두 열을 카드 기준선(24px)으로 민다 — 안 그러면
+   기능 이름이 카드 제목보다 12px 왼쪽에서 시작한다. */
+.pm-matrix tr > :first-child {
+  padding-left: var(--space-lg);
+}
+
+.pm-matrix tr > :last-child {
+  padding-right: var(--space-lg);
 }
 
 .pm-matrix tbody tr:last-child th,
@@ -276,19 +337,29 @@
   }
 }
 
-/* 범례 — 매트릭스를 읽는 법 */
+/* 범례 — 매트릭스를 읽는 법.
+   flex-wrap 이었을 때는 칩과 설명이 한 줄에서 제멋대로 끊겨 마지막 짝만
+   아래로 떨어졌다. 짝을 하나의 칸으로 묶고 칩 폭을 맞춰 설명 시작선을 세운다. */
 .pm-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-xs) var(--space-md);
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr));
+  gap: var(--space-xs) var(--space-lg);
   margin: 0;
   font-size: var(--text-xs);
   color: var(--color-muted);
 }
 
+.pm-legend__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
 .pm-legend .pm-grant {
+  flex: none;
   width: auto;
+  min-width: 6.5rem;
   min-height: auto;
   pointer-events: none;
 }
@@ -302,10 +373,12 @@
   align-items: start;
 }
 
-/* 오른쪽 처리 패널은 스크롤을 따라온다(1280+ 기준) */
+/* 오른쪽 처리 패널은 스크롤을 따라온다(1280+ 기준).
+   상단바가 sticky(56px)라 그 아래에서 멈춰야 한다 — top 을 --space-md 로만
+   두면 패널 머리가 상단바 밑으로 들어가 잘린다. */
 .pm-split__side {
   position: sticky;
-  top: var(--space-md);
+  top: calc(var(--topbar-height) + var(--space-md));
   min-width: 0;
 }
 
@@ -362,9 +435,13 @@
 
 /* ═══ 워크북 매칭 보드 ══════════════════════════════════════════════ */
 
+/* align-items 를 stretch(기본) 로 두면 한 줄에서 가장 키 큰 칸(확정 패널을 펼친
+   칸)에 맞춰 나머지가 늘어나, 접혀 있는 칸 밑에 400px 짜리 빈 카드가 생긴다.
+   칸은 제 내용만큼만 세운다 — 남는 자리는 카드가 아니라 배경이 받는다. */
 .pm-wbgrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
+  align-items: start;
   gap: var(--space-md);
   list-style: none;
   margin: 0;
@@ -429,6 +506,12 @@
   color: var(--color-muted);
   font-size: var(--text-xs);
   font-weight: var(--weight-normal);
+}
+
+/* 카드 폭이 18rem 뿐이라 빈 도움말 자리(1.2em)가 칸마다 쌓이면 세로가 흐트러진다.
+   에러가 뜨면 그때만 줄이 생긴다(그 순간엔 아래가 밀려도 된다 — 카드 안이다). */
+.pm-wbbody .ui-field__help:empty {
+  display: none;
 }
 
 /* 업로드 드롭 존 */

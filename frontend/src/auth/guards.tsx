@@ -8,7 +8,6 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { Feature, Role, homePathFor } from "../api/types";
 import { AppShell } from "../components/AppShell";
 import { Card } from "../components/Card";
-import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/States";
 import { Spinner } from "../components/Spinner";
 import { useMe } from "./MeProvider";
@@ -57,14 +56,14 @@ export function RequireFeature({ feature }: { feature: Feature }) {
   const { me, hasFeature } = useMe();
   if (!me) return null;
   if (me.role === "대표" || hasFeature(feature)) return <Outlet />;
-  // 다른 화면과 같은 골격(PageHeader 가 h1 — 화면당 h1 하나)으로 그린다.
+  // 화면 이름은 상단바가 이미 그리고 있다(예: "출결 입력"). 여기서는 왜 막혔는지만.
   return (
-    <>
-      <PageHeader title={`'${feature}' 권한이 없습니다`} />
-      <Card>
-        <EmptyState title="대표에게 권한을 요청해 주세요" />
-      </Card>
-    </>
+    <Card>
+      <EmptyState
+        title={`'${feature}' 권한이 없습니다`}
+        description="대표에게 권한을 요청해 주세요"
+      />
+    </Card>
   );
 }
 

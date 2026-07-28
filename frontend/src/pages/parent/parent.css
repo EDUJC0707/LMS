@@ -2,39 +2,17 @@
  * 토큰(styles/tokens.css) 밖의 색·반경·간격을 새로 만들지 않는다.
  * iPad 1024×768 을 1순위로 잡고, 900px 미만에서 한 단계 눌러 준다. */
 
-/* ── 자녀 선택(PageHeader actions 안) ───────────────────────────── */
+/* ── 사실 목록(반·진도·점수 등 서버가 준 값만) ────────────────── */
 
-.parent-childpick {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3xs);
-}
-
-.parent-childpick__label {
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-medium);
-  letter-spacing: var(--tracking-wide);
-  color: var(--color-muted);
-}
-
-.parent-childpick__select {
-  min-width: 11rem;
-}
-
-/* PageHeader 오른쪽에 자녀 선택과 링크가 함께 설 때 밑단을 맞춘다. */
-.parent-headactions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--space-md);
-}
-
-/* ── 사실 목록(이름·반·진도 등 서버가 준 값만) ────────────────── */
-
+/* 트랙 하한이 크면 6칸짜리 목록이 4+2 로 끊겨 오른쪽 절반이 죽는다.
+   6rem 이면 1024px 에서 6칸이 한 줄에 들어가고, 항목이 적으면 auto-fit 이
+   빈 트랙을 접어 남는 폭을 나눠 갖는다. 줄이 접힐 때만 행 간격을 한 단계
+   키워(md→lg) 둘째 줄이 첫 줄의 꼬리가 아니라 다음 줄로 읽히게 한다. */
 .parent-facts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
-  gap: var(--space-md);
+  grid-template-columns: repeat(auto-fit, minmax(min(6rem, 100%), 1fr));
+  column-gap: var(--space-md);
+  row-gap: var(--space-lg);
   margin: 0;
 }
 
@@ -45,17 +23,21 @@
   color: var(--color-muted);
 }
 
+/* 한 줄에 늘어선 값들은 글자 크기가 달라도 같은 기준선에 서야 한다.
+   16px×1.6 = 25.6, 20px×1.2 = 24 — 두 줄상자의 baseline 차이가 0.7px 로 줄어
+   "35" 만 4px 내려앉던 어긋남이 사라진다(라벨↔값 간격은 2px 로 동일 유지). */
 .parent-facts__value {
   margin: var(--space-3xs) 0 0;
   font-size: var(--text-base);
   font-weight: var(--weight-medium);
   color: var(--color-ink);
-  line-height: var(--leading-snug);
+  line-height: var(--leading-normal);
 }
 
 .parent-facts__value--strong {
   font-size: var(--text-md);
   font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
 }
 
 /* ── 달 이동 ────────────────────────────────────────────────────── */
@@ -82,22 +64,27 @@
   gap: var(--space-2xs);
 }
 
+/* 날짜는 셀 왼쪽(패딩 8px)에 붙는다 — 요일 머리도 같은 x 에 세운다.
+   가운데 정렬하면 머리글만 칸 한복판에 떠서 숫자 열과 어긋난다
+   (학생 달력 .st-cal__dow 와 같은 규칙). */
 .parent-cal__head {
   padding-bottom: var(--space-2xs);
+  padding-left: var(--space-xs);
   font-size: var(--text-2xs);
   font-weight: var(--weight-medium);
   letter-spacing: var(--tracking-wide);
   color: var(--color-muted);
-  text-align: center;
 }
 
+/* 좌우 4px 은 날짜와 출결 뱃지가 칸 선에 붙어 보인다 — 학생 달력(.st-cal__cell)과
+   같은 4/8/8 로 맞춘다. */
 .parent-cal__cell {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-3xs);
+  gap: var(--space-2xs);
   min-height: 4.75rem;
-  padding: var(--space-2xs);
+  padding: var(--space-2xs) var(--space-xs) var(--space-xs);
   border: 1px solid var(--color-rule-2);
   border-radius: var(--radius-sm);
   background: var(--color-paper);
@@ -135,13 +122,15 @@
   color: var(--color-neutral);
 }
 
+/* 구분선 위아래를 같은 값으로 둔다(16/16) — 16/12 는 선이 위로 밀려 보인다.
+   항목 사이는 학생 화면의 범례(.st-legend·.st-scale__legend)와 같은 16px. */
 .parent-legend {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-sm);
+  gap: var(--space-md);
   margin-top: var(--space-md);
-  padding-top: var(--space-sm);
+  padding-top: var(--space-md);
   border-top: 1px solid var(--color-rule-2);
 }
 
@@ -154,8 +143,9 @@
   color: var(--color-muted);
 }
 
-.parent-note--spaced {
-  margin-top: var(--space-md);
+/* 뒤에 목록이 따라오는 머리 문장(주차 공지 등). */
+.parent-note--lead {
+  margin-bottom: var(--space-sm);
 }
 
 /* ── 주차 학습 계획 ────────────────────────────────────────────── */
@@ -171,30 +161,6 @@
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
   color: var(--color-ink);
-}
-
-/* ── 단계 안내(신청 → 승인 → 지급완료) ─────────────────────────── */
-
-.parent-steps {
-  margin: 0;
-  padding-left: var(--space-lg);
-  list-style: decimal;
-}
-
-.parent-steps li {
-  margin-bottom: var(--space-xs);
-  font-size: var(--text-sm);
-  line-height: var(--leading-normal);
-  color: var(--color-ink-2);
-}
-
-.parent-steps li:last-child {
-  margin-bottom: 0;
-}
-
-.parent-steps li::marker {
-  color: var(--color-muted);
-  font-size: var(--text-xs);
 }
 
 /* ── 워크북 사진 ────────────────────────────────────────────────── */
@@ -228,11 +194,13 @@
   background: var(--color-paper-3);
 }
 
+/* 위 12 / 아래 16 은 캡션이 사진 쪽으로 딸려 올라가 보인다 — 12/12 로 맞추고,
+   대신 날짜와 뱃지 줄 사이(4px→8px)를 벌려 두 줄이 엉기지 않게 한다. */
 .parent-photo__cap {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2xs);
-  padding: var(--space-sm) var(--space-md) var(--space-md);
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
   border-top: 1px solid var(--color-rule-2);
 }
 
@@ -253,16 +221,18 @@
 
 /* ── 성적표 문항 결과 ──────────────────────────────────────────── */
 
+/* 같은 행의 "단원" 칸(제목 줄 + parent-note 보조 줄)과 줄 리듬을 맞춘다 —
+   표 셀은 leading-snug 이라 여기만 normal(1.6) 이면 첫 줄이 2px 뜨고,
+   보조 줄에 margin 4px 이 더 붙어 옆 칸 보조 줄보다 3px 내려갔다. */
 .parent-guide {
   margin: 0;
   font-size: var(--text-sm);
-  line-height: var(--leading-normal);
+  line-height: var(--leading-snug);
   color: var(--color-ink-2);
 }
 
 .parent-guide__video {
   display: block;
-  margin-top: var(--space-2xs);
   font-size: var(--text-xs);
   color: var(--color-muted);
 }
@@ -272,9 +242,11 @@
 @media (max-width: 899px) {
   .parent-cal__cell {
     min-height: 3.5rem;
+    padding: var(--space-2xs);
   }
 
-  .parent-childpick__select {
-    min-width: 9rem;
+  /* 셀 패딩이 4px 로 줄면 요일 머리도 따라 줄어야 숫자와 같은 x 에 선다. */
+  .parent-cal__head {
+    padding-left: var(--space-2xs);
   }
 }

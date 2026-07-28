@@ -9,7 +9,8 @@ import { changePassword } from "../../api/auth";
 import { toMessage } from "../../api/errors";
 import { homePathFor } from "../../api/types";
 import { useMe } from "../../auth/MeProvider";
-import { Alert, Button, Card, Field, Input, PageHeader } from "../../components";
+import { Alert, Button, Card, Field, Input } from "../../components";
+import "./common.css";
 
 export default function PasswordPage() {
   const { me, refresh } = useMe();
@@ -49,67 +50,56 @@ export default function PasswordPage() {
   };
 
   return (
-    <>
-      <PageHeader
-        title="비밀번호 변경"
-      />
+    // 칸이 셋뿐인 폼이라 카드를 화면 폭까지 늘리면 오른쪽이 통째로 빈다 —
+    // 카드를 내용 폭에 맞춰 세운다(cm-narrow).
+    <Card className="cm-narrow">
+      <form onSubmit={submit} noValidate className="ui-stack ui-stack--sm">
+        {forced && <Alert tone="warning">비밀번호를 바꿔야 다른 화면을 볼 수 있습니다.</Alert>}
+        {error && <Alert tone="danger">{error}</Alert>}
+        {done && !forced && <Alert tone="success">비밀번호를 바꿨습니다.</Alert>}
 
-      <Card>
-        <form
-          onSubmit={submit}
-          noValidate
-          style={{ display: "grid", gap: "var(--space-sm)", maxWidth: "24rem" }}
-        >
-          {forced && <Alert tone="warning">비밀번호를 바꿔야 다른 화면을 볼 수 있습니다.</Alert>}
-          {error && <Alert tone="danger">{error}</Alert>}
-          {done && !forced && <Alert tone="success">비밀번호를 바꿨습니다.</Alert>}
+        <Field label="현재 비밀번호" required>
+          {(props) => (
+            <Input
+              {...props}
+              type="password"
+              autoComplete="current-password"
+              value={current}
+              onChange={(event) => setCurrent(event.target.value)}
+            />
+          )}
+        </Field>
 
-          <Field label="현재 비밀번호" required>
-            {(props) => (
-              <Input
-                {...props}
-                type="password"
-                autoComplete="current-password"
-                value={current}
-                onChange={(event) => setCurrent(event.target.value)}
-              />
-            )}
-          </Field>
+        <Field label="새 비밀번호" required>
+          {(props) => (
+            <Input
+              {...props}
+              type="password"
+              autoComplete="new-password"
+              value={next}
+              onChange={(event) => setNext(event.target.value)}
+            />
+          )}
+        </Field>
 
-          <Field
-            label="새 비밀번호"
-            required
-          >
-            {(props) => (
-              <Input
-                {...props}
-                type="password"
-                autoComplete="new-password"
-                value={next}
-                onChange={(event) => setNext(event.target.value)}
-              />
-            )}
-          </Field>
+        <Field label="새 비밀번호 확인" error={mismatch} required>
+          {(props) => (
+            <Input
+              {...props}
+              type="password"
+              autoComplete="new-password"
+              value={confirm}
+              onChange={(event) => setConfirm(event.target.value)}
+            />
+          )}
+        </Field>
 
-          <Field label="새 비밀번호 확인" error={mismatch} required>
-            {(props) => (
-              <Input
-                {...props}
-                type="password"
-                autoComplete="new-password"
-                value={confirm}
-                onChange={(event) => setConfirm(event.target.value)}
-              />
-            )}
-          </Field>
-
-          <div className="ui-row">
-            <Button type="submit" variant="primary" loading={pending}>
-              비밀번호 바꾸기
-            </Button>
-          </div>
-        </form>
-      </Card>
-    </>
+        <div className="ui-row">
+          <Button type="submit" variant="primary" loading={pending}>
+            비밀번호 바꾸기
+          </Button>
+        </div>
+      </form>
+    </Card>
   );
 }

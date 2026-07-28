@@ -21,7 +21,6 @@ import {
   Field,
   Input,
   Loading,
-  PageHeader,
   StatusBadge,
   Table,
 } from "../../../components";
@@ -51,126 +50,101 @@ export default function ExamsPage() {
     );
   }, [exams.data, query]);
 
-  const pending = (exams.data ?? []).filter((exam) => exam.pending_sheet_count > 0);
+  if (exams.loading) return <Loading label="시험 목록을 불러오는 중…" />;
+  if (exams.error) return <ErrorState description={exams.error} onRetry={exams.reload} />;
 
   return (
-    <>
-      <PageHeader
-        title="시험·성적"
-      />
+    <Card title="시험 회차" aside={`${(exams.data ?? []).length}개 회차`} padding="none">
+      <div className="pm-toolbar pm-cardpad">
+        <Field label="회차 찾기">
+          {(props) => (
+            <Input
+              {...props}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="주간모의고사"
+              type="search"
+            />
+          )}
+        </Field>
+      </div>
 
-      {exams.loading ? (
-        <Loading label="시험 목록을 불러오는 중…" />
-      ) : exams.error ? (
-        <ErrorState description={exams.error} onRetry={exams.reload} />
-      ) : (
-        <Card
-          title="시험 회차"
-          aside={
-            pending.length > 0
-              ? `${pending.length}개 회차에 미대조 답안지가 남아 있습니다`
-              : `${(exams.data ?? []).length}개 회차`
-          }
-          padding="none"
-        >
-          <div style={{ padding: "var(--space-lg) var(--space-lg) 0" }}>
-            <div className="pm-toolbar">
-              <Field label="회차 찾기">
-                {(props) => (
-                  <Input
-                    {...props}
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="주간모의고사"
-                    type="search"
-                  />
-                )}
-              </Field>
-            </div>
-          </div>
-
-          <Table<ExamListRow>
-            rows={rows}
-            rowKey={(row) => row.exam_id}
-            dense
-            caption="시험 회차 목록"
-            onRowClick={(row) => navigate(`/admin/exams/${row.exam_id}`)}
-            empty={
-              query.trim() ? (
-                <EmptyState
-                  title={`“${query.trim()}”과 맞는 회차가 없습니다`}
-                />
+      <Table<ExamListRow>
+        rows={rows}
+        rowKey={(row) => row.exam_id}
+        dense
+        caption="시험 회차 목록"
+        onRowClick={(row) => navigate(`/admin/exams/${row.exam_id}`)}
+        empty={
+          query.trim() ? (
+            <EmptyState title={`“${query.trim()}”과 맞는 회차가 없습니다`} />
+          ) : (
+            <EmptyState title="아직 등록된 시험이 없습니다" />
+          )
+        }
+        columns={[
+          {
+            key: "round",
+            header: "회차",
+            numeric: true,
+            width: "4.5rem",
+            sortValue: (row) => row.round_no ?? 0,
+            cell: (row) => row.round_no ?? "—",
+          },
+          {
+            key: "name",
+            header: "시험명",
+            sortValue: (row) => row.name,
+            cell: (row) => row.name,
+          },
+          {
+            key: "date",
+            header: "시험일",
+            numeric: true,
+            sortValue: (row) => row.exam_date,
+            cell: (row) => row.exam_date,
+          },
+          {
+            key: "taker",
+            header: "응시",
+            numeric: true,
+            sortValue: (row) => row.taker_count,
+            cell: (row) => `${row.taker_count}명`,
+          },
+          {
+            key: "scored",
+            header: "성적 행",
+            numeric: true,
+            sortValue: (row) => row.score_count,
+            cell: (row) => row.score_count,
+          },
+          {
+            key: "average",
+            header: "평균",
+            numeric: true,
+            sortValue: (row) => row.average ?? -1,
+            cell: (row) => score(row.average),
+          },
+          {
+            key: "status",
+            header: "처리 상태",
+            width: "6rem",
+            cell: (row) => <StatusBadge status={row.processing_status} />,
+          },
+          {
+            key: "pending",
+            header: "미대조 답안지",
+            numeric: true,
+            sortValue: (row) => row.pending_sheet_count,
+            cell: (row) =>
+              row.pending_sheet_count > 0 ? (
+                <Badge tone="warning">{row.pending_sheet_count}장</Badge>
               ) : (
-                <EmptyState
-                  title="아직 등록된 시험이 없습니다"
-                />
-              )
-            }
-            columns={[
-              {
-                key: "round",
-                header: "회차",
-                numeric: true,
-                width: "4.5rem",
-                sortValue: (row) => row.round_no ?? 0,
-                cell: (row) => row.round_no ?? "—",
-              },
-              {
-                key: "name",
-                header: "시험명",
-                sortValue: (row) => row.name,
-                cell: (row) => row.name,
-              },
-              {
-                key: "date",
-                header: "시험일",
-                numeric: true,
-                sortValue: (row) => row.exam_date,
-                cell: (row) => row.exam_date,
-              },
-              {
-                key: "taker",
-                header: "응시",
-                numeric: true,
-                sortValue: (row) => row.taker_count,
-                cell: (row) => `${row.taker_count}명`,
-              },
-              {
-                key: "scored",
-                header: "성적 행",
-                numeric: true,
-                sortValue: (row) => row.score_count,
-                cell: (row) => row.score_count,
-              },
-              {
-                key: "average",
-                header: "평균",
-                numeric: true,
-                sortValue: (row) => row.average ?? -1,
-                cell: (row) => score(row.average),
-              },
-              {
-                key: "status",
-                header: "처리 상태",
-                width: "6rem",
-                cell: (row) => <StatusBadge status={row.processing_status} />,
-              },
-              {
-                key: "pending",
-                header: "미대조 답안지",
-                numeric: true,
-                sortValue: (row) => row.pending_sheet_count,
-                cell: (row) =>
-                  row.pending_sheet_count > 0 ? (
-                    <Badge tone="warning">{row.pending_sheet_count}장</Badge>
-                  ) : (
-                    <span style={{ color: "var(--color-muted)" }}>없음</span>
-                  ),
-              },
-            ]}
-          />
-        </Card>
-      )}
-    </>
+                <span className="pm-none">없음</span>
+              ),
+          },
+        ]}
+      />
+    </Card>
   );
 }

@@ -20,7 +20,6 @@ import {
   Field,
   Input,
   Loading,
-  PageHeader,
   Radio,
   Select,
   Table,
@@ -131,10 +130,6 @@ export default function CounselingPage() {
 
   return (
     <>
-      <PageHeader
-        title="결석 상담 대기열"
-      />
-
       <div className="ui-stack">
         {notice && (
           <Alert tone="success" onClose={() => setNotice(null)}>
@@ -161,56 +156,55 @@ export default function CounselingPage() {
               />
             )}
 
-            <Card padding="none">
-            <div
-              className="ops-toolbar"
-              style={{ padding: "var(--space-sm) var(--space-md)", alignItems: "flex-end" }}
-            >
-              <label className="ops-toolbar__field">
-                <span className="ops-toolbar__label">결석한 수업일</span>
-                <Select value={dateFilter} onChange={(event) => setDateFilter(event.target.value)}>
-                  <option value="">전체 ({all.length}건)</option>
-                  {dates.map((date) => (
-                    <option key={date} value={date}>
-                      {shortDate(date)} ({all.filter((c) => c.absence_date === date).length}건)
-                    </option>
-                  ))}
-                </Select>
-              </label>
-              <label className="ops-toolbar__field">
-                <span className="ops-toolbar__label">학생 찾기</span>
-                <Input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="이름 또는 원번"
-                />
-              </label>
-              {(dateFilter || query) && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setDateFilter("");
-                    setQuery("");
-                  }}
-                >
-                  조건 지우기
-                </Button>
-              )}
-            </div>
+            <Card padding="none" className="ops-tablecard">
+              <div className="ops-toolbar ops-cardbar">
+                <label className="ops-toolbar__field">
+                  <span className="ops-toolbar__label">결석한 수업일</span>
+                  <Select
+                    value={dateFilter}
+                    onChange={(event) => setDateFilter(event.target.value)}
+                  >
+                    <option value="">전체 ({all.length}건)</option>
+                    {dates.map((date) => (
+                      <option key={date} value={date}>
+                        {shortDate(date)} ({all.filter((c) => c.absence_date === date).length}건)
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+                <label className="ops-toolbar__field">
+                  <span className="ops-toolbar__label">학생 찾기</span>
+                  <Input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="이름 또는 원번"
+                  />
+                </label>
+                {(dateFilter || query) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setDateFilter("");
+                      setQuery("");
+                    }}
+                  >
+                    조건 지우기
+                  </Button>
+                )}
+              </div>
 
-            <Table
-              caption="결석 상담 대기 카드"
-              dense
-              columns={columns}
-              rows={rows}
-              rowKey={(r) => r.counsel_id}
-              isSelected={(r) => r.counsel_id === target?.counsel_id}
-              empty={
-                all.length === 0 ? "통화할 대기 카드가 없습니다" : "조건에 맞는 카드가 없습니다"
-              }
-            />
-
+              <Table
+                caption="결석 상담 대기 카드"
+                dense
+                columns={columns}
+                rows={rows}
+                rowKey={(r) => r.counsel_id}
+                isSelected={(r) => r.counsel_id === target?.counsel_id}
+                empty={
+                  all.length === 0 ? "통화할 대기 카드가 없습니다" : "조건에 맞는 카드가 없습니다"
+                }
+              />
             </Card>
           </>
         )}
@@ -277,11 +271,14 @@ function RecordPanel({
       title={`${card.student.name ?? "학생"} · ${card.target} 통화 기록`}
       aside={`원번 ${card.student.unique_id} · ${shortDate(card.absence_date)} 결석 · 지금까지 ${card.attempts}회 시도`}
     >
-      <div className="ui-stack ui-stack--md" ref={anchor}>
+      <div className="ui-stack ui-stack--md ops-form" ref={anchor}>
         {record.error && <Alert tone="danger">{record.error}</Alert>}
 
-        <div className="ops-toolbar__field">
-          <span className="ops-toolbar__label">통화 결과</span>
+        {/* 아래 Field 들과 같은 위계의 칸이다 — 라벨 조판도 같은 것을 쓴다.
+            툴바 라벨(11px 대문자 자간)이었을 때는 같은 폼 안에서 이 칸만
+            다른 크기·색으로 떠 위계가 하나 더 있는 것처럼 읽혔다. */}
+        <div className="ui-field">
+          <span className="ui-field__label">통화 결과</span>
           <div className="ui-row">
             <Radio
               name={`call-${card.counsel_id}`}

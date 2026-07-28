@@ -27,6 +27,12 @@ export function LoginPage({ kind }: { kind: LoginKind }) {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
+    // 빈 칸은 서버까지 보내지 않는다 — DRF 가 필드마다 기본 문구를 돌려주는데
+    // 그게 학부모·학생 화면에 그대로 노출되면 안 된다.
+    if (!loginId.trim() || !password) {
+      setError("아이디와 비밀번호를 입력해 주세요.");
+      return;
+    }
     setPending(true);
     try {
       const me = await login(kind, loginId.trim(), password);

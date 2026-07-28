@@ -513,13 +513,21 @@ class Command(BaseCommand):
 
     @staticmethod
     def _create_clinic(exam, students, staff, now, today):
-        """슬롯 5(월~금) + 최근 시험 자격 판정 + 신청 혼합(대기·승인배정 등)."""
+        """슬롯 20(월~금 × 4교시) + 최근 시험 자격 판정 + 신청 혼합(대기·승인배정 등).
+
+        시간대를 요일당 하나가 아니라 넷으로 두는 이유: 정원이 1 고정이라
+        (2026-07-21 회의 "시간별로 학생 한 명씩") 한 요일에 시간이 하나뿐이면
+        전교생이 하루 한 자리를 두고 다투는 셈이라 운영이 성립하지 않는다.
+        회의 문구 자체가 "**시간별로** 한 명"이므로 시간대가 여럿인 것이 전제다.
+        """
         slots = [
             ClinicSlot.objects.create(
-                weekday=weekday, start_time=datetime.time(19, 0),
-                end_time=datetime.time(20, 0),
+                weekday=weekday,
+                start_time=datetime.time(hour, 0),
+                end_time=datetime.time(hour + 1, 0),
             )
             for weekday in (1, 2, 3, 4, 5)  # 0=일…6=토 → 월~금
+            for hour in (17, 18, 19, 20)
         ]
         for order, item in enumerate(
             ["개념 이해도 점검", "오답 원인 설명", "유사문항 풀이 지도", "학습 태도 피드백"],
@@ -573,16 +581,24 @@ class Command(BaseCommand):
                 requested_date=date, requested_time=slot.start_time, **extra,
             )
 
+        def at(weekday, hour):
+            """(요일, 시) 로 슬롯을 집는다 — 인덱스 산수로 고르면 시간대를
+            늘릴 때마다 조용히 다른 칸을 가리킨다."""
+            return next(
+                s for s in slots if s.weekday == weekday and s.start_time.hour == hour
+            )
+
         assistant = staff["assistant"]
-        request(eligible[0], slots[0], next_date(slots[0]))  # 대기
-        request(eligible[1], slots[1], next_date(slots[1]))  # 대기
+        # 마감 칸이 요일·시간에 흩어져야 달력에서 "찬 자리/빈 자리"가 눈에 들어온다.
+        request(eligible[0], at(1, 18), next_date(at(1, 18)))  # 대기
+        request(eligible[1], at(2, 20), next_date(at(2, 20)))  # 대기
         request(  # 승인배정(예정) — 미트 링크 포함
-            eligible[2], slots[2], next_date(slots[2]),
+            eligible[2], at(4, 17), next_date(at(4, 17)),
             status=ClinicRequest.Status.APPROVED, assigned_staff=assistant,
             meet_url="https://meet.google.com/demo-loz-ic01",
         )
         done = request(  # 지난 클리닉 — 출석 처리 + 평가 기록
-            eligible[3], slots[3], next_date(slots[3]) - datetime.timedelta(days=7),
+            eligible[3], at(3, 19), next_date(at(3, 19)) - datetime.timedelta(days=7),
             status=ClinicRequest.Status.APPROVED, assigned_staff=assistant,
             meet_url="https://meet.google.com/demo-loz-ic02",
             attendance_status=ClinicRequest.AttendanceStatus.PRESENT,
@@ -606,7 +622,7 @@ class Command(BaseCommand):
                 ai_reason=f"{criteria.item} 판단(데모)",
             )
         noshow = request(  # 지난 클리닉 — 노쇼(결석 처리, unban 시연용)
-            eligible[4], slots[4], next_date(slots[4]) - datetime.timedelta(days=7),
+            eligible[4], at(5, 18), next_date(at(5, 18)) - datetime.timedelta(days=7),
             status=ClinicRequest.Status.APPROVED, assigned_staff=assistant,
             meet_url="https://meet.google.com/demo-loz-ic03",
             attendance_status=ClinicRequest.AttendanceStatus.ABSENT,
@@ -615,7 +631,7 @@ class Command(BaseCommand):
         noshow.student.noshow_count = 1
         noshow.student.save(update_fields=["noshow_count"])
         request(  # 취소 이력
-            eligible[5], slots[0], next_date(slots[0]),
+            eligible[5], at(1, 17), next_date(at(1, 17)),
             status=ClinicRequest.Status.CANCELLED, cancelled_at=now,
         )
         return eligible

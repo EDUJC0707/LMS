@@ -18,7 +18,6 @@ import {
   EmptyState,
   ErrorState,
   Loading,
-  PageHeader,
 } from "../../components";
 import { AbsenceRequestTable } from "../../features/makeup/AbsenceRequestTable";
 import { MakeupAbsence, absencesFromDays, requestableCount } from "../../features/makeup/absences";
@@ -63,65 +62,62 @@ export default function StudentMakeupPage() {
   };
 
   return (
-    <>
-      <PageHeader title="동보 신청" />
+    <div className="ui-stack">
+      {submit.error && (
+        <Alert tone="danger" onClose={submit.clearError}>
+          {submit.error}
+        </Alert>
+      )}
 
-      <div className="ui-stack">
-        {submit.error && (
-          <Alert tone="danger" onClose={submit.clearError}>
-            {submit.error}
-          </Alert>
+      {result && (
+        <Alert tone="success" onClose={() => setResult(null)}>
+          {result.session_date ? dayLabel(result.session_date) : "해당 수업"} 결석 동보 신청
+          {result.course_name && result.week_no !== null
+            ? ` — ${result.course_name} ${result.week_no}주차`
+            : ""}{" "}
+          · <b>{result.status}</b>
+        </Alert>
+      )}
+
+      <Card
+        title={`${monthLabel(month)} 결석한 수업`}
+        aside={
+          home.data && absences.length > 0
+            ? openCount > 0
+              ? `신청할 수 있는 결석 ${openCount}건`
+              : "모두 처리됨"
+            : undefined
+        }
+        actions={
+          <>
+            <Button size="sm" onClick={() => setMonth(shiftMonth(month, -1))}>
+              이전 달
+            </Button>
+            <Button size="sm" onClick={() => setMonth(shiftMonth(month, 1))}>
+              다음 달
+            </Button>
+          </>
+        }
+        // 표·로딩·빈 상태가 저마다 제 여백을 갖고 있다. 카드가 한 겹 더
+        // 얹으면 빈 달에는 카드 높이의 절반이 여백이 된다.
+        padding="none"
+      >
+        {home.loading ? (
+          <Loading label="출결을 불러오는 중…" />
+        ) : home.error ? (
+          <ErrorState description={home.error} onRetry={home.reload} />
+        ) : absences.length === 0 ? (
+          <EmptyState title={`${monthLabel(month)}에는 결석한 수업이 없습니다`} />
+        ) : (
+          <AbsenceRequestTable
+            rows={absences}
+            formatDate={dayLabel}
+            onRequest={request}
+            pendingId={pendingId}
+            caption="결석한 날과 동보 신청 상태"
+          />
         )}
-
-        {result && (
-          <Alert tone="success" onClose={() => setResult(null)}>
-            {result.session_date ? dayLabel(result.session_date) : "해당 수업"} 결석 동보 신청
-            {result.course_name && result.week_no !== null
-              ? ` — ${result.course_name} ${result.week_no}주차`
-              : ""}{" "}
-            · <b>{result.status}</b>
-          </Alert>
-        )}
-
-        <Card
-          title={`${monthLabel(month)} 결석한 수업`}
-          aside={
-            home.data && absences.length > 0
-              ? openCount > 0
-                ? `신청할 수 있는 결석 ${openCount}건`
-                : "모두 처리됨"
-              : undefined
-          }
-          actions={
-            <>
-              <Button size="sm" onClick={() => setMonth(shiftMonth(month, -1))}>
-                이전 달
-              </Button>
-              <Button size="sm" onClick={() => setMonth(shiftMonth(month, 1))}>
-                다음 달
-              </Button>
-            </>
-          }
-          padding={absences.length > 0 ? "none" : "md"}
-        >
-          {home.loading ? (
-            <Loading label="출결을 불러오는 중…" />
-          ) : home.error ? (
-            <ErrorState description={home.error} onRetry={home.reload} />
-          ) : absences.length === 0 ? (
-            <EmptyState title={`${monthLabel(month)}에는 결석한 수업이 없습니다`} />
-          ) : (
-            <AbsenceRequestTable
-              rows={absences}
-              formatDate={dayLabel}
-              onRequest={request}
-              pendingId={pendingId}
-              caption="결석한 날과 동보 신청 상태"
-            />
-          )}
-        </Card>
-
-      </div>
-    </>
+      </Card>
+    </div>
   );
 }

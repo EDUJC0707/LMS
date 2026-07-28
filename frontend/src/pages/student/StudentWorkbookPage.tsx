@@ -14,7 +14,6 @@ import {
   ErrorState,
   Loading,
   Modal,
-  PageHeader,
 } from "../../components";
 import { WorkbookPayload, WorkbookRow, dateTimeLabel, dayLabel } from "./lib";
 import "./student.css";
@@ -38,33 +37,21 @@ export default function StudentWorkbookPage() {
   );
 
   if (workbook.loading) {
-    return (
-      <>
-        <PageHeader title="워크북" />
-        <Loading label="워크북 사진을 불러오는 중…" />
-      </>
-    );
+    return <Loading label="워크북 사진을 불러오는 중…" />;
   }
 
   if (workbook.error || !workbook.data) {
-    return (
-      <>
-        <PageHeader title="워크북" />
-        <ErrorState description={workbook.error ?? undefined} onRetry={workbook.reload} />
-      </>
-    );
+    return <ErrorState description={workbook.error ?? undefined} onRetry={workbook.reload} />;
   }
 
   const rows = workbook.data.workbooks;
 
   return (
     <>
-      <PageHeader title="워크북" />
-
       <Card
         title="회차별 사진"
         aside={rows.length > 0 ? `${rows.length}장` : undefined}
-        padding={rows.length === 0 ? "md" : "md"}
+        padding={rows.length === 0 ? "none" : "md"}
       >
         {rows.length === 0 ? (
           <EmptyState title="아직 올라온 워크북 사진이 없습니다" />

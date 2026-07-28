@@ -10,15 +10,7 @@
 import { useState } from "react";
 
 import { http, useApi, useApiAction } from "../../api";
-import {
-  Alert,
-  Button,
-  Card,
-  EmptyState,
-  ErrorState,
-  Loading,
-  PageHeader,
-} from "../../components";
+import { Alert, Button, Card, EmptyState, ErrorState, Loading, ScopeBar } from "../../components";
 import { AbsenceRequestTable } from "../../features/makeup/AbsenceRequestTable";
 import { MakeupAbsence, requestableCount } from "../../features/makeup/absences";
 import { NO_CHILD_TITLE, useChild } from "./childContext";
@@ -63,19 +55,16 @@ export default function ParentMakeupPage() {
 
   return (
     <>
-      <PageHeader
-        title="동보 신청"
-        actions={picker}
-      />
+      {picker && <ScopeBar>{picker}</ScopeBar>}
 
       {studentId === null ? (
-        <Card>
+        <Card padding="none">
           <EmptyState title={NO_CHILD_TITLE} />
         </Card>
       ) : !enrolled ? (
         <PreEnrollNotice child={child} what="보강 영상 신청" />
       ) : home.loading ? (
-        <Loading />
+        <Loading label="결석한 수업을 불러오는 중…" />
       ) : home.error ? (
         <ErrorState description={home.error} onRetry={home.reload} />
       ) : (
@@ -106,7 +95,7 @@ export default function ParentMakeupPage() {
                 </Button>
               </div>
             }
-            padding={absences.length > 0 ? "none" : "md"}
+            padding="none"
           >
             {!started ? (
               <EmptyState title="아직 수업이 시작되지 않았습니다" />

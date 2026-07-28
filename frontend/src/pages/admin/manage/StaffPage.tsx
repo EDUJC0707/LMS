@@ -31,7 +31,6 @@ import {
   Input,
   Loading,
   Modal,
-  PageHeader,
   Select,
   Table,
 } from "../../../components";
@@ -75,6 +74,14 @@ function originOf(on: boolean, inPreset: boolean): Origin {
   if (on) return inPreset ? "preset" : "added";
   return inPreset ? "removed" : "none";
 }
+
+/** 범례 — [칩 상태, 칩 글자, 설명]. 순서가 곧 읽는 순서다. */
+const LEGEND: [Origin, string, string][] = [
+  ["preset", ORIGIN_LABEL.preset, "역할을 주면 자동으로 따라오는 기본 권한"],
+  ["added", ORIGIN_LABEL.added, "이 사람에게만 따로 열어 준 것"],
+  ["removed", ORIGIN_LABEL.removed, "프리셋에는 있지만 이 사람에게는 닫은 것"],
+  ["none", ORIGIN_LABEL.none, "프리셋에도 없고 따로 주지도 않은 것"],
+];
 
 export default function StaffPage() {
   const { me } = useMe();
@@ -168,240 +175,228 @@ export default function StaffPage() {
 
   return (
     <>
-      <PageHeader
-        title="직원 권한"
-        actions={
-          <Button variant="primary" onClick={() => setCreateOpen(true)}>
-            직원 계정 만들기
-          </Button>
-        }
-      />
+      {/* 알림줄·매트릭스·범례·비활성 목록은 모두 같은 위계의 판이다 —
+          다른 관리 화면과 같은 24px 로 띄운다(예전에는 셋이 맞붙어 있었다). */}
+      <div className="ui-stack">
+        {issued && (
+          <Alert tone="success" onClose={() => setIssued(null)}>
+            {issued.name}({issued.role}) 계정을 만들었습니다. 아이디{" "}
+            <span className="num">{issued.login_id}</span> · 초기 비밀번호{" "}
+            <span className="pm-secret">{issued.initial_password}</span>
+          </Alert>
+        )}
 
-      {issued && (
-        <Alert tone="success" onClose={() => setIssued(null)}>
-          {issued.name}({issued.role}) 계정을 만들었습니다. 아이디{" "}
-          <span className="num">{issued.login_id}</span> · 초기 비밀번호{" "}
-          <span className="pm-secret">{issued.initial_password}</span>
-        </Alert>
-      )}
+        {save.error && (
+          <Alert tone="danger" onClose={save.clearError}>
+            {save.error}
+          </Alert>
+        )}
 
-      {save.error && (
-        <Alert tone="danger" onClose={save.clearError}>
-          {save.error}
-        </Alert>
-      )}
-
-      {matrix.loading ? (
-        <Loading label="직원 권한을 불러오는 중…" />
-      ) : matrix.error ? (
-        <ErrorState description={matrix.error} onRetry={matrix.reload} />
-      ) : !data ? null : (
-        <>
-          <Card
-            title="권한 매트릭스"
-            aside={`재직 직원 ${active.length}명 · 기능 ${data.feature_keys.length}개`}
-            padding="none"
-          >
-            {active.length === 0 ? (
-              <div style={{ padding: "var(--space-lg)" }}>
-                <Alert tone="info">아직 관리자·조교 계정이 없습니다</Alert>
-              </div>
-            ) : (
-              <div className="ui-tablewrap">
-                <table className="pm-matrix">
-                  <caption className="sr-only">기능별 직원 권한 매트릭스</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col" className="pm-matrix__feature">
-                        기능
-                      </th>
-                      {active.map((staff) => {
-                        const count = Object.keys(changesOf(staff)).length;
-                        return (
-                          <th key={staff.user_id} scope="col">
-                            <span className="pm-staffhead">
-                              <span className="pm-staffhead__name">
-                                {staff.name}{" "}
-                                <Badge tone={staff.role === "관리자" ? "accent" : "neutral"}>
-                                  {staff.role}
-                                </Badge>
-                              </span>
-                              <span className="pm-staffhead__id num">{staff.login_id}</span>
-                              <span className="pm-staffhead__actions">
-                                {count > 0 ? (
-                                  <>
-                                    <Button
-                                      size="sm"
-                                      variant="primary"
-                                      loading={savingId === staff.user_id}
-                                      onClick={() => void commit(staff)}
-                                    >
-                                      {count}건 저장
-                                    </Button>
-                                    <Button size="sm" variant="ghost" onClick={() => revert(staff)}>
-                                      되돌리기
-                                    </Button>
-                                  </>
-                                ) : (
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => setDeactivating(staff)}
-                                  >
-                                    로그인 막기
-                                  </Button>
-                                )}
-                              </span>
-                            </span>
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.feature_keys.map((key) => (
-                      <tr key={key}>
-                        <th scope="row" className="pm-matrix__feature">
-                          <b>{key}</b>
-                          <span>{FEATURE_NOTE[key] ?? "이 학원에서 쓰는 추가 기능입니다."}</span>
+        {matrix.loading ? (
+          <Loading label="직원 권한을 불러오는 중…" />
+        ) : matrix.error ? (
+          <ErrorState description={matrix.error} onRetry={matrix.reload} />
+        ) : !data ? null : (
+          <>
+            <Card
+              title="권한 매트릭스"
+              aside={`재직 직원 ${active.length}명 · 기능 ${data.feature_keys.length}개`}
+              actions={
+                <Button variant="primary" onClick={() => setCreateOpen(true)}>
+                  직원 계정 만들기
+                </Button>
+              }
+              padding="none"
+            >
+              {active.length === 0 ? (
+                <div className="pm-cardpad">
+                  <Alert tone="info">아직 관리자·조교 계정이 없습니다</Alert>
+                </div>
+              ) : (
+                <div className="ui-tablewrap">
+                  <table className="pm-matrix">
+                    <caption className="sr-only">기능별 직원 권한 매트릭스</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col" className="pm-matrix__feature">
+                          기능
                         </th>
                         {active.map((staff) => {
-                          const on = currentOn(staff, key);
-                          const origin = originOf(on, staff.preset.includes(key));
-                          const changed = on !== savedOn(staff, key);
+                          const count = Object.keys(changesOf(staff)).length;
                           return (
-                            <td key={staff.user_id}>
-                              <button
-                                type="button"
-                                role="switch"
-                                aria-checked={on}
-                                className="pm-grant"
-                                data-origin={origin}
-                                data-changed={changed}
-                                onClick={() => toggle(staff, key)}
-                                aria-label={`${staff.name} · ${key} — 현재 ${ORIGIN_LABEL[origin]}`}
-                              >
-                                <span className="pm-grant__mark" aria-hidden="true">
-                                  {ORIGIN_MARK[origin]}
+                            <th key={staff.user_id} scope="col">
+                              <span className="pm-staffhead">
+                                <span className="pm-staffhead__name">
+                                  {staff.name}{" "}
+                                  <Badge tone={staff.role === "관리자" ? "accent" : "neutral"}>
+                                    {staff.role}
+                                  </Badge>
                                 </span>
-                                {ORIGIN_LABEL[origin]}
-                                {changed && " · 저장 전"}
-                              </button>
-                            </td>
+                                <span className="pm-staffhead__id num">{staff.login_id}</span>
+                                <span className="pm-staffhead__actions">
+                                  {count > 0 ? (
+                                    <>
+                                      <Button
+                                        size="sm"
+                                        variant="primary"
+                                        loading={savingId === staff.user_id}
+                                        onClick={() => void commit(staff)}
+                                      >
+                                        {count}건 저장
+                                      </Button>
+                                      <Button size="sm" variant="ghost" onClick={() => revert(staff)}>
+                                        되돌리기
+                                      </Button>
+                                    </>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => setDeactivating(staff)}
+                                    >
+                                      로그인 막기
+                                    </Button>
+                                  )}
+                                </span>
+                              </span>
+                            </th>
                           );
                         })}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Card>
-
-          <Card title="매트릭스 읽는 법" flat padding="sm">
-            <p className="pm-legend">
-              <span className="pm-grant" data-origin="preset">
-                <span className="pm-grant__mark" aria-hidden="true">
-                  ✓
-                </span>
-                프리셋
-              </span>
-              역할을 주면 자동으로 따라오는 기본 권한
-              <span className="pm-grant" data-origin="added">
-                <span className="pm-grant__mark" aria-hidden="true">
-                  ＋
-                </span>
-                개별 부여
-              </span>
-              이 사람에게만 따로 열어 준 것
-              <span className="pm-grant" data-origin="removed">
-                <span className="pm-grant__mark" aria-hidden="true">
-                  －
-                </span>
-                개별 회수
-              </span>
-              프리셋에는 있지만 이 사람에게는 닫은 것
-              <span className="pm-grant" data-origin="none">
-                <span className="pm-grant__mark" aria-hidden="true">
-                  ·
-                </span>
-                미부여
-              </span>
-              프리셋에도 없고 따로 주지도 않은 것
-            </p>
-          </Card>
-
-          {retired.length > 0 && (
-            <DetailsPanel
-              summary="비활성 직원"
-              aside={`${retired.length}명 — 로그인 차단됨`}
-              defaultOpen
-            >
-              {activate.error && (
-                <Alert tone="danger" onClose={activate.clearError}>
-                  {activate.error}
-                </Alert>
+                    </thead>
+                    <tbody>
+                      {data.feature_keys.map((key) => (
+                        <tr key={key}>
+                          <th scope="row" className="pm-matrix__feature">
+                            <b>{key}</b>
+                            <span>{FEATURE_NOTE[key] ?? "이 학원에서 쓰는 추가 기능입니다."}</span>
+                          </th>
+                          {active.map((staff) => {
+                            const on = currentOn(staff, key);
+                            const origin = originOf(on, staff.preset.includes(key));
+                            const changed = on !== savedOn(staff, key);
+                            return (
+                              <td key={staff.user_id}>
+                                <button
+                                  type="button"
+                                  role="switch"
+                                  aria-checked={on}
+                                  className="pm-grant"
+                                  data-origin={origin}
+                                  data-changed={changed}
+                                  onClick={() => toggle(staff, key)}
+                                  aria-label={`${staff.name} · ${key} — 현재 ${ORIGIN_LABEL[origin]}`}
+                                >
+                                  <span className="pm-grant__mark" aria-hidden="true">
+                                    {ORIGIN_MARK[origin]}
+                                  </span>
+                                  {ORIGIN_LABEL[origin]}
+                                  {changed && " · 저장 전"}
+                                </button>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
+            </Card>
 
-              <Table<StaffRow>
-                rows={retired}
-                rowKey={(row) => row.user_id}
-                dense
-                caption="비활성 직원과 재활성 처리"
-                columns={[
-                  { key: "name", header: "이름", cell: (row) => row.name },
-                  {
-                    key: "role",
-                    header: "역할",
-                    width: "6rem",
-                    cell: (row) => (
-                      <Badge tone={row.role === "관리자" ? "accent" : "neutral"}>{row.role}</Badge>
-                    ),
-                  },
-                  {
-                    key: "login_id",
-                    header: "아이디",
-                    numeric: true,
-                    cell: (row) => row.login_id,
-                  },
-                  {
-                    key: "state",
-                    header: "상태",
-                    width: "8rem",
-                    cell: () => <Badge tone="warning">로그인 차단</Badge>,
-                  },
-                  {
-                    key: "features",
-                    header: "보존된 권한",
-                    cell: (row) =>
-                      row.effective.length === 0 ? (
-                        <span style={{ color: "var(--color-muted)" }}>없음</span>
-                      ) : (
-                        `${row.effective.length}개 — ${row.effective.join(" · ")}`
+            {/* padding="sm"(16px) 는 카드 머리(좌우 24px)와 시작선이 어긋난다 —
+                제목 아래 칩이 8px 왼쪽으로 튀어나가므로 기본 여백을 쓴다. */}
+            <Card title="매트릭스 읽는 법" flat>
+              {/* 칩과 설명은 한 짝이다 — .pm-legend__row 로 묶어야 칩이 6.5rem 로
+                  서고 설명 시작선이 맞는다. 묶지 않으면 칩이 격자 칸(약 470px)을
+                  꽉 채워, 표 안의 진짜 칩보다 커진 견본이 된다. */}
+              <p className="pm-legend">
+                {LEGEND.map(([origin, label, note]) => (
+                  <span className="pm-legend__row" key={origin}>
+                    <span className="pm-grant" data-origin={origin}>
+                      <span className="pm-grant__mark" aria-hidden="true">
+                        {ORIGIN_MARK[origin]}
+                      </span>
+                      {label}
+                    </span>
+                    {note}
+                  </span>
+                ))}
+              </p>
+            </Card>
+
+            {retired.length > 0 && (
+              <DetailsPanel
+                summary="비활성 직원"
+                aside={`${retired.length}명 — 로그인 차단됨`}
+                defaultOpen
+              >
+                {activate.error && (
+                  <Alert tone="danger" onClose={activate.clearError}>
+                    {activate.error}
+                  </Alert>
+                )}
+
+                <Table<StaffRow>
+                  rows={retired}
+                  rowKey={(row) => row.user_id}
+                  dense
+                  caption="비활성 직원과 재활성 처리"
+                  columns={[
+                    { key: "name", header: "이름", cell: (row) => row.name },
+                    {
+                      key: "role",
+                      header: "역할",
+                      width: "6rem",
+                      cell: (row) => (
+                        <Badge tone={row.role === "관리자" ? "accent" : "neutral"}>{row.role}</Badge>
                       ),
-                  },
-                  {
-                    key: "action",
-                    header: "처리",
-                    align: "right",
-                    width: "9rem",
-                    cell: (row) => (
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        loading={activatingId === row.user_id}
-                        onClick={() => void restore(row)}
-                      >
-                        다시 활성화
-                      </Button>
-                    ),
-                  },
-                ]}
-              />
-            </DetailsPanel>
-          )}
-        </>
-      )}
+                    },
+                    {
+                      key: "login_id",
+                      header: "아이디",
+                      numeric: true,
+                      cell: (row) => row.login_id,
+                    },
+                    {
+                      key: "state",
+                      header: "상태",
+                      width: "8rem",
+                      cell: () => <Badge tone="warning">로그인 차단</Badge>,
+                    },
+                    {
+                      key: "features",
+                      header: "보존된 권한",
+                      cell: (row) =>
+                        row.effective.length === 0 ? (
+                          <span style={{ color: "var(--color-muted)" }}>없음</span>
+                        ) : (
+                          `${row.effective.length}개 — ${row.effective.join(" · ")}`
+                        ),
+                    },
+                    {
+                      key: "action",
+                      header: "처리",
+                      align: "right",
+                      width: "9rem",
+                      cell: (row) => (
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          loading={activatingId === row.user_id}
+                          onClick={() => void restore(row)}
+                        >
+                          다시 활성화
+                        </Button>
+                      ),
+                    },
+                  ]}
+                />
+              </DetailsPanel>
+            )}
+          </>
+        )}
+      </div>
 
       <CreateStaffModal
         open={createOpen}
@@ -430,10 +425,11 @@ export default function StaffPage() {
           </>
         }
       >
-        {deactivate.error && <Alert tone="danger">{deactivate.error}</Alert>}
-        <p style={{ margin: 0 }}>
-          {deactivating?.name}({deactivating?.role}) 계정이 로그인할 수 없게 됩니다.
-        </p>
+        {/* 모달 본문은 block 이라 형제끼리 붙는다 — 오류줄이 뜨면 문장과 맞닿는다. */}
+        <div className="ui-stack ui-stack--sm">
+          {deactivate.error && <Alert tone="danger">{deactivate.error}</Alert>}
+          <p>{deactivating?.name}({deactivating?.role}) 계정이 로그인할 수 없게 됩니다.</p>
+        </div>
       </Modal>
     </>
   );
@@ -490,7 +486,8 @@ function CreateStaffModal({
         </>
       }
     >
-      <form id="staff-create" onSubmit={submit} className="ui-stack--md">
+      {/* 폼 칸 사이는 8px — 게시판 글쓰기·비밀번호 변경 폼과 같은 값이다. */}
+      <form id="staff-create" onSubmit={submit} className="ui-stack ui-stack--sm">
         {create.error && <Alert tone="danger">{create.error}</Alert>}
         <Field label="이름" required error={nameError}>
           {(props) => (

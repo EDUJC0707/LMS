@@ -7,7 +7,7 @@
 import { Link, useParams } from "react-router-dom";
 
 import { http, useApi } from "../../api";
-import { Alert, Card, EmptyState, ErrorState, Loading, PageHeader } from "../../components";
+import { Alert, Card, EmptyState, ErrorState, Loading, ScopeBar } from "../../components";
 import { NO_CHILD_TITLE, useChild } from "./childContext";
 import { GradeReportView } from "./GradeReportView";
 import { dayLabel } from "./format";
@@ -32,31 +32,29 @@ export default function ParentGradeDetailPage() {
 
   const data = report.data;
 
+  // 상단바는 레일 라벨인 "성적"만 말한다 — 어느 회차의 누구 성적표인지는
+  // 본문 첫 카드가 들고 있어야 한다(제목=시험 이름, aside=회차·응시일·자녀).
+  const identity = data
+    ? [
+        data.exam.round_no === null ? null : `${data.exam.round_no}회`,
+        dayLabel(data.exam.exam_date),
+        data.student.name,
+        `원번 ${data.student.unique_id}`,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
+
   return (
     <>
-      <PageHeader
-        title="성적표"
-        description={
-          data
-            ? `${data.exam.name} · ${dayLabel(data.exam.exam_date)}${
-                data.exam.round_no === null ? "" : ` · ${data.exam.round_no}회차`
-              }`
-            : undefined
-        }
-        actions={
-          <div className="parent-headactions">
-            {picker}
-            <Link to="/parent/grades">성적 목록</Link>
-          </div>
-        }
-      />
+      {picker && <ScopeBar>{picker}</ScopeBar>}
 
       {studentId === null ? (
-        <Card>
+        <Card padding="none">
           <EmptyState title={NO_CHILD_TITLE} />
         </Card>
       ) : report.loading ? (
-        <Loading />
+        <Loading label="성적표를 불러오는 중…" />
       ) : report.error ? (
         <ErrorState description={report.error} onRetry={report.reload} />
       ) : data ? (
@@ -65,6 +63,8 @@ export default function ParentGradeDetailPage() {
 
           {data.report ? (
             <GradeReportView
+              examName={data.exam.name}
+              identity={identity}
               summary={data.report.summary}
               units={data.report.units}
               questions={data.report.questions}
@@ -72,7 +72,7 @@ export default function ParentGradeDetailPage() {
               themeTrends={data.report.theme_trends}
             />
           ) : (
-            <Card>
+            <Card title={data.exam.name} aside={identity} padding="none">
               <EmptyState
                 title="이 회차는 응시 기록이 없습니다"
                 action={<Link to="/parent/grades">다른 회차 보기</Link>}

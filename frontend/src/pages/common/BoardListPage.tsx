@@ -10,6 +10,11 @@
  *   않는다(눌러도 404 인 곳으로 보내지 않는다).
  * - 글쓰기 버튼은 그 게시판에 쓸 수 있는 사람에게만 보인다(PRD §4).
  * - 자유게시판은 강사가 짧게 올리는 피드라 목록 자체가 읽는 화면이다.
+ *
+ * 상단바는 카테고리와 무관하게 늘 "게시판"이다 — 지금 보는 카테고리는 탭이
+ * 말한다. 탭은 이 화면 전체를 갈아끼우는 범위 스위처라 <ScopeBar> 에 둔다.
+ * 글쓰기는 그 목록에 한 줄을 더하는 행동이라 같은 줄 오른쪽 끝에 둔다 —
+ * 빈 목록일 때도 자리가 같아야 해서 EmptyState 안에 두 번째 버튼을 두지 않는다.
  */
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -28,8 +33,8 @@ import {
   Input,
   Loading,
   Modal,
-  PageHeader,
   Pagination,
+  ScopeBar,
   Tabs,
   Textarea,
 } from "../../components";
@@ -58,19 +63,16 @@ export default function BoardListPage() {
 
   if (!isBoardCategory(decoded)) {
     return (
-      <>
-        <PageHeader title="게시판" />
-        <Card>
-          <EmptyState
-            title="없는 게시판입니다"
-            action={
-              <Link className="ui-btn ui-btn--primary" to="/boards/공지사항">
-                공지사항 보기
-              </Link>
-            }
-          />
-        </Card>
-      </>
+      <Card>
+        <EmptyState
+          title="없는 게시판입니다"
+          action={
+            <Link className="ui-btn ui-btn--primary" to="/boards/공지사항">
+              공지사항 보기
+            </Link>
+          }
+        />
+      </Card>
     );
   }
 
@@ -131,77 +133,62 @@ function BoardList({ category }: { category: BoardCategory }) {
 
   return (
     <>
-      <PageHeader
-        title={category}
-        actions={
-          canWrite && (
-            <Button variant="primary" onClick={() => setWriting(true)}>
-              {BOARD_WRITE_LABEL[category]}
-            </Button>
-          )
-        }
-      />
-
-      <div className="ui-stack">
+      <ScopeBar>
         <Tabs
           label="게시판 종류"
           value={category}
           onChange={(next) => navigate(`/boards/${next}`)}
           items={BOARD_CATEGORIES.map((name) => ({ key: name, label: name }))}
         />
-
-        {busy ? (
-          <Loading label="글을 불러오는 중…" />
-        ) : list.error ? (
-          <ErrorState description={list.error} onRetry={list.reload} />
-        ) : rows.length === 0 ? (
-          <Card>
-            <EmptyState
-              title={BOARD_EMPTY[category]}
-              action={
-                canWrite && (
-                  <Button variant="primary" onClick={() => setWriting(true)}>
-                    {BOARD_WRITE_LABEL[category]}
-                  </Button>
-                )
-              }
-            />
-          </Card>
-        ) : (
-          <>
-            <Card padding="none" className="cm-clip">
-              {isFeed ? (
-                <ul className="cm-feed">
-                  {rows.map((post) => (
-                    <li key={post.post_id}>
-                      <FeedItem
-                        post={post}
-                        body={bodies.data?.[post.post_id] ?? ""}
-                        category={category}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <ul className="cm-list">
-                  {rows.map((post) => (
-                    <li key={post.post_id}>
-                      <PostRowItem post={post} category={category} />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
-
-            <Pagination
-              page={page}
-              totalPages={totalPages}
-              onChange={setPage}
-              status={`전체 ${list.data?.count ?? 0}건`}
-            />
-          </>
+        {canWrite && (
+          <Button variant="primary" onClick={() => setWriting(true)}>
+            {BOARD_WRITE_LABEL[category]}
+          </Button>
         )}
-      </div>
+      </ScopeBar>
+
+      {busy ? (
+        <Loading label="글을 불러오는 중…" />
+      ) : list.error ? (
+        <ErrorState description={list.error} onRetry={list.reload} />
+      ) : rows.length === 0 ? (
+        <Card>
+          <EmptyState title={BOARD_EMPTY[category]} />
+        </Card>
+      ) : (
+        <div className="ui-stack">
+          <Card padding="none" className="cm-clip">
+            {isFeed ? (
+              <ul className="cm-feed">
+                {rows.map((post) => (
+                  <li key={post.post_id}>
+                    <FeedItem
+                      post={post}
+                      body={bodies.data?.[post.post_id] ?? ""}
+                      category={category}
+                    />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <ul className="cm-list">
+                {rows.map((post) => (
+                  <li key={post.post_id}>
+                    <PostRowItem post={post} category={category} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onChange={setPage}
+            status={`전체 ${list.data?.count ?? 0}건`}
+          />
+        </div>
+      )}
 
       <WriteDialog
         category={category}
@@ -283,11 +270,7 @@ function FeedItem({
         {!post.is_published && <Badge tone="warning">미게시</Badge>}
       </header>
       <h2 className="cm-feed__title">{post.title}</h2>
-      {body ? (
-        <p className="cm-prose">{body}</p>
-      ) : (
-        <p className="cm-row__meta">본문은 글을 열어서 볼 수 있습니다.</p>
-      )}
+      {body && <p className="cm-prose">{body}</p>}
       <footer className="cm-feed__foot">
         <Link to={`/boards/${category}/${post.post_id}`}>
           {post.comment_count > 0 ? `댓글 ${post.comment_count}개 보기` : "댓글 남기기"}

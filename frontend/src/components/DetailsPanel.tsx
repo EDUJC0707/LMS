@@ -19,14 +19,14 @@ export function DetailsPanel({ summary, aside, defaultOpen = false, children }: 
       <summary className="ui-details__summary">
         <svg
           className="ui-details__chevron"
-          width="14"
-          height="14"
-          viewBox="0 0 14 14"
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
           fill="none"
           stroke="currentColor"
           aria-hidden="true"
         >
-          <path d="M5 3l4 4-4 4" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M6 3.5l4.5 4.5L6 12.5" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
         {summary}
         {aside && <span className="ui-details__aside">{aside}</span>}

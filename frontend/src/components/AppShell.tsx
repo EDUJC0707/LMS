@@ -1,8 +1,12 @@
 /**
- * 앱 셸 — 좌측 사이드레일(로고 + 역할별 내비) + 상단 바(계정칩 · 로그아웃).
+ * 앱 셸 — 좌측 사이드레일(로고 + 역할별 내비) + 상단 바(현재 페이지 · 계정칩 · 로그아웃).
  *
  * 내비 항목은 /api/me 로만 조립한다(auth/nav.ts). 자격 없는 메뉴는
  * 회색 처리하는 게 아니라 **아예 없다**.
+ *
+ * 상단바 왼쪽은 **지금 보고 있는 화면의 이름**이다(역할 라벨이 아니다 —
+ * 그건 계정 칩이 이미 말한다). 이름·아이콘은 레일 항목과 같은 정의에서 온다.
+ * 화면당 h1 은 이 이름 하나뿐 — 페이지는 제목 없이 곧장 내용부터 그린다.
  *
  * 반응형: ≥900px 레일 고정 / <900px 상단 가로 탭 스트립.
  * hover 전용 인터랙션 없음 — 전부 탭으로 동작한다.
@@ -10,13 +14,14 @@
 import { ReactNode } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 
-import { navFor, shellTitleFor } from "../auth/nav";
+import { RAIL_FOOT, navFor, pageFor } from "../auth/nav";
 import { useMe } from "../auth/MeProvider";
 import { Button } from "./Button";
+import { PageIcon } from "./PageIcon";
+import { RoleIcon } from "./RoleIcon";
 
-function initial(name: string): string {
-  return name.trim().slice(0, 1) || "?";
-}
+const linkClass = ({ isActive }: { isActive: boolean }) =>
+  `ui-rail__link ${isActive ? "is-active" : ""}`.trim();
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { me, signOut } = useMe();
@@ -26,6 +31,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (!me) return null;
 
   const groups = navFor(me);
+  const page = pageFor(location.pathname);
 
   const handleSignOut = async () => {
     await signOut();
@@ -58,10 +64,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                   key={item.to}
                   to={item.to}
                   end={item.match !== "prefix"}
-                  className={({ isActive }) =>
-                    `ui-rail__link ${isActive ? "is-active" : ""}`.trim()
-                  }
+                  className={linkClass}
                 >
+                  <PageIcon name={item.icon} size={18} className="ui-rail__icon" />
                   {item.label}
                 </NavLink>
               ))}
@@ -70,22 +75,25 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
 
         <div className="ui-rail__foot">
-          <NavLink
-            to="/password"
-            className={({ isActive }) => `ui-rail__link ${isActive ? "is-active" : ""}`.trim()}
-          >
-            비밀번호 변경
+          <NavLink to={RAIL_FOOT.to} className={linkClass}>
+            <PageIcon name={RAIL_FOOT.icon} size={18} className="ui-rail__icon" />
+            {RAIL_FOOT.label}
           </NavLink>
         </div>
       </nav>
 
       <div className="ui-main">
         <header className="ui-topbar">
-          <span className="ui-topbar__title">{shellTitleFor(me)}</span>
+          {page && (
+            <span className="ui-topbar__page">
+              <PageIcon name={page.icon} className="ui-topbar__icon" />
+              <h1 className="ui-topbar__title">{page.label}</h1>
+            </span>
+          )}
           <div className="ui-topbar__right">
             <NavLink to="/password" className="ui-accountchip">
               <span className="ui-accountchip__avatar" aria-hidden="true">
-                {initial(me.name)}
+                <RoleIcon role={me.role} />
               </span>
               <span className="ui-accountchip__text">
                 <span className="ui-accountchip__name">{me.name}</span>

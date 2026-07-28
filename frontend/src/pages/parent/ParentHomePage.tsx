@@ -17,7 +17,7 @@ import {
   EmptyState,
   ErrorState,
   Loading,
-  PageHeader,
+  ScopeBar,
   StatusBadge,
   Table,
 } from "../../components";
@@ -62,17 +62,14 @@ export default function ParentHomePage() {
 
   return (
     <>
-      <PageHeader
-        title="자녀 학습 현황"
-        actions={picker}
-      />
+      {picker && <ScopeBar>{picker}</ScopeBar>}
 
       {studentId === null ? (
-        <Card>
+        <Card padding="none">
           <EmptyState title={NO_CHILD_TITLE} />
         </Card>
       ) : home.loading ? (
-        <Loading />
+        <Loading label="이번 달 일정을 불러오는 중…" />
       ) : home.error ? (
         <ErrorState description={home.error} onRetry={home.reload} />
       ) : home.data ? (
@@ -97,16 +94,10 @@ function HomeBody({
 
   return (
     <div className="ui-stack">
-      <Card>
+      {/* 상단바는 "홈"만 말하고 계정 칩은 학부모 본인이다 — 누구를 보고 있는지는
+          이 카드 제목이 든다(자녀가 1명이면 ScopeBar 조차 없다). */}
+      <Card title={student.name} aside={student.current_class ?? "반 배정 전"}>
         <dl className="parent-facts">
-          <div>
-            <dt className="parent-facts__term">자녀</dt>
-            <dd className="parent-facts__value parent-facts__value--strong">{student.name}</dd>
-          </div>
-          <div>
-            <dt className="parent-facts__term">반</dt>
-            <dd className="parent-facts__value">{student.current_class ?? "반 배정 전"}</dd>
-          </div>
           <div>
             <dt className="parent-facts__term">등록 상태</dt>
             <dd className="parent-facts__value">
@@ -256,7 +247,7 @@ function AbsenceCard({ rows }: { rows: AbsenceRow[] }) {
   return (
     <Card
       title="결석과 보강 영상"
-      padding={rows.length === 0 ? "md" : "none"}
+      padding="none"
       actions={rows.length > 0 ? <Link to="/parent/makeup">보강 영상 신청 화면</Link> : undefined}
     >
       {rows.length === 0 ? (
@@ -373,7 +364,7 @@ function summarize(rows: Deadline[]): DeadlineItem[] {
 function DeadlineCard({ rows }: { rows: Deadline[] }) {
   const items = summarize(rows);
   return (
-    <Card title="곧 마감되는 것" padding={items.length === 0 ? "md" : "none"}>
+    <Card title="곧 마감되는 것" padding="none">
       {items.length === 0 ? (
         <EmptyState title="기한이 다가온 항목이 없습니다" />
       ) : (
@@ -403,8 +394,10 @@ function DeadlineCard({ rows }: { rows: Deadline[] }) {
               header: "기한",
               width: "10rem",
               cell: (row) => (
+                // 날짜는 .num(모노) 을 씌우지 않는다 — "8월 4일"의 공백까지 모노 폭이
+                // 되어 월과 일 사이가 벌어진다. 다른 화면의 날짜 칸과도 같은 서체다.
                 <>
-                  <span className="num">{row.dueDate ? shortDay(row.dueDate) : "—"}</span>
+                  <div>{row.dueDate ? shortDay(row.dueDate) : "—"}</div>
                   <div className="parent-note">{dDayLabel(row.dDay)}</div>
                 </>
               ),
@@ -420,7 +413,7 @@ function DeadlineCard({ rows }: { rows: Deadline[] }) {
 
 function PaymentCard({ rows }: { rows: PaymentRow[] }) {
   return (
-    <Card title="교재 결제" padding={rows.length === 0 ? "md" : "none"}>
+    <Card title="교재 결제" padding="none">
       {rows.length === 0 ? (
         <EmptyState title="청구된 교재가 없습니다" />
       ) : (
@@ -478,9 +471,7 @@ function WeekCard({ weeks }: { weeks: HomeWeek[] }) {
               }
             >
               {week.offline_notice && (
-                <p className="parent-note" style={{ marginBottom: "var(--space-sm)" }}>
-                  학원 공지 — {week.offline_notice}
-                </p>
+                <p className="parent-note parent-note--lead">학원 공지 — {week.offline_notice}</p>
               )}
               {(week.day_plans ?? []).length === 0 ? (
                 <p className="parent-note">학습 계획이 아직 없습니다</p>
@@ -509,12 +500,12 @@ function NotEnrolled({ data }: { data: ParentHome }) {
   const products = data.purchasable_products ?? [];
   return (
     <>
-      <Card title="아직 수업이 시작되지 않았습니다">
-        <p className="parent-note">
-          {data.student.name} 학생 · <strong>{data.student.enrollment_status}</strong>
-        </p>
+      {/* 이름·등록 상태는 바로 위 카드가 이미 들고 있다 — 여기서는 달력이 없는
+          이유만 한 줄로 말한다. */}
+      <Card padding="none">
+        <EmptyState title="아직 수업이 시작되지 않았습니다" />
       </Card>
-      <Card title="구매할 수 있는 교재" padding={products.length === 0 ? "md" : "none"}>
+      <Card title="구매할 수 있는 교재" padding="none">
         {products.length === 0 ? (
           <EmptyState title="지금 구매할 수 있는 교재가 없습니다" />
         ) : (

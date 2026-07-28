@@ -12,7 +12,7 @@
  *   체감하는 유일한 지점이다.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 
 import { http, useApi, useApiAction } from "../../../api";
 import { useMe } from "../../../auth";
@@ -23,7 +23,6 @@ import {
   Checkbox,
   ErrorState,
   Loading,
-  PageHeader,
   StatusBadge,
   Table,
   useToast,
@@ -198,13 +197,7 @@ export default function AttendanceSessionPage() {
   }, [makeups.data, detail.data]);
 
   if (detail.loading) return <Loading label="명단을 불러오는 중…" />;
-  if (detail.error)
-    return (
-      <>
-        <PageHeader title="출결 입력" />
-        <ErrorState description={detail.error} onRetry={detail.reload} />
-      </>
-    );
+  if (detail.error) return <ErrorState description={detail.error} onRetry={detail.reload} />;
   if (!detail.data) return null;
 
   const session = detail.data.session;
@@ -320,19 +313,21 @@ export default function AttendanceSessionPage() {
     },
   ];
 
+  // 상단바는 "출결 입력"까지만 말한다 — 어느 회차인지는 본문이 들어야 한다.
+  // 카드 머리가 아니라 고정 바에 둔 이유: 30명을 훑는 내내 "몇 명 남았나"와
+  // "어느 회차인가"가 같이 붙어 있어야 다른 회차에 잘못 입력하지 않는다.
+  // "회차 목록" 링크는 뺐다 — 좌측 레일의 활성 항목이 바로 그 경로다.
   return (
     <>
-      <PageHeader
-        title={`${longDate(session.session_date)} 출결`}
-        description={`${sessionLabel(session)} · 명단 ${students.length}명${session.memo ? ` · ${session.memo}` : ""}`}
-        actions={
-          <Link to="/admin/attendance">
-            <Button variant="ghost">회차 목록</Button>
-          </Link>
-        }
-      />
-
       <div className="ops-bar">
+        <div className="ops-id">
+          <span className="ops-id__title">{longDate(session.session_date)}</span>
+          <span className="ops-id__meta">
+            {sessionLabel(session)} · 명단 {students.length}명
+            {session.memo ? ` · ${session.memo}` : ""}
+          </span>
+        </div>
+
         <div className="ops-figs">
           <Fig tone="present" n={live.출석} label="출석" />
           <Fig tone="late" n={live.지각} label="지각" />
@@ -366,11 +361,8 @@ export default function AttendanceSessionPage() {
         {approve.error && <Alert tone="danger">{approve.error}</Alert>}
         {saved && <SavedSummary triggers={saved} onClose={() => setSaved(null)} />}
 
-        <Card padding="none">
-          <div
-            className="ops-toolbar"
-            style={{ padding: "var(--space-sm) var(--space-md)", alignItems: "center" }}
-          >
+        <Card padding="none" className="ops-tablecard">
+          <div className="ops-toolbar ops-toolbar--center ops-cardbar">
             <Checkbox
               checked={examMode}
               onChange={(event) => setExamMode(event.target.checked)}
@@ -381,7 +373,7 @@ export default function AttendanceSessionPage() {
               onChange={(event) => setBlankOnly(event.target.checked)}
               label={`미입력한 학생만 보기 (${live.미입력}명)`}
             />
-            <p className="ops-keys" style={{ marginLeft: "auto" }}>
+            <p className="ops-keys">
               <span>
                 <kbd>Tab</kbd> 다음 학생
               </span>
@@ -404,7 +396,6 @@ export default function AttendanceSessionPage() {
               blankOnly ? "미입력한 학생이 없습니다" : "이 회차에 배정된 수강생이 없습니다"
             }
           />
-
         </Card>
       </div>
     </>

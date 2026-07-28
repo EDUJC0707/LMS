@@ -97,6 +97,14 @@
     color var(--dur-micro) var(--ease-out);
 }
 
+/* 아이콘은 라벨보다 한 단계 흐리다 — 읽는 것은 라벨이고 아이콘은 앵커일 뿐이다.
+   활성·hover 일 때만 라벨과 같은 밝기로 올라온다. */
+.ui-rail__icon {
+  flex: none;
+  color: var(--color-navy-400);
+  transition: color var(--dur-micro) var(--ease-out);
+}
+
 .ui-rail__link:hover {
   text-decoration: none;
 }
@@ -105,6 +113,10 @@
   .ui-rail__link:hover {
     background: var(--color-navy-800);
     color: var(--color-paper);
+  }
+
+  .ui-rail__link:hover .ui-rail__icon {
+    color: inherit;
   }
 }
 
@@ -118,11 +130,18 @@
   font-weight: var(--weight-semibold);
 }
 
+.ui-rail__link.is-active .ui-rail__icon {
+  color: inherit;
+}
+
 .ui-rail__foot {
   padding-top: var(--space-md);
   border-top: 1px solid var(--color-navy-800);
 }
 
+/* 상단바는 56px 고정이다. 왼쪽 = 지금 보고 있는 화면(아이콘 20 + 이름 16px),
+   오른쪽 = 누구인가(계정 칩) + 로그아웃. 그 사이에 아무것도 더 넣지 않는다 —
+   상태 배지·페이지 액션은 전부 본문 카드로 내려간다. */
 .ui-topbar {
   position: sticky;
   top: 0;
@@ -130,17 +149,33 @@
   display: flex;
   align-items: center;
   gap: var(--space-md);
-  min-height: var(--topbar-height);
-  padding: var(--space-xs) var(--space-lg);
+  height: var(--topbar-height);
+  padding: 0 var(--space-lg);
   background: var(--color-paper);
   border-bottom: 1px solid var(--color-rule);
 }
 
+.ui-topbar__page {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.ui-topbar__icon {
+  flex: none;
+  color: var(--color-ink-2);
+}
+
 .ui-topbar__title {
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-snug);
-  color: var(--color-ink-2);
+  line-height: var(--leading-snug);
+  color: var(--color-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ui-topbar__right {
@@ -265,9 +300,45 @@
   .ui-page {
     padding: var(--space-lg) var(--space-md) var(--space-2xl);
   }
+
+  /* 좁은 화면에서는 페이지 이름이 먼저다 — 좌우 여백을 줄여 이름 자리를 만든다.
+     그래도 모자라면 이름이 말줄임으로 잘린다(줄바꿈으로 56px 을 깨지 않는다). */
+  .ui-topbar {
+    padding: 0 var(--space-md);
+  }
 }
 
-/* ═══ PageHeader ═════════════════════════════════════════════════════ */
+/* ═══ ScopeBar ═══════════════════════════════════════════════════════
+   본문 첫 줄의 범위 스위처(자녀·대상 시험 등). 선도 배경도 없다 —
+   컨트롤 자체가 이미 면이라 테두리를 더하면 머리띠가 하나 더 생긴다.   */
+
+.ui-scopebar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-lg);
+}
+
+/* 입력류는 기본이 width:100% 라 그대로 두면 화면을 가로지르는 빈 띠가 된다.
+   여기서는 내용만큼만 차지하게 하되 좁은 화면에서는 줄 전체를 쓴다. */
+.ui-scopebar .ui-input,
+.ui-scopebar .ui-select {
+  width: auto;
+  min-width: 16rem;
+  max-width: 100%;
+}
+
+@media (max-width: 599px) {
+  .ui-scopebar .ui-input,
+  .ui-scopebar .ui-select {
+    width: 100%;
+  }
+}
+
+/* ═══ PageHeader (폐기 예정) ══════════════════════════════════════════
+   제목은 상단바로 갔다. 아직 옮기지 않은 화면만 이 블록을 쓰고 있으며,
+   전 화면 이전이 끝나면 PageHeader.tsx 와 함께 이 블록을 지운다.        */
 
 .ui-pagehead {
   display: flex;
@@ -323,6 +394,7 @@
 
 .ui-card__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-sm);
   padding: var(--space-md) var(--space-lg);
@@ -336,9 +408,14 @@
   color: var(--color-ink);
 }
 
+/* line-height 를 제목(h2 = --leading-tight)과 같은 비율로 묶는다.
+   기본값(--leading-normal)이면 13px 보조 텍스트가 20.8px 로 제목 19.2px 보다
+   높아져, aside 가 있는 카드 머리만 1.6px 커졌다 — 나란히 선 두 카드의
+   구분선이 어긋나고 세로로 쌓인 카드의 리듬이 흔들렸다(52.2 / 53.8 실측). */
 .ui-card__aside {
   margin-left: auto;
   font-size: var(--text-xs);
+  line-height: var(--leading-tight);
   color: var(--color-muted);
 }
 
@@ -346,8 +423,10 @@
   padding: var(--space-lg);
 }
 
+/* 좌우는 머리(--space-lg)와 같게 두고 위아래만 줄인다.
+   사방 16px 이면 본문이 제목보다 8px 안쪽에서 시작해 sm 을 쓸 수 없었다. */
 .ui-card__body--tight {
-  padding: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
 }
 
 .ui-card__body--flush {
@@ -481,6 +560,13 @@
   min-height: 1.2em; /* 에러가 떠도 아래가 밀리지 않게 자리를 잡아둔다 */
   font-size: var(--text-xs);
   color: var(--color-muted);
+}
+
+/* 자리를 잡아 두는 이유는 **뒤따르는 형제**가 밀리지 않게 하기 위해서다.
+   마지막 칸에는 밀릴 형제가 없고, 대신 담는 면(모달·카드)의 아래 여백만
+   두 배로 읽힌다(24 + 21 ≈ 45 vs 위 24). 마지막 칸에서만 접는다. */
+.ui-field:last-child .ui-field__help:empty {
+  display: none;
 }
 
 .ui-field__help--error {
@@ -652,6 +738,15 @@
   line-height: var(--leading-snug);
 }
 
+/* ⚠ 이 sticky 는 지금 어느 화면에서도 붙지 않는다(2026-07-28 통합 단계 실측).
+   .ui-tablewrap 이 overflow-x: auto 라 그 wrapper 가 스크롤 컨테이너가 되고
+   sticky 는 wrapper 기준으로 계산된다. 그런데 wrapper 는 세로로 넘치지 않아
+   열 이름이 그 안에서 움직일 일이 없다 — 표 전체가 페이지와 함께 올라간다.
+   (검증: 런타임에 wrapper 를 overflow:visible 로 바꾸면 열 이름의 top 이
+   -217.6 → 138 로 즉시 붙는다.)
+   CSS 상 overflow-x 만 auto 로 둘 수 없다 — 한 축이 visible 이 아니면 다른
+   축도 auto 로 계산된다. 살리려면 wrapper 에 max-height 를 줘 세로 스크롤
+   영역으로 만들어야 하고, 그건 레이아웃 구조 변경이라 여기서 손대지 않았다. */
 .ui-table thead th {
   position: sticky;
   top: 0;
@@ -709,6 +804,27 @@
   padding: 0;
 }
 
+/* ── 표를 카드에 붙일 때(padding="none") ──────────────────────────────
+   카드 머리는 좌우 --space-lg 인데 셀은 --space-md(조밀 표는 --space-sm)라,
+   열 이름이 카드 제목보다 8px(조밀 12px) 왼쪽에서 시작했다. 전 화면 공통
+   증상이라 화면마다 덮지 않고 여기서 한 번에 맞춘다 — 바깥 두 열만 카드
+   기준선으로 밀고 안쪽 열 간격은 그대로 둔다.
+   빈 상태 행은 제외한다 — colSpan 한 칸이라 EmptyState 의 좌우 대칭이 깨진다. */
+.ui-card__body--flush .ui-table tr:not(.ui-table__empty) > :first-child {
+  padding-left: var(--space-lg);
+}
+
+.ui-card__body--flush .ui-table tr:not(.ui-table__empty) > :last-child {
+  padding-right: var(--space-lg);
+}
+
+/* 마지막 행은 아래 구분선이 없어 셀 세로 여백만 남는다. 그 값이 카드 안쪽
+   좌우(24px)보다 작아 표가 카드 바닥에 눌린 것처럼 보였다. 반 스텝을 얹어
+   위아래를 맞춘다(빈 상태 행 제외 — .ui-state 가 이미 대칭 여백을 갖는다). */
+.ui-card__body--flush .ui-table tbody tr:last-child:not(.ui-table__empty) td {
+  padding-bottom: var(--space-sm);
+}
+
 /* ═══ Tabs ═══════════════════════════════════════════════════════════ */
 
 .ui-tabs {
@@ -756,6 +872,10 @@
 /* ═══ DetailsPanel (접이식) ══════════════════════════════════════════ */
 
 .ui-details {
+  /* 요약줄 라벨의 x 좌표 = 패딩 + 셰브론(16px) + gap = 40px.
+     본문이 이 선에 맞춘다 — 라벨보다 왼쪽에서 시작하면 접힌 제목보다
+     펼친 내용이 튀어나와 위계가 뒤집혀 보인다. */
+  --details-indent: calc(var(--space-md) + var(--space-md) + var(--space-xs));
   border: 1px solid var(--color-rule);
   border-radius: var(--radius-md);
   background: var(--color-paper);
@@ -796,9 +916,27 @@
 }
 
 .ui-details__body {
-  padding: 0 var(--space-md) var(--space-md);
+  padding: var(--space-md) var(--space-md) var(--space-md) var(--details-indent);
   border-top: 1px solid var(--color-rule-2);
-  padding-top: var(--space-md);
+}
+
+/* 본문이 표 하나면 패널 가장자리까지 붙인다 — 카드 안(padding="none")에서는
+   헤더 띠가 가장자리에 닿는데 패널 안에서만 16px 떠 있어, 같은 Table 이
+   담기는 곳에 따라 다르게 보였다. 바깥 두 열만 라벨 선에 맞춘다. */
+.ui-details__body:has(> .ui-tablewrap:only-child) {
+  padding: 0;
+}
+
+.ui-details__body > .ui-tablewrap > .ui-table tr:not(.ui-table__empty) > :first-child {
+  padding-left: var(--details-indent);
+}
+
+.ui-details__body > .ui-tablewrap > .ui-table tr:not(.ui-table__empty) > :last-child {
+  padding-right: var(--space-md);
+}
+
+.ui-details__body > .ui-tablewrap > .ui-table tbody tr:last-child:not(.ui-table__empty) td {
+  padding-bottom: var(--space-sm);
 }
 
 /* ═══ Alert (인라인 알림) ════════════════════════════════════════════ */
@@ -1076,12 +1214,14 @@
 
 /* ═══ Pagination ═════════════════════════════════════════════════════ */
 
+/* 세로 여백은 갖지 않는다 — 두 곳 다 .ui-stack(24px) 안의 형제라, 자기
+   패딩까지 얹으면 카드↔쪽번호가 40px 이 되고 쪽번호 아래에 16px 죽은 자리가
+   남는다. 간격은 담는 쪽(스택)이 정한다. */
 .ui-pagination {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-2xs);
-  padding: var(--space-md) 0;
 }
 
 .ui-pagination__status {
@@ -1196,8 +1336,10 @@
   display: none;
 }
 
+/* 입력 두 칸(gap 16)보다 한 단계 벌려 버튼을 따로 세운다.
+   반 스텝(4px)이었을 때 이 폼만 20px 로 8px 그리드를 벗어나 있었다. */
 .ui-authcard .ui-btn--primary {
-  margin-top: var(--space-2xs);
+  margin-top: var(--space-xs);
 }
 
 /* ═══ 레이아웃 유틸 (최소한만) ═══════════════════════════════════════ */

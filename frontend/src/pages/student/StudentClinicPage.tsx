@@ -22,8 +22,8 @@ import {
   ErrorState,
   Loading,
   Modal,
-  PageHeader,
   Radio,
+  ScopeBar,
   Select,
   StatusBadge,
   Table,
@@ -103,26 +103,18 @@ export default function StudentClinicPage() {
   const error = grades.error ?? clinic.error;
 
   if (loading) {
-    return (
-      <>
-        <PageHeader title="클리닉 신청" />
-        <Loading label="신청 가능한 시간대를 불러오는 중…" />
-      </>
-    );
+    return <Loading label="신청 가능한 시간대를 불러오는 중…" />;
   }
 
   if (error) {
     return (
-      <>
-        <PageHeader title="클리닉 신청" />
-        <ErrorState
-          description={error}
-          onRetry={() => {
-            void grades.reload();
-            void clinic.reload();
-          }}
-        />
-      </>
+      <ErrorState
+        description={error}
+        onRetry={() => {
+          void grades.reload();
+          void clinic.reload();
+        }}
+      />
     );
   }
 
@@ -130,12 +122,10 @@ export default function StudentClinicPage() {
 
   if (!data) {
     return (
-      <>
-        <PageHeader title="클리닉 신청" />
-        <Card>
-          <EmptyState title="아직 클리닉을 신청할 시험이 없습니다" />
-        </Card>
-      </>
+      // 빈 상태는 제 여백(48px)을 갖고 있다 — 카드 여백을 겹쳐 얹지 않는다.
+      <Card padding="none">
+        <EmptyState title="아직 클리닉을 신청할 시험이 없습니다" />
+      </Card>
     );
   }
 
@@ -149,26 +139,27 @@ export default function StudentClinicPage() {
       ? "이미 신청한 클리닉이 있습니다"
       : null;
 
+  // 대상 시험은 이 화면 전체의 범위다(아래 두 카드가 통째로 바뀐다) → ScopeBar.
+  // 회차가 하나뿐이면 고를 게 없으므로 시험 이름만 카드 옆에 둔다.
+  const multipleExams = exams.length > 1;
+
   return (
     <>
-      <PageHeader
-        title="클리닉 신청"
-        actions={
-          exams.length > 1 ? (
-            <Select
-              aria-label="대상 시험 선택"
-              value={effectiveExamId ?? ""}
-              onChange={(event) => setExamId(Number(event.target.value))}
-            >
-              {exams.map((exam) => (
-                <option key={exam.exam_id} value={exam.exam_id}>
-                  {exam.name}
-                </option>
-              ))}
-            </Select>
-          ) : undefined
-        }
-      />
+      {multipleExams && (
+        <ScopeBar>
+          <Select
+            aria-label="대상 시험 선택"
+            value={effectiveExamId ?? ""}
+            onChange={(event) => setExamId(Number(event.target.value))}
+          >
+            {exams.map((exam) => (
+              <option key={exam.exam_id} value={exam.exam_id}>
+                {exam.name}
+              </option>
+            ))}
+          </Select>
+        </ScopeBar>
+      )}
 
       <div className="ui-stack">
         {data.clinic_banned && (
@@ -176,7 +167,7 @@ export default function StudentClinicPage() {
         )}
 
         {!data.eligibility.is_target ? (
-          <Card title={data.exam.name} aside={data.exam.exam_date}>
+          <Card title={data.exam.name} aside={data.exam.exam_date} padding="none">
             <EmptyState
               title="이번 회차는 클리닉 대상이 아닙니다"
               description={data.eligibility.reason ?? undefined}
@@ -185,11 +176,11 @@ export default function StudentClinicPage() {
         ) : (
           <Card
             title="신청 가능한 시간대"
-            aside={`${data.exam.name} 기준`}
+            aside={multipleExams ? undefined : data.exam.name}
             padding="none"
           >
             {(book.error || blocked) && (
-              <div style={{ padding: "var(--space-md) var(--space-lg) 0" }}>
+              <div style={{ padding: "var(--space-md) var(--space-lg)" }}>
                 {book.error ? (
                   <Alert tone="danger" onClose={book.clearError}>
                     {book.error}
@@ -344,29 +335,32 @@ export default function StudentClinicPage() {
           </>
         }
       >
-        {change.error && <Alert tone="danger">{change.error}</Alert>}
-        <fieldset className="st-slotpick">
-          <legend className="sr-only">변경할 시간대 선택</legend>
-          {slots.map((slot) => (
-            <Radio
-              key={slot.slot_id}
-              name="clinic-slot"
-              checked={pickedSlot === slot.slot_id}
-              disabled={slot.is_full}
-              onChange={() => setPickedSlot(slot.slot_id)}
-              label={
-                <>
-                  {weekdayName(slot.weekday)}요일 {slot.start_time} · {dayLabel(slot.next_date)}
-                  <span style={{ color: "var(--color-muted)" }}>
-                    {" "}
-                    남은 자리 {slot.remaining}
-                    {slot.is_full ? " (마감)" : ""}
-                  </span>
-                </>
-              }
-            />
-          ))}
-        </fieldset>
+        {/* 실패 알림과 목록이 맞붙지 않게 한 겹으로 쌓는다(모달 안 여백 = 24px 대칭). */}
+        <div className="ui-stack ui-stack--md">
+          {change.error && <Alert tone="danger">{change.error}</Alert>}
+          <fieldset className="st-slotpick">
+            <legend className="sr-only">변경할 시간대 선택</legend>
+            {slots.map((slot) => (
+              <Radio
+                key={slot.slot_id}
+                name="clinic-slot"
+                checked={pickedSlot === slot.slot_id}
+                disabled={slot.is_full}
+                onChange={() => setPickedSlot(slot.slot_id)}
+                label={
+                  <>
+                    {weekdayName(slot.weekday)}요일 {slot.start_time} · {dayLabel(slot.next_date)}
+                    <span style={{ color: "var(--color-muted)" }}>
+                      {" "}
+                      남은 자리 {slot.remaining}
+                      {slot.is_full ? " (마감)" : ""}
+                    </span>
+                  </>
+                }
+              />
+            ))}
+          </fieldset>
+        </div>
       </Modal>
 
       {/* 취소 — 되돌릴 수 없으므로 확인을 받는다 */}
@@ -389,16 +383,18 @@ export default function StudentClinicPage() {
           </>
         }
       >
-        {cancel.error && <Alert tone="danger">{cancel.error}</Alert>}
-        {cancelling && (
-          <p style={{ marginBottom: "var(--space-sm)" }}>
-            <b>
-              {dayLabel(cancelling.requested_date)}{" "}
-              <span className="num">{cancelling.requested_time}</span>
-            </b>{" "}
-            클리닉 신청을 취소합니다.
-          </p>
-        )}
+        <div className="ui-stack ui-stack--md">
+          {cancel.error && <Alert tone="danger">{cancel.error}</Alert>}
+          {cancelling && (
+            <p>
+              <b>
+                {dayLabel(cancelling.requested_date)}{" "}
+                <span className="num">{cancelling.requested_time}</span>
+              </b>{" "}
+              클리닉 신청을 취소합니다.
+            </p>
+          )}
+        </div>
       </Modal>
     </>
   );

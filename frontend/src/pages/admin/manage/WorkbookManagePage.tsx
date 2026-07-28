@@ -31,7 +31,6 @@ import {
   Input,
   Loading,
   Modal,
-  PageHeader,
   Select,
   StatusBadge,
   Tabs,
@@ -88,11 +87,7 @@ export default function WorkbookManagePage() {
   const submissions = list.data?.submissions ?? [];
 
   return (
-    <>
-      <PageHeader
-        title="워크북 업로드"
-      />
-
+    <div className="ui-stack">
       <UploadCard sessions={sessions.data ?? []} onUploaded={() => void list.reload()} />
 
       <Card
@@ -102,43 +97,47 @@ export default function WorkbookManagePage() {
             list.data.unmatched_count > 0 ? (
               <>
                 <Badge tone="warning">보정 필요 {list.data.unmatched_count}장</Badge>{" "}
-                <span style={{ color: "var(--color-muted)" }}>전체 {list.data.total_count}장</span>
+                <span className="pm-none">전체 {list.data.total_count}장</span>
               </>
             ) : (
-              <>전체 {list.data.total_count}장 — 모두 확정됐습니다</>
+              `전체 ${list.data.total_count}장`
             )
           ) : undefined
         }
       >
-        <div className="ui-stack--md">
-          <Tabs items={STATUS_TABS} value={tab} onChange={setTab} label="매칭 상태" />
+        <div className="ui-stack">
+          {/* 상태 탭과 회차는 같은 일(보드 좁히기)을 한다 — 16px 으로 묶고
+              보드와는 24px 로 띄운다. */}
+          <div className="ui-stack ui-stack--md">
+            <Tabs items={STATUS_TABS} value={tab} onChange={setTab} label="매칭 상태" />
 
-          {sessions.data && sessions.data.length > 0 && (
-            <div className="pm-toolbar">
-              <Field label="회차">
-                {(props) => (
-                  <Select
-                    {...props}
-                    value={sessionFilter}
-                    onChange={(e) => setSessionFilter(e.target.value)}
-                  >
-                    <option value="">모든 회차</option>
-                    {sessions.data?.map((session) => (
-                      <option key={session.session_id} value={session.session_id}>
-                        {session.session_date}
-                        {session.session_no ? ` · ${session.session_no}회차` : ""}
-                      </option>
-                    ))}
-                  </Select>
+            {sessions.data && sessions.data.length > 0 && (
+              <div className="pm-toolbar">
+                <Field label="회차">
+                  {(props) => (
+                    <Select
+                      {...props}
+                      value={sessionFilter}
+                      onChange={(e) => setSessionFilter(e.target.value)}
+                    >
+                      <option value="">모든 회차</option>
+                      {sessions.data?.map((session) => (
+                        <option key={session.session_id} value={session.session_id}>
+                          {session.session_date}
+                          {session.session_no ? ` · ${session.session_no}회차` : ""}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                </Field>
+                {sessionFilter && (
+                  <Button variant="ghost" onClick={() => setSessionFilter("")}>
+                    회차 조건 지우기
+                  </Button>
                 )}
-              </Field>
-              {sessionFilter && (
-                <Button variant="ghost" onClick={() => setSessionFilter("")}>
-                  회차 조건 지우기
-                </Button>
-              )}
-            </div>
-          )}
+              </div>
+            )}
+          </div>
 
           {remove.error && (
             <Alert tone="danger" onClose={remove.clearError}>
@@ -200,7 +199,7 @@ export default function WorkbookManagePage() {
           {deleting?.session ? ` · ${deleting.session.session_date}` : ""}
         </p>
       </Modal>
-    </>
+    </div>
   );
 }
 
@@ -279,7 +278,7 @@ function UploadCard({
       title="사진 올리기"
       aside={files.length > 0 ? `${files.length}장 대기 중` : undefined}
     >
-      <div className="ui-stack--md">
+      <div className="ui-stack ui-stack--md">
         {(localError || upload.error) && (
           <Alert tone="danger" onClose={() => setLocalError(null)}>
             {localError ?? upload.error}
@@ -311,7 +310,8 @@ function UploadCard({
             }}
           />
           <b>사진을 여기에 끌어다 놓으세요</b>
-          <span>누르면 파일을 골라 올릴 수도 있습니다 · jpg·png·webp, 장당 10MB 이하</span>
+          {/* 남긴 건 제약뿐이다 — "누르면 파일을 고를 수도 있다"는 눌러 보면 안다. */}
+          <span>jpg · png · webp · 장당 10MB 이하</span>
         </label>
 
         {previews.length > 0 && (
@@ -441,73 +441,67 @@ function MatchCard({
           defaultOpen={attention}
           aside={attention ? "확정 필요" : undefined}
         >
-          <div className="ui-stack--sm">
+          {/* 확정하는 길이 둘이다(명부에서 고르기 · 사진에 적힌 값으로 대조).
+              각 길을 8px 로 묶고 길끼리는 16px + 실선으로 가른다. */}
+          <div className="ui-stack ui-stack--md">
             {match.error && <Alert tone="danger">{match.error}</Alert>}
 
-            <StudentPicker
-              value={picked}
-              onChange={setPicked}
-              label="학생 직접 지정"
-            />
-            <Button
-              loading={match.pending}
-              disabled={!picked}
-              onClick={async () => {
-                if (!picked) return;
-                if (await match.run({ student_id: picked.student_id })) onDone();
-              }}
-            >
-              이 학생으로 확정
-            </Button>
+            <div className="ui-stack ui-stack--sm">
+              <StudentPicker value={picked} onChange={setPicked} label="학생 직접 지정" />
+              <Button
+                loading={match.pending}
+                disabled={!picked}
+                onClick={async () => {
+                  if (!picked) return;
+                  if (await match.run({ student_id: picked.student_id })) onDone();
+                }}
+              >
+                이 학생으로 확정
+              </Button>
+            </div>
 
-            <hr
-              style={{
-                border: 0,
-                borderTop: "1px solid var(--color-rule-2)",
-                margin: "var(--space-xs) 0",
-              }}
-            />
+            <div className="ui-stack ui-stack--sm pm-actionblock">
+              <Field label="사진에 적힌 원번">
+                {(props) => (
+                  <Input
+                    {...props}
+                    value={uniqueId}
+                    onChange={(e) => setUniqueId(e.target.value)}
+                    placeholder="26001"
+                    inputMode="numeric"
+                  />
+                )}
+              </Field>
+              <Field label="사진에 적힌 이름">
+                {(props) => (
+                  <Input
+                    {...props}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="홍길동"
+                  />
+                )}
+              </Field>
+              <Button
+                loading={match.pending}
+                disabled={!uniqueId.trim()}
+                onClick={async () => {
+                  const ok = await match.run({
+                    recognized_unique_id: uniqueId.trim(),
+                    recognized_name: name.trim(),
+                  });
+                  if (ok) onDone();
+                }}
+              >
+                원번·이름으로 대조
+              </Button>
+            </div>
 
-            <Field
-              label="사진에 적힌 원번"
-            >
-              {(props) => (
-                <Input
-                  {...props}
-                  value={uniqueId}
-                  onChange={(e) => setUniqueId(e.target.value)}
-                  placeholder="26001"
-                  inputMode="numeric"
-                />
-              )}
-            </Field>
-            <Field label="사진에 적힌 이름">
-              {(props) => (
-                <Input
-                  {...props}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="홍길동"
-                />
-              )}
-            </Field>
-            <Button
-              loading={match.pending}
-              disabled={!uniqueId.trim()}
-              onClick={async () => {
-                const ok = await match.run({
-                  recognized_unique_id: uniqueId.trim(),
-                  recognized_name: name.trim(),
-                });
-                if (ok) onDone();
-              }}
-            >
-              원번·이름으로 대조
-            </Button>
-
-            <Button variant="danger" size="sm" onClick={onDelete}>
-              사진 삭제
-            </Button>
+            <div className="pm-actionblock">
+              <Button variant="danger" size="sm" block onClick={onDelete}>
+                사진 삭제
+              </Button>
+            </div>
           </div>
         </DetailsPanel>
       </div>
