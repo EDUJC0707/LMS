@@ -64,34 +64,34 @@ const TONE = [0.61, 0.53, 0.61, 0.63, 0.58, 0.59, 0.61, 0.84, 0.78, 0.61];
    존을 먼저 정하고 그 안에서 흔든다. 순수 난수는 고르게 흩어져 평평하고,
    군집 선호만 주면 한쪽으로 쏠린다. 순서는 data.js 의 UNITS 와 1:1.
 
-   **크기는 전부 같다**(데스크탑 17vw / 모바일 21vw). 사용자 지시다. 그래서 리듬은
+   **크기는 전부 같다**(데스크탑 15vw / 모바일 16vw). 사용자 지시다. 그래서 리듬은
    자리와 회전에서만 나온다 — 회전은 난수가 아니라 사다리(±33°, 0° 근처는 빔)를
    섞어 좌우 균형과 분산을 강제한다. 난수로 뽑으면 뭉친다(실측: 10개 중 5개가 16~17°).
    강사와 그 오른쪽은 금지구역이라 데스크탑 좌표가 전부 좌측 절반에 모인다. */
 const LAYOUT = [
-  { x: 47, y: 61, size: 17, rot: 11,  dim: 1, blur: 0 },   // atom
-  { x: 35, y: 55, size: 17, rot: -10, dim: 1, blur: 0 },   // dna
-  { x: 25, y: 46, size: 17, rot: 6,   dim: 1, blur: 0 },   // chromosome
-  { x: 28, y: 78, size: 17, rot: -14, dim: 1, blur: 0 },   // mitochondria
-  { x: 9,  y: 54, size: 17, rot: 21,  dim: 1, blur: 0 },   // chloroplast
-  { x: 11, y: 18, size: 17, rot: -17, dim: 1, blur: 0 },   // synapse
-  { x: 14, y: 78, size: 17, rot: -27, dim: 1, blur: 0 },   // population
-  { x: 44, y: 84, size: 17, rot: -32, dim: 1, blur: 0 },   // element
-  { x: 44, y: 37, size: 17, rot: 34,  dim: 1, blur: 0 },   // tectonics
-  { x: 27, y: 20, size: 17, rot: 27,  dim: 1, blur: 0 },   // universe
+  { x: 46, y: 21, size: 15, rot: 24,  dim: 1, blur: 0 },   // atom
+  { x: 32, y: 64, size: 15, rot: -5,  dim: 1, blur: 0 },   // dna
+  { x: 9,  y: 22, size: 15, rot: -20, dim: 1, blur: 0 },   // chromosome
+  { x: 22, y: 20, size: 15, rot: -31, dim: 1, blur: 0 },   // mitochondria
+  { x: 35, y: 38, size: 15, rot: 13,  dim: 1, blur: 0 },   // chloroplast
+  { x: 48, y: 47, size: 15, rot: -24, dim: 1, blur: 0 },   // synapse
+  { x: 14, y: 45, size: 15, rot: 5,   dim: 1, blur: 0 },   // population
+  { x: 25, y: 83, size: 15, rot: -11, dim: 1, blur: 0 },   // element
+  { x: 43, y: 81, size: 15, rot: 19,  dim: 1, blur: 0 },   // tectonics
+  { x: 10, y: 84, size: 15, rot: 33,  dim: 1, blur: 0 },   // universe
 ];
 
 const LAYOUT_SM = [
-  { x: 40, y: 83, size: 21, rot: 6,   dim: 1, blur: 0 },   // atom
-  { x: 40, y: 62, size: 21, rot: -35, dim: 1, blur: 0 },   // dna
-  { x: 17, y: 29, size: 21, rot: 28,  dim: 1, blur: 0 },   // chromosome
-  { x: 33, y: 18, size: 21, rot: -5,  dim: 1, blur: 0 },   // mitochondria
-  { x: 17, y: 68, size: 21, rot: -26, dim: 1, blur: 0 },   // chloroplast
-  { x: 21, y: 80, size: 21, rot: 10,  dim: 1, blur: 0 },   // synapse
-  { x: 25, y: 40, size: 21, rot: 16,  dim: 1, blur: 0 },   // population
-  { x: 29, y: 52, size: 21, rot: -12, dim: 1, blur: 0 },   // element
-  { x: 40, y: 33, size: 21, rot: 33,  dim: 1, blur: 0 },   // tectonics
-  { x: 17, y: 91, size: 21, rot: -16, dim: 1, blur: 0 },   // universe
+  { x: 18, y: 20, size: 16, rot: 5,   dim: 1, blur: 0 },   // atom
+  { x: 23, y: 41, size: 16, rot: 21,  dim: 1, blur: 0 },   // dna
+  { x: 15, y: 73, size: 16, rot: -29, dim: 1, blur: 0 },   // chromosome
+  { x: 34, y: 85, size: 16, rot: 9,   dim: 1, blur: 0 },   // mitochondria
+  { x: 20, y: 59, size: 16, rot: -14, dim: 1, blur: 0 },   // chloroplast
+  { x: 15, y: 80, size: 16, rot: -33, dim: 1, blur: 0 },   // synapse
+  { x: 34, y: 72, size: 16, rot: -17, dim: 1, blur: 0 },   // population
+  { x: 34, y: 34, size: 16, rot: -6,  dim: 1, blur: 0 },   // element
+  { x: 15, y: 30, size: 16, rot: 30,  dim: 1, blur: 0 },   // tectonics
+  { x: 19, y: 92, size: 16, rot: 27,  dim: 1, blur: 0 },   // universe
 ];
 
 const isSmall = () => matchMedia('(max-width: 860px)').matches;
@@ -164,7 +164,7 @@ export function mountField(root, units) {
     const base = u.asset.replace(/^assets\/motifs\//, '');
     img.src = `assets/motifs/768/${base}`;
     img.srcset = `assets/motifs/512/${base} 512w, assets/motifs/768/${base} 768w`;
-    img.sizes = '(max-width:860px) 21vw, 17vw';
+    img.sizes = '16vw';
     img.alt = '';
     img.decoding = 'async';
     el.append(img);

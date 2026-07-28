@@ -125,11 +125,10 @@
      하단 페이드 마스크를 걷어냈다 — 부분 투명도 투명이고, 인물이 흐려지면
      배경 모티프와 같은 층으로 읽힌다. 뒤로 모티프가 지나가지도 않는다. */
   .teacher{
-    /* 2026-07-28: 원본 대비 -25%+10% = 0.73배, 오른쪽에서 9%.
-       tune.html 슬라이더로 맞춘 값이다 — 바꾸면 pack-layout.py 도 다시 돌려야 한다
-       (강사 왼쪽 경계가 모티프 금지선이므로). */
-    position:absolute; right:var(--teacher-right, 9%); bottom:0; z-index:1;
-    height:min(var(--teacher-h, 73svh), 742px); width:auto;
+    /* 2026-07-28 확정: 80svh · 오른쪽에서 5%.
+       바꾸면 pack-layout.py 도 다시 돌려야 한다 — 강사 왼쪽 경계가 모티프 금지선이다. */
+    position:absolute; right:var(--teacher-right, 5%); bottom:0; z-index:1;
+    height:min(var(--teacher-h, 80svh), 820px); width:auto;
     object-fit:contain; object-position:bottom right;
     pointer-events:none; user-select:none;
     opacity:1;
@@ -241,7 +240,7 @@
     .navL nav{ display:none }
     .hero{ grid-template-columns:1fr; align-content:center; padding-bottom:32svh }
     .copy{ max-width:none }
-    .teacher{ height:var(--teacher-h-sm, 36svh); right:var(--teacher-right-sm, -14%) }
+    .teacher{ height:var(--teacher-h-sm, 40svh); right:var(--teacher-right-sm, -12%) }
     .step{ grid-template-columns:1fr; gap:.5rem }
     .step-no{ padding-top:0 }
     .tbl .hide-sm{ display:none }

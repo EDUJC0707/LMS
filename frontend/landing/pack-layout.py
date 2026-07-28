@@ -58,8 +58,8 @@ JITTER = 0.0
 # 텍스트 뒤는 지나가도 된다(사용자 지시 2026-07-28) — 톤 위계가 잡혀 있어
 # 배경(피크 휘도 68)이 헤드라인(110)보다 어둡기 때문이다. 대신 강사는 금지다.
 TEACHER = HERE / "assets" / "teacher" / "nobg" / "02-검정티-턱손.webp"
-TEACHER_H = 0.36 if MOBILE else 0.73      # index.html .teacher height
-TEACHER_RIGHT = -0.14 if MOBILE else 0.09  # index.html .teacher right
+TEACHER_H = 0.40 if MOBILE else 0.80      # index.html .teacher height
+TEACHER_RIGHT = -0.12 if MOBILE else 0.05  # index.html .teacher right
 TEACHER_PAD = 26          # 인물 실루엣 주변 여유(px)
 
 GW, GH = VW // CELL, VH // CELL
@@ -101,7 +101,7 @@ def forbidden():
     # 인물의 세로 구간만 막았더니 모바일에서 상단 우측이 열려 모티프가 인물 위쪽
     # 공중에 떴다. 세로를 나누지 않고 한 줄로 자른다 — 경계가 명확해야 한다.
     ti = Image.open(TEACHER)
-    th = min(TEACHER_H * VH, 742)
+    th = min(TEACHER_H * VH, 820)
     tw = th * ti.width / ti.height
     left = VW - TEACHER_RIGHT * VW - tw - TEACHER_PAD
     f[:, max(0, int(left // CELL)):] = True
