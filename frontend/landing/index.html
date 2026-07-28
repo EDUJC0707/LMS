@@ -89,6 +89,12 @@
      아니라 개체별 스칼라로 옮겨 화면에 남는 경계선을 모티프 실루엣뿐으로 만든다.
      피크 렌더휘도 68 < 헤드라인 110 — 배경이 전경보다 어두워야 위계가 선다. */
   .field{ position:absolute; inset:0; z-index:0; overflow:hidden; contain:paint }
+  /* 판 검수 모드(?bare) — 판과 강사만 남긴다 */
+  [data-bare] .nav, [data-bare] .copy, [data-bare] section,
+  [data-bare] footer, [data-bare] .dust{ display:none !important }
+  [data-bare] .hero{ min-height:100svh; padding-top:0 }
+  [data-bare] body{ overflow:hidden }
+
   /* 아래에서 위로: 모티프 → 먼지. 먼지가 맨 위인 이유는 덮개이기 때문이다 */
   .motifs, .dust{ position:absolute; inset:0; pointer-events:none; display:block }
   .dust{ mix-blend-mode:screen }   /* 검정 위에서 먼지가 빛으로 읽힌다 */
@@ -342,9 +348,17 @@ import { UNITS, CURRICULUM, ERRATA } from './data.js';
 import { mountField, mountNavDust } from './field.js';
 import { openChat } from './chat.js';
 
-/* 히어로 — 숨은 6개 */
-mountField(document.getElementById('field'), UNITS);
-mountNavDust(document.querySelector('.nav'));
+/* 판 검수 모드 — index.html?bare
+   모티프 10개를 전부 100% 로 깔고 강사만 남긴다. 배치가 겹치는지 균형이 맞는지
+   눈으로 보기 위한 것이고, **별도 페이지를 만들지 않는다** — 판이 두 군데 있으면
+   반드시 한쪽만 고치는 날이 온다(tune.html 을 접은 이유). field.js 가 이미 굽는
+   ink 캔버스를 그대로 쓰므로 LAYOUT 을 고치면 여기도 자동으로 따라온다. */
+const BARE = new URLSearchParams(location.search).has('bare');
+if (BARE) document.documentElement.dataset.bare = '';
+
+/* 히어로 */
+mountField(document.getElementById('field'), UNITS, { bare: BARE });
+if (!BARE) mountNavDust(document.querySelector('.nav'));
 
 /* 디버그 패널 — ⌘⌥D(맥) / Ctrl+Alt+D. 누르기 전에는 debug.js 를 내려받지도 않는다.
    code 로 본다(key 가 아니라) — ⌥ 조합에서 macOS 는 key 를 '∂' 로 바꿔 준다. */
@@ -433,7 +447,7 @@ if (!ERRATA.length) {
 
 /* 채널톡 */
 document.querySelectorAll('[data-chat]').forEach(b =>
-  b.addEventListener('click', () => openChat(b.dataset.chat)));
+  b.addEventListener('click', () => (BARE ? (()=>{}) : openChat)(b.dataset.chat)));
 </script>
 </body>
 </html>

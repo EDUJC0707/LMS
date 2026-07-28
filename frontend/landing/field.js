@@ -115,7 +115,11 @@ const isSmall = () => matchMedia('(max-width: 860px)').matches;
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
 
-export function mountField(root, units) {
+export function mountField(root, units, opts) {
+  /* 판 검수 모드 — 빛도 먼지도 없이 잉크를 통째로 깐다(index.html?bare).
+     따로 그리지 않고 **이미 굽는 ink 캔버스를 그대로** 쓴다. 그래서 LAYOUT 을
+     고치면 검수 화면도 자동으로 따라온다 — 판이 두 군데 있을 수가 없다. */
+  const BARE = !!(opts && opts.bare);
   const GLOW = readGlow();
   const [GR, GG, GB] = rgb(GLOW);
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -162,7 +166,7 @@ export function mountField(root, units) {
       tw: rand(.25, .8), tph: rand(0, 6.28),     // 반짝임 속도·위상
     };
   });
-  let dust = makeDust(CFG.dust);
+  let dust = BARE ? [] : makeDust(CFG.dust);
   const bucket = Array.from({ length: CFG.buckets }, () => []);
 
   let W = 0, H = 0, R = 100;
@@ -190,6 +194,35 @@ export function mountField(root, units) {
     });
     ictx.filter = 'none';
     baked = true;
+    if (BARE) drawBare();
+  };
+
+  /* 판 그대로 + 강사 왼쪽 금지선. 선은 강사 실루엣이 아니라 **패커가 쓰는 경계**를
+     그린다(실루엣에서 TEACHER_PAD 만큼 더 왼쪽) — 왜 오른쪽이 비었는지가 그 선으로
+     읽혀야 한다. */
+  const TEACHER_PAD = 26;
+  const drawBare = () => {
+    if (!baked) return;
+    lctx.setTransform(1, 0, 0, 1, 0, 0);
+    lctx.globalCompositeOperation = 'source-over';
+    lctx.globalAlpha = 1;
+    lctx.clearRect(0, 0, W, H);
+    lctx.drawImage(ink, 0, 0);
+
+    const t = document.querySelector('.teacher');
+    if (!t) return;
+    const x = Math.round(t.getBoundingClientRect().left - root.getBoundingClientRect().left) - TEACHER_PAD;
+    if (x <= 0 || x >= W) return;
+    lctx.save();
+    lctx.strokeStyle = GLOW;
+    lctx.globalAlpha = .35;
+    lctx.lineWidth = 1;
+    lctx.setLineDash([6, 6]);
+    lctx.beginPath();
+    lctx.moveTo(x + .5, 0);
+    lctx.lineTo(x + .5, H);
+    lctx.stroke();
+    lctx.restore();
   };
 
   const fit = () => {
@@ -221,6 +254,7 @@ export function mountField(root, units) {
 
     for (const p of dust) { p.hx = p.u * W; p.hy = p.v * H; p.x = p.hx; p.y = p.hy; }
     bake();
+    if (BARE) drawBare();
   };
 
   /* 이미지는 다 받은 뒤에 굽는다. 반쯤 받은 상태로 구우면 빈 캔버스가 남고,
@@ -427,7 +461,12 @@ export function mountField(root, units) {
     refit() { fit(); statics.forEach(f => f()); },
   };
 
-  if (reduce) {
+  if (BARE) {
+    // 애니메이션이 없다. 강사 이미지가 늦게 오면 금지선 자리가 바뀌므로 그때 다시 깐다
+    const t = document.querySelector('.teacher');
+    if (t && !t.complete) t.addEventListener('load', drawBare, { once: true });
+    drawBare();
+  } else if (reduce) {
     /* 움직임만 없다. 구도는 완성돼 보여야 한다.
        밭이 비어 있으면 검은 화면만 남으므로, 자율 위치에 빛을 한 번 충분히 발라
        한 프레임으로 구도를 만든다. */
