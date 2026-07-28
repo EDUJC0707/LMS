@@ -142,14 +142,14 @@
   .wrap{ max-width:60rem; margin:0 auto }
 
   /* 커리큘럼 — 밝음 */
-  #curriculum{ background:#F4F2ED; color:#16181C; --dim:#6A6F78; --line:rgba(0,0,0,.10) }
+  #curriculum{ background:#F4F2ED; color:#14151C; --dim:#666B7A; --line:rgba(20,21,28,.12) }
   .tracks{ display:flex; gap:8px; margin-bottom:2.4rem; flex-wrap:wrap }
   .track{
     padding:.6rem 1.15rem; border-radius:999px; border:1px solid var(--line);
     font-size:.9rem; font-weight:600; color:var(--dim); cursor:pointer;
     background:transparent; font-family:inherit;
   }
-  .track[aria-selected="true"]{ background:#16181C; color:#fff; border-color:#16181C }
+  .track[aria-selected="true"]{ background:#14151C; color:#fff; border-color:#14151C }
   .steps{ display:grid; gap:12px }
   .step{
     display:grid; grid-template-columns:9.5rem 1fr; gap:1.4rem;
@@ -162,7 +162,7 @@
   .badge{
     display:inline-block; margin-left:.5rem; padding:.15rem .5rem; border-radius:5px;
     font-size:.7rem; font-weight:700; letter-spacing:.02em;
-    background:#16181C; color:#fff; vertical-align:.12em;
+    background:#14151C; color:#fff; vertical-align:.12em;
   }
   .units{ display:flex; flex-wrap:wrap; gap:6px; margin-top:.75rem }
   .unit{
@@ -177,7 +177,7 @@
   .note{ margin-top:2.4rem; font-size:.82rem; color:var(--dim); line-height:1.6 }
 
   /* 정오표 — 중간톤 */
-  #errata{ background:#1C1E23; color:#E8EAEE; --dim:#8F949E; --line:rgba(255,255,255,.12) }
+  #errata{ background:#15161F; color:#E7E8F0; --dim:#8A8DA8; --line:rgba(120,126,215,.22) }
   .tbl{ width:100%; border-collapse:collapse; font-size:.92rem }
   .tbl th{
     text-align:left; font-size:.78rem; font-weight:600; letter-spacing:.03em;
@@ -208,11 +208,10 @@
   .empty{ padding:2.5rem 0; color:var(--dim); font-size:.95rem }
   .report{
     margin-top:2.6rem; padding-top:2rem; border-top:1px solid var(--line);
-    display:flex; justify-content:space-between; align-items:center; gap:1.5rem; flex-wrap:wrap;
+    display:flex; justify-content:flex-end;
   }
-  .report p{ color:var(--dim); font-size:.92rem; line-height:1.6 }
   .btn{
-    padding:.7rem 1.4rem; border-radius:999px; background:#E8EAEE; color:#1C1E23;
+    padding:.7rem 1.4rem; border-radius:999px; background:#E7E8F0; color:#15161F;
     font-size:.88rem; font-weight:700; white-space:nowrap; border:0; cursor:pointer;
     font-family:inherit;
   }
@@ -311,12 +310,10 @@
   <div class="wrap">
     <div class="sec-head">
       <h2>교재 정오표</h2>
-      <p>교재에서 확인된 오류는 전부 여기 올립니다.</p>
       <span class="stamp" id="errata-stamp"></span>
     </div>
     <div id="errata-body"></div>
     <div class="report">
-      <p>여기 없는 오류를 발견하셨나요?<br>알려주시면 확인 후 반영하고, 반영일을 이 표에 남깁니다.</p>
       <button class="btn" data-chat="정오표 제보">제보하기</button>
     </div>
   </div>
@@ -326,7 +323,6 @@
   <div class="wrap">
     <div class="sec-head" style="text-align:center">
       <h2>문의</h2>
-      <p>수업·교재·상담 무엇이든 편하게 물어보세요.</p>
     </div>
     <button class="ch" data-chat="상담 문의">상담 문의하기</button>
   </div>
@@ -370,7 +366,7 @@ const body = document.getElementById('errata-body');
 const stamp = document.getElementById('errata-stamp');
 
 if (!ERRATA.length) {
-  body.innerHTML = `<p class="empty">현재 확인된 정정 사항이 없습니다. 발견하시면 알려주세요.</p>`;
+  body.innerHTML = `<p class="empty">현재 확인된 정정 사항이 없습니다.</p>`;
 } else {
   const sorted = [...ERRATA].sort((a, b) => b.updated.localeCompare(a.updated));
   const total = sorted.reduce((n, b) => n + b.items.length, 0);
