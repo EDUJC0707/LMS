@@ -1,117 +1,187 @@
 /**
- * 히어로 배경에 숨은 통합과학 개념들.
+ * 히어로 배경 — 장막.
  *
- * 평상시 완전히 보이지 않는다 — 힌트도 흔적도 깔지 않는다. 방문자가 화면을
- * 만져본다는 전제이고, "여기 뭐가 있어요" 하는 안내를 두는 순간 발견이 아니게 된다.
- * 그래서 뜨는 것도 에셋 하나뿐이다. 라벨·툴팁·설명을 붙이지 않는다.
+ * 화면 전체에 통합과학 개념들이 **거대하게** 깔려 있지만 평상시엔 보이지 않는다.
+ * 커서(또는 손가락) 주변 반경만 장막이 걷히듯 드러난다.
+ *
+ * 개별 아이콘을 하나씩 켜는 방식이 아니다 — 레이어 하나에 전부 그려두고
+ * 방사형 마스크를 포인터에 붙여 그 안쪽만 보이게 한다. 그래서 두 개가 걸치면
+ * 둘 다 부분적으로 드러나고, 큰 것 하나면 그 조각만 드러난다.
+ *
+ * 점(dots)은 마스크 밖에도 항상 있다. 아무것도 없는 검은 화면이면 만질 이유가
+ * 없는데, 점이 미세하게 살아 움직이면 "여기 뭔가 있다"가 안내 문구 없이 전달된다.
  */
 
-/* 텍스트·강사 사진을 피해 흩어놓는다. 값은 히어로 기준 %.
-   실측한 금지 구역 (1440×900 기준) —
-   ① 헤드라인 x 5~50% · y 42~67%. 900 weight 로 키운 뒤 폭이 50%까지 왔다
-   ② 강사 x 73%~ 전 높이
-   중단 띠(y 42~67%)에서 남는 폭은 **x 52~71%** 뿐이다. 거기 하나만 넣는다.
+const R = {
+  reveal: 300,      // 장막이 걷히는 반경(px)
+  feather: 0.55,    // 가장자리가 풀어지는 비율 — 1에 가까울수록 부드럽다
+  dots: 190,
+  dotGlow: 260,     // 포인터 주변에서 점이 밝아지는 반경
+};
 
-   9개라 6개보다 촘촘하므로 크기를 줄이고, 상단·중단·하단 세 줄로 나눈다. */
+/* 거대한 배치. 값은 히어로 기준 %(중심점)와 vw(크기).
+   겹쳐도 된다 — 마스크가 어차피 일부만 드러내므로 오히려 층이 생긴다.
+   nav(상단 64px)를 피해 y는 18% 아래에서 시작한다. */
 const LAYOUT = [
-  { x: 13, y: 16, size: 16 },   // ─ 상단 (헤드라인 위)
-  { x: 31, y: 27, size: 13 },
-  { x: 49, y: 13, size: 15 },
-  { x: 65, y: 25, size: 14 },
-  { x: 61, y: 47, size: 15 },   // ─ 중단 — 헤드라인과 강사 사이 좁은 틈
-  { x: 11, y: 80, size: 15 },   // ─ 하단 (헤드라인 아래)
-  { x: 29, y: 89, size: 13 },
-  { x: 47, y: 79, size: 15 },
-  { x: 63, y: 88, size: 13 },
+  { x: 18, y: 46, size: 46 },
+  { x: 44, y: 30, size: 38 },
+  { x: 70, y: 44, size: 52 },
+  { x: 33, y: 74, size: 44 },
+  { x: 58, y: 84, size: 40 },
+  { x: 86, y: 70, size: 46 },
+  { x: 8, y: 86, size: 36 },
+  { x: 92, y: 28, size: 34 },
+  { x: 52, y: 56, size: 30 },
 ];
 
-/* 모바일은 헤드라인이 화면 한가운데에 오고(1단 배치) 강사가 우하단을 먹는다.
-   그래서 세로로 비는 구간은 상단 8~30%와 중하단 55~72% 둘뿐이다.
-   그 두 띠에만 놓는다 — 데스크탑 좌표를 그대로 쓰면 글자를 정면으로 덮는다. */
 const LAYOUT_SM = [
-  { x: 18, y: 9, size: 22 },    // ─ 상단 띠 (헤드라인 위)
-  { x: 48, y: 15, size: 19 },
-  { x: 78, y: 8, size: 21 },
-  { x: 86, y: 27, size: 18 },
-  { x: 14, y: 25, size: 19 },
-  { x: 15, y: 58, size: 21 },   // ─ 중하단 띠 (헤드라인 아래, 강사 위)
-  { x: 42, y: 65, size: 22 },
-  { x: 20, y: 82, size: 19 },   // 우하단은 강사 머리라 비운다
-  { x: 47, y: 87, size: 17 },
+  { x: 22, y: 24, size: 74 },
+  { x: 72, y: 18, size: 62 },
+  { x: 16, y: 52, size: 66 },
+  { x: 76, y: 48, size: 70 },
+  { x: 30, y: 78, size: 72 },
+  { x: 82, y: 80, size: 58 },
+  { x: 50, y: 36, size: 54 },
+  { x: 50, y: 94, size: 60 },
+  { x: 6, y: 68, size: 50 },
 ];
 
 const isSmall = () => matchMedia('(max-width: 860px)').matches;
+const rand = (a, b) => a + Math.random() * (b - a);
 
 export function mountField(root, units) {
-  const spots = units.slice(0, LAYOUT.length).map((u, i) => {
-    const el = document.createElement('div');
-    el.className = 'spot';
-    el.dataset.i = String(i);
+  /* ── 레이어 1: 점 — 마스크 밖에도 항상 보인다 ───────────────── */
+  const canvas = document.createElement('canvas');
+  canvas.className = 'dots';
+  root.append(canvas);
+  const ctx = canvas.getContext('2d');
 
+  let dots = [];
+  const seedDots = (w, h) => {
+    dots = Array.from({ length: R.dots }, () => ({
+      x: Math.random() * w,
+      y: Math.random() * h,
+      r: rand(0.5, 1.5),
+      base: rand(0.06, 0.26),      // 평상시 밝기
+      drift: rand(0.15, 0.5),      // 아주 느리게 떠다닌다
+      dir: Math.random() * Math.PI * 2,
+    }));
+  };
+
+  /* ── 레이어 2: 모티프 — 마스크가 걷히는 만큼만 보인다 ────────── */
+  const veil = document.createElement('div');
+  veil.className = 'veil';
+  root.append(veil);
+
+  units.slice(0, LAYOUT.length).forEach((u, i) => {
+    const el = document.createElement('div');
+    el.className = 'big';
+    el.dataset.i = String(i);
     const img = document.createElement('img');
     img.src = u.asset;
     img.alt = '';
     img.decoding = 'async';
-    // 지금 안 보이지만 만졌을 때 바로 떠야 한다. 늦게 로드되면 발견이 김샌다.
-    img.loading = 'eager';
+    img.loading = 'eager';   // 만졌을 때 바로 있어야 한다
     el.append(img);
-    root.append(el);
-    return el;
+    veil.append(el);
   });
+  const bigs = [...veil.children];
 
   const place = () => {
     const L = isSmall() ? LAYOUT_SM : LAYOUT;
-    spots.forEach((el, i) => {
+    bigs.forEach((el, i) => {
       const p = L[i];
       el.style.left = p.x + '%';
       el.style.top = p.y + '%';
       el.style.setProperty('--size', p.size + 'vw');
     });
   };
-  place();
-  addEventListener('resize', place);
 
-  /* spot에 직접 hover를 걸 수 없다 — 투명한 요소라 판정이 좁고, 큰 히트박스를 깔면
-     텍스트·로그인 버튼을 덮는다. 그래서 히어로 전체의 포인터 위치로 거리를 잰다.
+  const fit = () => {
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const r = root.getBoundingClientRect();
+    canvas.width = Math.round(r.width * dpr);
+    canvas.height = Math.round(r.height * dpr);
+    canvas.style.width = r.width + 'px';
+    canvas.style.height = r.height + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    seedDots(r.width, r.height);
+    place();
+  };
+  fit();
+  addEventListener('resize', fit);
 
-     입력 방식은 마운트 시점의 미디어쿼리가 아니라 **이벤트마다 pointerType으로**
-     가른다. `(hover: hover)`는 터치 겸용 노트북에서도 참이라, 한 번 분기해두면
-     그런 기기에서 탭이 죽는다. */
-  const hero = root.parentElement;
-  const nearest = (x, y, slack) => {
-    let hit = null, best = Infinity;
-    for (const el of spots) {
-      const r = el.getBoundingClientRect();
-      const d = Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2));
-      const reach = Math.max(slack, r.width * 0.62);
-      if (d < reach && d < best) { best = d; hit = el; }
+  /* ── 포인터 ─────────────────────────────────────────────────
+     마스크 중심은 CSS 변수로만 넘긴다. 매 프레임 DOM 을 만들거나 지우지 않는다. */
+  let px = -9999, py = -9999;   // 화면 밖에서 시작 = 아무것도 안 보임
+  let tx = px, ty = py;         // 뒤따라오는 값 — 커서에 살짝 늦게 붙어 부드럽다
+  let active = false;
+
+  const setVeil = (x, y, on) => {
+    veil.style.setProperty('--mx', x + 'px');
+    veil.style.setProperty('--my', y + 'px');
+    veil.style.setProperty('--r', (on ? R.reveal : 0) + 'px');
+  };
+
+  let t = 0;
+  const frame = () => {
+    t += 0.006;
+    tx += (px - tx) * 0.16;
+    ty += (py - ty) * 0.16;
+    setVeil(tx, ty, active);
+
+    const { width: w, height: h } = canvas.getBoundingClientRect();
+    ctx.clearRect(0, 0, w, h);
+    for (const d of dots) {
+      // 아주 느린 부유 — 정지해 있으면 죽은 화면으로 보인다
+      d.x += Math.cos(d.dir + t) * d.drift * 0.14;
+      d.y += Math.sin(d.dir + t * 0.8) * d.drift * 0.14;
+      if (d.x < -4) d.x = w + 4; else if (d.x > w + 4) d.x = -4;
+      if (d.y < -4) d.y = h + 4; else if (d.y > h + 4) d.y = -4;
+
+      let a = d.base;
+      if (active) {
+        const dist = Math.hypot(tx - d.x, ty - d.y);
+        if (dist < R.dotGlow) a += (1 - dist / R.dotGlow) * 0.75;
+      }
+      ctx.globalAlpha = Math.min(a, 1);
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+      ctx.fill();
     }
-    return hit;
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+
+  const hero = root.parentElement;
+  const toLocal = e => {
+    const r = root.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
   };
 
-  /* 커서 — 가까이 가면 뜨고 멀어지면 꺼진다 */
-  let raf = 0, mx = 0, my = 0;
-  const paint = () => {
-    raf = 0;
-    const hit = nearest(mx, my, 150);
-    spots.forEach(el => el.classList.toggle('on', el === hit));
-  };
   hero.addEventListener('pointermove', e => {
-    if (e.pointerType === 'touch') return;      // 탭 뒤에 따라오는 합성 이동 무시
-    mx = e.clientX; my = e.clientY;
-    if (!raf) raf = requestAnimationFrame(paint);
+    if (e.pointerType === 'touch') return;
+    [px, py] = toLocal(e);
+    if (!active) { tx = px; ty = py; active = true; }   // 첫 진입은 순간이동
   });
   hero.addEventListener('pointerleave', e => {
     if (e.pointerType === 'touch') return;
-    spots.forEach(el => el.classList.remove('on'));
+    active = false;
   });
 
-  /* 터치 — 탭하면 켜지고 한 번 더 탭하면 꺼진다.
-     커서처럼 머무는 게 없으므로 스스로 사라지지 않게 두고, 빈 곳을 탭하면 전부 닫는다. */
-  hero.addEventListener('pointerdown', e => {
+  /* 터치 — 손가락을 따라 걷히고, 떼면 잠시 머물다 닫힌다 */
+  let hold = 0;
+  const touch = e => {
+    [px, py] = toLocal(e);
+    if (!active) { tx = px; ty = py; active = true; }
+    clearTimeout(hold);
+  };
+  hero.addEventListener('pointerdown', e => { if (e.pointerType === 'touch') touch(e); }, { passive: true });
+  hero.addEventListener('pointermove', e => { if (e.pointerType === 'touch') touch(e); }, { passive: true });
+  hero.addEventListener('pointerup', e => {
     if (e.pointerType !== 'touch') return;
-    const hit = nearest(e.clientX, e.clientY, 120);
-    if (hit) hit.classList.toggle('on');
-    else spots.forEach(el => el.classList.remove('on'));
+    hold = setTimeout(() => { active = false; }, 900);
   }, { passive: true });
 }
