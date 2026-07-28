@@ -1,0 +1,161 @@
+/* 기본 요소 스타일 — 토큰만 참조한다. 하드코딩 값 금지. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  overflow-x: clip; /* 가로 스크롤 차단(hidden 아님 — sticky 유지) */
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  background: var(--color-paper-2);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  font-weight: var(--weight-light);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  word-break: keep-all; /* 한국어 어절 단위 줄바꿈 */
+  overflow-wrap: anywhere;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-style: normal; /* 제목은 항상 로만 — 이탤릭 제목 금지 */
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+}
+
+h3,
+h4 {
+  letter-spacing: var(--tracking-snug);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+ul,
+ol {
+  list-style: none;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+/* 숫자가 세로로 정렬돼야 하는 곳 — 점수·출결·금액·시각 */
+.num,
+td.num,
+th.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* 포커스: 즉시 나타난다(절대 트랜지션 걸지 않는다) */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* 어두운 네이비 표면 위에서는 밝은 링으로 뒤집는다 */
+.on-navy :focus-visible {
+  outline-color: var(--color-focus-inverse);
+}
+
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-ink);
+}
+
+::placeholder {
+  color: var(--color-neutral);
+}
+
+/* 스크린리더 전용 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* 페이지 진입 시 단 하나의 오케스트레이션된 등장.
+   개별 카드마다 스크롤 페이드인 금지 — 한 번만, 페이지 단위로. */
+@keyframes ui-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 120ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 120ms !important;
+    scroll-behavior: auto !important;
+  }
+}

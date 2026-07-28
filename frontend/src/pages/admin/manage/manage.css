@@ -1,0 +1,516 @@
+/* Hallmark · scope: in-app admin console (system-managed project)
+ * genre: modern-minimal · theme: locked (src/styles/tokens.css — navy 250)
+ * macrostructure/nav/footer: N/A — 셸·레일·토큰이 이미 확정돼 있어 page-scope
+ *   구조 선택은 적용되지 않는다. 적용한 규율: 잠긴 토큰(리터럴 색 0개)·
+ *   8-state 인터랙션·정직한 카피(서버 수치만)·이탤릭 제목 금지·재현 크롬 금지.
+ * pre-emit critique: P5 H5 E4 S5 R5 V4
+ *
+ * 관리자 · 관리 화면 전용 스타일. 색은 전부 var(--color-*) 로만 쓴다.
+ * 이 파일은 해당 페이지들에서만 import 한다(src/index.css 에 넣지 않는다).
+ */
+
+/* ═══ 공통 · 툴바 ═══════════════════════════════════════════════════ */
+
+/* 필터·검색 줄. 카드 헤더 아래 첫 요소로 쓴다. */
+.pm-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-md);
+}
+
+/* 툴바 안의 Field 는 도움말 자리를 빼고 폭만 잡는다. */
+.pm-toolbar .ui-field {
+  min-width: 0;
+  width: 12rem;
+}
+
+.pm-toolbar .ui-field__help:empty {
+  display: none;
+}
+
+/* 회차처럼 값이 긴 선택 상자 — 감싼 칸을 넓히고 안의 Field 가 꽉 채운다. */
+.pm-toolbar__wide {
+  width: 19rem;
+  max-width: 100%;
+}
+
+.pm-toolbar .pm-toolbar__wide .ui-field {
+  width: 100%;
+}
+
+/* 툴바 오른쪽 끝으로 밀어내는 스페이서 대용 */
+.pm-toolbar__end {
+  margin-left: auto;
+}
+
+/* 라벨 없이 값만 늘어놓는 메타 줄 */
+.pm-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-md);
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+}
+
+.pm-meta b {
+  color: var(--color-ink-2);
+  font-weight: var(--weight-semibold);
+}
+
+/* 읽는 영역과 처리 영역을 가르는 선 — 실수로 누르는 일을 줄인다. */
+.pm-actionblock {
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-rule-2);
+}
+
+/* 정의 목록 — 상세 패널의 항목/값 나열 */
+.pm-defs {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  gap: var(--space-xs) var(--space-md);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.pm-defs dt {
+  color: var(--color-muted);
+}
+
+.pm-defs dd {
+  margin: 0;
+  color: var(--color-ink);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 통계 한 줄 — 서버가 준 수치만 싣는다(만들어낸 지표 없음) */
+.pm-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: var(--space-md);
+  margin: 0;
+}
+
+.pm-stats > div {
+  min-width: 0;
+}
+
+.pm-stats dt {
+  margin: 0 0 var(--space-2xs);
+  color: var(--color-muted);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.pm-stats dd {
+  margin: 0;
+  color: var(--color-ink);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+}
+
+/* ═══ 권한 매트릭스 ═════════════════════════════════════════════════ */
+
+/* 행=기능(12개 고정) · 열=직원. 직원 수는 늘어도 열 스크롤로 흡수된다. */
+.pm-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.pm-matrix th,
+.pm-matrix td {
+  border-bottom: 1px solid var(--color-rule-2);
+  padding: var(--space-xs) var(--space-sm);
+  text-align: left;
+  vertical-align: top;
+}
+
+.pm-matrix tbody tr:last-child th,
+.pm-matrix tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* 기능 이름 열 — 가로 스크롤 시 고정 */
+.pm-matrix__feature {
+  position: sticky;
+  left: 0;
+  z-index: var(--z-base);
+  background: var(--color-paper);
+  min-width: 15rem;
+  border-right: 1px solid var(--color-rule);
+}
+
+.pm-matrix__feature b {
+  display: block;
+  color: var(--color-ink);
+  font-weight: var(--weight-semibold);
+}
+
+.pm-matrix__feature span {
+  display: block;
+  margin-top: var(--space-3xs);
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+}
+
+/* 직원 열 머리 — 이름·역할·저장 버튼이 한 덩어리 */
+.pm-matrix thead th {
+  background: var(--color-paper-3);
+  border-bottom: 1px solid var(--color-rule);
+  vertical-align: bottom;
+}
+
+.pm-matrix thead .pm-matrix__feature {
+  background: var(--color-paper-3);
+}
+
+.pm-staffhead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  min-width: 11rem;
+}
+
+.pm-staffhead__name {
+  color: var(--color-ink);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-snug);
+}
+
+.pm-staffhead__id {
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-normal);
+}
+
+.pm-staffhead__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+  min-height: var(--control-height-sm);
+  align-items: center;
+}
+
+/* ── 권한 칩(토글) — 프리셋·개별 부여·개별 회수 3축이 눈으로 갈린다 ── */
+
+.pm-grant {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  width: 100%;
+  min-height: var(--control-height-sm);
+  padding: var(--space-2xs) var(--space-xs);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-sm);
+  background: var(--color-paper);
+  color: var(--color-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out),
+    color var(--dur-micro) var(--ease-out);
+}
+
+.pm-grant__mark {
+  flex: none;
+  width: 1rem;
+  text-align: center;
+  font-weight: var(--weight-semibold);
+}
+
+/* 프리셋으로 켜진 것 — 역할을 주면 자동으로 따라오는 기본값 */
+.pm-grant[data-origin="preset"] {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent-soft);
+  color: var(--color-navy-700);
+}
+
+/* 개별로 더 준 것 — 프리셋 밖이므로 테두리를 세워 구분한다 */
+.pm-grant[data-origin="added"] {
+  background: var(--color-accent-faint);
+  border-color: var(--color-accent);
+  color: var(--color-navy-700);
+  font-weight: var(--weight-medium);
+}
+
+/* 개별로 회수한 것 — 프리셋엔 있는데 꺼 둔 상태 */
+.pm-grant[data-origin="removed"] {
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+/* 프리셋에도 없고 주지도 않은 자리 */
+.pm-grant[data-origin="none"] {
+  background: var(--color-paper);
+  border-style: dashed;
+}
+
+/* 저장 전 — 점선 링으로 "아직 서버에 없다"를 알린다 */
+.pm-grant[data-changed="true"] {
+  box-shadow: 0 0 0 2px var(--color-warning);
+}
+
+.pm-grant:active {
+  transform: translateY(1px);
+}
+
+.pm-grant:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@media (hover: hover) {
+  .pm-grant:not(:disabled):hover {
+    border-color: var(--color-accent);
+  }
+}
+
+/* 범례 — 매트릭스를 읽는 법 */
+.pm-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-md);
+  align-items: center;
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.pm-legend .pm-grant {
+  width: auto;
+  min-height: auto;
+  pointer-events: none;
+}
+
+/* ═══ 워크벤치(왼쪽 목록 · 오른쪽 처리) ═════════════════════════════ */
+
+.pm-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: var(--space-lg);
+  align-items: start;
+}
+
+/* 오른쪽 처리 패널은 스크롤을 따라온다(1280+ 기준) */
+.pm-split__side {
+  position: sticky;
+  top: var(--space-md);
+  min-width: 0;
+}
+
+@media (max-width: 1099px) {
+  .pm-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pm-split__side {
+    position: static;
+  }
+}
+
+/* ═══ 계정 발급 · 명단 입력 격자 ════════════════════════════════════ */
+
+.pm-entry {
+  display: grid;
+  /* 이름 · 학생 휴대폰 · 학부모 휴대폰 · 원번 · 학년 · 학교 · 삭제 */
+  grid-template-columns:
+    minmax(6rem, 0.9fr) minmax(8rem, 1.1fr) minmax(8rem, 1.1fr)
+    minmax(5rem, 0.7fr) minmax(4.5rem, 0.6fr) minmax(6rem, 0.9fr) auto;
+  gap: var(--space-xs);
+  align-items: center;
+}
+
+.pm-entry__head {
+  color: var(--color-muted);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+@media (max-width: 899px) {
+  .pm-entry {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .pm-entry__head {
+    display: none;
+  }
+}
+
+/* 초기 비밀번호 — 등폭으로 붙여 읽기 쉽게 */
+.pm-secret {
+  display: inline-block;
+  padding: var(--space-3xs) var(--space-2xs);
+  border-radius: var(--radius-xs);
+  background: var(--color-paper-3);
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
+}
+
+/* ═══ 워크북 매칭 보드 ══════════════════════════════════════════════ */
+
+.pm-wbgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
+  gap: var(--space-md);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pm-wbitem {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-md);
+  background: var(--color-paper);
+  overflow: hidden;
+}
+
+/* 보정이 필요한 건은 테두리로 먼저 눈에 띈다 */
+.pm-wbitem[data-attention="true"] {
+  border-color: var(--color-warning);
+}
+
+/* 높이를 고정한다 — 워크북 사진은 비율이 제각각이라 aspect-ratio 로는
+   카드 높이가 들쭉날쭉해지고, 격자에서 이름 줄이 안 맞는다. */
+.pm-wbthumb {
+  display: block;
+  width: 100%;
+  height: 9.5rem;
+  border: 0;
+  border-bottom: 1px solid var(--color-rule-2);
+  padding: 0;
+  background: var(--color-paper-3);
+  cursor: pointer;
+}
+
+.pm-wbthumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.pm-wbbody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm);
+  min-width: 0;
+}
+
+.pm-wbname {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2xs) var(--space-xs);
+  margin: 0;
+  color: var(--color-ink);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+}
+
+.pm-wbname small {
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-normal);
+}
+
+/* 업로드 드롭 존 */
+.pm-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  min-height: 9rem;
+  padding: var(--space-lg);
+  border: 1px dashed var(--color-rule);
+  border-radius: var(--radius-md);
+  background: var(--color-paper-2);
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  text-align: center;
+  transition:
+    border-color var(--dur-short) var(--ease-out),
+    background var(--dur-short) var(--ease-out);
+}
+
+.pm-drop[data-over="true"] {
+  border-color: var(--color-accent);
+  background: var(--color-accent-faint);
+  color: var(--color-navy-700);
+}
+
+/* 파일 입력은 시각적으로 숨기므로 포커스 링을 라벨이 대신 받는다. */
+.pm-drop:focus-within {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.pm-drop b {
+  color: var(--color-ink);
+  font-weight: var(--weight-semibold);
+}
+
+/* 업로드 대기 중인 파일 미리보기 */
+.pm-queue {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pm-queue li {
+  position: relative;
+  width: 5.5rem;
+}
+
+.pm-queue img {
+  width: 5.5rem;
+  height: 5.5rem;
+  object-fit: cover;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-sm);
+  display: block;
+}
+
+.pm-queue figcaption {
+  margin-top: var(--space-3xs);
+  color: var(--color-muted);
+  font-size: var(--text-2xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ═══ 문항 분석 ═════════════════════════════════════════════════════ */
+
+/* 단원 라벨 — 대단원 > 소단원 */
+.pm-unit {
+  display: block;
+  color: var(--color-ink-2);
+}
+
+.pm-unit small {
+  display: block;
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+}

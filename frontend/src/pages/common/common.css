@@ -1,0 +1,282 @@
+/* Hallmark · scope: page(common) · genre: modern-minimal · theme: locked(app-system)
+ * 공통 화면(게시판·알림·없는 주소) 전용 스타일. 토큰 밖의 색·크기·폰트를
+ * 새로 만들지 않는다 — 전부 var(--…) 참조.
+ * hover 는 @media (hover: hover) 안에만 두고, 모든 동작에 탭·포커스 대안이 있다.
+ * pre-emit critique: P5 H5 E4 S5 R5 V4
+ */
+
+/* ── 카드 안쪽 목록이 카드 모서리를 넘지 않게 ─────────────────────────── */
+.cm-clip {
+  overflow: hidden;
+}
+
+/* ── 게시글 목록(공지·질답·정오표·이벤트) ────────────────────────────── */
+.cm-list > li + li {
+  border-top: 1px solid var(--color-rule-2);
+}
+
+.cm-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2xs) var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  color: var(--color-ink);
+  text-decoration: none;
+  transition: background-color var(--dur-micro) var(--ease-out);
+}
+
+a.cm-row:hover {
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  a.cm-row:hover {
+    background: var(--color-paper-2);
+  }
+
+  a.cm-row:hover .cm-row__title {
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+}
+
+a.cm-row:active {
+  background: var(--color-paper-3);
+}
+
+/* 열 수 없는 비밀글 — 링크가 아니라 잠긴 줄이다(404 로 보내지 않는다) */
+.cm-row--locked {
+  color: var(--color-muted);
+  cursor: default;
+}
+
+.cm-row__main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-xs);
+  min-width: 0;
+  flex: 1 1 18rem;
+}
+
+.cm-row__title {
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-snug);
+  min-width: 0;
+}
+
+.cm-row--locked .cm-row__title {
+  font-weight: var(--weight-light);
+}
+
+.cm-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-xs);
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.cm-row__count {
+  font-weight: var(--weight-medium);
+  color: var(--color-ink-2);
+}
+
+/* ── 자유게시판 피드(제목을 누르지 않아도 본문이 읽힌다) ───────────────── */
+.cm-feed > li + li {
+  border-top: 1px solid var(--color-rule-2);
+}
+
+.cm-feed__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-lg);
+}
+
+.cm-feed__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-xs);
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.cm-feed__author {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+
+.cm-feed__title {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-snug);
+  letter-spacing: var(--tracking-snug);
+}
+
+.cm-feed__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  align-items: center;
+  font-size: var(--text-sm);
+}
+
+/* ── 본문(줄바꿈 보존 + 읽기 폭 제한) ─────────────────────────────────── */
+.cm-prose {
+  white-space: pre-wrap;
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--color-ink-2);
+  max-width: 42rem;
+}
+
+.cm-measure {
+  max-width: var(--content-max-narrow);
+}
+
+/* ── 댓글 ─────────────────────────────────────────────────────────── */
+.cm-comments > li + li {
+  border-top: 1px solid var(--color-rule-2);
+}
+
+.cm-comment {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  padding: var(--space-md) var(--space-lg);
+}
+
+.cm-comment__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.cm-comment__author {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+
+.cm-comment__tail {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.cm-comment__confirm {
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+}
+
+.cm-composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-md) var(--space-lg);
+  border-top: 1px solid var(--color-rule);
+  background: var(--color-paper-2);
+}
+
+.cm-composer__row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ── 알림 내역 ─────────────────────────────────────────────────────── */
+.cm-daygroup + .cm-daygroup {
+  border-top: 1px solid var(--color-rule);
+}
+
+.cm-daygroup__label {
+  padding: var(--space-xs) var(--space-lg);
+  background: var(--color-paper-3);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink-2);
+}
+
+.cm-notif > li + li {
+  border-top: 1px solid var(--color-rule-2);
+}
+
+.cm-notif__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2xs) var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+}
+
+.cm-notif__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.cm-notif__title {
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-snug);
+  color: var(--color-ink);
+  min-width: 0;
+}
+
+.cm-notif__body {
+  grid-column: 1 / -1;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--color-ink-2);
+  white-space: pre-wrap;
+}
+
+.cm-notif__when {
+  grid-row: 1;
+  grid-column: 2;
+  text-align: right;
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.cm-notif__link {
+  grid-column: 1 / -1;
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 599px) {
+  .cm-row,
+  .cm-comment,
+  .cm-notif__item,
+  .cm-composer,
+  .cm-daygroup__label {
+    padding-inline: var(--space-md);
+  }
+
+  .cm-feed__item {
+    padding: var(--space-md);
+  }
+
+  .cm-notif__item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cm-notif__when {
+    grid-row: auto;
+    grid-column: 1;
+    text-align: left;
+  }
+}

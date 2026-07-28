@@ -1,0 +1,20 @@
+[
+  {
+    "date": "2026-07-28",
+    "scope": "app-system",
+    "genre": "modern-minimal",
+    "macrostructure": "n/a (앱 셸 — 마케팅 페이지 아님)",
+    "nav": "N3 side-rail (≤899px 상단 탭 스트립으로 접힘)",
+    "footer": "n/a",
+    "theme": "custom",
+    "theme_axes": "light / geometric-sans / cool",
+    "vibe": "깊은 잉크 네이비, 조용한 정밀, 학원 실무",
+    "paper": "oklch(99% 0.005 250)",
+    "accent": "oklch(42% 0.100 250)",
+    "display": "Pretendard Variable 700",
+    "body": "Pretendard Variable 350",
+    "outlier": "JetBrains Mono (로고 태그 + 숫자 레지스터, 2슬롯)",
+    "enrichment": "none — 타이포 + 기존 원자 로고",
+    "brief": "한종철 통합과학 LMS · 디자인 시스템 + 앱 셸 + 인증 + 라우트 기반"
+  }
+]

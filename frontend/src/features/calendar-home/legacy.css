@@ -1,0 +1,106 @@
+/* A안 실험(캘린더 홈) 전용 레거시 토큰·셸.
+   2026-07-28 실제 프런트 기반 구축 때 src/index.css 에서 여기로 옮겼다 —
+   현재 라우트에 연결돼 있지 않은 실험 화면이며, 새 디자인 시스템
+   (src/styles/tokens.css)과 값이 섞이지 않도록 격리해 둔 것이다.
+   새 화면에서는 절대 이 파일의 변수를 쓰지 말 것. */
+:root {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --ink: #1b2430;
+  --ink-2: #5f6b7a;
+  --ink-3: #8b95a1;
+  --line: #e5eaf0;
+
+  --blue: #2e6be0;
+  --blue-soft: #eaf1fc;
+  --red: #c2453d;
+  --red-soft: #fbeded;
+  --amber: #b26e11;
+  --amber-soft: #fbf3e2;
+
+  --stamp-present: #2e5fc7;
+  --stamp-absent: #c2453d;
+
+  --radius: 14px;
+  --shadow:
+    0 1px 2px rgba(27, 36, 48, 0.04), 0 4px 14px rgba(27, 36, 48, 0.05);
+
+  --font-stamp: "AppleMyungjo", "Nanum Myeongjo", "Noto Serif KR", "Times New Roman", serif;
+}
+
+.shell-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 56px;
+  padding: 0 clamp(16px, 3vw, 28px);
+  background: rgba(255, 255, 255, 0.92);
+  border-bottom: 1px solid var(--line);
+}
+
+.shell-brand {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.shell-brand-tag {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--blue);
+  background: var(--blue-soft);
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+
+.shell-nav {
+  display: flex;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.shell-nav a {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+
+.shell-nav a.is-active {
+  color: var(--ink);
+  font-weight: 700;
+  background: #eff2f6;
+}
+
+.shell-account {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shell-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--blue);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+.shell-account-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+}

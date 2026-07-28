@@ -1,0 +1,217 @@
+/**
+ * 출결 입력 — 회차 고르기.
+ * 호출: GET /api/admin/attendance/sessions?date=YYYY-MM-DD
+ *
+ * 수업 당일 쓰는 화면이라 기본 탭은 "오늘 이후" — 오늘 회차가 맨 위에 온다.
+ * 지난 회차는 최근 것부터 본다(정정하러 들어오는 동선).
+ */
+import { useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+
+import { http, useApi } from "../../../api";
+import {
+  Button,
+  Card,
+  ErrorState,
+  Loading,
+  PageHeader,
+  Select,
+  Table,
+  Tabs,
+} from "../../../components";
+import type { Column } from "../../../components";
+import { relativeDay, sessionLabel, shortDate, todayISO } from "./format";
+import "./ops.css";
+import type { SessionBlock } from "./types";
+
+type Range = "예정" | "지난" | "전체";
+
+export default function AttendancePage() {
+  const navigate = useNavigate();
+  const today = todayISO();
+  const [date, setDate] = useState("");
+  const [courseId, setCourseId] = useState("");
+  const [range, setRange] = useState<Range>("예정");
+
+  const sessions = useApi(
+    async () =>
+      (
+        await http.get<{ sessions: SessionBlock[] }>("/admin/attendance/sessions", {
+          params: date ? { date } : {},
+        })
+      ).data.sessions,
+    [date],
+  );
+
+  const all = useMemo(() => sessions.data ?? [], [sessions.data]);
+
+  const courses = useMemo(() => {
+    const seen = new Map<number, string>();
+    for (const s of all) if (s.course) seen.set(s.course.course_id, s.course.name);
+    return [...seen].map(([id, name]) => ({ id, name }));
+  }, [all]);
+
+  const byCourse = useMemo(
+    () => (courseId ? all.filter((s) => String(s.course?.course_id ?? "") === courseId) : all),
+    [all, courseId],
+  );
+
+  const ahead = useMemo(() => byCourse.filter((s) => s.session_date >= today), [byCourse, today]);
+  const past = useMemo(
+    () => byCourse.filter((s) => s.session_date < today).reverse(),
+    [byCourse, today],
+  );
+
+  const rows = date ? byCourse : range === "예정" ? ahead : range === "지난" ? past : byCourse;
+
+  const columns: Column<SessionBlock>[] = [
+    {
+      key: "date",
+      header: "수업일",
+      width: "14rem",
+      sortValue: (r) => r.session_date,
+      cell: (r) => (
+        <span className="ops-name">
+          <span>{shortDate(r.session_date)}</span>
+          <span className="ops-sub">{relativeDay(r.session_date, today)}</span>
+        </span>
+      ),
+    },
+    {
+      key: "no",
+      header: "차시",
+      numeric: true,
+      width: "5rem",
+      sortValue: (r) => r.session_no ?? 0,
+      cell: (r) => (r.session_no === null ? <span className="ops-dash">—</span> : r.session_no),
+    },
+    {
+      key: "course",
+      header: "강좌 · 주차",
+      cell: (r) => sessionLabel({ ...r, session_no: null }),
+    },
+    {
+      key: "grade",
+      header: "대상",
+      width: "7rem",
+      cell: (r) =>
+        r.target_grade === null ? (
+          <span className="ops-dash">전 학년</span>
+        ) : (
+          <span className="num">고{r.target_grade}</span>
+        ),
+    },
+    {
+      key: "memo",
+      header: "메모",
+      cell: (r) => r.memo ?? <span className="ops-dash">—</span>,
+    },
+    {
+      key: "go",
+      header: "출결",
+      align: "right",
+      width: "9rem",
+      cell: (r) => (
+        <Link to={`/admin/attendance/${r.session_id}`} onClick={(e) => e.stopPropagation()}>
+          명단 열기
+        </Link>
+      ),
+    },
+  ];
+
+  return (
+    <>
+      <PageHeader
+        title="출결 입력"
+        description="회차를 열면 그 주차 수강생 명단이 나옵니다. 저장하는 순간 복습영상 지급과 결석 상담 대기열이 함께 처리됩니다."
+      />
+
+      <div className="ui-stack">
+        <Card padding="sm" flat>
+          <div className="ops-toolbar">
+            <label className="ops-toolbar__field">
+              <span className="ops-toolbar__label">수업일</span>
+              <input
+                className="ui-input"
+                type="date"
+                value={date}
+                onChange={(event) => setDate(event.target.value)}
+              />
+            </label>
+
+            {courses.length > 1 && (
+              <label className="ops-toolbar__field">
+                <span className="ops-toolbar__label">강좌</span>
+                <Select value={courseId} onChange={(event) => setCourseId(event.target.value)}>
+                  <option value="">전체 강좌</option>
+                  {courses.map((course) => (
+                    <option key={course.id} value={String(course.id)}>
+                      {course.name}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            )}
+
+            <div className="ui-row">
+              <Button size="sm" onClick={() => setDate(today)}>
+                오늘
+              </Button>
+              {(date || courseId) && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setDate("");
+                    setCourseId("");
+                  }}
+                >
+                  조건 지우기
+                </Button>
+              )}
+            </div>
+          </div>
+        </Card>
+
+        {sessions.loading ? (
+          <Loading label="회차를 불러오는 중…" />
+        ) : sessions.error ? (
+          <ErrorState description={sessions.error} onRetry={sessions.reload} />
+        ) : (
+          <Card padding="none">
+            {!date && (
+              <div style={{ padding: "var(--space-sm) var(--space-md) 0" }}>
+                <Tabs
+                  label="회차 범위"
+                  value={range}
+                  onChange={setRange}
+                  items={[
+                    { key: "예정", label: "오늘 이후", count: ahead.length },
+                    { key: "지난", label: "지난 회차", count: past.length },
+                    { key: "전체", label: "전체", count: byCourse.length },
+                  ]}
+                />
+              </div>
+            )}
+            <Table
+              caption="수업 회차 목록"
+              dense
+              columns={columns}
+              rows={rows}
+              rowKey={(r) => r.session_id}
+              isSelected={(r) => r.session_date === today}
+              onRowClick={(r) => navigate(`/admin/attendance/${r.session_id}`)}
+              empty={
+                date
+                  ? `${shortDate(date)}에는 수업 회차가 없습니다. 다른 날짜를 골라 보세요.`
+                  : range === "예정"
+                    ? "앞으로 예정된 회차가 없습니다. 지난 회차 탭에서 이전 수업을 확인하세요."
+                    : "표시할 회차가 없습니다. 커리큘럼에 주차가 매핑되면 여기에 나타납니다."
+              }
+            />
+          </Card>
+        )}
+      </div>
+    </>
+  );
+}

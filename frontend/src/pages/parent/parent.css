@@ -1,0 +1,280 @@
+/* 학부모 화면 전용 스타일.
+ * 토큰(styles/tokens.css) 밖의 색·반경·간격을 새로 만들지 않는다.
+ * iPad 1024×768 을 1순위로 잡고, 900px 미만에서 한 단계 눌러 준다. */
+
+/* ── 자녀 선택(PageHeader actions 안) ───────────────────────────── */
+
+.parent-childpick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+}
+
+.parent-childpick__label {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-muted);
+}
+
+.parent-childpick__select {
+  min-width: 11rem;
+}
+
+/* PageHeader 오른쪽에 자녀 선택과 링크가 함께 설 때 밑단을 맞춘다. */
+.parent-headactions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-md);
+}
+
+/* ── 사실 목록(이름·반·진도 등 서버가 준 값만) ────────────────── */
+
+.parent-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+  gap: var(--space-md);
+  margin: 0;
+}
+
+.parent-facts__term {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-muted);
+}
+
+.parent-facts__value {
+  margin: var(--space-3xs) 0 0;
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+  line-height: var(--leading-snug);
+}
+
+.parent-facts__value--strong {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+/* ── 달 이동 ────────────────────────────────────────────────────── */
+
+.parent-monthnav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.parent-monthnav__label {
+  min-width: 6.5rem;
+  text-align: center;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+
+/* ── 캘린더(읽기 전용 — 셀은 버튼이 아니다) ──────────────────── */
+
+.parent-cal {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--space-2xs);
+}
+
+.parent-cal__head {
+  padding-bottom: var(--space-2xs);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.parent-cal__cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3xs);
+  min-height: 4.75rem;
+  padding: var(--space-2xs);
+  border: 1px solid var(--color-rule-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-paper);
+}
+
+.parent-cal__cell--blank {
+  border-color: transparent;
+  background: transparent;
+}
+
+.parent-cal__cell--class {
+  background: var(--color-paper-2);
+  border-color: var(--color-rule);
+}
+
+.parent-cal__cell--today {
+  border-color: var(--color-accent);
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+
+.parent-cal__date {
+  font-size: var(--text-xs);
+  color: var(--color-ink-2);
+}
+
+.parent-cal__today {
+  margin-left: var(--space-3xs);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  color: var(--color-accent);
+}
+
+.parent-cal__pending {
+  font-size: var(--text-2xs);
+  color: var(--color-neutral);
+}
+
+.parent-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-rule-2);
+}
+
+/* ── 안내 문장(권한 경계·비어 있는 이유) ───────────────────────── */
+
+.parent-note {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--color-muted);
+}
+
+.parent-note--spaced {
+  margin-top: var(--space-md);
+}
+
+/* ── 주차 학습 계획 ────────────────────────────────────────────── */
+
+.parent-plans {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.parent-plans__title {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+
+/* ── 단계 안내(신청 → 승인 → 지급완료) ─────────────────────────── */
+
+.parent-steps {
+  margin: 0;
+  padding-left: var(--space-lg);
+  list-style: decimal;
+}
+
+.parent-steps li {
+  margin-bottom: var(--space-xs);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--color-ink-2);
+}
+
+.parent-steps li:last-child {
+  margin-bottom: 0;
+}
+
+.parent-steps li::marker {
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+}
+
+/* ── 워크북 사진 ────────────────────────────────────────────────── */
+
+.parent-photos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(15rem, 100%), 1fr));
+  gap: var(--space-md);
+}
+
+.parent-photo {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-paper);
+}
+
+.parent-photo__link {
+  display: block;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.parent-photo__img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: var(--color-paper-3);
+}
+
+.parent-photo__cap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+  border-top: 1px solid var(--color-rule-2);
+}
+
+.parent-photo__date {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+
+.parent-photo__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+/* ── 성적표 문항 결과 ──────────────────────────────────────────── */
+
+.parent-guide {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--color-ink-2);
+}
+
+.parent-guide__video {
+  display: block;
+  margin-top: var(--space-2xs);
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+/* ── 좁은 화면(세로 태블릿·휴대폰) ─────────────────────────────── */
+
+@media (max-width: 899px) {
+  .parent-cal__cell {
+    min-height: 3.5rem;
+  }
+
+  .parent-childpick__select {
+    min-width: 9rem;
+  }
+}

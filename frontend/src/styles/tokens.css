@@ -1,0 +1,164 @@
+/* Hallmark · scope: app-system (디자인 시스템 + 앱 셸) · genre: modern-minimal
+ * theme: custom(tuned) · vibe: "깊은 잉크 네이비, 조용한 정밀, 학원 실무"
+ * paper: oklch(99% 0.003 250) · accent: oklch(42% 0.100 250)
+ * display: Pretendard Variable · body: Pretendard Variable · outlier: JetBrains Mono
+ * axes: light / geometric-sans / cool · nav: N3 side-rail · enrichment: none
+ * studied: no · context: 사용자 지정(네이비 단일 키컬러) · pre-emit critique: P5 H5 E4 S5 R5 V4
+ */
+
+/* ═══════════════════════════════════════════════════════════════════════
+   한종철 통합과학 LMS — 디자인 토큰 (단일 진실 소스)
+
+   ▸ 규약 1. 하드코딩 색·크기 금지.
+     CSS 에서 색을 쓸 때는 반드시 var(--color-*) 로만 쓴다.
+     #hex, rgb(), oklch() 리터럴을 컴포넌트 CSS 에 직접 적는 것은 금지.
+     필요한 값이 없으면 여기에 이름 붙여 추가한 뒤 참조한다.
+
+   ▸ 규약 2. 키컬러는 네이비 하나.
+     --color-navy-* 스케일 + 무채색(paper/ink/rule) 만으로 전부 해결한다.
+     상태색(success/warning/danger)은 "의미 전용"이다 —
+     장식·강조·브랜드 용도로 쓰지 않는다. (성공/주의/위험을 말할 때만)
+
+   ▸ 규약 3. 액센트 면적은 화면의 5% 이내.
+     네이비 채움은 1차 버튼·활성 내비·사이드레일에만. 카드/섹션 배경 금지.
+
+   ▸ 규약 4. 8px 그리드.
+     간격은 --space-* 만 쓴다. 4px 는 반 스텝(--space-2xs)으로만 허용.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── 색 · 네이비 스케일 ────────────────────────────────────────────
+     hue 250 고정. 흔한 네이비(#1e3a8a·#000080 = hue 264 계열, #0f172a =
+     무채에 가까운 슬레이트)를 피해 hue 250 에 앵커했다 — 순청보다 약간
+     청록 쪽으로 기울어 잉크처럼 가라앉고, 채도는 색역 한계의 약 84%로
+     의도적으로 눌러 "쨍한 파랑"이 아니라 "깊은 남색"으로 읽힌다.        */
+  --color-navy-50: oklch(97% 0.010 250); /* #f0f6fc  선택 행·연한 강조 배경 */
+  --color-navy-100: oklch(94% 0.020 250); /* #e2edf8  뱃지 배경·활성 내비 배경 */
+  --color-navy-200: oklch(88% 0.038 250); /* #c5daf0  경계선(강조)·다크 위 본문 */
+  --color-navy-300: oklch(78% 0.062 250); /* #9abbde  다크 위 보조 텍스트 */
+  --color-navy-400: oklch(63% 0.092 250); /* #5d8dbf  다크 위 흐린 텍스트·아이콘 */
+  --color-navy-500: oklch(52% 0.110 250); /* #316ca5  링크 hover·차트 보조 */
+  --color-navy-600: oklch(42% 0.100 250); /* #194f81  ★ 키컬러 — 1차 버튼·활성 */
+  --color-navy-700: oklch(34% 0.088 250); /* #093963  키컬러 press·진한 제목 */
+  --color-navy-800: oklch(30% 0.072 250); /* #0b2f50  다크 표면 hover 단계 */
+  --color-navy-900: oklch(23% 0.058 250); /* #041e37  사이드레일·인증화면 다크 표면 */
+
+  /* 의미 별칭 — 컴포넌트는 되도록 이쪽을 쓴다(스케일 번호 직접 참조 최소화) */
+  --color-accent: var(--color-navy-600);
+  --color-accent-hover: var(--color-navy-700);
+  --color-accent-soft: var(--color-navy-100); /* 액센트 연배경 */
+  --color-accent-faint: var(--color-navy-50); /* 표 선택행 등 아주 연한 배경 */
+  --color-accent-ink: var(--color-paper); /* 네이비 채움 위 글자색 (8.2:1) */
+
+  /* ── 색 · 무채(네이비로 살짝 틴트) ────────────────────────────────
+     순백(#fff)·순흑(#000) 사용 금지. 전부 hue 250 쪽으로 미세하게 기울였다. */
+  --color-paper: oklch(99% 0.005 250); /* #f9fcff  기본 표면(카드·시트) */
+  --color-paper-2: oklch(97.4% 0.005 250); /* #f4f7fa  앱 배경·hover 표면 */
+  --color-paper-3: oklch(95.2% 0.008 250); /* #ebf0f4  표 헤더·비활성 표면 */
+  --color-rule: oklch(90% 0.010 250); /* #d9dfe5  기본 구분선 */
+  --color-rule-2: oklch(93.8% 0.008 250); /* #e7ebf0  보조 구분선(표 내부) */
+  --color-ink: oklch(21% 0.020 250); /* #111921  본문·제목 (17.2:1) */
+  --color-ink-2: oklch(42% 0.018 250); /* #464e57  보조 본문 (8.2:1) */
+  --color-muted: oklch(52.5% 0.015 250); /* #646b73  메타·설명 (5.2:1) */
+  --color-neutral: oklch(64% 0.013 250); /* #868d94  placeholder·비활성 (3.3:1) */
+
+  /* ── 색 · 상태(의미 전용. 액센트로 쓰지 말 것) ────────────────────── */
+  --color-success: oklch(50% 0.110 158); /* #14764a  출석·승인·완료 */
+  --color-success-bg: oklch(96% 0.022 158); /* #e6f7ec */
+  --color-warning: oklch(53% 0.112 68); /* #965d0d  지각·보류·마감임박 */
+  --color-warning-bg: oklch(96% 0.028 76); /* #fdf0de */
+  --color-danger: oklch(52% 0.170 26); /* #b63230  결석·거절·삭제 */
+  --color-danger-bg: oklch(96% 0.020 26); /* #ffedeb */
+
+  /* ── 색 · 포커스 ──────────────────────────────────────────────── */
+  --color-focus: oklch(50% 0.130 250); /* #1666aa  밝은 표면 위 포커스 링 */
+  --color-focus-inverse: oklch(85% 0.070 250); /* #acd2fb  네이비 표면 위 포커스 링 */
+
+  /* ── 타이포 · 페이스 ──────────────────────────────────────────────
+     한글 UI 라 라틴 전용 디스플레이 페이스를 못 쓴다(한글이 시스템 폰트로
+     떨어짐). Pretendard 하나로 display+body 를 겸하고, 대비는 굵기 극단
+     (350 ↔ 700)과 자간으로 만든다. 모노는 아웃라이어 2곳 전용:
+     ① 로고 태그 'LMS' ② 숫자·코드 레지스터(점수·학번·시각·전화번호).   */
+  --font-sans:
+    "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+    "Noto Sans KR", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* ── 타이포 · 스케일 (16px 본문 기준, 1.25 장3도) ───────────────────
+     한 화면에서 5단계를 넘기지 않는다. 더 필요한 위계는 굵기·색으로.    */
+  --text-2xs: 0.6875rem; /* 11px — 대문자 라벨(자간 넓게)에만 */
+  --text-xs: 0.8125rem; /* 13px — 메타·캡션·표 보조 */
+  --text-sm: 0.875rem; /* 14px — 보조 UI 텍스트·버튼 small */
+  --text-base: 1rem; /* 16px — 본문 기본(하한) */
+  --text-md: 1.25rem; /* 20px — 카드 제목 */
+  --text-lg: 1.5625rem; /* 25px — 페이지 제목 */
+  --text-xl: 1.9531rem; /* 31px — 대시보드 헤드라인·큰 수치 */
+  --text-2xl: 2.4414rem; /* 39px — 로그인 화면 헤드라인(최대) */
+
+  --leading-tight: 1.2; /* 제목 */
+  --leading-snug: 1.4; /* 카드 제목·표 셀 */
+  --leading-normal: 1.6; /* 본문 */
+
+  --tracking-tight: -0.02em; /* 큰 제목 */
+  --tracking-snug: -0.01em; /* 중간 제목·버튼 */
+  --tracking-wide: 0.08em; /* 대문자 라벨 */
+
+  --weight-light: 350; /* 본문(가변 축) */
+  --weight-normal: 400;
+  --weight-medium: 500; /* 버튼·라벨 */
+  --weight-semibold: 600; /* 표 헤더·카드 제목 */
+  --weight-bold: 700; /* 페이지 제목·로고 */
+
+  /* ── 간격 · 8px 그리드 ───────────────────────────────────────────── */
+  --space-3xs: 0.125rem; /*  2px */
+  --space-2xs: 0.25rem; /*  4px (반 스텝) */
+  --space-xs: 0.5rem; /*  8px */
+  --space-sm: 0.75rem; /* 12px */
+  --space-md: 1rem; /* 16px */
+  --space-lg: 1.5rem; /* 24px */
+  --space-xl: 2rem; /* 32px */
+  --space-2xl: 3rem; /* 48px */
+  --space-3xl: 4rem; /* 64px */
+  --space-4xl: 6rem; /* 96px */
+
+  /* ── 반경 ───────────────────────────────────────────────────────── */
+  --radius-xs: 4px; /* 뱃지·체크박스 */
+  --radius-sm: 6px; /* 입력·작은 버튼 */
+  --radius-md: 10px; /* 버튼·카드 내부 블록 */
+  --radius-lg: 14px; /* 카드·패널 */
+  --radius-xl: 20px; /* 모달·시트 */
+  --radius-pill: 999px; /* 계정칩·탭 */
+
+  /* ── 그림자 (한 겹만. 다크 표면에는 쓰지 않는다 — 밝기로 층을 만든다) ── */
+  --shadow-hairline: 0 0 0 1px oklch(21% 0.02 250 / 0.06);
+  --shadow-whisper: 0 1px 2px oklch(21% 0.02 250 / 0.06);
+  --shadow-raised: 0 4px 12px oklch(21% 0.02 250 / 0.08);
+  --shadow-overlay: 0 16px 48px oklch(21% 0.02 250 / 0.18);
+  /* 모달 backdrop — 색이 아니라 반투명 오버레이라 여기에 이름을 붙여 둔다. */
+  --scrim: oklch(23% 0.058 250 / 0.45);
+
+  /* ── 모션 ───────────────────────────────────────────────────────── */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1); /* 등장 */
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0); /* 퇴장 */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1); /* 토글 */
+  --dur-micro: 120ms; /* 눌림·색 전환 */
+  --dur-short: 200ms; /* hover·툴팁·메뉴 */
+  --dur-long: 380ms; /* 모달·서랍·페이지 진입 */
+
+  /* ── z-index (6단계 고정. 임의 숫자 금지) ─────────────────────────── */
+  --z-base: 1;
+  --z-raised: 10;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-modal: 400;
+  --z-toast: 500;
+  --z-tooltip: 600;
+
+  /* ── 레이아웃 상수 ──────────────────────────────────────────────── */
+  --rail-width: 15rem; /* 240px — 사이드레일 */
+  --topbar-height: 3.5rem; /* 56px */
+  --content-max: 78rem; /* 1248px — 관리자 밀도 화면 */
+  --content-max-narrow: 56rem; /* 896px — 학생·학부모 읽기 화면 */
+  --control-height: 2.75rem; /* 44px — 버튼·입력 공통(터치 하한) */
+  --control-height-sm: 2.25rem; /* 36px — 밀도 높은 관리자 툴바 전용 */
+}

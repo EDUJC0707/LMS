@@ -1,0 +1,352 @@
+/* 관리자 운영 화면 전용 스타일.
+   색·간격·반경·모션은 전부 토큰 참조 — 리터럴 값 금지(styles/tokens.css 규약).
+   데스크탑 1280+ 1순위. hover 는 @media (hover: hover) 안에만 두고
+   탭·포커스로도 같은 정보에 도달하게 한다. */
+
+/* ── 대시보드 타일 ─────────────────────────────────────────────── */
+
+.ops-tiles {
+  display: grid;
+  gap: var(--space-md);
+  grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+}
+
+.ops-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  min-width: 0;
+  padding: var(--space-md);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-md);
+  background: var(--color-paper);
+  box-shadow: var(--shadow-whisper);
+  color: var(--color-ink);
+  transition:
+    border-color var(--dur-micro) var(--ease-out),
+    background-color var(--dur-micro) var(--ease-out);
+}
+
+.ops-tile:hover {
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  .ops-tile:hover {
+    border-color: var(--color-navy-300);
+    background: var(--color-accent-faint);
+  }
+}
+
+.ops-tile:active {
+  transform: translateY(1px);
+}
+
+.ops-tile__label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+}
+
+.ops-tile__value {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2xs);
+  min-height: 2.5rem;
+}
+
+.ops-tile__n {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-ink);
+}
+
+.ops-tile__n.is-zero {
+  color: var(--color-neutral);
+}
+
+.ops-tile__unit,
+.ops-tile__hint {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.ops-tile__hint {
+  line-height: var(--leading-snug);
+}
+
+/* ── 회차 요약(대시보드 상단) ──────────────────────────────────── */
+
+.ops-focus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.ops-focus__text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+}
+
+.ops-focus__title {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-snug);
+  color: var(--color-ink);
+}
+
+.ops-focus__meta {
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+}
+
+/* ── 집계 수치 묶음(대시보드 회차 카드 · 출결 입력 고정 바 공용) ── */
+
+.ops-figs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-lg);
+}
+
+.ops-fig {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  min-width: 3.25rem;
+}
+
+.ops-fig__n {
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+  color: var(--color-ink);
+}
+
+.ops-fig__l {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-muted);
+}
+
+/* 0 은 알릴 게 없다는 뜻이라 색을 태우지 않는다(상태색 남용 방지). */
+.ops-fig__n.is-zero {
+  color: var(--color-neutral);
+}
+
+/* 상태색은 의미 전용 — 출석/지각/결석 집계에만 쓴다. */
+.ops-fig--present .ops-fig__n:not(.is-zero) {
+  color: var(--color-success);
+}
+
+.ops-fig--late .ops-fig__n:not(.is-zero) {
+  color: var(--color-warning);
+}
+
+.ops-fig--absent .ops-fig__n:not(.is-zero) {
+  color: var(--color-danger);
+}
+
+.ops-fig--blank .ops-fig__n:not(.is-zero) {
+  color: var(--color-ink-2);
+}
+
+/* ── 출결 입력 고정 바 ─────────────────────────────────────────── */
+
+.ops-bar {
+  position: sticky;
+  /* 상단 바 아래에 붙는다. 상단 바(z-sticky)보다 낮게 둬 겹치지 않게 한다. */
+  top: var(--topbar-height);
+  z-index: var(--z-raised);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-md) var(--space-lg);
+  margin-bottom: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-md);
+  background: var(--color-paper);
+  box-shadow: var(--shadow-whisper);
+}
+
+.ops-bar__actions {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.ops-bar__dirty {
+  font-size: var(--text-xs);
+  color: var(--color-ink-2);
+}
+
+/* ── 툴바(필터 줄) ─────────────────────────────────────────────── */
+
+.ops-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-md);
+}
+
+.ops-toolbar__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  min-width: 0;
+}
+
+.ops-toolbar__label {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-muted);
+}
+
+.ops-toolbar .ui-input,
+.ops-toolbar .ui-select {
+  min-height: var(--control-height-sm);
+}
+
+/* ── 출결 상태 선택(세그먼트) ──────────────────────────────────── */
+
+.ops-seg {
+  display: inline-flex;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--color-paper);
+}
+
+.ops-seg__opt {
+  position: relative;
+  display: block;
+}
+
+.ops-seg__opt input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.ops-seg__opt span {
+  display: grid;
+  place-items: center;
+  min-width: 3rem;
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-xs);
+  border-left: 1px solid var(--color-rule);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink-2);
+  transition: background-color var(--dur-micro) var(--ease-out);
+}
+
+.ops-seg__opt:first-child span {
+  border-left: none;
+}
+
+@media (hover: hover) {
+  .ops-seg__opt input:not(:checked):hover + span {
+    background: var(--color-paper-3);
+  }
+}
+
+.ops-seg__opt input:focus-visible + span {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.ops-seg__opt input:checked + span {
+  font-weight: var(--weight-semibold);
+}
+
+.ops-seg__opt--present input:checked + span {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.ops-seg__opt--late input:checked + span {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.ops-seg__opt--absent input:checked + span {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+/* 표 안 체크박스는 관리자 밀도(36px)로 낮춘다 — 30행을 한 화면에 담기 위해. */
+.ops-examcell .ui-check {
+  min-height: var(--control-height-sm);
+  justify-content: center;
+}
+
+/* ── 표 안의 작은 표시들 ───────────────────────────────────────── */
+
+.ops-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.ops-dot {
+  flex: none;
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+}
+
+.ops-sub {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.ops-dash {
+  color: var(--color-neutral);
+}
+
+.ops-note {
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--color-muted);
+}
+
+.ops-note strong {
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink-2);
+}
+
+/* 키보드 안내 — 조작법은 화면 안에 적어 둔다(관리자는 매일 쓴다). */
+.ops-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.ops-keys kbd {
+  padding: 0 var(--space-2xs);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-xs);
+  background: var(--color-paper-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--color-ink-2);
+}
