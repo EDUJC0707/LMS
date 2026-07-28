@@ -245,6 +245,18 @@ class SessionDetailTests(AttendanceAdminFixtureMixin, TestCase):
             body["summary"], {"출석": 1, "결석": 1, "지각": 0, "미입력": 1, "total": 3}
         )
 
+    def test_roster_rows_carry_attendance_id_for_makeup_grant(self):
+        # 즉시 동보 지급(POST /api/admin/attendance/makeup)의 body 키 —
+        # 명단 행에서 바로 지급하려면 기존 출결의 PK 가 응답에 있어야 한다
+        absent = Attendance.objects.create(
+            session=self.session_w2, student=self.s1, status="결석"
+        )
+        res = self.client.get(self.detail_url(self.session_w2.session_id))
+        by_id = {s["student_id"]: s for s in res.json()["students"]}
+        self.assertEqual(by_id[self.s1.student_id]["attendance_id"], absent.id)
+        # 미입력 학생은 null(키는 존재 — 프런트 분기 단순화)
+        self.assertIsNone(by_id[self.s2.student_id]["attendance_id"])
+
     def test_missing_session_is_404(self):
         self.assertEqual(self.client.get(self.detail_url(99999)).status_code, 404)
 

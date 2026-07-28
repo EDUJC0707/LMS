@@ -514,3 +514,115 @@
   color: var(--color-muted);
   font-size: var(--text-xs);
 }
+
+/* ═══ 학생 검색·선택기 (StudentPicker) ══════════════════════════════ */
+
+/* 검색 입력 + 후보 목록. 명부 API(GET /api/admin/students)를 그대로 그린다. */
+.pm-picker {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  min-width: 16rem;
+}
+
+/* 이미 고른 상태의 라벨 — Field 와 같은 규격으로 맞춘다. */
+.pm-picker__label {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-ink-2);
+}
+
+/* 후보 목록은 떠 있는 드롭다운이다 — 열려도 옆 컨트롤이 아래로 밀리지 않는다. */
+.pm-picker__panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: var(--z-dropdown);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-md);
+  background: var(--color-paper);
+  box-shadow: var(--shadow-raised);
+  overflow: hidden;
+}
+
+/* 툴바 안에서는 검색 칸이 남는 폭을 가져간다(기본 .ui-field 12rem 규칙보다 우선). */
+.pm-toolbar .pm-picker {
+  flex: 1 1 18rem;
+  max-width: 26rem;
+}
+
+.pm-toolbar .pm-picker .ui-field {
+  width: 100%;
+}
+
+.pm-picker__msg {
+  margin: 0;
+  padding: var(--space-xs) var(--space-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.pm-picker__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 15rem;
+  overflow-y: auto;
+  border-top: 1px solid var(--color-rule-2);
+}
+
+.pm-picker__option {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  padding: var(--space-xs) var(--space-sm);
+  border: 0;
+  border-bottom: 1px solid var(--color-rule-2);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: var(--color-ink);
+}
+
+.pm-picker__option:last-child {
+  border-bottom: 0;
+}
+
+.pm-picker__option:hover {
+  background: var(--color-accent-faint);
+}
+
+.pm-picker__option:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.pm-picker__chosen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-faint);
+  min-height: var(--control-height);
+}
+
+.pm-picker__name {
+  font-size: var(--text-sm);
+  color: var(--color-ink);
+}
+
+.pm-picker__meta {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}

@@ -58,6 +58,12 @@ export interface ChildContext {
   studentId: number | null;
   child: MeChild | null;
   children: MeChild[];
+  /**
+   * 고른 자녀가 등록 상태인가. 예비등록·퇴원이면 성적·워크북·동보가 없다 —
+   * 학생 화면의 enrolled 게이트(auth/nav.ts)와 같은 규칙이다.
+   * 자녀가 없으면 false.
+   */
+  enrolled: boolean;
   /** 자녀 2명 이상일 때만 요소가 있다. PageHeader actions 에 넣는다. */
   picker: ReactNode;
 }
@@ -87,13 +93,14 @@ export function useChild(): ChildContext {
           {children.map((entry) => (
             <option key={entry.student_id} value={entry.student_id}>
               {entry.name ?? `학생 ${entry.student_id}`} · {entry.grade}
+              {entry.enrollment_status === "등록" ? "" : ` · ${entry.enrollment_status}`}
             </option>
           ))}
         </Select>
       </div>
     );
 
-  return { studentId, child, children, picker };
+  return { studentId, child, children, enrolled: child?.enrollment_status === "등록", picker };
 }
 
 /** 자녀가 한 명도 연결돼 있지 않을 때 화면에 띄우는 문구. */

@@ -17,21 +17,22 @@ import {
   Table,
 } from "../../components";
 import { NO_CHILD_DESC, NO_CHILD_TITLE, useChild } from "./childContext";
+import { PreEnrollNotice } from "./PreEnrollNotice";
 import { score, shortDay } from "./format";
 import "./parent.css";
 import { GradeList } from "./types";
 
 export default function ParentGradesPage() {
-  const { studentId, picker } = useChild();
+  const { studentId, child, picker, enrolled } = useChild();
 
   const grades = useApi<GradeList | null>(
     () =>
-      studentId === null
+      studentId === null || !enrolled
         ? Promise.resolve(null)
         : http
             .get<GradeList>("/parent/grades", { params: { student_id: studentId } })
             .then((response) => response.data),
-    [studentId],
+    [studentId, enrolled],
   );
 
   const student = grades.data?.student;
@@ -48,6 +49,12 @@ export default function ParentGradesPage() {
         <Card>
           <EmptyState title={NO_CHILD_TITLE} description={NO_CHILD_DESC} />
         </Card>
+      ) : !enrolled ? (
+        <PreEnrollNotice
+          child={child}
+          what="성적 확인"
+          why="시험을 보려면 먼저 수강 등록이 확정되어야 합니다."
+        />
       ) : grades.loading ? (
         <Loading />
       ) : grades.error ? (

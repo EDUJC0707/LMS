@@ -358,7 +358,12 @@ class MeParentTests(MeTestBase):
         user = make_user("me-par1", User.Role.PARENT, name="박학부모")
         parent = Parent.objects.create(user=user, phone="010-9999-8888")
         child1_user = make_user("me-kid1", User.Role.STUDENT, name="김첫째")
-        child1 = Student.objects.create(user=child1_user, unique_id="1-1111", grade="고1")
+        child1 = Student.objects.create(
+            user=child1_user,
+            unique_id="1-1111",
+            grade="고1",
+            enrollment_status=Student.EnrollmentStatus.REGISTERED,
+        )
         child2 = Student.objects.create(unique_id="3-3333", grade="고3")  # 계정 미발급 자녀
         ParentStudent.objects.create(parent=parent, student=child1, relation="모")
         ParentStudent.objects.create(parent=parent, student=child2, relation="모")
@@ -366,12 +371,37 @@ class MeParentTests(MeTestBase):
         self.assertEqual(
             data["children"],
             [
-                {"student_id": child1.student_id, "name": "김첫째", "grade": "고1"},
-                {"student_id": child2.student_id, "name": None, "grade": "고3"},
+                {
+                    "student_id": child1.student_id,
+                    "name": "김첫째",
+                    "grade": "고1",
+                    "enrollment_status": "등록",
+                },
+                {
+                    "student_id": child2.student_id,
+                    "name": None,
+                    "grade": "고3",
+                    "enrollment_status": "예비등록",
+                },
             ],
         )
         self.assertNotIn("student", data)
         self.assertNotIn("features", data)
+
+    def test_children_enrollment_status_drives_menu_assembly(self):
+        # 예비등록 자녀만 둔 학부모 — 프런트가 성적·워크북 메뉴를 접을 근거
+        user = make_user("me-par3", User.Role.PARENT, name="박예비")
+        parent = Parent.objects.create(user=user, phone="010-7777-6666")
+        pre = Student.objects.create(unique_id="1-9999", grade="고1")
+        withdrawn = Student.objects.create(
+            unique_id="1-8888",
+            grade="고1",
+            enrollment_status=Student.EnrollmentStatus.WITHDRAWN,
+        )
+        ParentStudent.objects.create(parent=parent, student=pre)
+        ParentStudent.objects.create(parent=parent, student=withdrawn)
+        statuses = [c["enrollment_status"] for c in self.me_as(user).json()["children"]]
+        self.assertEqual(statuses, ["예비등록", "퇴원"])
 
     def test_parent_without_row_gets_empty_children(self):
         user = make_user("me-par2", User.Role.PARENT)

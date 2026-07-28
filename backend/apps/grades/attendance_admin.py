@@ -110,7 +110,12 @@ def session_block(session):
 
 
 def build_detail_payload(session, roster, attendance_by_student):
-    """상세·PUT 공용 응답 — 명단 + 출결 값 + 집계(프런트 재조회 불필요)."""
+    """상세·PUT 공용 응답 — 명단 + 출결 값 + 집계(프런트 재조회 불필요).
+
+    행의 `attendance_id` 는 동보 즉시 지급(POST /api/admin/attendance/makeup)의
+    body 키다 — 명단에서 결석 학생에게 바로 지급하려면 기존 출결의 PK 가 응답에
+    있어야 한다(2026-07-28 보강). 미입력 학생은 null(키는 항상 존재).
+    """
     students = []
     counts = {status: 0 for status in Attendance.Status.values}
     for student in roster:
@@ -124,6 +129,7 @@ def build_detail_payload(session, roster, attendance_by_student):
                 "unique_id": student.unique_id,
                 "current_class": student.current_class,
                 "enrollment_status": student.enrollment_status,
+                "attendance_id": att.id if att is not None else None,
                 "attendance": _attendance_block(att),
             }
         )

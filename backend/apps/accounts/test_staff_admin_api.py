@@ -254,3 +254,48 @@ class StaffDeactivateTests(StaffAdminFixtureMixin, TestCase):
     def test_unknown_target_404(self):
         res = self.client.patch(f"{STAFF_URL}/999999/deactivate")
         self.assertEqual(res.status_code, 404)
+
+
+class StaffActivateTests(StaffAdminFixtureMixin, TestCase):
+    """PATCH /api/admin/staff/{user_id}/activate — 비활성 되돌리기(대표 전용)."""
+
+    def setUp(self):
+        self.client.force_login(self.owner)
+
+    def activate(self, target_id):
+        return self.client.patch(f"{STAFF_URL}/{target_id}/activate")
+
+    def test_reactivates_deactivated_staff(self):
+        self.client.patch(f"{STAFF_URL}/{self.admin.user_id}/deactivate")
+        res = self.activate(self.admin.user_id)
+        self.assertEqual(res.status_code, 200)
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.is_active)
+        self.assertTrue(res.json()["is_active"])
+
+    def test_already_active_is_idempotent(self):
+        res = self.activate(self.assistant.user_id)
+        self.assertEqual(res.status_code, 200)
+        self.assistant.refresh_from_db()
+        self.assertTrue(self.assistant.is_active)
+
+    def test_owner_target_rejected(self):
+        self.assertEqual(self.activate(self.owner2.user_id).status_code, 400)
+
+    def test_student_target_404(self):
+        self.assertEqual(self.activate(self.student.user_id).status_code, 404)
+
+    def test_unknown_target_404(self):
+        self.assertEqual(self.activate(999999).status_code, 404)
+
+    def test_non_owner_denied(self):
+        # deactivate 와 같은 게이트(IsOwner) — 관리자·조교는 delta 와 무관하게 403
+        StaffFeatureGrant.objects.create(
+            user=self.admin,
+            feature_key=FeatureKey.FEATURE_GRANT_ADMIN,
+            is_granted=True,
+            granted_by=self.owner,
+        )
+        for user in (self.admin, self.assistant, self.student):
+            self.client.force_login(user)
+            self.assertEqual(self.activate(self.assistant.user_id).status_code, 403)

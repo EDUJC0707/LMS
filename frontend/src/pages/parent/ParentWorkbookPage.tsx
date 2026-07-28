@@ -7,21 +7,22 @@
 import { http, mediaUrl, useApi } from "../../api";
 import { Badge, Card, EmptyState, ErrorState, Loading, PageHeader } from "../../components";
 import { NO_CHILD_DESC, NO_CHILD_TITLE, useChild } from "./childContext";
+import { PreEnrollNotice } from "./PreEnrollNotice";
 import { dateTimeLabel, dayLabel } from "./format";
 import "./parent.css";
 import { WorkbookList } from "./types";
 
 export default function ParentWorkbookPage() {
-  const { studentId, child, picker } = useChild();
+  const { studentId, child, picker, enrolled } = useChild();
 
   const workbook = useApi<WorkbookList | null>(
     () =>
-      studentId === null
+      studentId === null || !enrolled
         ? Promise.resolve(null)
         : http
             .get<WorkbookList>("/parent/workbook", { params: { student_id: studentId } })
             .then((response) => response.data),
-    [studentId],
+    [studentId, enrolled],
   );
 
   const rows = workbook.data?.workbooks ?? [];
@@ -38,6 +39,12 @@ export default function ParentWorkbookPage() {
         <Card>
           <EmptyState title={NO_CHILD_TITLE} description={NO_CHILD_DESC} />
         </Card>
+      ) : !enrolled ? (
+        <PreEnrollNotice
+          child={child}
+          what="워크북 열람"
+          why="워크북 사진은 실제 수업에 참여한 뒤부터 쌓입니다."
+        />
       ) : workbook.loading ? (
         <Loading />
       ) : workbook.error ? (

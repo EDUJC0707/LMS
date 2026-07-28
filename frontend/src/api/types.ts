@@ -35,8 +35,15 @@ export interface MeStudent {
 
 export interface MeChild {
   student_id: number;
+  /** null = 아직 계정이 발급되지 않은 자녀 */
   name: string | null;
   grade: string;
+  /**
+   * "예비등록" | "등록" | "퇴원". 계정 미발급 자녀도 값이 반드시 있다.
+   * 학생 블록(student.enrollment_status)과 같은 값집합이라 자녀별 메뉴를
+   * 학생 화면과 똑같은 규칙으로 조립할 수 있다.
+   */
+  enrollment_status: string;
 }
 
 export interface Me {

@@ -8,8 +8,10 @@ GET /api/auth/csrf 로 쿠키를 먼저 받는다.
 - GET/POST /api/admin/staff                    권한 매트릭스·직원 생성 (대표 전용)
 - PUT      /api/admin/staff/{id}/features      기능 delta upsert (대표 전용)
 - PATCH    /api/admin/staff/{id}/deactivate    직원 비활성 (대표 전용)
+- PATCH    /api/admin/staff/{id}/activate      직원 재활성 (대표 전용)
 - POST     /api/admin/accounts/bulk            계정 일괄 발급 (계정관리)
 - POST     /api/admin/accounts/{id}/register   예비등록→등록 전환 (계정관리)
+- GET      /api/admin/students                 학생 명부 조회 (직원 공통)
 
 게이트·입력 검증·상태 코드만 여기서, DB 쓰기·페이로드 조립은 staff_admin·
 provisioning 서비스가 담당한다(attendance_admin 선례).
@@ -19,11 +21,12 @@ from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import status
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import provisioning, staff_admin
+from . import provisioning, staff_admin, student_directory
 from .features import FeatureKey, effective_features
 from .models import Parent, ParentStudent, Student, User
 from .permissions import (
@@ -136,6 +139,9 @@ class MeView(APIView):
       students 행이 없는 예외 상태는 null 로 방어.
     - 학부모: children[] — 자녀 드롭다운 소스(parent_students 경유,
       student_id 오름차순). 자녀 이름은 연결된 users 행에서 취한다(미발급이면 null).
+      각 자녀의 enrollment_status 도 함께 내린다 — 학생 블록과 같은 축으로,
+      예비등록·퇴원 자녀만 둔 학부모에게 성적·워크북 메뉴가 뜨지 않게
+      프런트가 메뉴를 조립하는 근거(2026-07-28 보강, 모듈성 §1).
     - 직원(대표·관리자·조교): features[] = effective_features(user) —
       **관리자 메뉴 렌더 계약**. 프런트 메뉴는 이 목록으로만 조립하고,
       강제는 각 API 의 FeatureRequired 가 담당(프런트 숨김은 보조).
@@ -184,6 +190,7 @@ class MeView(APIView):
                 "student_id": link.student.student_id,
                 "name": link.student.user.name if link.student.user else None,
                 "grade": link.student.grade,
+                "enrollment_status": link.student.enrollment_status,
             }
             for link in links
         ]
@@ -302,6 +309,31 @@ class StaffDeactivateView(APIView):
         return Response(staff_admin.matrix_row(target))
 
 
+class StaffActivateView(APIView):
+    """PATCH /api/admin/staff/{user_id}/activate — is_active=true (대표 전용).
+
+    비활성의 역연산 — 매트릭스가 비활성 직원도 행으로 보여주는 이유가
+    "재활성/이력 확인"(staff_admin.build_matrix 계약)인데 되돌릴 API 가 없어
+    복직·오조작이 DB 직접 수정으로만 풀렸다(2026-07-28 보강).
+
+    게이트는 deactivate 와 동일(IsOwner + _load_managed_staff) — 직원 계정
+    관리는 대표 전용 민감 기능 후보이므로(key_considerations §2) 되돌리기만
+    문턱을 낮추면 그 판단이 무너진다. 기능 권한 delta 는 건드리지 않는다
+    (비활성 중에도 보존되므로 재활성 시 원래 권한이 그대로 살아난다).
+    이미 활성인 계정에 호출해도 200(멱등 — 화면 재시도 안전).
+    """
+
+    permission_classes = [IsOwner]
+
+    def patch(self, request, user_id):
+        target, error = _load_managed_staff(user_id)
+        if error is not None:
+            return error
+        target.is_active = True
+        target.save(update_fields=["is_active"])
+        return Response(staff_admin.matrix_row(target))
+
+
 class AccountBulkIssueView(APIView):
     """POST /api/admin/accounts/bulk — 학생 명단 일괄 발급 (계정관리).
 
@@ -341,6 +373,50 @@ class AccountRegisterView(APIView):
                 "enrollment_status": student.enrollment_status,
                 "registered_at": timezone.localtime(student.registered_at).isoformat(),
             }
+        )
+
+
+class StudentDirectoryView(APIView):
+    """GET /api/admin/students — 학생 명부 조회 (직원 공통, 페이지네이션).
+
+    권한이 기능 키가 아니라 역할 게이트(IsStaffRole)인 근거는
+    student_directory 모듈 docstring 참조 — 워크북 업로드 대상 선택(조교)과
+    등록 전환 대상 찾기(계정관리자)가 같은 조회를 쓰므로 기능 키 하나로 묶으면
+    한쪽이 막힌다. 응답은 이름·원번·학년·반·등록상태뿐(연락처 미노출).
+
+    쿼리: q / enrollment_status / course_id / class_name / page.
+    """
+
+    permission_classes = [IsStaffRole]
+
+    def get(self, request):
+        params = request.query_params
+        enrollment_status = (params.get("enrollment_status") or "").strip()
+        if enrollment_status and enrollment_status not in Student.EnrollmentStatus.values:
+            return Response(
+                {"detail": "enrollment_status 값이 올바르지 않습니다(예비등록/등록/퇴원)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        raw_course_id = (params.get("course_id") or "").strip()
+        course_id = None
+        if raw_course_id:
+            try:
+                course_id = int(raw_course_id)
+            except ValueError:
+                return Response(
+                    {"detail": "course_id가 올바르지 않습니다."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        queryset = student_directory.build_queryset(
+            q=(params.get("q") or "").strip(),
+            enrollment_status=enrollment_status,
+            course_id=course_id,
+            class_name=(params.get("class_name") or "").strip(),
+        )
+        paginator = PageNumberPagination()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        return paginator.get_paginated_response(
+            [student_directory.row(student) for student in page]
         )
 
 

@@ -4,15 +4,15 @@
  * API
  *   POST /api/admin/accounts/bulk                명단 리스트 → 행별 결과(초기 비번 1회)
  *   POST /api/admin/accounts/{student_id}/register  1주차 출석 확인 후 등록 전환
- *   GET  /api/admin/attendance/sessions           예비등록 명단을 뽑을 회차 목록
- *   GET  /api/admin/attendance/sessions/{id}      회차 출석부(enrollment_status 포함)
+ *   GET  /api/admin/students?enrollment_status=예비등록  전환 대기 명부(직원 공통 권한)
+ *   GET  /api/admin/attendance/sessions(/{id})   판단 근거가 되는 1주차 출석부(출결입력 권한)
  *
  * 화면 설계
  * - 명단은 엑셀에서 그대로 붙여넣는 게 현실이라 “붙여넣기 → 행 격자”가 기본이고,
  *   한두 명만 추가할 때를 위해 행을 직접 채울 수도 있다.
- * - 등록 전환 대상(예비등록 학생)만 뽑아 주는 API 가 없다. 대신 정책이 곧
- *   “1주차 출석 확인 후 전환”이므로 출결 회차의 출석부에서 예비등록만 걸러
- *   출석 여부와 나란히 보여 준다 — 판단 근거와 버튼이 같은 줄에 있게 된다.
+ * - 전환 대기 목록은 **명부 API 가 기준**이다(예비등록으로 직접 조회). 출결 권한이
+ *   있으면 그 위에 1주차 출석 여부를 얹어 판단 근거와 버튼을 같은 줄에 둔다 —
+ *   출결 권한이 없어도 목록 자체는 비지 않는다.
  */
 import { useMemo, useState } from "react";
 
@@ -36,14 +36,14 @@ import {
   Textarea,
   useToast,
 } from "../../../components";
+import {
+  DirectoryPage,
+  PreRegisteredRow,
+  directoryParams,
+  mergePreRegistered,
+} from "./directory";
 import "./manage.css";
-import type {
-  BulkResult,
-  BulkResultRow,
-  RosterStudent,
-  SessionDetail,
-  SessionRow,
-} from "./types";
+import type { BulkResult, BulkResultRow, SessionDetail, SessionRow } from "./types";
 
 interface EntryRow {
   key: number;
@@ -114,6 +114,8 @@ export default function AccountsPage() {
   const [rows, setRows] = useState<EntryRow[]>(() => [blankRow(), blankRow(), blankRow()]);
   const [pasted, setPasted] = useState("");
   const [result, setResult] = useState<BulkResult | null>(null);
+  // 발급에 성공할 때마다 올린다 — 아래 전환 대기 명부가 새 학생을 바로 집어 온다.
+  const [issuedCount, setIssuedCount] = useState(0);
 
   const issue = useApiAction(async (body: Omit<EntryRow, "key">[]) => {
     const { data } = await http.post<BulkResult>("/admin/accounts/bulk", body);
@@ -131,6 +133,7 @@ export default function AccountsPage() {
     const data = await issue.run(payload);
     if (!data) return;
     setResult(data);
+    if (data.summary.created > 0) setIssuedCount((prev) => prev + 1);
     // 성공한 행은 입력 격자에서 비운다 — 두 번 발급하는 사고를 막는다.
     const failedIndexes = new Set(
       data.results.filter((r) => r.status === "실패").map((r) => r.index),
@@ -356,20 +359,38 @@ export default function AccountsPage() {
         </Card>
       )}
 
-      {hasFeature("출결입력") ? <PreRegisteredPanel /> : <PreRegisteredUnavailable />}
+      <PreRegisteredPanel canReadRoster={hasFeature("출결입력")} reloadToken={issuedCount} />
     </>
   );
 }
 
 /* ── 예비등록 → 등록 전환 ───────────────────────────────────────────── */
 
-function PreRegisteredPanel() {
-  const sessions = useApi(
-    () =>
-      http.get<{ sessions: SessionRow[] }>("/admin/attendance/sessions").then((r) => r.data.sessions),
-    [],
-  );
+function PreRegisteredPanel({
+  canReadRoster,
+  reloadToken,
+}: {
+  /** 출결입력 권한 — 있으면 1주차 출석 여부를 함께 보여 준다. */
+  canReadRoster: boolean;
+  /** 계정 발급이 성공할 때마다 바뀌는 값. 바뀌면 명부를 다시 읽는다. */
+  reloadToken: number;
+}) {
   const [sessionId, setSessionId] = useState<number | null>(null);
+  const [pendingId, setPendingId] = useState<number | null>(null);
+
+  // 전환 대기 명부 — 이 화면의 기준. 출결 권한과 무관하게 언제나 읽힌다.
+  const waiting = useApi(async () => {
+    const { data } = await http.get<DirectoryPage>("/admin/students", {
+      params: directoryParams({ enrollment_status: "예비등록" }),
+    });
+    return data;
+  }, [reloadToken]);
+
+  const sessions = useApi(async () => {
+    if (!canReadRoster) return null;
+    const { data } = await http.get<{ sessions: SessionRow[] }>("/admin/attendance/sessions");
+    return data.sessions;
+  }, [canReadRoster]);
 
   // 정책상 근거가 되는 회차는 1주차다 — 없으면 가장 이른 회차.
   const defaultSession = useMemo(() => {
@@ -381,40 +402,37 @@ function PreRegisteredPanel() {
   const chosen = sessionId ?? defaultSession;
 
   const roster = useApi(async () => {
-    if (chosen === null) return null;
+    if (!canReadRoster || chosen === null) return null;
     const { data } = await http.get<SessionDetail>(`/admin/attendance/sessions/${chosen}`);
-    return data;
-  }, [chosen]);
+    return data.students;
+  }, [canReadRoster, chosen]);
 
   // 액션이 값을 돌려줘야 성공/실패를 구분할 수 있다(useApiAction 계약).
   const register = useApiAction(async (studentId: number) => {
     await http.post(`/admin/accounts/${studentId}/register`);
     return true;
   });
-  const [pendingId, setPendingId] = useState<number | null>(null);
 
-  const convert = async (student: RosterStudent) => {
+  const convert = async (student: PreRegisteredRow) => {
     setPendingId(student.student_id);
     const ok = await register.run(student.student_id);
     setPendingId(null);
     if (!ok) return; // 실패 사유는 카드 안 Alert 로 보인다
-    await roster.reload();
+    await waiting.reload();
   };
 
-  const waiting = (roster.data?.students ?? []).filter(
-    (student) => student.enrollment_status === "예비등록",
-  );
+  const rows = mergePreRegistered(waiting.data?.results ?? [], roster.data);
 
   return (
     <Card
       title="등록 전환 대기"
-      aside={roster.data ? `예비등록 ${waiting.length}명` : undefined}
+      aside={waiting.data ? `예비등록 ${waiting.data.count}명` : undefined}
       padding="none"
     >
       <div style={{ padding: "var(--space-lg) var(--space-lg) 0" }} className="ui-stack--md">
         <p style={{ margin: 0, color: "var(--color-ink-2)" }}>
-          계정을 받은 학생은 먼저 예비등록 상태입니다. 실제로 첫 수업에 나온 것을 출석부로
-          확인한 뒤 등록으로 바꾸면 성적·클리닉·워크북이 열립니다.
+          계정을 받은 학생은 먼저 예비등록 상태입니다. 실제로 첫 수업에 나온 것을 확인한 뒤
+          등록으로 바꾸면 성적·클리닉·워크북이 열립니다.
         </p>
 
         {register.error && (
@@ -423,51 +441,58 @@ function PreRegisteredPanel() {
           </Alert>
         )}
 
-        {sessions.loading ? null : sessions.error ? (
-          <Alert tone="danger">{sessions.error}</Alert>
-        ) : (
-          <div className="pm-toolbar">
-            <div className="pm-toolbar__wide">
-              <Field label="확인할 회차" hint="보통 1주차 출석부를 기준으로 판단합니다.">
-                {(props) => (
-                  <Select
-                    {...props}
-                    value={chosen ?? ""}
-                    onChange={(e) => setSessionId(Number(e.target.value))}
-                  >
-                    {(sessions.data ?? []).map((session) => (
-                      <option key={session.session_id} value={session.session_id}>
-                        {session.session_date}
-                        {session.session_no ? ` · ${session.session_no}회차` : ""}
-                        {session.week_no ? ` (${session.week_no}주차)` : ""}
-                      </option>
-                    ))}
-                  </Select>
-                )}
-              </Field>
+        {canReadRoster ? (
+          sessions.error ? (
+            <Alert tone="danger">{sessions.error}</Alert>
+          ) : (sessions.data ?? []).length > 0 ? (
+            <div className="pm-toolbar">
+              <div className="pm-toolbar__wide">
+                <Field label="출석을 확인할 회차" hint="보통 1주차 출석부를 기준으로 판단합니다.">
+                  {(props) => (
+                    <Select
+                      {...props}
+                      value={chosen ?? ""}
+                      onChange={(e) => setSessionId(Number(e.target.value))}
+                    >
+                      {(sessions.data ?? []).map((session) => (
+                        <option key={session.session_id} value={session.session_id}>
+                          {session.session_date}
+                          {session.session_no ? ` · ${session.session_no}회차` : ""}
+                          {session.week_no ? ` (${session.week_no}주차)` : ""}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                </Field>
+              </div>
             </div>
-          </div>
+          ) : null
+        ) : (
+          <Alert tone="info">
+            이 계정에는 출결 입력 권한이 없어 출석 여부는 함께 보여 드릴 수 없습니다. 첫 수업에
+            나왔는지 확인한 뒤 전환하세요.
+          </Alert>
         )}
       </div>
 
-      {roster.loading ? (
-        <Loading label="출석부를 불러오는 중…" />
-      ) : roster.error ? (
-        <ErrorState description={roster.error} onRetry={roster.reload} />
+      {waiting.loading ? (
+        <Loading label="전환 대기 명부를 불러오는 중…" />
+      ) : waiting.error ? (
+        <ErrorState description={waiting.error} onRetry={waiting.reload} />
       ) : (
-        <Table<RosterStudent>
-          rows={waiting}
+        <Table<PreRegisteredRow>
+          rows={rows}
           rowKey={(row) => row.student_id}
           dense
-          caption="예비등록 학생과 이 회차 출석 여부"
+          caption="예비등록 학생과 1주차 출석 여부"
           empty={
             <EmptyState
-              title="이 회차에는 등록 전환을 기다리는 학생이 없습니다"
-              description="다른 회차를 고르거나, 위에서 새 명단을 발급하세요."
+              title="등록 전환을 기다리는 학생이 없습니다"
+              description="계정을 새로 발급하면 예비등록 학생이 여기에 나타납니다."
             />
           }
           columns={[
-            { key: "name", header: "학생", cell: (row) => row.name },
+            { key: "name", header: "학생", cell: (row) => row.name ?? "이름 미등록" },
             {
               key: "unique_id",
               header: "원번",
@@ -475,17 +500,22 @@ function PreRegisteredPanel() {
               sortValue: (row) => row.unique_id,
               cell: (row) => row.unique_id || "—",
             },
+            { key: "grade", header: "학년", cell: (row) => row.grade || "—" },
             { key: "class", header: "반", cell: (row) => row.current_class ?? "미배정" },
-            {
-              key: "attendance",
-              header: "이 회차 출석",
-              cell: (row) =>
-                row.attendance?.status ? (
-                  <StatusBadge status={row.attendance.status} />
-                ) : (
-                  <span style={{ color: "var(--color-muted)" }}>기록 없음</span>
-                ),
-            },
+            ...(canReadRoster
+              ? [
+                  {
+                    key: "attendance",
+                    header: "이 회차 출석",
+                    cell: (row: PreRegisteredRow) =>
+                      row.attendance_status ? (
+                        <StatusBadge status={row.attendance_status} />
+                      ) : (
+                        <span style={{ color: "var(--color-muted)" }}>기록 없음</span>
+                      ),
+                  },
+                ]
+              : []),
             {
               key: "action",
               header: "처리",
@@ -494,7 +524,7 @@ function PreRegisteredPanel() {
               cell: (row) => (
                 <Button
                   size="sm"
-                  variant={row.attendance?.status === "출석" ? "primary" : "secondary"}
+                  variant={row.attendance_status === "출석" ? "primary" : "secondary"}
                   loading={pendingId === row.student_id}
                   onClick={() => void convert(row)}
                 >
@@ -505,18 +535,6 @@ function PreRegisteredPanel() {
           ]}
         />
       )}
-    </Card>
-  );
-}
-
-/** 출결 권한이 없으면 예비등록 명단을 뽑을 길이 없다 — 왜 비었는지 그대로 쓴다. */
-function PreRegisteredUnavailable() {
-  return (
-    <Card title="등록 전환 대기">
-      <EmptyState
-        title="예비등록 명단은 출석부에서 불러옵니다"
-        description="이 계정에는 출결 입력 권한이 없어 출석부를 열 수 없습니다. 출결을 담당하는 관리자에게 전환을 요청하거나, 대표에게 출결입력 권한을 요청하세요."
-      />
     </Card>
   );
 }

@@ -15,6 +15,12 @@ include_billing 플래그로 추가된다.
 
 시간 의미론: 기준 시각은 이 모듈의 timezone.now() 1회 호출로 고정하고,
 오늘·D-n 은 Asia/Seoul 로컬 날짜(timezone.localdate) 기준으로 계산한다.
+
+동보 신청 동선(2026-07-28 보강): 캘린더 일자와 학부모 결석 항목이 결석 근거의
+`attendance_id`(동보 신청 API 의 body 키)와 `makeup_status`(중복 신청 차단 근거)를
+함께 내린다 — 프런트가 결석 칸에서 신청을 완결할 수 있게. 동보 상태는
+makeup_grants 를 **참조만** 하며(사본 금지 — key_considerations §6) 학생·학부모
+양쪽이 같은 필드명·값집합(신청/승인/지급완료/거절, 미신청은 null)을 쓴다.
 """
 import calendar as pycalendar
 import datetime
@@ -86,6 +92,9 @@ def build_home_payload(student, month=None, include_billing=False):
         ).values_list("session_date", flat=True)
     )
     orders = _orders(student)
+    # 동보 상태도 1회 로드해 캘린더 일자(_days)와 학부모 결석 목록(_absences)이
+    # 공유한다 — 결석이 없으면 쿼리 자체가 없다(쿼리 수 계약).
+    makeup_status_map = _makeup_status_map(attendances)
 
     # 주차 데이터는 1회 로드해 진행 표기(_course_block)와 주차 목록(_weeks)이
     # 공유한다 — released() 이중 실행 방지(쿼리 수 계약).
@@ -101,14 +110,14 @@ def build_home_payload(student, month=None, include_billing=False):
             else None
         ),
         "calendar": {
-            "days": _days(attendances, session_dates),
+            "days": _days(attendances, session_dates, makeup_status_map),
             "weeks": _weeks(primary.course, week_nos, released_weeks) if primary else [],
         },
         "deadlines": _deadlines(student, orders, today, now),
     }
     if include_billing:
         payload["payment_status"] = _payment_status(orders)
-        payload["absences"] = _absences(attendances)
+        payload["absences"] = _absences(attendances, makeup_status_map)
     return payload
 
 
@@ -180,13 +189,23 @@ def _course_block(primary, enrollments, today, week_nos, released_weeks):
     }
 
 
-def _days(attendances, session_dates):
-    """날짜별 출결 도장·예정 수업 — 뭔가 있는 날만 담는 희소 리스트."""
-    stamps = {a.session.session_date: a.status for a in attendances}
+def _days(attendances, session_dates, makeup_status_map):
+    """날짜별 출결 도장·예정 수업 — 뭔가 있는 날만 담는 희소 리스트.
+
+    출결이 있는 날은 `attendance_id`(동보 신청 body 키)와 `makeup_status`
+    (결석일 때의 동보 진행 상태)를 함께 내린다 — 결석 칸에서 신청을 완결하고
+    중복 신청 버튼을 감추기 위한 최소 정보. 출결이 없는 날(예정 수업만)은 둘 다
+    null 이며 **키는 항상 존재**한다(프런트 분기 단순화).
+    """
+    stamps = {a.session.session_date: a for a in attendances}
     return [
         {
             "date": d.isoformat(),
-            "attendance": stamps.get(d),
+            "attendance": stamps[d].status if d in stamps else None,
+            "attendance_id": stamps[d].id if d in stamps else None,
+            "makeup_status": (
+                makeup_status_map.get(stamps[d].id) if d in stamps else None
+            ),
             "has_class_session": d in session_dates,
         }
         for d in sorted(set(stamps) | session_dates)
@@ -312,23 +331,35 @@ def _payment_status(orders):
     ]
 
 
-def _absences(attendances):
-    """월 내 결석일 + 동보 신청 여부(학부모 홈, PRD 3.2.0 학부모 관점).
+def _makeup_status_map(attendances):
+    """결석별 최신 동보 상태 {attendance_id: status} — 1쿼리, 결석 없으면 0쿼리.
 
-    출결 SSOT(attendances)에서 파생하며 동보 상태는 makeup_grants 를 참조만
-    한다(사본 금지 — key_considerations §6). makeup_status None = 미신청.
+    출결 SSOT(attendances)에서 파생하며 makeup_grants 를 참조만 한다(사본 금지
+    — key_considerations §6). 같은 결석에 거절 후 재신청이 쌓일 수 있으므로
+    makeup_id 오름차순으로 덮어써 **최신 신청**을 화면 상태로 삼는다.
+    반환에 없는 결석 = 미신청(소비자 응답에서는 null).
     """
-    absent = [a for a in attendances if a.status == Attendance.Status.ABSENT]
-    makeup_by_attendance = {}
-    if absent:
-        makeup_rows = MakeupGrant.objects.filter(
-            attendance_id__in=[a.id for a in absent]
-        ).order_by("makeup_id")
-        makeup_by_attendance = {m.attendance_id: m.status for m in makeup_rows}
+    absent_ids = [
+        a.id for a in attendances if a.status == Attendance.Status.ABSENT
+    ]
+    if not absent_ids:
+        return {}
+    rows = MakeupGrant.objects.filter(attendance_id__in=absent_ids).order_by("makeup_id")
+    return {m.attendance_id: m.status for m in rows}
+
+
+def _absences(attendances, makeup_status_map):
+    """월 내 결석일 + 동보 신청 근거·상태(학부모 홈, PRD 3.2.0 학부모 관점).
+
+    attendance_id 는 학부모 동보 신청 API 의 body 키이고, makeup_status 는
+    중복 신청 차단 근거다(캘린더 일자와 같은 필드명·값집합). None = 미신청.
+    """
     return [
         {
+            "attendance_id": a.id,
             "date": a.session.session_date.isoformat(),
-            "makeup_status": makeup_by_attendance.get(a.id),
+            "makeup_status": makeup_status_map.get(a.id),
         }
-        for a in absent
+        for a in attendances
+        if a.status == Attendance.Status.ABSENT
     ]

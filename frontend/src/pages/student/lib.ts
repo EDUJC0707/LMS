@@ -108,6 +108,10 @@ export interface HomeCourse {
 export interface CalendarDay {
   date: string;
   attendance: string | null; // "출석" | "지각" | "결석" | null
+  /** 출결 레코드 PK. null = 그날 출결 기록 없음. 동보 신청 body 의 키가 그대로 이 값이다. */
+  attendance_id: number | null;
+  /** null = 동보 미신청. 그 외 신청 · 승인 · 지급완료 · 거절 */
+  makeup_status: string | null;
   has_class_session: boolean;
 }
 

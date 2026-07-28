@@ -224,6 +224,48 @@ class StudentHomeCalendarTests(HomeFixtureMixin, TestCase):
         # 아무 일도 없는 날은 항목 자체가 없다(희소 리스트)
         self.assertNotIn("2026-07-10", days)
 
+    def test_days_carry_attendance_id_for_makeup_request(self):
+        # 동보 신청(POST /api/student/makeup-request)의 body 키 — 화면에서
+        # 결석 칸을 눌러 바로 신청하려면 이 값이 응답에 있어야 한다
+        self.login_student()
+        days = {d["date"]: d for d in self.get_home().json()["calendar"]["days"]}
+        self.assertEqual(days["2026-07-15"]["attendance_id"], self.att_absent.id)
+        self.assertEqual(days["2026-07-08"]["attendance_id"], self.att_present.id)
+        # 출결이 없는 예정일은 null(키는 존재 — 프런트 분기 단순화)
+        self.assertIsNone(days["2026-07-29"]["attendance_id"])
+
+    def test_absent_day_carries_makeup_status(self):
+        # 중복 신청 버튼 차단 근거 — 학부모 absences[].makeup_status 와 동일 형태
+        self.login_student()
+        days = {d["date"]: d for d in self.get_home().json()["calendar"]["days"]}
+        self.assertIsNone(days["2026-07-15"]["makeup_status"])
+        MakeupGrant.objects.create(
+            student=self.student,
+            attendance=self.att_absent,
+            source=MakeupGrant.Source.STUDENT_REQUEST,
+        )
+        days = {d["date"]: d for d in self.get_home().json()["calendar"]["days"]}
+        self.assertEqual(days["2026-07-15"]["makeup_status"], "신청")
+        # 결석 아닌 날은 동보 개념 자체가 없다 — 항상 null
+        self.assertIsNone(days["2026-07-08"]["makeup_status"])
+
+    def test_makeup_status_takes_latest_request_after_rejection(self):
+        # 거절 후 재신청 — 최신 신청(makeup_id 최대)이 화면 상태다
+        self.login_student()
+        MakeupGrant.objects.create(
+            student=self.student,
+            attendance=self.att_absent,
+            source=MakeupGrant.Source.STUDENT_REQUEST,
+            status=MakeupGrant.Status.REJECTED,
+        )
+        MakeupGrant.objects.create(
+            student=self.student,
+            attendance=self.att_absent,
+            source=MakeupGrant.Source.STUDENT_REQUEST,
+        )
+        days = {d["date"]: d for d in self.get_home().json()["calendar"]["days"]}
+        self.assertEqual(days["2026-07-15"]["makeup_status"], "신청")
+
     def test_month_param_filters_days(self):
         self.login_student()
         ClassSession.objects.create(
@@ -298,9 +340,18 @@ class StudentHomeCalendarTests(HomeFixtureMixin, TestCase):
             product=Product.objects.create(name="교재", price=45000),
             amount=45000,
         )
-        with freeze_now(), self.assertNumQueries(12):
+        # 12 → 13 (2026-07-28): 결석 칸의 makeup_status 를 위한 동보 조회 1건.
+        # 결석 수와 무관한 IN 조회 1회이며 학부모 홈과 공유한다(N+1 아님).
+        with freeze_now(), self.assertNumQueries(13):
             res = self.client.get(STUDENT_HOME)
         self.assertEqual(len(res.json()["deadlines"]), 3)
+
+    def test_no_makeup_query_when_month_has_no_absence(self):
+        # 결석이 없으면 동보 조회 자체가 없다 — 위 13건에서 정확히 1건이 빠진다
+        self.login_student()
+        with freeze_now(), self.assertNumQueries(12):
+            res = self.client.get(STUDENT_HOME + "?month=2026-08")
+        self.assertEqual(res.json()["calendar"]["days"], [])
 
 
 class StudentHomeDeadlineTests(HomeFixtureMixin, TestCase):
@@ -536,6 +587,17 @@ class ParentHomeTests(HomeFixtureMixin, TestCase):
         entry = self.get_parent_home().json()["absences"][0]
         self.assertEqual(entry["date"], "2026-07-15")
         self.assertIsNone(entry["makeup_status"])
+
+    def test_absences_carry_attendance_id(self):
+        # 학부모 동보 신청(POST /api/parent/makeup-request) body 키
+        entry = self.get_parent_home().json()["absences"][0]
+        self.assertEqual(entry["attendance_id"], self.att_absent.id)
+
+    def test_parent_days_carry_attendance_id_and_makeup_status(self):
+        # 학생 홈과 같은 조립부(_days) — 형태 동일
+        days = {d["date"]: d for d in self.get_parent_home().json()["calendar"]["days"]}
+        self.assertEqual(days["2026-07-15"]["attendance_id"], self.att_absent.id)
+        self.assertIsNone(days["2026-07-15"]["makeup_status"])
 
     def test_bare_child_keeps_payment_status(self):
         # 미등록 자녀 — bare 구성 + 결제 상태(학부모 결제 액션 근거)는 유지

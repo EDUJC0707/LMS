@@ -6,12 +6,15 @@
  *   PUT   /api/admin/staff/{user_id}/features   변경분만 {기능키: bool}
  *   POST  /api/admin/staff                      직원 생성(이름·전화=아이디·역할)
  *   PATCH /api/admin/staff/{user_id}/deactivate 비활성(로그인 차단)
+ *   PATCH /api/admin/staff/{user_id}/activate   재활성(로그인 허용, 멱등)
  *
  * 화면 설계
  * - 행=기능(12개 고정), 열=직원. 기능 수는 고정이고 직원 수만 늘어나므로
  *   이 방향이라야 데스크탑에서 가로 스크롤 없이 읽힌다.
  * - 셀은 프리셋 / 개별 부여 / 개별 회수 3축이 색·라벨로 갈린다(범례 참조).
  * - 서버가 400 을 주는 대상(자기 자신·대표)은 애초에 매트릭스에 넣지 않는다.
+ * - 비활성은 되돌릴 수 있다. 기능 권한 delta 는 비활성 중에도 보존되므로
+ *   재활성하면 원래 권한이 그대로 살아난다 — 계정을 새로 발급할 이유가 없다.
  */
 import { FormEvent, useMemo, useState } from "react";
 
@@ -30,6 +33,7 @@ import {
   Modal,
   PageHeader,
   Select,
+  Table,
 } from "../../../components";
 import "./manage.css";
 import type { StaffCreated, StaffMatrix, StaffRow } from "./types";
@@ -92,6 +96,11 @@ export default function StaffPage() {
     await http.patch(`/admin/staff/${userId}/deactivate`);
     return true;
   });
+  const activate = useApiAction(async (userId: number) => {
+    await http.patch(`/admin/staff/${userId}/activate`);
+    return true;
+  });
+  const [activatingId, setActivatingId] = useState<number | null>(null);
 
   const data = matrix.data;
 
@@ -146,6 +155,14 @@ export default function StaffPage() {
     const ok = await deactivate.run(deactivating.user_id);
     if (!ok) return; // 실패 사유는 모달 안 Alert 로 보인다
     setDeactivating(null);
+    await matrix.reload();
+  };
+
+  const restore = async (staff: StaffRow) => {
+    setActivatingId(staff.user_id);
+    const ok = await activate.run(staff.user_id);
+    setActivatingId(null);
+    if (!ok) return; // 실패 사유는 비활성 목록 위 Alert 로 보인다
     await matrix.reload();
   };
 
@@ -327,18 +344,78 @@ export default function StaffPage() {
           </Card>
 
           {retired.length > 0 && (
-            <DetailsPanel summary="비활성 직원" aside={`${retired.length}명 — 로그인 차단됨`}>
+            <DetailsPanel
+              summary="비활성 직원"
+              aside={`${retired.length}명 — 로그인 차단됨`}
+              defaultOpen
+            >
               <p style={{ marginTop: 0, color: "var(--color-muted)" }}>
                 퇴사·휴직으로 로그인을 막아 둔 계정입니다. 남긴 출결·성적 기록을 보존하려고
-                지우지 않습니다. 다시 근무하게 되면 계정을 새로 발급하세요.
+                지우지 않습니다. 권한 설정도 그대로 남아 있어, 다시 활성화하면 예전 권한으로
+                바로 돌아옵니다.
               </p>
-              <ul className="ui-stack--sm" style={{ margin: 0, paddingLeft: "1.2rem" }}>
-                {retired.map((staff) => (
-                  <li key={staff.user_id}>
-                    {staff.name} · {staff.role} · <span className="num">{staff.login_id}</span>
-                  </li>
-                ))}
-              </ul>
+
+              {activate.error && (
+                <Alert tone="danger" onClose={activate.clearError}>
+                  {activate.error}
+                </Alert>
+              )}
+
+              <Table<StaffRow>
+                rows={retired}
+                rowKey={(row) => row.user_id}
+                dense
+                caption="비활성 직원과 재활성 처리"
+                columns={[
+                  { key: "name", header: "이름", cell: (row) => row.name },
+                  {
+                    key: "role",
+                    header: "역할",
+                    width: "6rem",
+                    cell: (row) => (
+                      <Badge tone={row.role === "관리자" ? "accent" : "neutral"}>{row.role}</Badge>
+                    ),
+                  },
+                  {
+                    key: "login_id",
+                    header: "아이디",
+                    numeric: true,
+                    cell: (row) => row.login_id,
+                  },
+                  {
+                    key: "state",
+                    header: "상태",
+                    width: "8rem",
+                    cell: () => <Badge tone="warning">로그인 차단</Badge>,
+                  },
+                  {
+                    key: "features",
+                    header: "보존된 권한",
+                    cell: (row) =>
+                      row.effective.length === 0 ? (
+                        <span style={{ color: "var(--color-muted)" }}>없음</span>
+                      ) : (
+                        `${row.effective.length}개 — ${row.effective.join(" · ")}`
+                      ),
+                  },
+                  {
+                    key: "action",
+                    header: "처리",
+                    align: "right",
+                    width: "9rem",
+                    cell: (row) => (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        loading={activatingId === row.user_id}
+                        onClick={() => void restore(row)}
+                      >
+                        다시 활성화
+                      </Button>
+                    ),
+                  },
+                ]}
+              />
             </DetailsPanel>
           )}
         </>
@@ -377,7 +454,8 @@ export default function StaffPage() {
           남긴 출결·성적 기록은 그대로 보존됩니다.
         </p>
         <p style={{ marginBottom: 0, color: "var(--color-muted)" }}>
-          이 화면에서 되돌릴 수는 없습니다. 다시 근무하게 되면 계정을 새로 발급하세요.
+          되돌릴 수 있습니다 — 아래 &lsquo;비활성 직원&rsquo;에서 다시 활성화하면 지금 권한
+          그대로 로그인이 열립니다.
         </p>
       </Modal>
     </>

@@ -1,45 +1,45 @@
 /**
  * 보강 영상(동보) 신청 — 자녀 결석 목록 + POST /api/parent/makeup-request
  *
- * 결석 목록은 GET /api/parent/home?month= 의 absences 블록에서 온다.
- * ⚠ 현재 백엔드는 absences 에 attendance_id 를 내려주지 않는데(신청 API 는 그
- *   id 를 요구한다), 그래서 신청 버튼은 id 가 실제로 내려온 결석에만 그린다 —
- *   없는 자격을 회색 버튼으로 만들어 두지 않는다(PRD §4 상태 기반 노출).
- *   서버가 id 를 실어 주는 순간 이 화면은 고칠 것 없이 신청까지 동작한다.
+ * 결석 목록은 GET /api/parent/home?month= 의 absences 블록에서 온다. 서버가
+ * 결석마다 attendance_id 를 함께 내려주므로(2026-07-28 보강) 표의 버튼 한 번으로
+ * 신청이 끝난다 — "신청 단추가 보이지 않는 결석" 안내는 더 이상 필요 없다.
+ *
+ * 신청 대상 판정·표는 features/makeup 에서 학생 화면과 공유한다.
  */
 import { useState } from "react";
 
 import { http, useApi, useApiAction } from "../../api";
 import {
   Alert,
-  Badge,
   Button,
   Card,
   EmptyState,
   ErrorState,
   Loading,
   PageHeader,
-  StatusBadge,
-  Table,
 } from "../../components";
+import { AbsenceRequestTable } from "../../features/makeup/AbsenceRequestTable";
+import { MakeupAbsence, requestableCount } from "../../features/makeup/absences";
 import { NO_CHILD_DESC, NO_CHILD_TITLE, useChild } from "./childContext";
 import { currentMonth, dayLabel, monthLabel, shiftMonth } from "./format";
+import { PreEnrollNotice } from "./PreEnrollNotice";
 import "./parent.css";
-import { AbsenceRow, MakeupBlock, ParentHome } from "./types";
+import { MakeupBlock, ParentHome } from "./types";
 
 export default function ParentMakeupPage() {
-  const { studentId, child, picker } = useChild();
+  const { studentId, child, picker, enrolled } = useChild();
   const [month, setMonth] = useState(currentMonth());
   const [requesting, setRequesting] = useState<number | null>(null);
 
   const home = useApi<ParentHome | null>(
     () =>
-      studentId === null
+      studentId === null || !enrolled
         ? Promise.resolve(null)
         : http
             .get<ParentHome>("/parent/home", { params: { student_id: studentId, month } })
             .then((response) => response.data),
-    [studentId, month],
+    [studentId, enrolled, month],
   );
 
   const request = useApiAction(async (attendanceId: number) => {
@@ -49,8 +49,7 @@ export default function ParentMakeupPage() {
     return data.makeup;
   });
 
-  const submit = async (row: AbsenceRow) => {
-    if (row.attendance_id === undefined) return;
+  const submit = async (row: MakeupAbsence) => {
     setRequesting(row.attendance_id);
     const created = await request.run(row.attendance_id);
     setRequesting(null);
@@ -58,15 +57,9 @@ export default function ParentMakeupPage() {
     if (created) await home.reload();
   };
 
-  const absences = home.data?.absences;
+  const absences = home.data?.absences ?? [];
   const started = home.data?.calendar != null;
-  // 신청할 수 있는 결석이 하나도 없으면 신청 열 자체를 만들지 않는다.
-  const requestable = (absences ?? []).some(
-    (row) => row.makeup_status === null && row.attendance_id !== undefined,
-  );
-  const blocked = (absences ?? []).some(
-    (row) => row.makeup_status === null && row.attendance_id === undefined,
-  );
+  const openCount = requestableCount(absences);
 
   return (
     <>
@@ -82,6 +75,12 @@ export default function ParentMakeupPage() {
         <Card>
           <EmptyState title={NO_CHILD_TITLE} description={NO_CHILD_DESC} />
         </Card>
+      ) : !enrolled ? (
+        <PreEnrollNotice
+          child={child}
+          what="보강 영상 신청"
+          why="결석한 수업이 있어야 보강 영상을 신청할 수 있습니다."
+        />
       ) : home.loading ? (
         <Loading />
       ) : home.error ? (
@@ -96,6 +95,13 @@ export default function ParentMakeupPage() {
 
           <Card
             title="결석한 수업"
+            aside={
+              absences.length > 0
+                ? openCount > 0
+                  ? `신청할 수 있는 결석 ${openCount}건`
+                  : "모두 처리됨"
+                : undefined
+            }
             actions={
               <div className="parent-monthnav">
                 <Button size="sm" onClick={() => setMonth(shiftMonth(month, -1))}>
@@ -107,62 +113,25 @@ export default function ParentMakeupPage() {
                 </Button>
               </div>
             }
-            padding={absences && absences.length > 0 ? "none" : "md"}
+            padding={absences.length > 0 ? "none" : "md"}
           >
             {!started ? (
               <EmptyState
                 title="아직 수업이 시작되지 않았습니다"
                 description="등록이 확정되고 수업이 시작되면 결석 기록과 보강 영상 신청이 여기에 열립니다."
               />
-            ) : !absences || absences.length === 0 ? (
+            ) : absences.length === 0 ? (
               <EmptyState
                 title={`${monthLabel(month)}에는 결석이 없습니다`}
                 description="다른 달을 보려면 위의 달 이동 단추를 눌러 주세요."
               />
             ) : (
-              <Table
+              <AbsenceRequestTable
                 rows={absences}
-                rowKey={(row) => row.date}
+                formatDate={dayLabel}
+                onRequest={submit}
+                pendingId={requesting}
                 caption="결석일과 보강 영상 신청 상태"
-                columns={[
-                  {
-                    key: "date",
-                    header: "결석한 날",
-                    cell: (row: AbsenceRow) => dayLabel(row.date),
-                  },
-                  {
-                    key: "status",
-                    header: "보강 영상",
-                    width: "9rem",
-                    cell: (row: AbsenceRow) =>
-                      row.makeup_status ? (
-                        <StatusBadge status={row.makeup_status} />
-                      ) : (
-                        <Badge tone="outline">신청 전</Badge>
-                      ),
-                  },
-                  ...(requestable
-                    ? [
-                        {
-                          key: "action",
-                          header: "신청",
-                          width: "8rem",
-                          align: "right" as const,
-                          cell: (row: AbsenceRow) =>
-                            row.makeup_status === null && row.attendance_id !== undefined ? (
-                              <Button
-                                size="sm"
-                                variant="primary"
-                                loading={requesting === row.attendance_id}
-                                onClick={() => submit(row)}
-                              >
-                                신청하기
-                              </Button>
-                            ) : null,
-                        },
-                      ]
-                    : []),
-                ]}
               />
             )}
           </Card>
@@ -180,12 +149,10 @@ export default function ParentMakeupPage() {
                 것&rsquo;에 나타납니다.
               </li>
             </ol>
-            {blocked && (
-              <p className="parent-note parent-note--spaced">
-                신청 단추가 보이지 않는 결석은 이 화면에서 바로 신청할 수 없습니다. 학원으로 연락해
-                주시면 보강 영상을 열어 드립니다.
-              </p>
-            )}
+            <p className="parent-note parent-note--spaced">
+              이미 신청했거나 지급된 결석에는 신청 단추가 나타나지 않습니다. 거절된 신청은 사유를
+              확인한 뒤 다시 신청할 수 있습니다.
+            </p>
           </Card>
         </div>
       )}

@@ -6,16 +6,16 @@
  *   GET    /api/admin/workbook?status=&session_id=
  *   PATCH  /api/admin/workbook/{id}/match     {student_id} 또는 {recognized_unique_id,recognized_name}
  *   DELETE /api/admin/workbook/{id}
- *   GET    /api/admin/attendance/sessions(/{id})  회차·학생 명단(출결입력 권한이 있을 때만)
+ *   GET    /api/admin/attendance/sessions        회차 목록(출결입력 권한이 있을 때만)
+ *   GET    /api/admin/students?q=                학생 명부 검색(직원 공통 권한)
  *
  * 화면 설계
  * - 매칭은 “사진을 보고 사람을 고르는” 일이라 표가 아니라 썸네일 격자다.
  *   보정이 필요한 건(대기·불일치·인식실패)은 테두리로 먼저 눈에 띈다.
- * - 학생 목록을 주는 API 가 따로 없다. 출결 권한이 있으면 회차 출석부에서
- *   명단을 빌려 오고, 없으면 이미 올라온 사진들에 붙은 학생으로 목록을 만든다
- *   — 어느 쪽이든 서버가 실제로 내려준 학생만 고를 수 있다.
+ * - 학생은 명부 API 로 이름·원번을 쳐서 고른다(StudentPicker). 예전에는 출결
+ *   출석부에서 명단을 빌려 와야 해서 출결 권한이 없는 조교는 후보가 0명이었다.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { http, mediaUrl, useApi, useApiAction } from "../../../api";
 import { useMe } from "../../../auth";
@@ -36,8 +36,10 @@ import {
   StatusBadge,
   Tabs,
 } from "../../../components";
+import { StudentPicker } from "./StudentPicker";
+import type { DirectoryStudent } from "./directory";
 import "./manage.css";
-import type { SessionDetail, SessionRow, WorkbookList, WorkbookRow } from "./types";
+import type { SessionRow, WorkbookList, WorkbookRow } from "./types";
 
 type StatusTab = "전체" | "대기" | "자동매칭" | "수동확정" | "불일치" | "인식실패";
 const STATUS_TABS: { key: StatusTab; label: string }[] = [
@@ -48,12 +50,6 @@ const STATUS_TABS: { key: StatusTab; label: string }[] = [
   { key: "자동매칭", label: "자동 매칭" },
   { key: "수동확정", label: "수동 확정" },
 ];
-
-interface StudentOption {
-  student_id: number;
-  name: string;
-  unique_id: string;
-}
 
 /** 보정이 남은 건 — 서버의 미매핑 정의(대기·불일치·인식실패)와 같다. */
 function needsAttention(row: WorkbookRow): boolean {
@@ -83,41 +79,6 @@ export default function WorkbookManagePage() {
     return data.sessions;
   }, [canReadSessions]);
 
-  // 명단을 빌려 올 회차 — 필터를 걸었으면 그 회차, 아니면 가장 최근 회차.
-  const rosterSessionId = useMemo(() => {
-    if (sessionFilter) return Number(sessionFilter);
-    const all = sessions.data ?? [];
-    return all.length > 0 ? all[all.length - 1].session_id : null;
-  }, [sessionFilter, sessions.data]);
-
-  const roster = useApi(async () => {
-    if (!canReadSessions || rosterSessionId === null) return null;
-    const { data } = await http.get<SessionDetail>(`/admin/attendance/sessions/${rosterSessionId}`);
-    return data.students;
-  }, [canReadSessions, rosterSessionId]);
-
-  /** 고를 수 있는 학생 = 출석부 명단 ∪ 이미 올라온 사진에 붙은 학생. */
-  const studentOptions: StudentOption[] = useMemo(() => {
-    const map = new Map<number, StudentOption>();
-    for (const student of roster.data ?? []) {
-      map.set(student.student_id, {
-        student_id: student.student_id,
-        name: student.name,
-        unique_id: student.unique_id,
-      });
-    }
-    for (const row of list.data?.submissions ?? []) {
-      if (!map.has(row.student.student_id)) {
-        map.set(row.student.student_id, {
-          student_id: row.student.student_id,
-          name: row.student.name ?? "이름 미등록",
-          unique_id: row.student.unique_id,
-        });
-      }
-    }
-    return [...map.values()].sort((a, b) => a.unique_id.localeCompare(b.unique_id, "ko"));
-  }, [roster.data, list.data]);
-
   const [deleting, setDeleting] = useState<WorkbookRow | null>(null);
   const remove = useApiAction(async (submissionId: number) => {
     await http.delete(`/admin/workbook/${submissionId}`);
@@ -133,11 +94,7 @@ export default function WorkbookManagePage() {
         description="수업 끝에 걷은 워크북 마지막 장을 올리고, 사진마다 어느 학생 것인지 확정합니다. 확정된 사진만 학생·학부모에게 보입니다."
       />
 
-      <UploadCard
-        students={studentOptions}
-        sessions={sessions.data ?? []}
-        onUploaded={() => void list.reload()}
-      />
+      <UploadCard sessions={sessions.data ?? []} onUploaded={() => void list.reload()} />
 
       <Card
         title="매칭 보드"
@@ -209,7 +166,6 @@ export default function WorkbookManagePage() {
                 <MatchCard
                   key={row.submission_id}
                   row={row}
-                  students={studentOptions}
                   onDone={() => void list.reload()}
                   onDelete={() => setDeleting(row)}
                 />
@@ -256,17 +212,15 @@ export default function WorkbookManagePage() {
 /* ── 업로드 ─────────────────────────────────────────────────────────── */
 
 function UploadCard({
-  students,
   sessions,
   onUploaded,
 }: {
-  students: StudentOption[];
   sessions: SessionRow[];
   onUploaded: () => void;
 }) {
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
-  const [studentId, setStudentId] = useState("");
+  const [student, setStudent] = useState<DirectoryStudent | null>(null);
   const [sessionId, setSessionId] = useState("");
   const [over, setOver] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -310,14 +264,14 @@ function UploadCard({
       setLocalError("올릴 사진을 먼저 고르세요.");
       return;
     }
-    if (!studentId) {
+    if (!student) {
       setLocalError("이 사진이 누구 것인지 먼저 고르세요.");
       return;
     }
     setLocalError(null);
     const form = new FormData();
     for (const file of files) form.append("images", file);
-    form.append("student_id", studentId);
+    form.append("student_id", String(student.student_id));
     if (sessionId) form.append("session_id", sessionId);
     const count = await upload.run(form);
     if (count === undefined) return;
@@ -387,31 +341,12 @@ function UploadCard({
         )}
 
         <div className="pm-toolbar">
-          <Field
-            label="학생"
+          <StudentPicker
+            value={student}
+            onChange={setStudent}
             required
-            hint={
-              students.length === 0
-                ? "고를 수 있는 학생이 아직 없습니다. 출결 회차가 만들어지면 명단이 채워집니다."
-                : "먼저 잠정으로 지정하고, 아래 매칭 보드에서 확정합니다."
-            }
-          >
-            {(props) => (
-              <Select
-                {...props}
-                value={studentId}
-                onChange={(e) => setStudentId(e.target.value)}
-                disabled={students.length === 0}
-              >
-                <option value="">학생 고르기</option>
-                {students.map((student) => (
-                  <option key={student.student_id} value={student.student_id}>
-                    {student.unique_id} · {student.name}
-                  </option>
-                ))}
-              </Select>
-            )}
-          </Field>
+            hint="이름이나 원번으로 찾습니다. 아래 매칭 보드에서 확정할 수 있습니다."
+          />
 
           {sessions.length > 0 && (
             <Field label="회차" hint="비워 두면 회차 없이 저장됩니다.">
@@ -448,16 +383,14 @@ function UploadCard({
 
 function MatchCard({
   row,
-  students,
   onDone,
   onDelete,
 }: {
   row: WorkbookRow;
-  students: StudentOption[];
   onDone: () => void;
   onDelete: () => void;
 }) {
-  const [manualId, setManualId] = useState(String(row.student.student_id));
+  const [picked, setPicked] = useState<DirectoryStudent | null>(null);
   const [uniqueId, setUniqueId] = useState(row.recognized_unique_id ?? row.student.unique_id);
   const [name, setName] = useState(row.recognized_name ?? "");
 
@@ -517,27 +450,18 @@ function MatchCard({
           <div className="ui-stack--sm">
             {match.error && <Alert tone="danger">{match.error}</Alert>}
 
-            <Field label="학생 직접 지정" hint="사진을 보고 바로 확정할 때.">
-              {(props) => (
-                <Select
-                  {...props}
-                  value={manualId}
-                  onChange={(e) => setManualId(e.target.value)}
-                  disabled={students.length === 0}
-                >
-                  {students.map((student) => (
-                    <option key={student.student_id} value={student.student_id}>
-                      {student.unique_id} · {student.name}
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </Field>
+            <StudentPicker
+              value={picked}
+              onChange={setPicked}
+              label="학생 직접 지정"
+              hint="사진을 보고 바로 확정할 때. 이름이나 원번으로 찾습니다."
+            />
             <Button
               loading={match.pending}
-              disabled={!manualId}
+              disabled={!picked}
               onClick={async () => {
-                if (await match.run({ student_id: Number(manualId) })) onDone();
+                if (!picked) return;
+                if (await match.run({ student_id: picked.student_id })) onDone();
               }}
             >
               이 학생으로 확정

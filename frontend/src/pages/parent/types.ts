@@ -31,6 +31,10 @@ export interface HomeDay {
   date: string;
   /** 출석·지각·결석. 아직 입력 전이면 null */
   attendance: string | null;
+  /** 출결 레코드 PK. 기록이 없으면 null */
+  attendance_id: number | null;
+  /** null = 동보 미신청. 그 외 신청 · 승인 · 지급완료 · 거절 */
+  makeup_status: string | null;
   has_class_session: boolean;
 }
 
@@ -98,12 +102,8 @@ export interface AbsenceRow {
   date: string;
   /** null = 동보 미신청. 그 외 신청·승인·지급완료·거절 */
   makeup_status: string | null;
-  /**
-   * 현재 백엔드는 결석에 attendance_id 를 내려주지 않는다(apps/curriculum/home.py
-   * `_absences`). 동보 신청 POST 는 이 id 를 요구하므로, 서버가 내려주는 날
-   * 신청 버튼이 그대로 살아나도록 옵셔널로 받아 둔다. 없으면 버튼을 그리지 않는다.
-   */
-  attendance_id?: number;
+  /** 동보 신청 POST 가 요구하는 출결 번호. 결석 항목이므로 항상 값이 있다. */
+  attendance_id: number;
 }
 
 export interface PurchasableProduct {
