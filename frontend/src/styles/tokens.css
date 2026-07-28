@@ -1,7 +1,7 @@
 /* Hallmark · scope: app-system (디자인 시스템 + 앱 셸) · genre: modern-minimal
  * theme: custom(tuned) · vibe: "깊은 잉크 네이비, 조용한 정밀, 학원 실무"
  * paper: oklch(99% 0.003 250) · accent: oklch(42% 0.100 250)
- * display: Pretendard Variable · body: Pretendard Variable · outlier: JetBrains Mono
+ * display: SUIT Variable · body: SUIT Variable · outlier: JetBrains Mono
  * axes: light / geometric-sans / cool · nav: N3 side-rail · enrichment: none
  * studied: no · context: 사용자 지정(네이비 단일 키컬러) · pre-emit critique: P5 H5 E4 S5 R5 V4
  */
@@ -76,11 +76,16 @@
 
   /* ── 타이포 · 페이스 ──────────────────────────────────────────────
      한글 UI 라 라틴 전용 디스플레이 페이스를 못 쓴다(한글이 시스템 폰트로
-     떨어짐). Pretendard 하나로 display+body 를 겸하고, 대비는 굵기 극단
+     떨어짐). SUIT 하나로 display+body 를 겸하고, 대비는 굵기 극단
      (350 ↔ 700)과 자간으로 만든다. 모노는 아웃라이어 2곳 전용:
-     ① 로고 태그 'LMS' ② 숫자·코드 레지스터(점수·학번·시각·전화번호).   */
+     ① 로고 태그 'LMS' ② 숫자·코드 레지스터(점수·학번·시각·전화번호).
+
+     SUIT 채택(2026-07-28, Pretendard 에서 교체). SUIT 는 자간이 넓고
+     0·ㅇ 이 기하학적 정원이라, 화면 절반이 숫자인 이 앱(원번·점수·금액·D-n)의
+     수치가 또렷하게 선다. SUIT 자체가 자간을 벌려 놓았으므로 --tracking-*
+     를 더 벌리지 마라 — 기존 음수 자간 값이 이 페이스에 맞춰진 값이다.     */
   --font-sans:
-    "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+    "SUIT Variable", SUIT, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
     "Noto Sans KR", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
