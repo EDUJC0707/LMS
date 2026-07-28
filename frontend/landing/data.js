@@ -13,6 +13,7 @@
 export const UNITS = [
   { key: 'atom', asset: 'assets/motifs/atom.webp' },
   { key: 'dna', asset: 'assets/motifs/dna.webp' },
+  { key: 'chromosome', asset: 'assets/motifs/chromosome.webp' },
   { key: 'mitochondria', asset: 'assets/motifs/mitochondria.webp' },
   { key: 'chloroplast', asset: 'assets/motifs/chloroplast.webp' },
   { key: 'synapse', asset: 'assets/motifs/synapse.webp' },
