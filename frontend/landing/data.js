@@ -7,14 +7,19 @@
  * 읽어오는 자리다(SPEC §7-2).
  */
 
-/** 히어로에 숨는 것들. 순서가 곧 화면 배치 순서다 */
+/* 히어로에 숨는 것들. 순서가 곧 화면 배치 순서다(field.js LAYOUT과 짝).
+   accent 계열을 쓴다 — 같은 개념의 base 버전은 검정에서 흐릿한 유리 덩어리가 되는데,
+   accent 는 형태가 또렷하고 색이 남는다(미토콘드리아 크리스타·나선은하·지구 판 경계). */
 export const UNITS = [
   { key: 'atom', asset: 'assets/motifs/atom.webp' },
   { key: 'dna', asset: 'assets/motifs/dna.webp' },
-  { key: 'electromagnetism', asset: 'assets/motifs/electromagnetism.webp' },
-  { key: 'ecosystem', asset: 'assets/motifs/ecosystem.webp' },
-  { key: 'earth-system', asset: 'assets/motifs/earth-system.webp' },
-  { key: 'antibody', asset: 'assets/motifs/antibody.webp' },
+  { key: 'mitochondria', asset: 'assets/motifs/mitochondria.webp' },
+  { key: 'chloroplast', asset: 'assets/motifs/chloroplast.webp' },
+  { key: 'synapse', asset: 'assets/motifs/synapse.webp' },
+  { key: 'population', asset: 'assets/motifs/population.webp' },
+  { key: 'element', asset: 'assets/motifs/element.webp' },
+  { key: 'tectonics', asset: 'assets/motifs/tectonics.webp' },
+  { key: 'universe', asset: 'assets/motifs/universe.webp' },
 ];
 
 /**
