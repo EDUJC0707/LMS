@@ -40,6 +40,15 @@ const BLUES = [
     dim: '#6B6E85', accent: '#8288B4', glow: '#A8ACC6', chip: '#15161F', t1: '#6E7191', t2: '#F0F0F5' },
 ];
 
+/* CSS 변수로 나가는 노브의 정의. 키마다 어떤 변수에 어떤 단위로 쓰는지,
+   모바일 짝이 있는지를 여기 한 군데에 적는다 — 분기를 apply() 에 흩뿌리면
+   변수를 하나 더할 때마다 세 군데를 고쳐야 한다. */
+const CSSVARS = {
+  h:     { v: '--teacher-h',     sm: '--teacher-h-sm',     smKey: 'hSm', unit: 'svh' },
+  r:     { v: '--teacher-right', sm: '--teacher-right-sm', smKey: 'rSm', unit: '%' },
+  h1gap: { v: '--h1-gap', unit: 'em' },
+};
+
 /* 노브. [키, 라벨, 최소, 최대, 간격, 어디에 쓰나, 소수자리]
    where: 'css' = CSS 변수(강사)
           'cfg' = field.js CFG 에 즉시 대입
@@ -71,6 +80,9 @@ const GROUPS = [
   ['모티프', [
     ['peak',    '최대 밝기', .1,   1, .02,'cfg', 2],
     ['drift',   '부유 반경',  0,  20, 1,  'cfg', 0],
+  ]],
+  ['헤드라인', [
+    ['h1gap',   '줄 간격',    0,  .8, .01,'css', 2],
   ]],
 ];
 
@@ -131,7 +143,7 @@ export function openDebug() {
   const sm = () => matchMedia('(max-width: 860px)').matches;
 
   // index.html 에 박힌 강사 기본값. 여기와 CSS 가 어긋나면 패널을 여는 순간 화면이 튄다
-  const TEACHER0 = { h: 80, r: 5, hSm: 40, rSm: -12 };
+  const TEACHER0 = { h: 80, r: 5, hSm: 40, rSm: -12, h1gap: .14 };
   if (!BASE) BASE = { teacher: { ...TEACHER0 }, blue: 'asset', cfg: api ? { ...api.cfg } : {} };
 
   const st = document.createElement('style');
@@ -181,9 +193,8 @@ export function openDebug() {
       const inp = document.createElement('input');
       inp.type = 'range'; inp.min = min; inp.max = max; inp.step = step;
       inp.oninput = () => {
-        const v = +inp.value, mob = sm();
-        if (where === 'css') S[key === 'h' ? (mob ? 'hSm' : 'h') : (mob ? 'rSm' : 'r')] = v;
-        else S[key] = v;
+        const v = +inp.value, cv = CSSVARS[key];
+        S[where === 'css' && cv.sm && sm() ? cv.smKey : key] = v;
         apply(where);
       };
       wrap.append(lab, inp);
@@ -204,7 +215,7 @@ export function openDebug() {
     /* 인라인 변수를 **지운다**. 값만 되돌려 놓으면 :root 인라인이 스타일시트를
        계속 이겨, 나중에 CSS 를 고쳐도 화면이 안 바뀌는 유령이 남는다. */
     for (const k of ['dim', 'accent', 'glow', 'chip', 't1', 't2', 'line',
-                     'teacher-h', 'teacher-right', 'teacher-h-sm', 'teacher-right-sm'])
+                     'teacher-h', 'teacher-right', 'teacher-h-sm', 'teacher-right-sm', 'h1-gap'])
       rootS.removeProperty('--' + k);
     Object.assign(S, { blue: BASE.blue, ...BASE.teacher });
     delete S.pos;
@@ -226,8 +237,9 @@ export function openDebug() {
     dot.style.setProperty('--dot', b.accent);
 
     const mob = sm();
-    rootS.setProperty(mob ? '--teacher-h-sm' : '--teacher-h', (mob ? S.hSm : S.h) + 'svh');
-    rootS.setProperty(mob ? '--teacher-right-sm' : '--teacher-right', (mob ? S.rSm : S.r) + '%');
+    const cssVal = key => { const c = CSSVARS[key]; return S[c.sm && mob ? c.smKey : key]; };
+    for (const [key, c] of Object.entries(CSSVARS))
+      rootS.setProperty(c.sm && mob ? c.sm : c.v, cssVal(key) + c.unit);
 
     if (api) {
       for (const [, rows] of GROUPS)
@@ -244,11 +256,9 @@ export function openDebug() {
     }
 
     for (const [key, o] of Object.entries(inputs)) {
-      const v = o.where === 'css'
-        ? (key === 'h' ? (mob ? S.hSm : S.h) : (mob ? S.rSm : S.r))
-        : S[key];
+      const v = o.where === 'css' ? cssVal(key) : S[key];
       o.inp.value = v;
-      o.out.textContent = (+v).toFixed(o.dec) + (key === 'h' ? 'svh' : key === 'r' ? '%' : '');
+      o.out.textContent = (+v).toFixed(o.dec) + (o.where === 'css' ? CSSVARS[key].unit : '');
     }
 
     // 강사 왼쪽 경계 = pack-layout.py 의 모티프 금지선. 옮겼으면 패커를 다시 돌려야 한다

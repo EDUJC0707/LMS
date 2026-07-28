@@ -110,7 +110,12 @@
     font-weight:900;
     /* 2026-07-28: 30% 작게. 히어로의 무게중심을 글자에서 배경으로 옮긴다 */
     font-size:clamp(2.1rem, 5.3vw, 4.9rem);
-    line-height:1.14;                     /* 두 줄 사이를 벌렸다 */
+    /* 줄 사이를 line-height 가 아니라 gap 으로 벌린다 — line-height 는 글자 위아래
+       여백을 같이 키워서 "두 줄 사이"만 따로 조절할 수가 없다.
+       em 이라 글자 크기를 바꿔도 비율이 유지된다. */
+    display:flex; flex-direction:column;
+    gap:var(--h1-gap, .14em);
+    line-height:1;
     letter-spacing:-.045em;
     word-break:keep-all;
     text-shadow:0 0 72px #000, 0 0 30px rgba(8,8,19,.95);
