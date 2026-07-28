@@ -47,6 +47,10 @@ EDGE = 30
 # 깔고 섞는다: 좌우 균형이 보장되고, 0° 근처(스티커처럼 보이는 각)가 비어 있다.
 TILT_SET = [-33, -26, -19, -12, -7, 7, 12, 19, 26, 33]
 TILT_JIT = 3                          # 사다리 위 미세 흔들기 — 등차 티를 지운다
+
+# 손으로 못박은 기울기. 사다리에서 빼서 나머지에게 나눠 준다.
+# 판이 꽉 차 있어 한 개만 돌려서는 빈자리가 안 나오므로, 못박고 **전체를 다시 푼다**.
+PIN_TILT = {"dna": -7}                # 2026-07-28 사용자 지시: 이중나선을 오른쪽으로 +10°
 NO_ALIGN = 3.0                        # 중심이 x·y 둘 다 이만큼 가까우면 거부
 
 # 크기는 전부 같다(사용자 지시 2026-07-28: "크기는 같게 겹치지는 않게").
@@ -173,8 +177,11 @@ def attempt(scale, seed):
 
     # 크기가 같으므로 순서에 유불리가 없다. 다만 잉크가 넓은 것(chromosome 32%,
     # element)이 뒤로 밀리면 자리가 없으므로 **잉크 면적이 큰 것부터** 놓는다.
-    tilts = list(TILT_SET[:len(order)])
-    r.shuffle(tilts)
+    free = [v for v in TILT_SET[:len(order)] if v not in PIN_TILT.values()]
+    r.shuffle(free)
+    it = iter(free)
+    tilts = [PIN_TILT.get(n, None) for n in order]
+    tilts = [v if v is not None else next(it) for v in tilts]
     plan = sorted(zip(order, zones, tilts), key=lambda p: -MASKS[p[0]].mean())
 
     occ = FORBID.copy()
@@ -182,7 +189,8 @@ def attempt(scale, seed):
 
     for n, (zx1, zx2, zy1, zy2), base_deg in plan:
         size_px = int(VW * scale / 100 * SIZE_EQ)
-        deg = float(base_deg + r.uniform(-TILT_JIT, TILT_JIT))
+        # 못박은 것은 흔들지 않는다 — 지시한 각도 그대로여야 한다
+        deg = float(base_deg if n in PIN_TILT else base_deg + r.uniform(-TILT_JIT, TILT_JIT))
         m = stamp(n, size_px, deg)
         gh, gw = m.shape
         if gh >= GH or gw >= GW:
