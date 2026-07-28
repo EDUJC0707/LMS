@@ -8,6 +8,19 @@
 
 - [ ] **API 갭 보강 워크플로** (2026-07-28 발사): 백엔드 4건 완료(attendance_id 노출·학생 명부 API·children enrollment_status·직원 재활성) → **프런트 배선 진행 중**(동보 신청 완결·워크북 학생 검색·등록 전환·메뉴 정합). 완료 시 재검증 → 커밋
 
+## 랜딩 (2026-07-28 착수, 별도 트랙)
+
+스펙 `frontend/landing/SPEC.md` · 자산 `frontend/landing/assets/INDEX.md` · 조사 `local/landing-refs/`
+히어로·3섹션 구현 완료(`e012b00`), 타이포 SUIT 900(`e4eb447`). 로컬에서 도는 정적 페이지다.
+
+- [ ] **에셋 재선정 — 사용자가 직접 고르는 중.** 현재 6종(atom·dna·electromagnetism·ecosystem·earth-system·antibody)은 잠정. 받는 대로 `assets/motifs/` 교체 + `field.js` 좌표 재조정
+- [ ] **디자인 방향 재검토** — 사용자 피드백 "방향이 안 맞는다"(7/28). 타이포는 SUIT 900으로 한 차례 강화했으나 전체 방향은 미확정
+- [ ] **채널톡 플러그인 키** — `chat.js`의 `window.__CHANNEL_TALK_KEY__` 주입 자리만 있음. 키 없으면 위젯이 안 뜬다. 랜딩의 **유일한 전환 경로**라 이게 비면 상담 신청이 불가능(PRD 3.3.3)
+- [ ] **커리큘럼 강좌 라인업 실제 값** — `data.js`에 기존 교재로 임시 배치. 4단계 × 2트랙 축에 실제 라인업 재배치 필요
+- [ ] **정오표 데이터 소스** — 지금 빈 배열. `boards`의 `Post.Category.ERRATA`를 비로그인 공개 API로 열어야 하고, 웹 표를 그리려면 `errata_items` 자식 테이블이 필요(현 `Post`는 title/body뿐). `Post.updated_at`이 `auto_now` 없는 nullable이라 갱신 지점 명시 안 하면 정렬이 무너짐
+- [ ] **배포 경로 미정** — 랜딩을 어디에 띄울지(Fly 정적 서빙 / 별도 호스팅 / LMS 라우트 편입). nav 로그인이 `/student/login`을 가리키므로 같은 도메인이 자연스러움
+- [ ] 로고와 히어로 에셋이 둘 다 원자라 한 화면에 겹침 — 셋 중 택일(로고 교체 / atom 제외 / 의도된 반복)
+
 ## 다음 (워크플로 끝나면 순서대로)
 
 - [ ] **seed_demo 파일 누적 버그 수정**: DB 행은 리셋되는데 `backend/media/workbook/demo/` 스토리지 파일은 안 지워져 재실행마다 Django 랜덤 접미사로 누적(6회 실행 → 58개). 시드 시작 시 디렉터리 비우기 + `.gitignore`에 `backend/media/` 추가
