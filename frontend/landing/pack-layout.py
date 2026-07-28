@@ -61,6 +61,8 @@ TEACHER = HERE / "assets" / "teacher" / "nobg" / "02-검정티-턱손.webp"
 TEACHER_H = 0.40 if MOBILE else 0.80      # index.html .teacher height
 TEACHER_RIGHT = -0.12 if MOBILE else 0.05  # index.html .teacher right
 TEACHER_PAD = 26          # 인물 실루엣 주변 여유(px)
+# index.html 의 .teacher bottom(바닥 띄움)은 여기 없다 — 금지선이 전 높이 세로선이라
+# 인물이 위아래로 움직여도 모티프 배치가 달라지지 않기 때문이다.
 
 GW, GH = VW // CELL, VH // CELL
 rng = np.random.default_rng(20260728)

@@ -89,27 +89,14 @@
      아니라 개체별 스칼라로 옮겨 화면에 남는 경계선을 모티프 실루엣뿐으로 만든다.
      피크 렌더휘도 68 < 헤드라인 110 — 배경이 전경보다 어두워야 위계가 선다. */
   .field{ position:absolute; inset:0; z-index:0; overflow:hidden; contain:paint }
-  .dust, .wash{ position:absolute; pointer-events:none; display:block }
-  .dust{ inset:0; mix-blend-mode:screen }   /* 검정 위에서 먼지가 빛으로 읽힌다 */
+  .dust, .wash, .motifs{ position:absolute; pointer-events:none; display:block }
+  .dust, .motifs{ inset:0 }
+  .dust{ mix-blend-mode:screen }    /* 검정 위에서 먼지가 빛으로 읽힌다 */
   .wash{ left:0; top:0 }            /* 크기·margin 은 JS 가 창 반경으로 계산 */
-  .motifs{ position:absolute; inset:0; pointer-events:none }
 
-  .big{
-    position:absolute; width:var(--size); aspect-ratio:1;
-    /* 바닥값 0 — 먼지가 걷히지 않은 곳에는 아무것도 없다(사용자 지시 2026-07-28) */
-    opacity:0;
-    transform:translate(-50%,-50%);
-  }
-  .big img{
-    width:100%; height:100%; object-fit:contain; display:block;
-    /* 정적 톤 — 1회 래스터되므로 프레임 비용 0. JS 가 blur 만 앞에 붙인다 */
-    filter:saturate(1.35) brightness(var(--tone,1));
-    /* 실루엣 최외곽 꼬리만 죽인다. 잉크 r99 ≤ 1.16(half-width) 실측 근거 */
-    -webkit-mask-image:radial-gradient(farthest-corner at 50% 50%,
-        #000 0 62%, rgba(0,0,0,.72) 82%, transparent 100%);
-            mask-image:radial-gradient(farthest-corner at 50% 50%,
-        #000 0 62%, rgba(0,0,0,.72) 82%, transparent 100%);
-  }
+  /* 모티프는 DOM 요소가 아니라 캔버스 한 장이다. 개체별 opacity 로는 "원자의
+     왼쪽 고리만 보인다" 를 표현할 수 없어서 — 반응 단위가 개체가 아니라
+     픽셀이어야 하기 때문이다. 손전등 모양으로 잉크를 오려내는 일은 JS 가 한다. */
 
   /* 텍스트는 필드 위 */
   .copy{ position:relative; z-index:2; grid-column:1; max-width:44rem }
@@ -123,7 +110,7 @@
        여백을 같이 키워서 "두 줄 사이"만 따로 조절할 수가 없다.
        em 이라 글자 크기를 바꿔도 비율이 유지된다. */
     display:flex; flex-direction:column;
-    gap:var(--h1-gap, .14em);
+    gap:var(--h1-gap, .20em);
     line-height:1;
     letter-spacing:-.045em;
     word-break:keep-all;
@@ -141,7 +128,7 @@
   .teacher{
     /* 2026-07-28 확정: 80svh · 오른쪽에서 5%.
        바꾸면 pack-layout.py 도 다시 돌려야 한다 — 강사 왼쪽 경계가 모티프 금지선이다. */
-    position:absolute; right:var(--teacher-right, 5%); bottom:0; z-index:1;
+    position:absolute; right:var(--teacher-right, 5%); bottom:var(--teacher-bottom, 5%); z-index:1;
     height:min(var(--teacher-h, 80svh), 820px); width:auto;
     object-fit:contain; object-position:bottom right;
     pointer-events:none; user-select:none;
@@ -254,7 +241,7 @@
     .navL nav{ display:none }
     .hero{ grid-template-columns:1fr; align-content:center; padding-bottom:32svh }
     .copy{ max-width:none }
-    .teacher{ height:var(--teacher-h-sm, 40svh); right:var(--teacher-right-sm, -12%) }
+    .teacher{ height:var(--teacher-h-sm, 40svh); right:var(--teacher-right-sm, -12%); bottom:var(--teacher-bottom-sm, 3%) }
     .step{ grid-template-columns:1fr; gap:.5rem }
     .step-no{ padding-top:0 }
     .tbl .hide-sm{ display:none }

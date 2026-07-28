@@ -14,7 +14,7 @@
 
 /* 저장 키에 버전을 붙인다. 기본값이 바뀔 때 키를 올리면 옛 저장값이 자동으로
    버려진다 — 안 그러면 코드를 고쳐도 화면은 옛 값 그대로라 한참 헤맨다. */
-const LS = 'hjc-debug-v4';
+const LS = 'hjc-debug-v5';
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 /* 코드에 박힌 값. 첫 open 때 한 번만 뜬다 — 닫았다 열 때마다 뜨면 그때의
@@ -47,6 +47,7 @@ const BLUES = [
 const CSSVARS = {
   h:     { v: '--teacher-h',     sm: '--teacher-h-sm',     smKey: 'hSm', unit: 'svh' },
   r:     { v: '--teacher-right', sm: '--teacher-right-sm', smKey: 'rSm', unit: '%' },
+  b:     { v: '--teacher-bottom', sm: '--teacher-bottom-sm', smKey: 'bSm', unit: '%' },
   h1gap: { v: '--h1-gap', unit: 'em' },
 };
 
@@ -59,6 +60,7 @@ const GROUPS = [
   ['블루 · 강사', [
     ['h',       '크기',      35, 100, 1,   'css', 0],
     ['r',       '위치',     -25,  35, 1,   'css', 0],
+    ['b',       '바닥에서',    0,  30, 1,   'css', 0],
   ]],
   ['먼지', [
     ['dust',    '개수',     200, 4000, 50, 'new', 0],
@@ -78,9 +80,11 @@ const GROUPS = [
     ['kOut',    '밀림 속도',    1,  20, .5, 'cfg', 1],
     ['kIn',     '되메움 속도', .3,   6, .1, 'cfg', 1],
   ]],
-  ['모티프', [
-    ['peak',    '최대 밝기', .1,   1, .02,'cfg', 2],
-    ['drift',   '부유 반경',  0,  20, 1,  'cfg', 0],
+  ['모티프 (손전등)', [
+    ['flash',   '손전등 크기', .02, .18, .002,'fit', 3],
+    ['soft',    '가장자리',     0,  .9, .02, 'cfg', 2],
+    ['ink',     '밝기',        .1,   1, .02, 'cfg', 2],
+    ['lag',     '따라붙기',      3,  30, .5,  'cfg', 1],
   ]],
   ['헤드라인', [
     ['h1gap',   '줄 간격',    0,  .8, .01,'css', 2],
@@ -144,7 +148,7 @@ export function openDebug() {
   const sm = () => matchMedia('(max-width: 860px)').matches;
 
   // index.html 에 박힌 강사 기본값. 여기와 CSS 가 어긋나면 패널을 여는 순간 화면이 튄다
-  const TEACHER0 = { h: 80, r: 5, hSm: 40, rSm: -12, h1gap: .14 };
+  const TEACHER0 = { h: 80, r: 5, b: 5, hSm: 40, rSm: -12, bSm: 3, h1gap: .20 };
   if (!BASE) BASE = { teacher: { ...TEACHER0 }, blue: 'royal', cfg: api ? { ...api.cfg } : {} };
 
   const st = document.createElement('style');
@@ -216,7 +220,8 @@ export function openDebug() {
     /* 인라인 변수를 **지운다**. 값만 되돌려 놓으면 :root 인라인이 스타일시트를
        계속 이겨, 나중에 CSS 를 고쳐도 화면이 안 바뀌는 유령이 남는다. */
     for (const k of ['dim', 'accent', 'glow', 'chip', 't1', 't2', 'line',
-                     'teacher-h', 'teacher-right', 'teacher-h-sm', 'teacher-right-sm', 'h1-gap'])
+                     'teacher-h', 'teacher-right', 'teacher-bottom',
+                     'teacher-h-sm', 'teacher-right-sm', 'teacher-bottom-sm', 'h1-gap'])
       rootS.removeProperty('--' + k);
     Object.assign(S, { blue: BASE.blue, ...BASE.teacher });
     delete S.pos;
