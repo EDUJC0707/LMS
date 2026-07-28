@@ -517,7 +517,7 @@ class Command(BaseCommand):
         slots = [
             ClinicSlot.objects.create(
                 weekday=weekday, start_time=datetime.time(19, 0),
-                end_time=datetime.time(20, 0), capacity=3,
+                end_time=datetime.time(20, 0),
             )
             for weekday in (1, 2, 3, 4, 5)  # 0=일…6=토 → 월~금
         ]

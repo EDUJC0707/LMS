@@ -62,7 +62,6 @@ class ClinicAdminFixtureMixin:
             weekday=3,
             start_time=datetime.time(19, 0),
             end_time=datetime.time(20, 0),
-            capacity=2,
         )
 
     @classmethod

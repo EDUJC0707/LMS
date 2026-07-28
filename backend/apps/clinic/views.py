@@ -1,7 +1,8 @@
 """clinic 뷰 — 클리닉 신청 4차 + 클리닉 관리자 8차 슬라이스 (PRD 3.2.4·§4).
 
 4차(소비자 — consumer_urls.py):
-- GET   /api/student/clinic?exam_id=          자격·슬롯 잔여·내 신청 (IsStudent)
+- GET   /api/student/clinic?exam_id=          자격·내 신청 현황 (IsStudent)
+- GET   /api/student/clinic/availability      날짜별 가용 시간 (IsStudent, 자격 403)
 - POST  /api/student/clinic/requests          신청 생성 (자격·정원·마감·노쇼·중복)
 - PATCH /api/student/clinic/requests/{id}     시간 변경 (같은 규칙 재검증)
 - POST  /api/student/clinic/requests/{id}/cancel  취소 (노쇼 미집계)
@@ -75,6 +76,48 @@ class StudentClinicView(APIView):
         if exam is None:
             return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
         return Response(booking.build_clinic_home(student, exam))
+
+
+class StudentClinicAvailabilityView(APIView):
+    """GET /api/student/clinic/availability?exam_id=&from=&to= — 날짜별 가용 시간.
+
+    달력에서 날짜를 고르고 그 날의 시간 하나를 선택하는 흐름(Calendly 형)의
+    데이터 원천. 자격·구간 판정과 노출 규칙은 booking.availability 계약.
+    """
+
+    permission_classes = [IsStudent]
+
+    def get(self, request):
+        student = _load_student(request)
+        if student is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        raw_exam_id = request.query_params.get("exam_id")
+        try:
+            exam_id = int(raw_exam_id)
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "exam_id가 필요합니다."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        bounds = {}
+        for key, param in (("date_from", "from"), ("date_to", "to")):
+            raw = request.query_params.get(param)
+            if raw is None:
+                continue
+            parsed = _parse_date(raw)
+            if parsed is None:
+                return Response(
+                    {"detail": f"{param} 형식은 YYYY-MM-DD 입니다."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            bounds[key] = parsed
+        exam = Exam.objects.filter(pk=exam_id).first()
+        if exam is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            payload = booking.availability(student, exam, **bounds)
+        except booking.ClinicError as error:
+            return Response({"detail": error.message}, status=error.http_status)
+        return Response(payload)
 
 
 class ClinicRequestCreateView(APIView):
@@ -184,12 +227,14 @@ class ClinicRequestCancelView(APIView):
 
 
 def _booking_payload(clinic_request, now):
-    """신청·변경 응답 — 신청 반영 후 잔여 정원 포함(재조회 불필요 계약)."""
-    slot = clinic_request.slot
-    taken = booking.active_count(slot, clinic_request.requested_date)
+    """신청·변경 응답 — 확정된 슬롯 요약 동봉(재조회 불필요 계약).
+
+    잔여 정원은 싣지 않는다 — 정원 1 고정이라 신청이 성공한 시점에 그
+    날짜·시간은 항상 마감이다(booking.slot_block).
+    """
     return {
         "request": booking.request_block(clinic_request, now),
-        "slot": booking.slot_block(slot, clinic_request.requested_date, taken),
+        "slot": booking.slot_block(clinic_request.slot),
     }
 
 

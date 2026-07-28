@@ -3,9 +3,11 @@
 규칙 강제 지점(전부 API 레벨 — 프런트 숨김은 보조):
   ① 자격: ClinicEligibility(is_target) 대상자만 — 비대상·무판정 403
   ② 정원: (slot, requested_date)의 활성 신청 수(`대기`+`승인배정`) >=
-     capacity → 마감 400. 집계는 clinic_requests 를 센다(잔여석 사본 금지 —
-     ClinicSlot 모델 계약). 동시성은 트랜잭션 + select_for_update(슬롯 행
-     잠금)로 정원 초과를 막는다.
+     capacity → 마감 400. **capacity 는 1 고정**(ClinicSlot 모델 계약,
+     2026-07-21 회의)이라 활성 신청이 한 건만 있어도 그 날짜·시간은 마감이다.
+     집계는 clinic_requests 를 센다(잔여석 사본 금지 — ClinicSlot 모델 계약).
+     동시성은 트랜잭션 + select_for_update(슬롯 행 잠금)로 막는다 — 정원이
+     1 이라 경합 창이 그만큼 좁고 결과는 더 치명적이다.
   ③ 당일 마감: 당일 오전 8시(Asia/Seoul) 이후 그 날짜의 신청·변경·취소
      불가. 취소를 '변경'에 포함시킨 판단 근거: 8시 마감의 목적이 당일
      배정 인력 확정인데, 취소만 열어두면 마감 후 이탈로 같은 문제가 생긴다.
@@ -34,6 +36,20 @@ CLINIC_LINK_LEAD = datetime.timedelta(minutes=5)
 SAME_DAY_CUTOFF = datetime.time(8, 0)
 # 정원 집계 대상 상태(ClinicSlot 모델 계약 — 대기+승인배정).
 ACTIVE_STATUSES = (ClinicRequest.Status.PENDING, ClinicRequest.Status.APPROVED)
+
+# 예약 가능 기간(GET .../availability) — 기본 14일, 최대 31일.
+#   기본 14일: 클리닉 자격은 시험 회차 단위로 열리고 회차 주기가 주 단위라
+#     2주면 다음 회차 판정 전까지를 덮고, 요일 기반 슬롯이 모든 요일 2회씩
+#     노출되어 달력 한 화면이 비어 보이지 않는다.
+#   최대 31일: 달력 UI 가 한 번에 그리는 최대 단위(한 달)이자 운영 상한 —
+#     그보다 먼 미래는 조교 배정 계획이 서지 않아 열어도 지킬 수 없는 약속이
+#     된다(무한정 미래 개방 금지). 초과 요청은 400.
+AVAILABILITY_DEFAULT_DAYS = 14
+AVAILABILITY_MAX_DAYS = 31
+
+# 예약 불가 사유(응답 reason) — 마감은 숨기지 않고 사유와 함께 내린다.
+REASON_FULL = "마감"
+REASON_MINE = "내신청"
 
 
 class ClinicError(Exception):
@@ -167,78 +183,144 @@ def cancel_booking(request):
 
 
 def build_clinic_home(student, exam):
-    """GET /api/student/clinic 응답 본문 — 자격·슬롯 잔여·내 신청 현황.
+    """GET /api/student/clinic 응답 본문 — 자격·내 신청 현황.
 
-    상태 기반 노출(§4): 슬롯 목록은 **대상자이면서 제한이 없는** 학생에게만
-    포함한다 — 비대상자·영구제한자에게는 신청 가능한 시간대 자체가 없다.
+    **슬롯 목록은 여기 없다**: "요일 슬롯 + 슬롯별 next_date" 축으로는 달력에서
+    날짜를 고르는 흐름을 그릴 수 없어 폐기하고, 날짜 축 응답인
+    `availability()`(GET /api/student/clinic/availability)로 전부 옮겼다.
+    이 API 는 자격 판정과 내 신청 현황(상태·링크)만 담당한다.
     """
     now = timezone.now()
     eligibility = ClinicEligibility.objects.filter(exam=exam, student=student).first()
-    is_target = bool(eligibility and eligibility.is_target)
     my_requests = (
         ClinicRequest.objects.filter(student=student, exam=exam)
         .select_related("slot")
         .order_by("clinic_id")
     )
-    payload = {
+    return {
         "exam": {
             "exam_id": exam.exam_id,
             "name": exam.name,
             "exam_date": exam.exam_date.isoformat(),
         },
         "eligibility": {
-            "is_target": is_target,
+            "is_target": bool(eligibility and eligibility.is_target),
             "reason": eligibility.reason if eligibility else None,
         },
         "clinic_banned": student.clinic_banned,
         "my_requests": [request_block(r, now) for r in my_requests],
     }
-    if is_target and not student.clinic_banned:
-        payload["slots"] = _slot_list(now)
-    return payload
 
 
-def next_open_date(weekday, now):
-    """슬롯 요일의 다음 신청 가능일 — 당일은 8시 전까지만, 지나면 다음 주."""
+def availability(student, exam, date_from=None, date_to=None):
+    """GET /api/student/clinic/availability 응답 본문 — 날짜별 예약 가능 시간.
+
+    자격 게이트(§4)는 신청과 동일(`_ensure_can_book`) — 대상이 아니거나 영구
+    제한이면 403 으로 **시간표 자체를 못 본다**.
+
+    노출 판단(무엇을 빼고 무엇을 사유와 함께 보여줄지):
+    - **날짜 축에서 제거**: 지난 날짜 / 8시 마감이 지난 당일 / 그 요일에 활성
+      슬롯이 없는 날. 근거 — 학생이 취할 수 있는 행동이 없고, "지났다"는
+      날짜 전체에 걸리는 사유라 시간마다 반복하면 달력이 사유 문구로 덮인다.
+      폐지(is_active=false) 슬롯도 같은 이유로 존재 자체를 감춘다(신청 시
+      404 존재 비노출과 같은 계약).
+    - **시간 축에 사유와 함께 표시**: 마감. 근거 — PRD 3.2.4 가 "정원에 도달한
+      슬롯은 신청 버튼 비활성(**마감 표시**)"를 명시한다. 숨기면 학생은 그
+      시간이 원래 없는 건지 찼는지 구분할 수 없다. 내 활성 신청이 차지한
+      경우는 `내신청` 으로 구분해 변경 흐름의 기준점이 보이게 한다.
+
+    쿼리: 슬롯 1 + 예약현황 집계 1 로 고정. 날짜×슬롯 루프는 메모리에서 돈다
+    (N+1 금지 — 테스트가 assertNumQueries 로 상한을 고정).
+    """
+    now = timezone.now()
+    _ensure_can_book(student, exam)
     today = timezone.localdate(now)
-    candidate = today + datetime.timedelta(days=(weekday - model_weekday(today)) % 7)
-    if candidate == today and timezone.localtime(now).time() >= SAME_DAY_CUTOFF:
-        candidate += datetime.timedelta(days=7)
-    return candidate
+    date_from = date_from or today
+    if date_to is None:
+        date_to = date_from + datetime.timedelta(days=AVAILABILITY_DEFAULT_DAYS - 1)
+    if date_to < date_from:
+        raise ClinicError("조회 시작일이 종료일보다 늦습니다.")
+    if (date_to - date_from).days + 1 > AVAILABILITY_MAX_DAYS:
+        raise ClinicError(f"조회 구간은 최대 {AVAILABILITY_MAX_DAYS}일입니다.")
+    start = max(date_from, today)
+    if start == today and timezone.localtime(now).time() >= SAME_DAY_CUTOFF:
+        start += datetime.timedelta(days=1)
+    return {
+        "exam_id": exam.exam_id,
+        "range": {"from": start.isoformat(), "to": date_to.isoformat()},
+        "days": _day_blocks(student, start, date_to),
+    }
 
 
-def _slot_list(now):
-    """활성 슬롯 + 다음 신청 가능일 기준 잔여 정원(1쿼리 집계)."""
+def _day_blocks(student, start, end):
+    """[start, end] 각 날짜의 시간 목록 — 활성 슬롯이 있는 날만 담는다."""
+    if start > end:
+        return []
     slots = list(ClinicSlot.objects.filter(is_active=True).order_by("weekday", "start_time"))
     if not slots:
         return []
-    dates = {slot.slot_id: next_open_date(slot.weekday, now) for slot in slots}
-    cond = Q()
+    by_weekday = {}
     for slot in slots:
-        cond |= Q(slot=slot, requested_date=dates[slot.slot_id])
-    counts = {
-        row["slot_id"]: row["n"]
-        for row in ClinicRequest.objects.filter(cond, status__in=ACTIVE_STATUSES)
-        .values("slot_id")
-        .annotate(n=Count("clinic_id"))
+        by_weekday.setdefault(slot.weekday, []).append(slot)
+    taken = _taken_map(student, slots, start, end)
+    days = []
+    date = start
+    while date <= end:
+        weekday = model_weekday(date)
+        day_slots = by_weekday.get(weekday)
+        if day_slots:
+            days.append(
+                {
+                    "date": date.isoformat(),
+                    "weekday": weekday,
+                    "times": [time_block(s, taken.get((s.slot_id, date))) for s in day_slots],
+                }
+            )
+        date += datetime.timedelta(days=1)
+    return days
+
+
+def _taken_map(student, slots, start, end):
+    """(slot_id, date) → (활성 신청 수, 그 중 내 신청 수) — 집계 1쿼리."""
+    rows = (
+        ClinicRequest.objects.filter(
+            slot__in=slots, requested_date__range=(start, end), status__in=ACTIVE_STATUSES
+        )
+        .values("slot_id", "requested_date")
+        .annotate(
+            n=Count("clinic_id"),
+            mine=Count("clinic_id", filter=Q(student=student)),
+        )
+    )
+    return {(r["slot_id"], r["requested_date"]): (r["n"], r["mine"]) for r in rows}
+
+
+def time_block(slot, taken=None):
+    """가용 시간 1칸 — 예약가능 여부와 사유(마감/내신청)."""
+    count, mine = taken or (0, 0)
+    is_full = count >= slot.capacity
+    return {
+        "slot_id": slot.slot_id,
+        "start_time": slot.start_time.strftime("%H:%M"),
+        "end_time": slot.end_time.strftime("%H:%M"),
+        "available": not is_full,
+        "reason": (REASON_MINE if mine else REASON_FULL) if is_full else None,
     }
-    return [
-        slot_block(slot, dates[slot.slot_id], counts.get(slot.slot_id, 0))
-        for slot in slots
-    ]
 
 
-def slot_block(slot, requested_date, taken):
-    """슬롯 요약 블록 — 목록·신청/변경 응답 공용(재조회 불필요 계약)."""
+def slot_block(slot):
+    """슬롯 요약 블록 — 신청·변경 응답 공용(재조회 불필요 계약).
+
+    정원·잔여석은 싣지 않는다: capacity 는 1 고정이라 신청이 성공한 순간
+    그 날짜·시간의 잔여는 언제나 0 이고, 값이 하나뿐인 필드는 계약이 아니라
+    노이즈다(ClinicSlot 모델 계약). 프런트가 "수요일 19:00~20:00" 를 그리는 데
+    필요한 요일·시간만 남긴다.
+    """
     return {
         "slot_id": slot.slot_id,
         "weekday": slot.weekday,
         "start_time": slot.start_time.strftime("%H:%M"),
         "end_time": slot.end_time.strftime("%H:%M"),
-        "capacity": slot.capacity,
-        "next_date": requested_date.isoformat(),
-        "remaining": max(slot.capacity - taken, 0),
-        "is_full": taken >= slot.capacity,
     }
 
 

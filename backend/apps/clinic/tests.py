@@ -6,6 +6,7 @@ baseline lms-db-spec.html Domain 4, PRD 3.2.4(클리닉 신청).
 """
 import datetime
 
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.test import TestCase
 
@@ -56,10 +57,37 @@ class ClinicSlotTests(TestCase):
         self.assertEqual(slot.capacity, 1)
         self.assertTrue(slot.is_active)
 
-    def test_capacity_contract_documented(self):
-        # PRD 3.2.4: 정원 = 그 시간대 배정 가능한 "조교 수" 기준(관리자 설정).
-        # 마감 판정(활성 신청 수 >= capacity)의 기준이 docstring 에 있어야 한다.
-        self.assertIn("조교", ClinicSlot.__doc__)
+    def test_capacity_cannot_be_stored_other_than_one(self):
+        # 2026-07-21 회의: 클리닉은 "시간별로 학생 한 명씩" — 정원은 관리자가
+        # 정하는 값이 아니라 운영의 고정 사실이므로 DB 가 직접 막는다.
+        with self.assertRaises(IntegrityError):
+            make_slot(weekday=2, capacity=2)
+
+    def test_capacity_zero_is_also_rejected(self):
+        with self.assertRaises(IntegrityError):
+            make_slot(weekday=2, capacity=0)
+
+    def test_capacity_validation_rejects_other_than_one(self):
+        # 폼·직접 호출 경로(full_clean)에서도 같은 불변식을 잡는다.
+        slot = ClinicSlot(
+            weekday=2,
+            start_time=datetime.time(19, 0),
+            end_time=datetime.time(20, 0),
+            capacity=3,
+        )
+        with self.assertRaises(ValidationError):
+            slot.full_clean()
+
+    def test_capacity_is_not_editable(self):
+        # 관리자 화면·폼에 정원 입력칸이 뜨지 않게 한다(편집 불가 필드).
+        self.assertFalse(ClinicSlot._meta.get_field("capacity").editable)
+
+    def test_fixed_capacity_contract_documented(self):
+        # 정원 고정의 근거(0721 회의)와 마감 판정 계약이 docstring 에 있어야 한다.
+        doc = ClinicSlot.__doc__
+        self.assertIn("한 타임 1명", doc)
+        self.assertIn("2026-07-21", doc)
+        self.assertNotIn("조교 수", doc)
 
 
 class ClinicRequestTests(TestCase):

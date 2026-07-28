@@ -12,6 +12,11 @@ app_name = "clinic_consumer"
 urlpatterns = [
     path("student/clinic", views.StudentClinicView.as_view(), name="student-clinic"),
     path(
+        "student/clinic/availability",
+        views.StudentClinicAvailabilityView.as_view(),
+        name="student-clinic-availability",
+    ),
+    path(
         "student/clinic/requests",
         views.ClinicRequestCreateView.as_view(),
         name="student-clinic-request-create",

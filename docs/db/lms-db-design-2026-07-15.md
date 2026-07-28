@@ -402,10 +402,12 @@ baseline(`clinic_id` PK, `student_id` FK, `requested_date`, `requested_time`, `s
 | weekday | SMALLINT | NN | 0=일…6=토 (월~금 운영) |
 | start_time | TIME | NN | 예: 19:00 |
 | end_time | TIME | NN | 예: 20:00 |
-| capacity | SMALLINT | NN, 기본 1 | 정원(조교 배정 수) |
+| capacity | SMALLINT | NN, 기본 1 | 정원 — **1 고정**(구현 각주 ① 참조) |
 | is_active | BOOLEAN | NN, 기본 true | |
 
 - UQ(weekday, start_time).
+- **[구현 각주 2026-07-28] 정원 1 고정**: 표의 원래 설명 "정원(조교 배정 수)"은 2026-07-15 회의 기준이었고 **2026-07-21 회의로 뒤집혔다** — "클리닉이 한 시간에 여러 개 일어나는 경우도 있나요?" → "시간별로 학생 한 명씩"(그래서 구글 미트 계정 1개로 충분). 정원은 관리자 설정값이 아니라 운영의 고정 사실이므로 `capacity`는 **컬럼을 유지한 채 1로 못 박았다**(마이그레이션 `clinic/0002_clinic_slot_capacity_fixed_one`): 기존 행 정규화 → `CHECK (capacity = 1)`(`ck_clinic_slots_capacity_one`) + `editable=False`. 컬럼을 남긴 이유는 ① 본 설계·baseline 스키마가 정의한 컬럼이라 삭제가 되돌리기 비싼 변경이고 ② 마감 판정식(활성 신청 수 ≥ capacity)이 컬럼을 그대로 읽어 1의 출처가 코드에 드러나며 ③ 운영 전제가 바뀌면 CHECK 완화만으로 열 수 있기 때문. 관리자 API·화면에는 정원 편집 경로를 두지 않는다. 값이 1뿐이라 소비자 응답에서 `capacity`/`remaining`은 폐지.
+- **[구현 각주 2026-07-28] 날짜 축 조회**: 소비자 조회는 "요일 슬롯 + 슬롯별 next_date" 축을 폐기하고 `GET /api/student/clinic/availability?exam_id=&from=&to=`(날짜별 예약 가능 시간)로 이관했다 — 달력에서 날짜를 고르는 흐름(Calendly 형, PRD 3.2.4)을 그리려면 날짜 축 응답이 필요하다. 예약 가능 구간은 기본 14일·최대 31일(앱 레이어 상수).
 
 #### 🆕 `clinic_eligibilities` — 대상자 판정
 | 컬럼 | 자료형 | 제약 | 설명 |
@@ -421,7 +423,7 @@ baseline(`clinic_id` PK, `student_id` FK, `requested_date`, `requested_time`, `s
 
 - UQ(exam_id, student_id). 전제 = 출석(`attendances`) + 응시(`scores.is_taken`/`attendances.exam_taken`) + 평균미달.
 
-- **[구현 각주 2026-07-22]** 도메인 6 전체를 `backend/apps/clinic`에 그린필드 최종 상태로 구현(슬롯·신청·판정 + baseline 평가 3표, §4.8 인덱스 포함). 편차·확정 2건: ① `clinic_evaluations`는 baseline 문구("클리닉 1건당 1개")를 OneToOne(UQ)로 DB 강제. ② 출석·응시 값은 `clinic_eligibilities`에 복사하지 않고 grades(`attendances`/`scores.is_taken`/`exams.avg_score`) 참조·계산 경로를 모델 docstring 계약으로 명시(cutoff_score NULL=전체평균 자동 판정 — 헤더 노트 ⑤). 정원 마감(활성 신청 수 ≥ capacity)·당일 8시 마감·노쇼 누적(`students.noshow_count`/`clinic_banned`가 원천)은 앱 레이어 계약.
+- **[구현 각주 2026-07-22]** 도메인 6 전체를 `backend/apps/clinic`에 그린필드 최종 상태로 구현(슬롯·신청·판정 + baseline 평가 3표, §4.8 인덱스 포함). 편차·확정 2건: ① `clinic_evaluations`는 baseline 문구("클리닉 1건당 1개")를 OneToOne(UQ)로 DB 강제. ② 출석·응시 값은 `clinic_eligibilities`에 복사하지 않고 grades(`attendances`/`scores.is_taken`/`exams.avg_score`) 참조·계산 경로를 모델 docstring 계약으로 명시(cutoff_score NULL=전체평균 자동 판정 — 헤더 노트 ⑤). 정원 마감(활성 신청 수 ≥ capacity — capacity 는 1 고정, 2026-07-28 각주 참조)·당일 8시 마감·노쇼 누적(`students.noshow_count`/`clinic_banned`가 원천)은 앱 레이어 계약.
 
 ### 도메인 7 — 게시판 · 문의 · 상담
 
@@ -848,7 +850,7 @@ CREATE TABLE clinic_slots (
     weekday    SMALLINT NOT NULL,               -- 0=일..6=토
     start_time TIME NOT NULL,
     end_time   TIME NOT NULL,
-    capacity   SMALLINT NOT NULL DEFAULT 1,
+    capacity   SMALLINT NOT NULL DEFAULT 1 CHECK (capacity = 1),  -- 한 타임 1명 고정(0721 회의)
     is_active  BOOLEAN NOT NULL DEFAULT true,
     UNIQUE (weekday, start_time)
 );
