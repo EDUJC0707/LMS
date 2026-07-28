@@ -14,7 +14,7 @@
 
 /* 저장 키에 버전을 붙인다. 기본값이 바뀔 때 키를 올리면 옛 저장값이 자동으로
    버려진다 — 안 그러면 코드를 고쳐도 화면은 옛 값 그대로라 한참 헤맨다. */
-const LS = 'hjc-debug-v3';
+const LS = 'hjc-debug-v4';
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 /* 코드에 박힌 값. 첫 open 때 한 번만 뜬다 — 닫았다 열 때마다 뜨면 그때의
@@ -22,16 +22,17 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 let BASE = null;
 
 /* 블루 6종. 전부 에셋에서 나온 청색계이고 색상각(H)과 채도만 다르다.
-   에셋 심부 평균이 H236 이라 그걸 가운데 두고 양옆으로 벌렸다.
+   에셋 심부 평균이 H236 이라 그걸 가운데 두고 양옆으로 벌렸고,
+   **확정은 royal(H224)** 이다(2026-07-28) — 나머지는 되돌려 보기 위해 남긴다.
    accent 휘도를 132 근처로 맞춰 놨다 — 밝기가 제각각이면 "어떤 파랑이 예쁜가"가
    아니라 "어떤 게 밝은가"를 고르게 된다. */
 const BLUES = [
+  { key: 'royal', name: '로열 (확정)', h: 224,
+    dim: '#5E6B9C', accent: '#6B87DE', glow: '#9EAEE1', chip: '#101729', t1: '#606DA4', t2: '#EEF1FA' },
   { key: 'asset', name: '에셋 심부', h: 236,
     dim: '#666999', accent: '#787ED7', glow: '#A5A9DD', chip: '#131427', t1: '#676BA1', t2: '#F0F1FA' },
   { key: 'indigo', name: '인디고', h: 248,
     dim: '#6A6699', accent: '#8578DB', glow: '#ADA5DF', chip: '#151327', t1: '#6D67A3', t2: '#F2F0FA' },
-  { key: 'royal', name: '로열', h: 224,
-    dim: '#5E6B9C', accent: '#6B87DE', glow: '#9EAEE1', chip: '#101729', t1: '#606DA4', t2: '#EEF1FA' },
   { key: 'electric', name: '일렉트릭', h: 212,
     dim: '#557099', accent: '#5290E0', glow: '#93B4E2', chip: '#0C1A29', t1: '#5673A4', t2: '#ECF2FA' },
   { key: 'ice', name: '아이스', h: 200,
@@ -144,7 +145,7 @@ export function openDebug() {
 
   // index.html 에 박힌 강사 기본값. 여기와 CSS 가 어긋나면 패널을 여는 순간 화면이 튄다
   const TEACHER0 = { h: 80, r: 5, hSm: 40, rSm: -12, h1gap: .14 };
-  if (!BASE) BASE = { teacher: { ...TEACHER0 }, blue: 'asset', cfg: api ? { ...api.cfg } : {} };
+  if (!BASE) BASE = { teacher: { ...TEACHER0 }, blue: 'royal', cfg: api ? { ...api.cfg } : {} };
 
   const st = document.createElement('style');
   st.textContent = CSS;
@@ -161,7 +162,7 @@ export function openDebug() {
 
   /* 저장값. 노브 키를 그대로 쓰고, 강사만 데스크탑/모바일이 따로다. */
   const S = Object.assign(
-    { blue: 'asset', ...TEACHER0, folded: false },
+    { blue: 'royal', ...TEACHER0, folded: false },
     JSON.parse(localStorage.getItem(LS) || '{}')
   );
   const save = () => localStorage.setItem(LS, JSON.stringify(S));

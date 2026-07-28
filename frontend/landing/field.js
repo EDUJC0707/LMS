@@ -47,14 +47,20 @@ const CFG = {
   drift: 6,
 };
 
-/* 먼지·워시 색. atom·synapse·universe 의 진한 청색 픽셀 평균 H236 계열.
+/* 먼지·워시 색. 에셋 심부 청색(H236)에서 조금 더 차가운 H224 '로열' 로 확정.
    **값은 CSS 의 --glow 가 원본이다.** 여기 상수는 그게 없을 때의 대비책일 뿐 —
    색을 두 파일에 적어 두면 반드시 한쪽만 고치는 날이 온다. */
-const GLOW_FALLBACK = '#A5A9DD';
+const GLOW_FALLBACK = '#9EAEE1';
 const readGlow = () => {
   const v = getComputedStyle(document.documentElement).getPropertyValue('--glow').trim();
   return /^#[0-9a-f]{6}$/i.test(v) ? v : GLOW_FALLBACK;
 };
+const rgb = hex => [1, 3, 5].map(i => parseInt(hex.substr(i, 2), 16));
+
+/* 정적 먼지 캔버스들의 다시 그리기 콜백. nav 처럼 히어로 밖에 있는 조각이
+   여기 등록되고, 디버그 패널이 먼지 값을 바꾸면 같이 다시 그려진다 —
+   따로 두면 히어로만 바뀌어 이어짐이 깨진다. */
+const statics = [];
 
 /* 에셋별 톤. 중간휘도를 실측해 피크 렌더휘도를 전부 ≈68 로 맞춘 계수.
    element·tectonics 는 원래 어두워서(134·146) 계수가 높다. data.js UNITS 순서. */
@@ -117,13 +123,15 @@ export function mountField(root, units) {
   wash.width = wash.height = 256;
   root.append(wash);
   {
-    const c = wash.getContext('2d');
-    const g = c.createRadialGradient(112, 104, 0, 128, 128, 128);
-    g.addColorStop(0, 'rgba(126,140,255,.070)');
-    g.addColorStop(.42, 'rgba(96,104,214,.030)');
+    const wctx = wash.getContext('2d');
+    // 색은 팔레트에서 파생한다 — rgb 를 여기 적어 두면 팔레트를 바꿔도 빛만 옛 색이다
+    const [r0, g0, b0] = rgb(GLOW);
+    const g = wctx.createRadialGradient(112, 104, 0, 128, 128, 128);
+    g.addColorStop(0, `rgba(${r0},${g0},${b0},.070)`);
+    g.addColorStop(.42, `rgba(${Math.round(r0 * .78)},${Math.round(g0 * .8)},${b0},.030)`);
     g.addColorStop(1, 'rgba(0,0,0,0)');
-    c.fillStyle = g;
-    c.fillRect(0, 0, 256, 256);
+    wctx.fillStyle = g;
+    wctx.fillRect(0, 0, 256, 256);
   }
 
   /* ── 먼지 ────────────────────────────────────────────────
@@ -363,8 +371,8 @@ export function mountField(root, units) {
     cfg: CFG,
     // n 을 cfg 에도 반영한다 — 안 하면 패널이 읽는 cfg.dust 와 실제 입자 수가
     // 갈라져, 초기화나 재열기 때 엉뚱한 개수로 돌아간다
-    rebuild(n) { if (n != null) CFG.dust = n; dust = makeDust(CFG.dust); fit(); },
-    refit: fit,
+    rebuild(n) { if (n != null) CFG.dust = n; dust = makeDust(CFG.dust); fit(); statics.forEach(f => f()); },
+    refit() { fit(); statics.forEach(f => f()); },
   };
 
   if (reduce) {
@@ -381,4 +389,49 @@ export function mountField(root, units) {
       else if (raf) { cancelAnimationFrame(raf); raf = 0; }
     }, { threshold: 0 }).observe(root.parentElement);
   }
+}
+
+
+/**
+ * nav 의 먼지 — 히어로 먼지밭을 위로 이어 붙인다.
+ *
+ * nav 는 항상 불투명 검정이라 그 아래 히어로 먼지를 가로로 잘라 먹는다. 여기서
+ * 이어 주지 않으면 화면 맨 위 64px 만 텅 빈 띠로 남아 "덮개"라는 전제가 깨진다.
+ *
+ * **애니메이션하지 않는다**(사용자 지시 2026-07-28: "hover하면 움직일 필요는 없고
+ * 그냥 연속성을 위해"). 화면 맨 위에서 계속 움직이는 것은 그 자체가 방해이고,
+ * rAF 를 하나 더 도는 값어치도 없다. resize 와 디버그 패널 조작 때만 다시 그린다.
+ *
+ * 밀도는 히어로와 **면적당으로** 맞춘다 — 개수를 맞추면 좁은 띠에 몰려 눈에 띈다.
+ */
+export function mountNavDust(host) {
+  const cv = document.createElement('canvas');
+  cv.className = 'navdust';
+  host.prepend(cv);
+  const ctx = cv.getContext('2d');
+
+  const draw = () => {
+    const r = host.getBoundingClientRect();
+    const W = Math.round(r.width), H = Math.round(r.height);
+    if (!W || !H) return;
+    cv.width = W; cv.height = H;
+    cv.style.width = W + 'px';
+    cv.style.height = H + 'px';
+    ctx.fillStyle = readGlow();
+
+    // 히어로가 기준으로 삼는 뷰포트 면적. 같은 밀도가 되도록 개수를 환산한다
+    const heroArea = innerWidth * innerHeight;
+    const n = Math.max(8, Math.round(CFG.dust * (W * H) / heroArea));
+    for (let i = 0; i < n; i++) {
+      ctx.globalAlpha = rand(CFG.aMin, CFG.aMax);
+      const d = rand(CFG.dMin, CFG.dMax);
+      ctx.fillRect(Math.random() * W - d / 2, Math.random() * H - d / 2, d, d);
+    }
+    ctx.globalAlpha = 1;
+  };
+
+  statics.push(draw);
+  addEventListener('resize', draw);
+  draw();
+  return draw;
 }
