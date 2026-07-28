@@ -59,10 +59,7 @@ export default function StudentWorkbookPage() {
 
   return (
     <>
-      <PageHeader
-        title="워크북"
-        description="수업 시간에 촬영한 내 워크북 사진과 수행 기록입니다. 사진을 누르면 크게 볼 수 있습니다."
-      />
+      <PageHeader title="워크북" />
 
       <Card
         title="회차별 사진"
@@ -70,10 +67,7 @@ export default function StudentWorkbookPage() {
         padding={rows.length === 0 ? "md" : "md"}
       >
         {rows.length === 0 ? (
-          <EmptyState
-            title="아직 올라온 워크북 사진이 없습니다"
-            description="수업에서 촬영한 사진은 담당 선생님이 내 이름과 맞는지 확인한 뒤에 이곳에 올라옵니다."
-          />
+          <EmptyState title="아직 올라온 워크북 사진이 없습니다" />
         ) : (
           <ul className="st-shots">
             {rows.map((row) => (

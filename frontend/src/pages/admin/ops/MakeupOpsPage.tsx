@@ -169,7 +169,6 @@ export default function MakeupOpsPage() {
     <>
       <PageHeader
         title="동보 관리"
-        description="결석한 수업의 복습영상을 학생·학부모가 신청한 목록입니다. 승인하면 그 자리에서 영상 시청 권한이 학생 계정으로 나갑니다."
       />
 
       <div className="ui-stack">
@@ -202,15 +201,9 @@ export default function MakeupOpsPage() {
               rows={rows}
               rowKey={(r) => r.makeup_id}
               empty={
-                tab === "신청"
-                  ? "승인을 기다리는 신청이 없습니다. 결석한 학생이 신청하면 여기에 쌓입니다."
-                  : `${tab} 상태인 신청이 없습니다.`
+                tab === "신청" ? "승인을 기다리는 신청이 없습니다" : `${tab} 상태인 신청이 없습니다`
               }
             />
-            <p className="ops-note" style={{ padding: "var(--space-md)" }}>
-              출결이 정정돼 결석이 아니게 된 신청, 이미 지급된 결석의 중복 신청은 승인되지
-              않습니다. 그런 경우 이유가 화면 위에 표시됩니다.
-            </p>
           </Card>
         )}
       </div>
@@ -240,10 +233,6 @@ export default function MakeupOpsPage() {
             <p>
               {rejecting.student.name ?? "학생"}(원번 {rejecting.student.unique_id})의{" "}
               {shortDate(rejecting.session_date)} 결석 동보 신청입니다.
-            </p>
-            <p className="ops-note">
-              거절하면 이 신청은 다시 승인할 수 없습니다. 지급이 필요해지면 학생이 새로
-              신청해야 합니다.
             </p>
           </div>
         )}

@@ -6,7 +6,7 @@
  */
 import { http, mediaUrl, useApi } from "../../api";
 import { Badge, Card, EmptyState, ErrorState, Loading, PageHeader } from "../../components";
-import { NO_CHILD_DESC, NO_CHILD_TITLE, useChild } from "./childContext";
+import { NO_CHILD_TITLE, useChild } from "./childContext";
 import { PreEnrollNotice } from "./PreEnrollNotice";
 import { dateTimeLabel, dayLabel } from "./format";
 import "./parent.css";
@@ -31,20 +31,15 @@ export default function ParentWorkbookPage() {
     <>
       <PageHeader
         title="워크북"
-        description="수업 시간에 학원이 찍어 올린 자녀의 워크북 사진입니다. 사진을 누르면 크게 볼 수 있습니다."
         actions={picker}
       />
 
       {studentId === null ? (
         <Card>
-          <EmptyState title={NO_CHILD_TITLE} description={NO_CHILD_DESC} />
+          <EmptyState title={NO_CHILD_TITLE} />
         </Card>
       ) : !enrolled ? (
-        <PreEnrollNotice
-          child={child}
-          what="워크북 열람"
-          why="워크북 사진은 실제 수업에 참여한 뒤부터 쌓입니다."
-        />
+        <PreEnrollNotice child={child} what="워크북 열람" />
       ) : workbook.loading ? (
         <Loading />
       ) : workbook.error ? (
@@ -57,7 +52,6 @@ export default function ParentWorkbookPage() {
           {rows.length === 0 ? (
             <EmptyState
               title="아직 올라온 워크북 사진이 없습니다"
-              description="수업에서 찍은 사진은 학원이 자녀 것으로 확인한 뒤에 이 화면에 올라옵니다."
             />
           ) : (
             <>
@@ -96,9 +90,6 @@ export default function ParentWorkbookPage() {
                   </figure>
                 ))}
               </div>
-              <p className="parent-note parent-note--spaced">
-                수행도와 과제 여부는 수업을 진행한 선생님이 남긴 기록입니다.
-              </p>
             </>
           )}
         </Card>

@@ -14,11 +14,9 @@ export interface PreEnrollNoticeProps {
   child: MeChild | null;
   /** 이 화면이 무엇인지 — "성적", "워크북", "보강 영상 신청" */
   what: string;
-  /** 왜 아직 없는지 한 문장. */
-  why: string;
 }
 
-export function PreEnrollNotice({ child, what, why }: PreEnrollNoticeProps) {
+export function PreEnrollNotice({ child, what }: PreEnrollNoticeProps) {
   const name = child?.name ?? "자녀";
   const status = child?.enrollment_status ?? "미등록";
   const withdrawn = status === "퇴원";
@@ -30,14 +28,7 @@ export function PreEnrollNotice({ child, what, why }: PreEnrollNoticeProps) {
         <span className="parent-note">{name} 학생</span>
       </div>
       <div style={{ marginTop: "var(--space-md)" }}>
-        <EmptyState
-          title={`${name} 학생은 아직 ${what} 대상이 아닙니다`}
-          description={
-            withdrawn
-              ? `${why} 퇴원한 학생의 기록은 학원에 보존됩니다 — 필요하시면 학원으로 문의해 주세요.`
-              : `${why} 첫 수업 출석이 확인되어 등록으로 바뀌면 이 화면이 자동으로 열립니다. 자녀가 여러 명이면 위에서 다른 자녀를 골라 보세요.`
-          }
-        />
+        <EmptyState title={`${name} 학생은 아직 ${what} 대상이 아닙니다`} />
       </div>
     </Card>
   );

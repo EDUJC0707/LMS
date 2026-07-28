@@ -196,7 +196,7 @@ class StaffFeaturesPutTests(StaffAdminFixtureMixin, TestCase):
 
 
 class StaffCreateTests(StaffAdminFixtureMixin, TestCase):
-    """POST /api/admin/staff — login_id=전화번호·랜덤 초기 비번."""
+    """POST /api/admin/staff — login_id={이름}{뒷4자리}·랜덤 초기 비번(8-4 개정)."""
 
     def setUp(self):
         self.client.force_login(self.owner)
@@ -206,28 +206,39 @@ class StaffCreateTests(StaffAdminFixtureMixin, TestCase):
             STAFF_URL, data=json.dumps(body), content_type="application/json"
         )
 
-    def test_creates_admin_with_phone_login_and_random_password(self):
+    def test_creates_admin_with_korean_login_id_and_random_password(self):
         res = self.post_staff({"name": "신입관리자", "phone": "01055556666", "role": "관리자"})
         self.assertEqual(res.status_code, 201)
         body = res.json()
-        created = User.objects.get(login_id="01055556666")
+        created = User.objects.get(login_id="신입관리자6666")
+        self.assertEqual(body["login_id"], "신입관리자6666")
         self.assertEqual(created.role, User.Role.ADMIN)
-        self.assertEqual(created.phone, "01055556666")
+        self.assertEqual(created.phone, "01055556666")  # 연락처는 아이디와 무관하게 보존
         self.assertTrue(created.must_change_password)
         self.assertTrue(created.check_password(body["initial_password"]))
 
     def test_creates_assistant(self):
         res = self.post_staff({"name": "신입조교", "phone": "01077778888", "role": "조교"})
         self.assertEqual(res.status_code, 201)
-        self.assertEqual(User.objects.get(login_id="01077778888").role, User.Role.ASSISTANT)
+        self.assertEqual(User.objects.get(login_id="신입조교8888").role, User.Role.ASSISTANT)
 
     def test_owner_role_rejected(self):
         res = self.post_staff({"name": "대표둘", "phone": "01000000001", "role": "대표"})
         self.assertEqual(res.status_code, 400)
 
-    def test_duplicate_login_id_rejected(self):
-        make_user("01099990000", User.Role.ADMIN)
+    def test_same_name_and_tail_gets_suffix(self):
+        # 동명이인 + 같은 뒷4자리 — 거절이 아니라 접미사로 해소(8-4 개정)
+        make_user("중복0000", User.Role.ADMIN)
         res = self.post_staff({"name": "중복", "phone": "01099990000", "role": "관리자"})
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.json()["login_id"], "중복0000a")
+
+    def test_unusable_phone_rejected(self):
+        res = self.post_staff({"name": "짧은번호", "phone": "12", "role": "관리자"})
+        self.assertEqual(res.status_code, 400)
+
+    def test_unusable_name_rejected(self):
+        res = self.post_staff({"name": "!!!", "phone": "01012345678", "role": "관리자"})
         self.assertEqual(res.status_code, 400)
 
     def test_missing_fields_rejected(self):

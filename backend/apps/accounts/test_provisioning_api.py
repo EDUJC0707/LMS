@@ -3,11 +3,12 @@
 검증 축:
 - 기능 게이트: 계정관리 키(FeatureRequired) — 조교 프리셋에 없어 403,
   delta 부여 시 허용
-- 일괄 발급: 학생 User(아이디=전화번호·랜덤 비번·must_change_password) +
-  Student(예비등록) / parent_phone → 학부모 계정 생성·**중복 전화면 기존
-  학부모에 자녀 연결만**(ParentStudent) / **무전화 학생은 학부모번호+접미사**
-  (8-4: a, b, …) / login_id 중복은 **해당 행만 실패**(행 단위 savepoint —
-  성공 행은 유지) / 초기 비밀번호는 응답으로 반환·credentials_sent_at 미스탬프
+- 일괄 발급: 학생 User(아이디={이름}{뒷4자리}·랜덤 비번·must_change_password) +
+  Student(예비등록) / parent_phone → 학부모 계정 생성(아이디=**학생 아이디+p**)·
+  **중복 전화면 기존 학부모에 자녀 연결만**(ParentStudent) / **무전화 학생은
+  학부모 번호 뒷4자리**(8-4 개정) / 동명이인+같은 뒷4자리는 **접미사로 해소** /
+  아이디를 만들 수 없는 행(이름·번호 불량)은 **해당 행만 실패**(행 단위
+  savepoint — 성공 행은 유지) / 초기 비밀번호는 응답 반환·credentials_sent_at 미스탬프
 - 등록 전환: 예비등록→등록 + registered_at (그 외 상태 400)
 """
 import json
@@ -81,10 +82,12 @@ class BulkIssueTests(ProvisioningFixtureMixin, TestCase):
         body = res.json()
         result = body["results"][0]
         self.assertEqual(result["status"], "생성")
+        self.assertEqual(result["login_id"], "김학생2222")
 
-        student_user = User.objects.get(login_id="01011112222")
+        student_user = User.objects.get(login_id="김학생2222")
         self.assertEqual(student_user.role, User.Role.STUDENT)
         self.assertEqual(student_user.name, "김학생")
+        self.assertEqual(student_user.phone, "01011112222")  # 연락처는 그대로 보존
         self.assertTrue(student_user.must_change_password)
         self.assertTrue(student_user.check_password(result["initial_password"]))
 
@@ -98,7 +101,10 @@ class BulkIssueTests(ProvisioningFixtureMixin, TestCase):
         parent = Parent.objects.get(phone="01033334444")
         self.assertIsNotNone(parent.user)
         self.assertEqual(parent.user.role, User.Role.PARENT)
-        self.assertEqual(parent.user.login_id, "01033334444")
+        # 학부모 아이디 = 학생 아이디 + p (학부모 번호와 무관)
+        self.assertEqual(parent.user.login_id, "김학생2222p")
+        self.assertEqual(result["parent"]["login_id"], "김학생2222p")
+        self.assertEqual(parent.user.phone, "01033334444")
         self.assertIsNone(parent.credentials_sent_at)
         self.assertTrue(result["parent"]["created"])
         self.assertTrue(parent.user.check_password(result["parent"]["initial_password"]))
@@ -119,10 +125,13 @@ class BulkIssueTests(ProvisioningFixtureMixin, TestCase):
         self.assertTrue(body["results"][0]["parent"]["created"])
         self.assertFalse(body["results"][1]["parent"]["created"])
         self.assertNotIn("initial_password", body["results"][1]["parent"])
+        # 다자녀 학부모 아이디는 **최초 연결 자녀** 기준으로 고정된다(login_id 모듈 계약)
+        self.assertEqual(parent.user.login_id, "김첫째0001p")
+        self.assertEqual(body["results"][1]["parent"]["login_id"], "김첫째0001p")
 
     def test_existing_parent_in_db_gets_link_only(self):
         existing = Parent.objects.create(
-            user=make_user("01055550000", User.Role.PARENT, name="기존학부모"),
+            user=make_user("기존학부모0000p", User.Role.PARENT, name="기존학부모"),
             phone="01055550000",
         )
         res = self.post_bulk(
@@ -131,31 +140,43 @@ class BulkIssueTests(ProvisioningFixtureMixin, TestCase):
         body = res.json()
         self.assertFalse(body["results"][0]["parent"]["created"])
         self.assertEqual(Parent.objects.filter(phone="01055550000").count(), 1)
-        student = Student.objects.get(user__login_id="01055551111")
+        student = Student.objects.get(user__login_id="신규생1111")
         self.assertTrue(
             ParentStudent.objects.filter(parent=existing, student=student).exists()
         )
 
-    def test_phoneless_student_uses_parent_phone_with_suffix(self):
+    def test_phoneless_student_uses_parent_phone_tail(self):
+        # 무전화 학생 — 학부모 번호 뒷4자리를 쓰고, 학부모는 그 아이디 + p
+        res = self.post_bulk([{"name": "무폰생", "parent_phone": "01077774821"}])
+        body = res.json()
+        self.assertEqual(body["results"][0]["login_id"], "무폰생4821")
+        self.assertEqual(body["results"][0]["parent"]["login_id"], "무폰생4821p")
+        self.assertTrue(User.objects.filter(login_id="무폰생4821").exists())
+        self.assertTrue(
+            User.objects.filter(login_id="무폰생4821p", role=User.Role.PARENT).exists()
+        )
+
+    def test_same_name_and_tail_gets_suffix(self):
+        # 동명이인 + 같은 뒷4자리 — 실패가 아니라 접미사로 해소, 학부모도 따라간다
         rows = [
-            {"name": "무폰첫째", "parent_phone": "01077770000"},
-            {"name": "무폰둘째", "parent_phone": "01077770000"},
+            {"name": "김민준", "phone": "01011111234", "parent_phone": "01055551111"},
+            {"name": "김민준", "phone": "01022221234", "parent_phone": "01055552222"},
         ]
         res = self.post_bulk(rows)
         body = res.json()
-        self.assertEqual(body["results"][0]["login_id"], "01077770000a")
-        self.assertEqual(body["results"][1]["login_id"], "01077770000b")
-        self.assertTrue(User.objects.filter(login_id="01077770000a").exists())
-        self.assertTrue(User.objects.filter(login_id="01077770000b").exists())
-        # 학부모 본인 아이디는 접미사 없는 원번호.
-        self.assertTrue(
-            User.objects.filter(login_id="01077770000", role=User.Role.PARENT).exists()
-        )
+        self.assertEqual(body["results"][0]["login_id"], "김민준1234")
+        self.assertEqual(body["results"][1]["login_id"], "김민준1234a")
+        self.assertEqual(body["results"][0]["parent"]["login_id"], "김민준1234p")
+        self.assertEqual(body["results"][1]["parent"]["login_id"], "김민준1234ap")
+        self.assertEqual(body["summary"]["created"], 2)
 
-    def test_duplicate_login_id_fails_only_that_row(self):
-        make_user("01088880000", User.Role.STUDENT, name="선점자")
+    def test_name_with_spaces_normalized(self):
+        res = self.post_bulk([{"name": " 김 하늘 ", "phone": "010-1111-4821"}])
+        self.assertEqual(res.json()["results"][0]["login_id"], "김하늘4821")
+
+    def test_unusable_name_fails_only_that_row(self):
         rows = [
-            {"name": "중복생", "phone": "01088880000"},
+            {"name": "!!!", "phone": "01088880000"},
             {"name": "정상생", "phone": "01088880001"},
         ]
         res = self.post_bulk(rows)
@@ -165,8 +186,8 @@ class BulkIssueTests(ProvisioningFixtureMixin, TestCase):
         self.assertTrue(body["results"][0]["error"])
         self.assertEqual(body["results"][1]["status"], "생성")
         # 실패 행 잔재 없음(행 단위 savepoint 롤백) — 성공 행은 유지.
-        self.assertFalse(Student.objects.filter(user__login_id="01088880000").exists())
-        self.assertTrue(Student.objects.filter(user__login_id="01088880001").exists())
+        self.assertFalse(Student.objects.filter(user__phone="01088880000").exists())
+        self.assertTrue(Student.objects.filter(user__login_id="정상생0001").exists())
         self.assertEqual(body["summary"]["created"], 1)
         self.assertEqual(body["summary"]["failed"], 1)
 
@@ -175,11 +196,17 @@ class BulkIssueTests(ProvisioningFixtureMixin, TestCase):
         body = res.json()
         self.assertEqual(body["results"][0]["status"], "실패")
 
+    def test_row_with_short_phone_fails_that_row(self):
+        res = self.post_bulk([{"name": "짧은번호", "phone": "12"}])
+        body = res.json()
+        self.assertEqual(body["results"][0]["status"], "실패")
+        self.assertFalse(User.objects.filter(name="짧은번호").exists())
+
     def test_row_without_name_fails_that_row(self):
         res = self.post_bulk([{"phone": "01012340000"}])
         body = res.json()
         self.assertEqual(body["results"][0]["status"], "실패")
-        self.assertFalse(User.objects.filter(login_id="01012340000").exists())
+        self.assertFalse(User.objects.filter(phone="01012340000").exists())
 
     def test_non_list_or_empty_body_rejected(self):
         self.assertEqual(self.post_bulk({"name": "딕셔너리"}).status_code, 400)

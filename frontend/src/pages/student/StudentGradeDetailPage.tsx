@@ -82,7 +82,6 @@ export default function StudentGradeDetailPage() {
         <Card>
           <EmptyState
             title="이 회차는 응시 기록이 없어 성적표가 없습니다"
-            description="응시하지 않은 시험은 채점 결과가 만들어지지 않습니다. 다음 회차에 응시하면 문항별 결과와 학습동선이 이곳에 나옵니다."
             action={<Link to="/student/grades">다른 회차 보기</Link>}
           />
         </Card>
@@ -289,10 +288,7 @@ export default function StudentGradeDetailPage() {
         {/* ④ 오답 학습동선 */}
         <Card title="오답 문항 학습동선" aside={guides.length > 0 ? `${guides.length}문항` : undefined}>
           {guides.length === 0 ? (
-            <EmptyState
-              title="틀린 문항이 없습니다"
-              description="이번 회차는 복습할 오답이 없어 학습동선을 만들지 않았습니다."
-            />
+            <EmptyState title="틀린 문항이 없습니다" />
           ) : (
             <div className="st-guides">
               {guides.map((guide: WrongAnswerGuide) => (
@@ -318,10 +314,7 @@ export default function StudentGradeDetailPage() {
         {/* ⑤ 테마별 누적 정답률 */}
         <Card title="테마별 누적 정답률" aside={themes.length > 0 ? `${themes.length}개 테마` : undefined}>
           {themes.length === 0 ? (
-            <EmptyState
-              title="테마가 붙은 문항이 아직 없습니다"
-              description="문항에 테마가 지정되면 회차가 쌓일수록 테마별 누적 정답률을 보여드립니다."
-            />
+            <EmptyState title="테마가 붙은 문항이 아직 없습니다" />
           ) : (
             <div className="st-weeks">
               {themes.map((trend: ThemeTrend) => {

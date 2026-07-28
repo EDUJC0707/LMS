@@ -5,7 +5,8 @@
  *   채우고 이 파일은 건드리지 않는다(동시 편집 충돌 방지).
  *
  * 구조:
- *   /login/{student,parent,admin}   비로그인 전용(로그인 상태면 홈으로)
+ *   /login                          학생·학부모 공용(비로그인 전용)
+ *   /login/admin                    직원 전용 — 어디서도 링크하지 않는다
  *   /  (RequireAuth)                셸 + 인증 필요. must_change_password 강제 유도
  *     ├ /student/*                  RequireRole 학생
  *     ├ /parent/*                   RequireRole 학부모
@@ -18,11 +19,7 @@ import { Navigate, createBrowserRouter } from "react-router-dom";
 import BareApp from "../bare/BareApp";
 import { RedirectIfSignedIn, RequireAuth, RequireFeature, RequireRole } from "../auth/guards";
 import { RoleHome } from "./RoleHome";
-import {
-  AdminLoginPage,
-  ParentLoginPage,
-  StudentLoginPage,
-} from "../pages/auth/LoginPage";
+import { AdminLoginPage, ConsumerLoginPage } from "../pages/auth/LoginPage";
 
 import StudentHomePage from "../pages/student/StudentHomePage";
 import StudentGradesPage from "../pages/student/StudentGradesPage";
@@ -62,20 +59,12 @@ export const router = createBrowserRouter([
   // 기능 검증용 bare 프런트 — 보존 구역. 절대 수정하지 않는다.
   { path: "/bare/*", element: <BareApp /> },
 
-  // 로그인 3종(PRD §4 경로 분리)
+  // 로그인 — 소비자는 한 화면, 직원만 별도 주소.
   {
-    path: "/login/student",
+    path: "/login",
     element: (
       <RedirectIfSignedIn>
-        <StudentLoginPage />
-      </RedirectIfSignedIn>
-    ),
-  },
-  {
-    path: "/login/parent",
-    element: (
-      <RedirectIfSignedIn>
-        <ParentLoginPage />
+        <ConsumerLoginPage />
       </RedirectIfSignedIn>
     ),
   },
@@ -87,7 +76,9 @@ export const router = createBrowserRouter([
       </RedirectIfSignedIn>
     ),
   },
-  { path: "/login", element: <Navigate to="/login/student" replace /> },
+  // 구 경로(역할별 분리) — 북마크·구 링크를 위해 남겨 둔 리다이렉트.
+  { path: "/login/student", element: <Navigate to="/login" replace /> },
+  { path: "/login/parent", element: <Navigate to="/login" replace /> },
 
   // 인증 구역 — 셸이 씌워진다.
   {

@@ -32,7 +32,7 @@ export function RequireAuth() {
 
   if (loading) return <Booting />;
   if (!me) {
-    return <Navigate to="/login/student" replace state={{ from: location.pathname }} />;
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
   if (me.must_change_password && location.pathname !== "/password") {
     return <Navigate to="/password" replace />;
@@ -60,15 +60,9 @@ export function RequireFeature({ feature }: { feature: Feature }) {
   // 다른 화면과 같은 골격(PageHeader 가 h1 — 화면당 h1 하나)으로 그린다.
   return (
     <>
-      <PageHeader
-        title="이 기능을 사용할 권한이 없습니다"
-        description={`'${feature}' 권한이 있어야 볼 수 있는 화면입니다.`}
-      />
+      <PageHeader title={`'${feature}' 권한이 없습니다`} />
       <Card>
-        <EmptyState
-          title="대표에게 권한을 요청해 주세요"
-          description="권한이 부여되면 왼쪽 메뉴에 이 화면이 나타납니다."
-        />
+        <EmptyState title="대표에게 권한을 요청해 주세요" />
       </Card>
     </>
   );

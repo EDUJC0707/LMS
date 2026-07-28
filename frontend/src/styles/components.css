@@ -1123,121 +1123,81 @@
   color: var(--color-neutral);
 }
 
-/* ═══ 인증 화면 (로그인 3종 · 비밀번호 변경) ════════════════════════ */
+/* ═══ 인증 화면 (로그인) ═════════════════════════════════════════════
+   중앙 정렬 단일 카드. 로고·제목·아이디·비밀번호·버튼이 전부다.
+   빈 화면은 글이 아니라 면으로 채운다 — 같은 hue(250) 세 단계가 밖에서
+   안으로 밝아지며 카드를 세운다: navy-100(바탕) → navy-50(브랜드 띠) →
+   paper(입력 면). 액센트 네이비 채움은 로그인 버튼 하나뿐이다. */
 
 .ui-authpage {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
   min-height: 100dvh;
-  background: var(--color-paper-2);
-}
-
-@media (min-width: 900px) {
-  .ui-authpage {
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-  }
-}
-
-.ui-authpage__aside {
-  display: none;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: var(--space-3xl) var(--space-2xl);
-  background: var(--color-navy-900);
-  color: var(--color-navy-200);
-}
-
-@media (min-width: 900px) {
-  .ui-authpage__aside {
-    display: flex;
-  }
-}
-
-.ui-authpage__mark {
-  width: 4.5rem;
-  height: 4.5rem;
-}
-
-.ui-authpage__lede {
-  max-width: 26ch;
-  font-size: var(--text-xl);
-  font-weight: var(--weight-bold);
-  line-height: var(--leading-tight);
-  letter-spacing: var(--tracking-tight);
-  color: var(--color-paper);
-}
-
-.ui-authpage__note {
-  max-width: 40ch;
-  font-size: var(--text-sm);
-  color: var(--color-navy-300);
-}
-
-.ui-authpage__panel {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
   padding: var(--space-2xl) var(--space-lg);
+  background: var(--color-navy-100);
 }
 
 .ui-authcard {
   width: 100%;
-  max-width: 24rem;
-  margin-inline: auto;
+  max-width: 23rem;
+  overflow: hidden;
+  background: var(--color-paper);
+  border: 1px solid var(--color-navy-200);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-whisper);
   animation: ui-reveal var(--dur-long) var(--ease-out) both;
 }
 
+/* 브랜드 영역 — 로고 + 워드마크 한 줄. 배경 장식 없음.
+   단색 띠와 원자 워터마크를 둘 다 시도했으나 카드에 이질적인 층이 생겨
+   걷어냈다(2026-07-28 사용자 판단). 카드는 한 면으로 둔다. */
 .ui-authcard__brand {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-xs);
-  margin-bottom: var(--space-xl);
+  padding: var(--space-2xl) var(--space-xl) var(--space-lg);
 }
 
-@media (min-width: 900px) {
-  .ui-authcard__brand img {
-    display: none;
-  }
+.ui-authcard__brand img {
+  flex: none;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-sm);
 }
 
 .ui-authcard__brandname {
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   font-weight: var(--weight-bold);
   letter-spacing: var(--tracking-snug);
+  white-space: nowrap;
+  color: var(--color-navy-900);
 }
 
 .ui-authcard__title {
+  padding: var(--space-xl) var(--space-xl) 0;
+  text-align: center;
   font-size: var(--text-lg);
   font-weight: var(--weight-bold);
   letter-spacing: var(--tracking-tight);
 }
 
-.ui-authcard__sub {
-  margin-top: var(--space-2xs);
-  font-size: var(--text-sm);
-  color: var(--color-muted);
-}
-
 .ui-authcard__form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
-  margin-top: var(--space-lg);
+  gap: var(--space-md);
+  padding: var(--space-lg) var(--space-xl) var(--space-2xl);
 }
 
-.ui-authcard__switch {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-xs);
-  margin-top: var(--space-xl);
-  padding-top: var(--space-md);
-  border-top: 1px solid var(--color-rule);
-  font-size: var(--text-xs);
-  color: var(--color-muted);
+/* 도움말이 없는 화면이라 빈 자리를 남기지 않는다.
+   두 칸 다 필수라 * 표시가 구분하는 게 없다 — 입력의 required 속성만 남긴다. */
+.ui-authcard .ui-field__help:empty,
+.ui-authcard .ui-field__req {
+  display: none;
 }
 
-.ui-authcard__switch a {
-  font-weight: var(--weight-medium);
+.ui-authcard .ui-btn--primary {
+  margin-top: var(--space-2xs);
 }
 
 /* ═══ 레이아웃 유틸 (최소한만) ═══════════════════════════════════════ */

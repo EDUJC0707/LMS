@@ -61,10 +61,7 @@ export default function NotificationsPage() {
 
   return (
     <>
-      <PageHeader
-        title="알림"
-        description="학원에서 보낸 안내를 최근 순서대로 모았습니다."
-      />
+      <PageHeader title="알림" />
 
       {list.loading ? (
         <Loading label="알림을 불러오는 중…" />
@@ -72,10 +69,7 @@ export default function NotificationsPage() {
         <ErrorState description={list.error} onRetry={list.reload} />
       ) : rows.length === 0 ? (
         <Card>
-          <EmptyState
-            title="아직 받은 알림이 없습니다"
-            description="성적표·복습영상·클리닉·결제 안내가 오면 여기에 쌓입니다."
-          />
+          <EmptyState title="아직 받은 알림이 없습니다" />
         </Card>
       ) : (
         <div className="ui-stack">
@@ -135,9 +129,7 @@ function NotificationItem({
       {row.body && <p className="cm-notif__body">{row.body}</p>}
 
       {failed && (
-        <p className="cm-notif__body">
-          알림톡이 전달되지 않았습니다. 내용은 이 화면에서 그대로 볼 수 있습니다.
-        </p>
+        <p className="cm-notif__body">알림톡 발송 실패</p>
       )}
 
       {showGradeLink && (

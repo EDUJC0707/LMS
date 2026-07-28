@@ -29,7 +29,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const handleSignOut = async () => {
     await signOut();
-    navigate("/login/student", { replace: true });
+    navigate("/login", { replace: true });
   };
 
   return (
@@ -38,7 +38,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="ui-rail__brand">
           <img
             className="ui-rail__mark"
-            src="/atom-logo.png"
+            src="/atom-master.png"
             alt=""
             width={32}
             height={32}

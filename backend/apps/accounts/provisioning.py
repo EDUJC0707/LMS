@@ -1,8 +1,9 @@
 """계정 일괄 발급 서비스 — 학생·학부모 계정 생성·연결 (PRD 3.1.5, 8-3·8-4).
 
-아이디 규칙(8-4 확정): 아이디 = 본인 휴대폰 번호. **휴대폰 없는 학생만
-학부모 번호 + 접미사**(a, b, … — 예: `01012345678a`). 학부모 아이디는
-접미사 없는 원번호(학생·학부모 동일 규칙).
+아이디 규칙은 **`login_id.py` 가 유일한 준거**다(8-4 개정 2026-07-28 — 한글
+전환: 학생 `{이름}{뒷4자리}`, 학부모 `{학생 아이디}p`). 이 모듈은 규칙을
+직접 만들지 않고 그 함수만 호출한다 — 규칙이 두 곳에 흩어지면 발급 경로마다
+아이디 체계가 갈린다.
 
 **행 단위 실패 판단(전체 롤백 아님)**: 명단은 엑셀 붙여넣기로 수십 행이
 한 번에 들어온다. 한 행의 중복·누락 때문에 전체를 롤백하면 관리자는 실패
@@ -21,16 +22,13 @@ import secrets
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from .login_id import LoginIdError, issue_parent_login_id, issue_student_login_id
 from .models import Parent, ParentStudent, Student, User
 
 # 혼동 문자(0/O/1/l/I) 제외 — SMS 로 받아 손으로 입력하는 비밀번호라
 # 시인성이 보안 엔트로피만큼 중요하다(최초 로그인 후 변경 강제가 안전망).
 _PASSWORD_ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz"
 _PASSWORD_LENGTH = 8
-
-# 무전화 학생 아이디 접미사 후보(8-4 예: 01012345678a). 한 학부모 번호에
-# 26명을 넘는 무전화 자녀는 현실적으로 없다 — 소진 시 해당 행 실패.
-_SUFFIXES = "abcdefghijklmnopqrstuvwxyz"
 
 
 def generate_initial_password() -> str:
@@ -91,7 +89,10 @@ def _issue_row(row):
     if not phone and not parent_phone:
         raise RowError("phone 또는 parent_phone이 필요합니다.")
 
-    login_id = phone if phone else _suffixed_login_id(parent_phone)
+    try:
+        login_id = issue_student_login_id(name, phone, parent_phone)
+    except LoginIdError as exc:
+        raise RowError(str(exc)) from exc
     student_user, initial_password = _create_user(login_id, User.Role.STUDENT, name, phone)
     student = Student.objects.create(
         user=student_user,
@@ -102,7 +103,7 @@ def _issue_row(row):
 
     parent_block = None
     if parent_phone:
-        parent_block = _link_parent(parent_phone, name, student)
+        parent_block = _link_parent(parent_phone, name, login_id, student)
 
     return {
         "name": name,
@@ -119,15 +120,6 @@ def _clean_phone(value):
     return value.strip()
 
 
-def _suffixed_login_id(parent_phone):
-    """무전화 학생 아이디 — 학부모번호+첫 빈 접미사(8-4). 소진 시 행 실패."""
-    for suffix in _SUFFIXES:
-        candidate = f"{parent_phone}{suffix}"
-        if not User.objects.filter(login_id=candidate).exists():
-            return candidate
-    raise RowError("학부모 번호 기반 아이디 접미사가 소진되었습니다.")
-
-
 def _create_user(login_id, role, name, phone):
     """User 생성 — 중복 아이디는 RowError(사전 조회 + IntegrityError 이중 방어)."""
     if User.objects.filter(login_id=login_id).exists():
@@ -142,13 +134,17 @@ def _create_user(login_id, role, name, phone):
     return user, password
 
 
-def _link_parent(parent_phone, student_name, student):
+def _link_parent(parent_phone, student_name, student_login_id, student):
     """학부모 생성/연결 — **중복 전화면 기존 학부모에 자녀 연결만**(PRD 3.4).
 
     parents.phone 이 매칭 키(청구서·SMS 수신 번호 — 모델 계약). 신규면
-    학부모 User(아이디=원번호)+Parent 를 만들고, User.name 은 NN 이라
-    "{학생명} 학부모"로 표시명을 채운다(Parent.name 은 설계상 NULL 유지 —
-    실명 미상). 같은 전화가 학부모 아닌 계정(직원 등)에 선점돼 있으면 행 실패.
+    학부모 User(아이디=**이 자녀의 아이디 + p** — login_id 모듈)+Parent 를
+    만들고, User.name 은 NN 이라 "{학생명} 학부모"로 표시명을 채운다
+    (Parent.name 은 설계상 NULL 유지 — 실명 미상).
+
+    **다자녀는 아이디가 바뀌지 않는다**: 둘째부터는 이 분기의 앞쪽(기존 학부모)
+    으로 들어와 연결만 추가되므로, 아이디는 계정을 만들게 한 최초 연결 자녀
+    기준으로 고정된다(login_id 모듈의 다자녀 절과 같은 계약).
     """
     parent = Parent.objects.filter(phone=parent_phone).order_by("parent_id").first()
     if parent is not None:
@@ -161,14 +157,18 @@ def _link_parent(parent_phone, student_name, student):
             "created": False,
             "linked": link_created,
         }
+    try:
+        parent_login_id = issue_parent_login_id(student_login_id)
+    except LoginIdError as exc:
+        raise RowError(str(exc)) from exc
     parent_user, parent_password = _create_user(
-        parent_phone, User.Role.PARENT, f"{student_name} 학부모", parent_phone
+        parent_login_id, User.Role.PARENT, f"{student_name} 학부모", parent_phone
     )
     parent = Parent.objects.create(user=parent_user, phone=parent_phone)
     ParentStudent.objects.create(parent=parent, student=student)
     return {
         "parent_id": parent.parent_id,
-        "login_id": parent_phone,
+        "login_id": parent_login_id,
         "initial_password": parent_password,
         "created": True,
         "linked": True,

@@ -117,7 +117,6 @@ export default function AdminDashboardPage() {
         key="makeup"
         to="/admin/makeup"
         label="동보 승인 대기"
-        hint="승인하면 복습영상 시청 권한이 바로 나갑니다."
         state={makeup}
       />,
     );
@@ -127,7 +126,6 @@ export default function AdminDashboardPage() {
         key="counseling"
         to="/admin/counseling"
         label="결석 상담 대기"
-        hint="결석을 저장할 때 자동으로 만들어진 학부모 통화 카드입니다."
         state={counseling}
       />,
     );
@@ -137,7 +135,6 @@ export default function AdminDashboardPage() {
         key="clinic"
         to="/admin/clinic"
         label="클리닉 배정 대기"
-        hint="신청한 학생에게 담당 조교와 미팅 링크를 배정합니다."
         state={clinic}
       />,
     );
@@ -147,7 +144,6 @@ export default function AdminDashboardPage() {
         key="workbook"
         to="/admin/workbook"
         label="워크북 매칭 잔량"
-        hint="주인이 확정되지 않은 사진입니다. 확정해야 학생 화면에 보입니다."
         state={workbook}
         unit="장"
       />,
@@ -157,7 +153,7 @@ export default function AdminDashboardPage() {
     <>
       <PageHeader
         title="오늘 운영"
-        description={`${longDate(today)} · ${me?.name ?? ""} ${me?.role ?? ""}. 담당 권한이 있는 일만 보입니다.`}
+        description={`${longDate(today)} · ${me?.name ?? ""} ${me?.role ?? ""}`}
       />
 
       <div className="ui-stack">
@@ -177,9 +173,7 @@ export default function AdminDashboardPage() {
             ) : details.error ? (
               <ErrorState description={details.error} onRetry={details.reload} />
             ) : (details.data ?? []).length === 0 ? (
-              <p className="ops-note">
-                등록된 수업 회차가 없습니다. 커리큘럼에 주차가 매핑되면 여기에 나타납니다.
-              </p>
+              <p className="ops-note">등록된 수업 회차가 없습니다</p>
             ) : (
               <div className="ui-stack ui-stack--md">
                 {(details.data ?? []).map((detail) => (
@@ -198,10 +192,7 @@ export default function AdminDashboardPage() {
 
         {!canAttendance && tiles.length === 0 && (
           <Card>
-            <p className="ops-note">
-              지금 계정에는 운영 화면 권한이 없습니다. 맡아야 할 업무가 있으면 대표에게 권한을
-              요청하세요.
-            </p>
+            <p className="ops-note">지금 계정에는 운영 화면 권한이 없습니다</p>
           </Card>
         )}
       </div>
@@ -244,18 +235,15 @@ function SessionRow({ detail, today }: { detail: SessionDetail; today: string })
 function OpsTile({
   to,
   label,
-  hint,
   state,
   unit = "건",
 }: {
   to: string;
   label: string;
-  hint: string;
   state: ApiState<number | null>;
   unit?: string;
 }) {
   const count = state.data ?? 0;
-  const settled = !state.loading && !state.error;
   return (
     <Link to={to} className="ops-tile">
       <span className="ops-tile__label">{label}</span>
@@ -270,9 +258,6 @@ function OpsTile({
             <span className="ops-tile__unit">{unit}</span>
           </>
         )}
-      </span>
-      <span className="ops-tile__hint">
-        {settled && count === 0 ? "지금은 밀린 게 없습니다." : hint}
       </span>
     </Link>
   );

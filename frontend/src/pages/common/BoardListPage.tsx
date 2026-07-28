@@ -37,7 +37,6 @@ import {
   BOARD_BODY_LABEL,
   BOARD_CATEGORIES,
   BOARD_EMPTY,
-  BOARD_INTRO,
   API_PAGE_SIZE,
   BOARD_TITLE_LABEL,
   BOARD_WRITE_LABEL,
@@ -64,7 +63,6 @@ export default function BoardListPage() {
         <Card>
           <EmptyState
             title="없는 게시판입니다"
-            description="주소가 바뀌었을 수 있습니다. 아래 게시판에서 다시 찾아 주세요."
             action={
               <Link className="ui-btn ui-btn--primary" to="/boards/공지사항">
                 공지사항 보기
@@ -135,7 +133,6 @@ function BoardList({ category }: { category: BoardCategory }) {
     <>
       <PageHeader
         title={category}
-        description={BOARD_INTRO[category]}
         actions={
           canWrite && (
             <Button variant="primary" onClick={() => setWriting(true)}>
@@ -161,13 +158,6 @@ function BoardList({ category }: { category: BoardCategory }) {
           <Card>
             <EmptyState
               title={BOARD_EMPTY[category]}
-              description={
-                canWrite
-                  ? "첫 글을 남겨 주세요."
-                  : category === "질답"
-                    ? "궁금한 점이 생기면 언제든 질문할 수 있습니다."
-                    : "새 글이 올라오면 여기에 표시됩니다."
-              }
               action={
                 canWrite && (
                   <Button variant="primary" onClick={() => setWriting(true)}>
@@ -389,9 +379,6 @@ function WriteDialog({
         <Field
           label={BOARD_BODY_LABEL[category]}
           error={bodyError}
-          hint={
-            category === "질답" ? "교재 쪽수·문항 번호를 함께 적으면 답이 빨라집니다." : undefined
-          }
           required
         >
           {(props) => (

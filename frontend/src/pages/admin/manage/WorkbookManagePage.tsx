@@ -91,7 +91,6 @@ export default function WorkbookManagePage() {
     <>
       <PageHeader
         title="워크북 업로드"
-        description="수업 끝에 걷은 워크북 마지막 장을 올리고, 사진마다 어느 학생 것인지 확정합니다. 확정된 사진만 학생·학부모에게 보입니다."
       />
 
       <UploadCard sessions={sessions.data ?? []} onUploaded={() => void list.reload()} />
@@ -158,7 +157,6 @@ export default function WorkbookManagePage() {
                   ? "이 조건에 올라온 사진이 없습니다"
                   : `${tab} 상태인 사진이 없습니다`
               }
-              description="위에서 사진을 올리거나, 상태 탭·회차 조건을 바꿔 보세요."
             />
           ) : (
             <ul className="pm-wbgrid">
@@ -197,12 +195,9 @@ export default function WorkbookManagePage() {
           </>
         }
       >
-        <p style={{ marginTop: 0 }}>
-          사진 파일까지 함께 지워지고 되돌릴 수 없습니다. 잘못 찍혔거나 같은 장을 두 번 올린
-          경우에만 지우세요.
-        </p>
-        <p style={{ marginBottom: 0, color: "var(--color-muted)" }}>
-          내가 올린 사진이 아니면 관리자·대표만 지울 수 있습니다.
+        <p style={{ margin: 0 }}>
+          {deleting?.student.name ?? "미확정"}
+          {deleting?.session ? ` · ${deleting.session.session_date}` : ""}
         </p>
       </Modal>
     </>
@@ -345,11 +340,10 @@ function UploadCard({
             value={student}
             onChange={setStudent}
             required
-            hint="이름이나 원번으로 찾습니다. 아래 매칭 보드에서 확정할 수 있습니다."
           />
 
           {sessions.length > 0 && (
-            <Field label="회차" hint="비워 두면 회차 없이 저장됩니다.">
+            <Field label="회차">
               {(props) => (
                 <Select
                   {...props}
@@ -454,7 +448,6 @@ function MatchCard({
               value={picked}
               onChange={setPicked}
               label="학생 직접 지정"
-              hint="사진을 보고 바로 확정할 때. 이름이나 원번으로 찾습니다."
             />
             <Button
               loading={match.pending}
@@ -477,7 +470,6 @@ function MatchCard({
 
             <Field
               label="사진에 적힌 원번"
-              hint="원번과 이름이 정확히 한 명과 맞으면 자동으로 확정됩니다."
             >
               {(props) => (
                 <Input
@@ -495,7 +487,7 @@ function MatchCard({
                   {...props}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="김하늘"
+                  placeholder="홍길동"
                 />
               )}
             </Field>

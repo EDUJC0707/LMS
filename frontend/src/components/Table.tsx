@@ -54,7 +54,7 @@ export function Table<Row>({
   columns,
   rows,
   rowKey,
-  empty = "표시할 내용이 없습니다.",
+  empty = "표시할 내용이 없습니다",
   onRowClick,
   isSelected,
   dense = false,

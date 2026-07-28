@@ -108,7 +108,6 @@ export function GradeReportView({
         {guides.length === 0 ? (
           <EmptyState
             title="틀린 문항이 없습니다"
-            description="이번 회차는 복습할 문항이 따로 없습니다."
           />
         ) : (
           <Table

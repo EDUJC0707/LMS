@@ -106,7 +106,6 @@ export default function ClinicManagePage() {
     <>
       <PageHeader
         title="클리닉 배정"
-        description="학생이 낸 클리닉 신청을 확인하고 담당 조교와 화상 링크를 정합니다. 수업이 끝나면 출결과 조교 수행 평가를 남깁니다."
       />
 
       <Tabs items={TABS} value={tab} onChange={setTab} label="신청 상태" />
@@ -139,7 +138,7 @@ export default function ClinicManagePage() {
               rows={rows}
               rowKey={(row) => row.clinic_id}
               dense
-              caption="클리닉 신청 목록. 행을 누르면 오른쪽에서 처리합니다."
+              caption="클리닉 신청 목록"
               onRowClick={(row) => setSelectedId(row.clinic_id)}
               isSelected={(row) => row.clinic_id === selectedId}
               empty={
@@ -149,7 +148,6 @@ export default function ClinicManagePage() {
                       ? "이 조건에 해당하는 신청이 없습니다"
                       : `${tab} 상태인 신청이 없습니다`
                   }
-                  description="상태 탭이나 날짜 조건을 바꿔 보세요."
                 />
               }
               columns={[
@@ -221,10 +219,7 @@ export default function ClinicManagePage() {
             />
           ) : (
             <Card title="처리">
-              <EmptyState
-                title="왼쪽에서 신청을 하나 고르세요"
-                description="고른 신청에 지금 할 수 있는 일(배정·미승인·출결·평가)만 여기에 나타납니다."
-              />
+              <EmptyState title="왼쪽에서 신청을 하나 고르세요" />
             </Card>
           )}
         </div>
@@ -343,10 +338,7 @@ function RequestPanel({
         </dl>
 
         {request.student.clinic_banned && (
-          <Alert tone="danger">
-            결석이 누적돼 이 학생은 새 클리닉을 신청할 수 없습니다.
-            {isOwner ? " 사정이 확인되면 아래에서 풀어 줄 수 있습니다." : " 해제는 대표만 할 수 있습니다."}
-          </Alert>
+          <Alert tone="danger">신청 제한 상태</Alert>
         )}
 
         {request.student.clinic_banned && isOwner && (
@@ -381,11 +373,7 @@ function RequestPanel({
                 </Select>
               )}
             </Field>
-            <Field
-              label="화상 수업 링크"
-              required
-              hint="링크가 없으면 학생에게 빈 안내가 갑니다. 구글 미트 주소를 붙여 넣으세요."
-            >
+            <Field label="화상 수업 링크" required>
               {(props) => (
                 <Input
                   {...props}
@@ -427,14 +415,9 @@ function RequestPanel({
             {attend.error && <Alert tone="danger">{attend.error}</Alert>}
             {request.student.noshow_count >= 1 && (
               <Alert tone="warning">
-                이 학생은 이미 {request.student.noshow_count}회 결석했습니다. 여기서 한 번 더
-                결석으로 처리하면 클리닉 신청이 자동으로 막히고, 푸는 것은 대표만 할 수
-                있습니다.
+                노쇼 {request.student.noshow_count}회 — 한 번 더 결석이면 신청이 막힙니다
               </Alert>
             )}
-            <p style={{ margin: 0, color: "var(--color-muted)", fontSize: "var(--text-sm)" }}>
-              출결은 한 번만 기록할 수 있습니다. 기록하면 학부모에게 안내가 나갑니다.
-            </p>
             <div className="ui-row">
               <Button
                 variant="primary"
@@ -533,7 +516,7 @@ function EvaluationForm({
           </fieldset>
         ))}
 
-        <Field label="종합 판정" hint="비워 두면 항목 기록만 남습니다.">
+        <Field label="종합 판정">
           {(props) => (
             <Select
               {...props}

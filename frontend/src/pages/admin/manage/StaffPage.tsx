@@ -51,7 +51,7 @@ const FEATURE_NOTE: Record<string, string> = {
   워크북업로드: "워크북 사진 업로드와 학생 매칭",
   문제은행관리: "문제은행·유사문항 관리",
   계정관리: "명단 입력·계정 발급·등록 전환",
-  권한부여: "직원 권한 조정 — 이 화면은 대표만 열립니다",
+  권한부여: "직원 권한 조정",
 };
 
 type DirtyMap = Record<number, Record<string, boolean>>;
@@ -170,7 +170,6 @@ export default function StaffPage() {
     <>
       <PageHeader
         title="직원 권한"
-        description="직원이 어떤 화면을 열 수 있는지 정합니다. 역할을 주면 기본 권한(프리셋)이 따라오고, 여기서 사람별로 더 주거나 회수합니다."
         actions={
           <Button variant="primary" onClick={() => setCreateOpen(true)}>
             직원 계정 만들기
@@ -182,8 +181,7 @@ export default function StaffPage() {
         <Alert tone="success" onClose={() => setIssued(null)}>
           {issued.name}({issued.role}) 계정을 만들었습니다. 아이디{" "}
           <span className="num">{issued.login_id}</span> · 초기 비밀번호{" "}
-          <span className="pm-secret">{issued.initial_password}</span> — 이 비밀번호는 지금 한
-          번만 보입니다. 본인에게 직접 전하고 첫 로그인 때 바꾸도록 안내하세요.
+          <span className="pm-secret">{issued.initial_password}</span>
         </Alert>
       )}
 
@@ -206,18 +204,12 @@ export default function StaffPage() {
           >
             {active.length === 0 ? (
               <div style={{ padding: "var(--space-lg)" }}>
-                <Alert tone="info">
-                  아직 관리자·조교 계정이 없습니다. 오른쪽 위 “직원 계정 만들기”로 먼저 계정을
-                  발급하세요.
-                </Alert>
+                <Alert tone="info">아직 관리자·조교 계정이 없습니다</Alert>
               </div>
             ) : (
               <div className="ui-tablewrap">
                 <table className="pm-matrix">
-                  <caption className="sr-only">
-                    기능별 직원 권한 매트릭스. 각 칸을 눌러 켜고 끈 뒤 직원 이름 아래 저장을
-                    누릅니다.
-                  </caption>
+                  <caption className="sr-only">기능별 직원 권한 매트릭스</caption>
                   <thead>
                     <tr>
                       <th scope="col" className="pm-matrix__feature">
@@ -337,10 +329,6 @@ export default function StaffPage() {
               </span>
               프리셋에도 없고 따로 주지도 않은 것
             </p>
-            <p style={{ margin: "var(--space-sm) 0 0", color: "var(--color-muted)" }}>
-              칸을 눌러 바꾼 뒤 직원 이름 아래 저장을 눌러야 서버에 반영됩니다. 프리셋과 같아진
-              항목은 저장할 때 자동으로 정리되므로 “개별 부여·회수”에는 정말 예외인 것만 남습니다.
-            </p>
           </Card>
 
           {retired.length > 0 && (
@@ -349,12 +337,6 @@ export default function StaffPage() {
               aside={`${retired.length}명 — 로그인 차단됨`}
               defaultOpen
             >
-              <p style={{ marginTop: 0, color: "var(--color-muted)" }}>
-                퇴사·휴직으로 로그인을 막아 둔 계정입니다. 남긴 출결·성적 기록을 보존하려고
-                지우지 않습니다. 권한 설정도 그대로 남아 있어, 다시 활성화하면 예전 권한으로
-                바로 돌아옵니다.
-              </p>
-
               {activate.error && (
                 <Alert tone="danger" onClose={activate.clearError}>
                   {activate.error}
@@ -449,13 +431,8 @@ export default function StaffPage() {
         }
       >
         {deactivate.error && <Alert tone="danger">{deactivate.error}</Alert>}
-        <p style={{ marginTop: 0 }}>
-          {deactivating?.name}({deactivating?.role}) 계정이 바로 로그인할 수 없게 됩니다. 지금까지
-          남긴 출결·성적 기록은 그대로 보존됩니다.
-        </p>
-        <p style={{ marginBottom: 0, color: "var(--color-muted)" }}>
-          되돌릴 수 있습니다 — 아래 &lsquo;비활성 직원&rsquo;에서 다시 활성화하면 지금 권한
-          그대로 로그인이 열립니다.
+        <p style={{ margin: 0 }}>
+          {deactivating?.name}({deactivating?.role}) 계정이 로그인할 수 없게 됩니다.
         </p>
       </Modal>
     </>
@@ -529,7 +506,6 @@ function CreateStaffModal({
         <Field
           label="휴대폰 번호"
           required
-          hint="이 번호가 그대로 로그인 아이디가 됩니다."
           error={phoneError}
         >
           {(props) => (
@@ -546,7 +522,6 @@ function CreateStaffModal({
         </Field>
         <Field
           label="역할"
-          hint="관리자는 운영 전반, 조교는 워크북·클리닉부터 시작합니다. 세부 권한은 매트릭스에서 조정하세요."
         >
           {(props) => (
             <Select {...props} value={role} onChange={(e) => setRole(e.target.value)}>
@@ -555,10 +530,6 @@ function CreateStaffModal({
             </Select>
           )}
         </Field>
-        <p style={{ margin: 0, color: "var(--color-muted)", fontSize: "var(--text-sm)" }}>
-          초기 비밀번호는 발급 직후 한 번만 보입니다. 알림톡을 붙이기 전까지는 직접 전달해야
-          합니다.
-        </p>
       </form>
     </Modal>
   );

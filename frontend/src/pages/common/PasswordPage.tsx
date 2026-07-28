@@ -29,7 +29,7 @@ export default function PasswordPage() {
     setError(null);
     setMismatch(null);
     if (next !== confirm) {
-      setMismatch("새 비밀번호가 서로 다릅니다. 두 칸에 같은 값을 입력해 주세요.");
+      setMismatch("새 비밀번호가 서로 다릅니다");
       return;
     }
     setPending(true);
@@ -52,11 +52,6 @@ export default function PasswordPage() {
     <>
       <PageHeader
         title="비밀번호 변경"
-        description={
-          forced
-            ? "처음 발급받은 비밀번호를 쓰고 계십니다. 본인만 아는 비밀번호로 바꾼 뒤에 이용할 수 있습니다."
-            : "다른 곳에서 쓰지 않는 비밀번호로 바꿔 주세요."
-        }
       />
 
       <Card>
@@ -83,7 +78,6 @@ export default function PasswordPage() {
 
           <Field
             label="새 비밀번호"
-            hint="8자 이상, 너무 흔한 비밀번호는 사용할 수 없습니다."
             required
           >
             {(props) => (

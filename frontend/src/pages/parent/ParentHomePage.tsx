@@ -21,7 +21,7 @@ import {
   StatusBadge,
   Table,
 } from "../../components";
-import { NO_CHILD_DESC, NO_CHILD_TITLE, useChild } from "./childContext";
+import { NO_CHILD_TITLE, useChild } from "./childContext";
 import {
   currentMonth,
   dDayLabel,
@@ -64,13 +64,12 @@ export default function ParentHomePage() {
     <>
       <PageHeader
         title="자녀 학습 현황"
-        description="출결과 수업 일정, 교재 결제 상태를 확인하는 화면입니다. 기록은 학원에서 입력합니다."
         actions={picker}
       />
 
       {studentId === null ? (
         <Card>
-          <EmptyState title={NO_CHILD_TITLE} description={NO_CHILD_DESC} />
+          <EmptyState title={NO_CHILD_TITLE} />
         </Card>
       ) : home.loading ? (
         <Loading />
@@ -233,11 +232,7 @@ function MonthCard({
         <StatusBadge status="출석" />
         <StatusBadge status="지각" />
         <StatusBadge status="결석" />
-        <span className="parent-note">회색 칸은 수업이 있는 날입니다.</span>
       </div>
-      <p className="parent-note parent-note--spaced">
-        출결은 수업 당일 학원에서 입력합니다. 기록이 실제와 다르면 학원으로 알려 주세요.
-      </p>
     </Card>
   );
 }
@@ -265,10 +260,7 @@ function AbsenceCard({ rows }: { rows: AbsenceRow[] }) {
       actions={rows.length > 0 ? <Link to="/parent/makeup">보강 영상 신청 화면</Link> : undefined}
     >
       {rows.length === 0 ? (
-        <EmptyState
-          title="이번 달 결석이 없습니다"
-          description="결석한 날이 생기면 여기에서 보강 영상 신청 상태를 확인할 수 있습니다."
-        />
+        <EmptyState title="이번 달 결석이 없습니다" />
       ) : (
         <Table
           rows={rows}
@@ -383,10 +375,7 @@ function DeadlineCard({ rows }: { rows: Deadline[] }) {
   return (
     <Card title="곧 마감되는 것" padding={items.length === 0 ? "md" : "none"}>
       {items.length === 0 ? (
-        <EmptyState
-          title="기한이 다가온 항목이 없습니다"
-          description="보강 영상 시청 기한, 클리닉 일정, 미결제 교재가 생기면 여기에 모입니다."
-        />
+        <EmptyState title="기한이 다가온 항목이 없습니다" />
       ) : (
         <Table
           rows={items}
@@ -433,10 +422,7 @@ function PaymentCard({ rows }: { rows: PaymentRow[] }) {
   return (
     <Card title="교재 결제" padding={rows.length === 0 ? "md" : "none"}>
       {rows.length === 0 ? (
-        <EmptyState
-          title="청구된 교재가 없습니다"
-          description="학원에서 교재를 청구하면 금액과 결제 상태가 여기에 표시됩니다."
-        />
+        <EmptyState title="청구된 교재가 없습니다" />
       ) : (
         <Table
           rows={rows}
@@ -477,12 +463,6 @@ function PaymentCard({ rows }: { rows: PaymentRow[] }) {
 
 function WeekCard({ weeks }: { weeks: HomeWeek[] }) {
   const open = weeks.filter((week) => !week.locked);
-  const lockedNos = weeks.filter((week) => week.locked).map((week) => week.week_no);
-  const contiguous =
-    lockedNos.length > 1 && lockedNos[lockedNos.length - 1] - lockedNos[0] + 1 === lockedNos.length;
-  const lockedLabel = contiguous
-    ? `${lockedNos[0]}~${lockedNos[lockedNos.length - 1]}주차`
-    : lockedNos.join("·") + "주차";
 
   return (
     <Card title="주차별 수업 계획" aside={`공개된 ${open.length}주차`}>
@@ -503,7 +483,7 @@ function WeekCard({ weeks }: { weeks: HomeWeek[] }) {
                 </p>
               )}
               {(week.day_plans ?? []).length === 0 ? (
-                <p className="parent-note">이 주차의 학습 계획은 아직 올라오지 않았습니다.</p>
+                <p className="parent-note">학습 계획이 아직 없습니다</p>
               ) : (
                 <ul className="parent-plans">
                   {(week.day_plans ?? []).map((plan) => (
@@ -518,11 +498,6 @@ function WeekCard({ weeks }: { weeks: HomeWeek[] }) {
               )}
             </DetailsPanel>
         ))}
-        {lockedNos.length > 0 && (
-          <p className="parent-note">
-            {lockedLabel}는 수업이 가까워지면 공개됩니다.
-          </p>
-        )}
       </div>
     </Card>
   );
@@ -536,8 +511,7 @@ function NotEnrolled({ data }: { data: ParentHome }) {
     <>
       <Card title="아직 수업이 시작되지 않았습니다">
         <p className="parent-note">
-          {data.student.name} 학생은 <strong>{data.student.enrollment_status}</strong> 상태입니다.
-          등록이 확정되면 출결·수업 일정이 이 화면에 나타납니다.
+          {data.student.name} 학생 · <strong>{data.student.enrollment_status}</strong>
         </p>
       </Card>
       <Card title="구매할 수 있는 교재" padding={products.length === 0 ? "md" : "none"}>

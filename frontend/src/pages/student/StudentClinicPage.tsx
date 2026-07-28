@@ -131,15 +131,9 @@ export default function StudentClinicPage() {
   if (!data) {
     return (
       <>
-        <PageHeader
-          title="클리닉 신청"
-          description="시험 결과에 따라 배정되는 1:1 온라인 클리닉을 신청합니다."
-        />
+        <PageHeader title="클리닉 신청" />
         <Card>
-          <EmptyState
-            title="아직 클리닉을 신청할 시험이 없습니다"
-            description="시험을 응시하고 성적이 확정되면, 대상자에게 신청 가능한 시간대가 열립니다."
-          />
+          <EmptyState title="아직 클리닉을 신청할 시험이 없습니다" />
         </Card>
       </>
     );
@@ -150,16 +144,15 @@ export default function StudentClinicPage() {
   // 신청 버튼을 회색으로 남기지 않는다 — 지금 신청할 수 없는 이유를 문장으로 말하고
   // 버튼 자체를 화면에서 뺀다(PRD §4 상태 기반 노출).
   const blocked: string | null = data.clinic_banned
-    ? "신청이 제한된 상태라 새로 신청할 수 없습니다. 이미 신청한 건의 취소는 가능합니다."
+    ? "신청이 제한된 상태입니다"
     : active.length > 0
-      ? "이미 신청한 클리닉이 있습니다. 한 시험에 한 건까지 신청할 수 있어요 — 시간을 바꾸려면 아래 내 신청 현황에서 변경하세요."
+      ? "이미 신청한 클리닉이 있습니다"
       : null;
 
   return (
     <>
       <PageHeader
         title="클리닉 신청"
-        description="시험 결과에 따라 배정되는 1:1 온라인 클리닉입니다. 시간대를 고르면 담당 선생님 배정 후 미트 링크가 열립니다."
         actions={
           exams.length > 1 ? (
             <Select
@@ -179,21 +172,14 @@ export default function StudentClinicPage() {
 
       <div className="ui-stack">
         {data.clinic_banned && (
-          <Alert tone="warning">
-            노쇼가 누적되어 클리닉 신청이 제한된 상태입니다. 이미 신청한 건의 취소만 가능하며,
-            제한 해제는 학원에 문의해 주세요.
-          </Alert>
+          <Alert tone="warning">노쇼 누적으로 클리닉 신청이 제한된 상태입니다</Alert>
         )}
 
         {!data.eligibility.is_target ? (
           <Card title={data.exam.name} aside={data.exam.exam_date}>
             <EmptyState
               title="이번 회차는 클리닉 대상이 아닙니다"
-              description={
-                data.eligibility.reason
-                  ? `사유 — ${data.eligibility.reason}`
-                  : "클리닉은 회차별 성적 판정으로 대상자가 정해집니다. 다음 회차 판정 결과를 기다려 주세요."
-              }
+              description={data.eligibility.reason ?? undefined}
             />
           </Card>
         ) : (
@@ -217,7 +203,7 @@ export default function StudentClinicPage() {
               rows={slots}
               rowKey={(row) => row.slot_id}
               caption="신청 가능한 클리닉 시간대"
-              empty="지금 열려 있는 시간대가 없습니다. 시간대가 추가되면 이곳에 표시됩니다."
+              empty="열려 있는 시간대가 없습니다"
               columns={[
                 {
                   key: "when",
@@ -269,12 +255,6 @@ export default function StudentClinicPage() {
                 },
               ]}
             />
-            <div style={{ padding: "var(--space-md) var(--space-lg) var(--space-lg)" }}>
-              <p className="st-note">
-                {!blocked && "한 시험에 신청은 한 건까지입니다. "}
-                당일 신청·변경·취소는 오전 8시까지만 가능하고, 그 이후에는 학원으로 연락해 주세요.
-              </p>
-            </div>
           </Card>
         )}
 
@@ -283,7 +263,7 @@ export default function StudentClinicPage() {
             rows={data.my_requests}
             rowKey={(row) => row.clinic_id}
             caption="내 클리닉 신청 현황"
-            empty="아직 신청한 클리닉이 없습니다. 위에서 시간대를 골라 신청하세요."
+            empty="신청한 클리닉이 없습니다"
             columns={[
               {
                 key: "when",
@@ -365,9 +345,6 @@ export default function StudentClinicPage() {
         }
       >
         {change.error && <Alert tone="danger">{change.error}</Alert>}
-        <p className="st-note" style={{ marginBottom: "var(--space-md)" }}>
-          시간을 바꾸면 이미 배정된 선생님과 미트 링크는 회수되고 다시 대기 상태가 됩니다.
-        </p>
         <fieldset className="st-slotpick">
           <legend className="sr-only">변경할 시간대 선택</legend>
           {slots.map((slot) => (
@@ -422,9 +399,6 @@ export default function StudentClinicPage() {
             클리닉 신청을 취소합니다.
           </p>
         )}
-        <p className="st-note">
-          취소는 노쇼로 집계되지 않습니다. 자리가 남아 있으면 다시 신청할 수 있습니다.
-        </p>
       </Modal>
     </>
   );

@@ -2,7 +2,9 @@
 
 검증 축:
 - 계정: 직원 3(대표/관리자/조교) + 학생 30(등록 28·예비등록 2) + 학부모 10,
-  전원 test1234 로그인 가능·must_change_password=False
+  전원 test1234 로그인 가능·must_change_password=False.
+  아이디는 8-4 개정 규칙(login_id 모듈) 산출값과 일치해야 한다 —
+  학생 `{이름}{뒷4자리}`, 학부모 `{자녀 아이디}p`, 직원 학생과 동일 축
 - 커리큘럼: 강좌 1 + 주차 10(오늘 기준 4주차까지만 공개 — 게이팅) + Day 계획
 - 출결: 회차(수·토) + 지난 회차 출결(출석/결석/지각 혼합) → 트리거 파생
   (VideoGrant source=출석자동, AbsenceCounseling 대기열)이 실제 생성됨
@@ -13,10 +15,12 @@
 - 멱등: 2회 실행해도 카운트 동일(초기화 후 재생성)
 """
 import io
+import json
 
 from django.core.management import call_command
 from django.test import TestCase
 
+from apps.accounts.login_id import person_base
 from apps.accounts.models import Parent, ParentStudent, Student, User
 from apps.boards.models import AbsenceCounseling, Post
 from apps.clinic.models import ClinicEligibility, ClinicRequest, ClinicSlot
@@ -51,9 +55,48 @@ class SeedDemoTests(TestCase):
         self.assertEqual(User.objects.filter(role=User.Role.ADMIN).count(), 1)
         self.assertEqual(User.objects.filter(role=User.Role.ASSISTANT).count(), 1)
         owner = User.objects.get(role=User.Role.OWNER)
-        self.assertEqual(owner.login_id, "01000000001")
+        self.assertEqual(owner.login_id, "한종철0001")
+        self.assertEqual(owner.phone, "01000000001")
         self.assertTrue(owner.check_password("test1234"))
         self.assertFalse(owner.must_change_password)
+        self.assertEqual(User.objects.get(role=User.Role.ADMIN).login_id, "김관리0002")
+        self.assertEqual(User.objects.get(role=User.Role.ASSISTANT).login_id, "박조교0003")
+
+    def test_login_ids_follow_rule(self):
+        """아이디가 규칙 함수 산출값과 일치 — 시드가 규칙을 우회하지 않는다."""
+        for student in Student.objects.select_related("user").order_by("student_id"):
+            user = student.user
+            self.assertEqual(user.login_id, person_base(user.name, user.phone))
+        for parent in Parent.objects.select_related("user").order_by("parent_id"):
+            first_link = (
+                ParentStudent.objects.filter(parent=parent)
+                .select_related("student__user")
+                .order_by("id")
+                .first()
+            )
+            # 최초 연결 자녀 기준(login_id 모듈 다자녀 절)
+            self.assertEqual(
+                parent.user.login_id, f"{first_link.student.user.login_id}p"
+            )
+
+    def test_consumer_login_endpoint_accepts_seed_accounts(self):
+        """시드 계정이 통합 로그인 경로로 그대로 들어간다(프런트 배선 전제)."""
+        student = Student.objects.select_related("user").order_by("student_id").first()
+        res = self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"login_id": student.user.login_id, "password": "test1234"}),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["role"], "학생")
+        parent = Parent.objects.select_related("user").order_by("parent_id").first()
+        res = self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"login_id": parent.user.login_id, "password": "test1234"}),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["role"], "학부모")
 
     def test_students_and_parents_created(self):
         self.assertEqual(Student.objects.count(), 30)
@@ -143,7 +186,10 @@ class SeedDemoTests(TestCase):
         self.assertTrue(Notification.objects.exists())
 
     def test_output_lists_login_accounts(self):
-        self.assertIn("01000000001", self.output)
+        # 계정표가 실제 발급 아이디를 그대로 보여줘야 한다(프런트·사용자의 유일한 안내)
+        self.assertIn("한종철0001", self.output)
+        self.assertIn("김하늘0001", self.output)
+        self.assertIn("김하늘0001p", self.output)
         self.assertIn("test1234", self.output)
 
     def test_idempotent_rerun(self):

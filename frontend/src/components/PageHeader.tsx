@@ -3,7 +3,7 @@ import { ReactNode } from "react";
 export interface PageHeaderProps {
   /** 페이지 제목. 화면당 h1 은 이것 하나뿐이다. */
   title: string;
-  /** 한 줄 설명 — 이 화면이 무엇을 하는 곳인지 학생·학부모 말로. */
+  /** 제목 옆 메타 — 이름·날짜·회차 같은 **데이터**만. 화면 설명을 넣지 않는다(CLAUDE.md §8). */
   description?: ReactNode;
   /** 오른쪽 액션 버튼들. */
   actions?: ReactNode;

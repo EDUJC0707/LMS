@@ -57,7 +57,6 @@ export default function ExamsPage() {
     <>
       <PageHeader
         title="시험·성적"
-        description="회차별 응시 인원과 평균, 채점 진행 상황을 봅니다. 회차를 누르면 학생별 점수와 문항 분석이 열립니다."
       />
 
       {exams.loading ? (
@@ -94,18 +93,16 @@ export default function ExamsPage() {
             rows={rows}
             rowKey={(row) => row.exam_id}
             dense
-            caption="시험 회차 목록. 행을 누르면 상세로 이동합니다."
+            caption="시험 회차 목록"
             onRowClick={(row) => navigate(`/admin/exams/${row.exam_id}`)}
             empty={
               query.trim() ? (
                 <EmptyState
                   title={`“${query.trim()}”과 맞는 회차가 없습니다`}
-                  description="검색어를 지우면 전체 회차가 다시 보입니다."
                 />
               ) : (
                 <EmptyState
                   title="아직 등록된 시험이 없습니다"
-                  description="시험을 만들고 답안지를 올리면 여기에 회차가 쌓입니다."
                 />
               )
             }

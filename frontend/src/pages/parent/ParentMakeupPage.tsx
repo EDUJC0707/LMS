@@ -21,7 +21,7 @@ import {
 } from "../../components";
 import { AbsenceRequestTable } from "../../features/makeup/AbsenceRequestTable";
 import { MakeupAbsence, requestableCount } from "../../features/makeup/absences";
-import { NO_CHILD_DESC, NO_CHILD_TITLE, useChild } from "./childContext";
+import { NO_CHILD_TITLE, useChild } from "./childContext";
 import { currentMonth, dayLabel, monthLabel, shiftMonth } from "./format";
 import { PreEnrollNotice } from "./PreEnrollNotice";
 import "./parent.css";
@@ -65,22 +65,15 @@ export default function ParentMakeupPage() {
     <>
       <PageHeader
         title="동보 신청"
-        description={`동보는 결석한 수업의 보강 영상입니다. ${
-          child?.name ? `${child.name} 학생이 ` : "자녀가 "
-        }결석한 수업의 영상을 신청하고 처리 상태를 확인합니다.`}
         actions={picker}
       />
 
       {studentId === null ? (
         <Card>
-          <EmptyState title={NO_CHILD_TITLE} description={NO_CHILD_DESC} />
+          <EmptyState title={NO_CHILD_TITLE} />
         </Card>
       ) : !enrolled ? (
-        <PreEnrollNotice
-          child={child}
-          what="보강 영상 신청"
-          why="결석한 수업이 있어야 보강 영상을 신청할 수 있습니다."
-        />
+        <PreEnrollNotice child={child} what="보강 영상 신청" />
       ) : home.loading ? (
         <Loading />
       ) : home.error ? (
@@ -116,15 +109,9 @@ export default function ParentMakeupPage() {
             padding={absences.length > 0 ? "none" : "md"}
           >
             {!started ? (
-              <EmptyState
-                title="아직 수업이 시작되지 않았습니다"
-                description="등록이 확정되고 수업이 시작되면 결석 기록과 보강 영상 신청이 여기에 열립니다."
-              />
+              <EmptyState title="아직 수업이 시작되지 않았습니다" />
             ) : absences.length === 0 ? (
-              <EmptyState
-                title={`${monthLabel(month)}에는 결석이 없습니다`}
-                description="다른 달을 보려면 위의 달 이동 단추를 눌러 주세요."
-              />
+              <EmptyState title={`${monthLabel(month)}에는 결석이 없습니다`} />
             ) : (
               <AbsenceRequestTable
                 rows={absences}
@@ -134,25 +121,6 @@ export default function ParentMakeupPage() {
                 caption="결석일과 보강 영상 신청 상태"
               />
             )}
-          </Card>
-
-          <Card title="신청하면 이렇게 진행됩니다">
-            <ol className="parent-steps">
-              <li>
-                <strong>신청</strong> — 학부모나 학생이 결석한 수업의 보강 영상을 요청합니다.
-              </li>
-              <li>
-                <strong>승인</strong> — 학원이 결석 사유와 수업 회차를 확인합니다.
-              </li>
-              <li>
-                <strong>지급완료</strong> — 영상이 열리고, 시청 기한이 자녀 홈의 &lsquo;곧 마감되는
-                것&rsquo;에 나타납니다.
-              </li>
-            </ol>
-            <p className="parent-note parent-note--spaced">
-              이미 신청했거나 지급된 결석에는 신청 단추가 나타나지 않습니다. 거절된 신청은 사유를
-              확인한 뒤 다시 신청할 수 있습니다.
-            </p>
           </Card>
         </div>
       )}

@@ -184,7 +184,6 @@ export default function ExamDetailPage() {
                   ? "이 회차는 모든 학생이 응시했습니다"
                   : "조건에 맞는 학생이 없습니다"
               }
-              description="검색어를 지우거나 다른 탭을 눌러 보세요."
             />
           }
           columns={[
@@ -249,7 +248,7 @@ export default function ExamDetailPage() {
 
       <Card
         title="문항별 결과"
-        aside={`${questions.length}문항 · 정답률이 낮은 문항을 먼저 보세요`}
+        aside={`${questions.length}문항`}
         padding="none"
       >
         <Table<ExamQuestionRow>
@@ -257,7 +256,7 @@ export default function ExamDetailPage() {
           rowKey={(row) => row.question_id}
           dense
           caption="문항별 정답률과 응답 분포"
-          empty="아직 문항 정보가 등록되지 않았습니다."
+          empty="아직 문항 정보가 등록되지 않았습니다"
           columns={[
             {
               key: "q",

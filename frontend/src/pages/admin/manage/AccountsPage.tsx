@@ -162,7 +162,6 @@ export default function AccountsPage() {
     <>
       <PageHeader
         title="계정 발급"
-        description="새 학생 명단을 넣어 학생·학부모 계정을 한 번에 만듭니다. 1주차 출석을 확인한 학생은 아래에서 등록으로 바꿉니다."
       />
 
       <Card
@@ -179,11 +178,6 @@ export default function AccountsPage() {
       >
         <div className="ui-stack--md">
           {issue.error && <Alert tone="danger">{issue.error}</Alert>}
-
-          <Alert tone="info">
-            아이디는 학생 본인 휴대폰 번호입니다. 휴대폰이 없는 학생은 학부모 번호 뒤에 a, b …
-            를 붙여 만듭니다. 학부모 번호가 이미 등록돼 있으면 새 계정 대신 자녀만 연결됩니다.
-          </Alert>
 
           <div className="pm-entry" aria-hidden="true">
             {COLUMNS.map((column) => (
@@ -223,10 +217,7 @@ export default function AccountsPage() {
 
           <DetailsPanel summary="엑셀에서 붙여넣기" aside="한 줄에 한 명">
             <div className="ui-stack--sm">
-              <Field
-                label="명단 붙여넣기"
-                hint="이름 · 학생 휴대폰 · 학부모 휴대폰 · 원번 · 학년 · 학교 순서. 빈 칸은 그냥 비워 두세요."
-              >
+              <Field label="이름 · 학생 휴대폰 · 학부모 휴대폰 · 원번 · 학년 · 학교">
                 {(props) => (
                   <Textarea
                     {...props}
@@ -272,17 +263,14 @@ export default function AccountsPage() {
           padding="none"
         >
           <div style={{ padding: "var(--space-lg) var(--space-lg) 0" }}>
-            <Alert tone="warning">
-              초기 비밀번호는 이 화면에서만 보입니다. 지금 복사해 학생·학부모에게 전달하세요.
-              알림톡을 연결하면 발급과 동시에 자동 발송으로 바뀝니다.
-            </Alert>
+            <Alert tone="warning">초기 비밀번호는 이 화면에서만 보입니다</Alert>
           </div>
           <Table<BulkResultRow>
             rows={result.results}
             rowKey={(row) => row.index}
             dense
             caption="일괄 발급 행별 결과"
-            empty="발급을 시도한 행이 없습니다."
+            empty="발급을 시도한 행이 없습니다"
             columns={[
               {
                 key: "index",
@@ -430,11 +418,6 @@ function PreRegisteredPanel({
       padding="none"
     >
       <div style={{ padding: "var(--space-lg) var(--space-lg) 0" }} className="ui-stack--md">
-        <p style={{ margin: 0, color: "var(--color-ink-2)" }}>
-          계정을 받은 학생은 먼저 예비등록 상태입니다. 실제로 첫 수업에 나온 것을 확인한 뒤
-          등록으로 바꾸면 성적·클리닉·워크북이 열립니다.
-        </p>
-
         {register.error && (
           <Alert tone="danger" onClose={register.clearError}>
             {register.error}
@@ -447,7 +430,7 @@ function PreRegisteredPanel({
           ) : (sessions.data ?? []).length > 0 ? (
             <div className="pm-toolbar">
               <div className="pm-toolbar__wide">
-                <Field label="출석을 확인할 회차" hint="보통 1주차 출석부를 기준으로 판단합니다.">
+                <Field label="출석을 확인할 회차">
                   {(props) => (
                     <Select
                       {...props}
@@ -468,10 +451,7 @@ function PreRegisteredPanel({
             </div>
           ) : null
         ) : (
-          <Alert tone="info">
-            이 계정에는 출결 입력 권한이 없어 출석 여부는 함께 보여 드릴 수 없습니다. 첫 수업에
-            나왔는지 확인한 뒤 전환하세요.
-          </Alert>
+          <Alert tone="info">출결 입력 권한이 없어 출석 여부를 함께 볼 수 없습니다</Alert>
         )}
       </div>
 
@@ -486,10 +466,7 @@ function PreRegisteredPanel({
           dense
           caption="예비등록 학생과 1주차 출석 여부"
           empty={
-            <EmptyState
-              title="등록 전환을 기다리는 학생이 없습니다"
-              description="계정을 새로 발급하면 예비등록 학생이 여기에 나타납니다."
-            />
+            <EmptyState title="등록 전환을 기다리는 학생이 없습니다" />
           }
           columns={[
             { key: "name", header: "학생", cell: (row) => row.name ?? "이름 미등록" },

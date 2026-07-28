@@ -57,7 +57,7 @@ export default function BoardPostPage() {
       <>
         <PageHeader title="게시글" />
         <Card>
-          <EmptyState title="없는 주소입니다" description="게시판에서 글을 다시 찾아 주세요." />
+          <EmptyState title="없는 주소입니다" />
         </Card>
       </>
     );
@@ -337,17 +337,11 @@ function Comments({
       title={`${label} ${post.comments.length}`}
       padding="none"
       className="cm-clip"
-      aside={post.category === "질답" ? "강사·조교가 답변합니다" : undefined}
     >
       {post.comments.length === 0 ? (
         <div style={{ padding: "var(--space-lg)" }}>
           <EmptyState
             title={post.category === "질답" ? "아직 답변이 없습니다" : "아직 댓글이 없습니다"}
-            description={
-              post.category === "질답"
-                ? "확인하는 대로 강사·조교가 답변을 남깁니다."
-                : "첫 댓글을 남겨 보세요."
-            }
           />
         </div>
       ) : (

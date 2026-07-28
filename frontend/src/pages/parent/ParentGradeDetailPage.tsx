@@ -8,7 +8,7 @@ import { Link, useParams } from "react-router-dom";
 
 import { http, useApi } from "../../api";
 import { Alert, Card, EmptyState, ErrorState, Loading, PageHeader } from "../../components";
-import { NO_CHILD_DESC, NO_CHILD_TITLE, useChild } from "./childContext";
+import { NO_CHILD_TITLE, useChild } from "./childContext";
 import { GradeReportView } from "./GradeReportView";
 import { dayLabel } from "./format";
 import "./parent.css";
@@ -41,7 +41,7 @@ export default function ParentGradeDetailPage() {
             ? `${data.exam.name} · ${dayLabel(data.exam.exam_date)}${
                 data.exam.round_no === null ? "" : ` · ${data.exam.round_no}회차`
               }`
-            : "시험 한 회차의 문항별 결과와 총평입니다."
+            : undefined
         }
         actions={
           <div className="parent-headactions">
@@ -53,7 +53,7 @@ export default function ParentGradeDetailPage() {
 
       {studentId === null ? (
         <Card>
-          <EmptyState title={NO_CHILD_TITLE} description={NO_CHILD_DESC} />
+          <EmptyState title={NO_CHILD_TITLE} />
         </Card>
       ) : report.loading ? (
         <Loading />
@@ -75,7 +75,6 @@ export default function ParentGradeDetailPage() {
             <Card>
               <EmptyState
                 title="이 회차는 응시 기록이 없습니다"
-                description={`${data.student.name} 학생이 이 시험을 보지 않아 성적표가 만들어지지 않았습니다. 다음 회차 결과는 응시 후 이곳에서 확인할 수 있습니다.`}
                 action={<Link to="/parent/grades">다른 회차 보기</Link>}
               />
             </Card>

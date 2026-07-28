@@ -21,6 +21,8 @@
 import base64
 import datetime
 import random
+import textwrap
+import unicodedata
 
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -28,6 +30,11 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
+from apps.accounts.login_id import (
+    issue_parent_login_id,
+    issue_staff_login_id,
+    issue_student_login_id,
+)
 from apps.accounts.models import Parent, ParentStudent, StaffFeatureGrant, Student, User
 from apps.boards.models import AbsenceCounseling, ParentCounselRequest, Post, PostComment
 from apps.clinic.models import (
@@ -59,6 +66,14 @@ from apps.payments.models import Order, Payment, Product
 from apps.videos.models import MakeupGrant, Video, VideoGrant
 
 PASSWORD = "test1234"  # 데모 전용 공통 비밀번호(모듈 docstring)
+
+_STAFF_ROLES = (User.Role.OWNER, User.Role.ADMIN, User.Role.ASSISTANT)
+
+
+def _pad(text, width):
+    """한글 폭(2칸)을 반영한 열 정렬 — str.ljust 는 글자 수만 세어 어긋난다."""
+    used = sum(2 if unicodedata.east_asian_width(ch) in "WF" else 1 for ch in text)
+    return text + " " * max(width - used, 1)
 
 _SURNAMES = ["김", "이", "박", "최", "정", "강", "조", "윤", "장", "임"]
 _GIVEN = [
@@ -155,30 +170,41 @@ class Command(BaseCommand):
     # --- 계정 -------------------------------------------------------------
 
     @staticmethod
-    def _make_user(login_id, role, name, phone=""):
+    def _make_user(login_id, role, name, phone):
+        """아이디는 호출자가 login_id 모듈로 만들어 넘긴다 — 규칙 우회 금지."""
         user = User.objects.create_user(
             login_id=login_id,
             password=PASSWORD,
             role=role,
             name=name,
-            phone=phone or login_id,
+            phone=phone,
             must_change_password=False,  # 데모 전용(모듈 docstring)
         )
         return user
 
+    def _create_person(self, role, name, phone):
+        """이름+휴대폰 → 8-4 규칙 아이디로 계정 생성(학생·직원 공통 축)."""
+        return self._make_user(issue_staff_login_id(name, phone), role, name, phone)
+
     def _create_staff(self):
-        owner = self._make_user("01000000001", User.Role.OWNER, "한종철")
-        admin = self._make_user("01000000002", User.Role.ADMIN, "김관리")
-        assistant = self._make_user("01000000003", User.Role.ASSISTANT, "박조교")
+        owner = self._create_person(User.Role.OWNER, "한종철", "01000000001")
+        admin = self._create_person(User.Role.ADMIN, "김관리", "01000000002")
+        assistant = self._create_person(User.Role.ASSISTANT, "박조교", "01000000003")
         return {"owner": owner, "admin": admin, "assistant": assistant}
 
     def _create_students_and_parents(self, now):
-        """학생 30(등록 28·예비등록 29/30번) + 학부모 10(자녀 1~2명)."""
+        """학생 30(등록 28·예비등록 29/30번) + 학부모 10(자녀 1~2명).
+
+        아이디는 login_id 모듈 산출값 그대로 — 학생 `{이름}{뒷4자리}`,
+        학부모 `{최초 연결 자녀 아이디}p`(8-4 개정).
+        """
         students = []
         for i in range(1, 31):
             name = _SURNAMES[(i - 1) % 10] + _GIVEN[i - 1]
-            login_id = f"010{10000000 + i:08d}"  # 01010000001 ~ 01010000030
-            user = self._make_user(login_id, User.Role.STUDENT, name)
+            phone = f"010{10000000 + i:08d}"  # 01010000001 ~ 01010000030
+            user = self._make_user(
+                issue_student_login_id(name, phone), User.Role.STUDENT, name, phone
+            )
             pre_registered = i >= 29
             students.append(
                 Student.objects.create(
@@ -197,12 +223,15 @@ class Command(BaseCommand):
             )
         parents = []
         for i in range(1, 11):
-            login_id = f"010{20000000 + i:08d}"  # 01020000001 ~ 01020000010
-            child = students[i - 1]
+            phone = f"010{20000000 + i:08d}"  # 01020000001 ~ 01020000010
+            child = students[i - 1]  # 최초 연결 자녀 — 학부모 아이디의 기준
             user = self._make_user(
-                login_id, User.Role.PARENT, f"{child.user.name} 학부모"
+                issue_parent_login_id(child.user.login_id),
+                User.Role.PARENT,
+                f"{child.user.name} 학부모",
+                phone,
             )
-            parent = Parent.objects.create(user=user, phone=login_id)
+            parent = Parent.objects.create(user=user, phone=phone)
             ParentStudent.objects.create(
                 parent=parent, student=child, relation="모", is_primary_contact=True
             )
@@ -786,17 +815,45 @@ class Command(BaseCommand):
 
     # --- 출력 -------------------------------------------------------------
 
+    def _print_accounts(self):
+        """실제 발급된 아이디를 그대로 나열한다(8-4 개정 후 범위 표기가 불가능).
+
+        구 규칙에서는 `01010000001 ~ 01010000030` 같은 범위 한 줄로 충분했지만
+        아이디가 이름 기반이 되어 연속 범위가 성립하지 않는다 — 시드로 만든
+        계정으로 로그인하려면 전체 목록이 필요하다.
+        """
+        w = self.stdout.write
+        w("로그인 계정 (비밀번호는 전부 test1234):")
+        for user in User.objects.filter(role__in=_STAFF_ROLES).order_by("user_id"):
+            w(f"  {_pad(user.role, 8)}{user.login_id}")
+        registered, pre_registered = [], []
+        for student in Student.objects.select_related("user").order_by("student_id"):
+            bucket = (
+                pre_registered
+                if student.enrollment_status == Student.EnrollmentStatus.PRE_REGISTERED
+                else registered
+            )
+            bucket.append(student.user.login_id)
+        self._print_ids(f"학생 등록({len(registered)})", registered)
+        self._print_ids(f"학생 예비등록({len(pre_registered)})", pre_registered)
+        parents = [
+            p.user.login_id
+            for p in Parent.objects.select_related("user").order_by("parent_id")
+        ]
+        self._print_ids(f"학부모({len(parents)})", parents)
+
+    def _print_ids(self, label, login_ids):
+        self.stdout.write(f"  {label}")
+        for line in textwrap.wrap(
+            "  ".join(login_ids), width=92, initial_indent="    ", subsequent_indent="    "
+        ):
+            self.stdout.write(line)
+
     def _print_summary(self, triggers, eligible):
         w = self.stdout.write
         w(self.style.SUCCESS("seed_demo 완료 — 데모 데이터 생성됨(전체 초기화 후 재생성)"))
         w("")
-        w("로그인 계정 (비밀번호는 전부 test1234):")
-        w("  역할     아이디                          비고")
-        w("  대표     01000000001                    한종철")
-        w("  관리자   01000000002                    김관리")
-        w("  조교     01000000003                    박조교")
-        w("  학생     01010000001 ~ 01010000030      30명(29·30번은 예비등록)")
-        w("  학부모   01020000001 ~ 01020000010      10명(자녀 1~2명 연동)")
+        self._print_accounts()
         w("")
         w("생성 카운트:")
         counts = {

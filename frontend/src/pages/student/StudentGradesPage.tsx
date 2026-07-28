@@ -59,7 +59,7 @@ export default function StudentGradesPage() {
         title="성적"
         description={`${student.name} · 원번 ${student.unique_id}${
           student.school ? ` · ${student.school}` : ""
-        } — 지금까지 응시한 시험 결과와 점수 변화입니다.`}
+        }`}
       />
 
       <div className="ui-stack">
@@ -104,9 +104,6 @@ export default function StudentGradesPage() {
                 <p className="st-stat__value">{num(latest.percentile)}</p>
               </div>
             </div>
-            <p className="st-note" style={{ marginTop: "var(--space-md)" }}>
-              두 번째 시험부터 회차별 점수 변화를 그래프로 보여드립니다.
-            </p>
           </Card>
         ) : null}
 
@@ -118,7 +115,7 @@ export default function StudentGradesPage() {
             onRowClick={(row) => {
               if (row.is_taken) navigate(`/student/grades/${row.exam_id}`);
             }}
-            empty="아직 응시한 시험이 없습니다. 시험을 보면 회차별 결과와 성적표가 여기에 쌓입니다."
+            empty="아직 응시한 시험이 없습니다"
             columns={[
               {
                 key: "round",

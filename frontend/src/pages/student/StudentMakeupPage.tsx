@@ -64,10 +64,7 @@ export default function StudentMakeupPage() {
 
   return (
     <>
-      <PageHeader
-        title="동보 신청"
-        description="결석한 수업의 복습영상을 신청합니다. 승인되면 그 주차 영상을 볼 수 있는 권한이 지급됩니다."
-      />
+      <PageHeader title="동보 신청" />
 
       <div className="ui-stack">
         {submit.error && (
@@ -78,12 +75,11 @@ export default function StudentMakeupPage() {
 
         {result && (
           <Alert tone="success" onClose={() => setResult(null)}>
-            {result.session_date ? dayLabel(result.session_date) : "해당 수업"} 결석에 대한 동보를
-            신청했습니다
+            {result.session_date ? dayLabel(result.session_date) : "해당 수업"} 결석 동보 신청
             {result.course_name && result.week_no !== null
               ? ` — ${result.course_name} ${result.week_no}주차`
-              : ""}
-            . 지금은 <b>{result.status}</b> 상태이며, 승인되면 그 주차 복습영상 권한이 지급됩니다.
+              : ""}{" "}
+            · <b>{result.status}</b>
           </Alert>
         )}
 
@@ -113,10 +109,7 @@ export default function StudentMakeupPage() {
           ) : home.error ? (
             <ErrorState description={home.error} onRetry={home.reload} />
           ) : absences.length === 0 ? (
-            <EmptyState
-              title={`${monthLabel(month)}에는 결석한 수업이 없습니다`}
-              description="동보는 결석한 수업에만 신청할 수 있습니다. 다른 달을 확인하려면 위의 달 이동 버튼을 눌러 주세요."
-            />
+            <EmptyState title={`${monthLabel(month)}에는 결석한 수업이 없습니다`} />
           ) : (
             <AbsenceRequestTable
               rows={absences}
@@ -128,24 +121,6 @@ export default function StudentMakeupPage() {
           )}
         </Card>
 
-        <Card title="신청하면 이렇게 진행됩니다">
-          <ol className="st-steps">
-            <li>
-              <strong>신청</strong> — 결석한 수업의 복습영상을 요청합니다.
-            </li>
-            <li>
-              <strong>승인</strong> — 학원이 결석 사유와 수업 회차를 확인합니다.
-            </li>
-            <li>
-              <strong>지급완료</strong> — 영상이 열리고, 시청 기한이 홈의 &lsquo;곧 마감되는
-              것&rsquo;에 나타납니다.
-            </li>
-          </ol>
-          <p className="st-note" style={{ marginTop: "var(--space-sm)" }}>
-            이미 신청했거나 지급된 결석에는 신청 버튼이 나타나지 않습니다. 거절된 신청은 사유를
-            확인한 뒤 다시 신청할 수 있습니다.
-          </p>
-        </Card>
       </div>
     </>
   );

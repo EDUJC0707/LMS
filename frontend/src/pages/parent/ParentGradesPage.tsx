@@ -16,7 +16,7 @@ import {
   PageHeader,
   Table,
 } from "../../components";
-import { NO_CHILD_DESC, NO_CHILD_TITLE, useChild } from "./childContext";
+import { NO_CHILD_TITLE, useChild } from "./childContext";
 import { PreEnrollNotice } from "./PreEnrollNotice";
 import { score, shortDay } from "./format";
 import "./parent.css";
@@ -41,20 +41,15 @@ export default function ParentGradesPage() {
     <>
       <PageHeader
         title="자녀 성적"
-        description="지금까지 본 시험 결과와 회차별 추이입니다. 채점과 성적 입력은 학원에서 합니다."
         actions={picker}
       />
 
       {studentId === null ? (
         <Card>
-          <EmptyState title={NO_CHILD_TITLE} description={NO_CHILD_DESC} />
+          <EmptyState title={NO_CHILD_TITLE} />
         </Card>
       ) : !enrolled ? (
-        <PreEnrollNotice
-          child={child}
-          what="성적 확인"
-          why="시험을 보려면 먼저 수강 등록이 확정되어야 합니다."
-        />
+        <PreEnrollNotice child={child} what="성적 확인" />
       ) : grades.loading ? (
         <Loading />
       ) : grades.error ? (
@@ -75,7 +70,7 @@ export default function ParentGradesPage() {
               rows={grades.data.exams}
               rowKey={(row) => row.exam_id}
               caption="시험별 결과"
-              empty="아직 응시한 시험이 없습니다. 시험을 보면 결과가 여기에 쌓입니다."
+              empty="아직 응시한 시험이 없습니다"
               columns={[
                 {
                   key: "round",
@@ -190,10 +185,6 @@ export default function ParentGradesPage() {
                 },
               ]}
             />
-            <p className="parent-note" style={{ padding: "var(--space-md)" }}>
-              백분위는 같은 시험을 본 학생들 사이에서 자녀가 어디쯤인지 나타냅니다 — 숫자가 클수록
-              앞선 성적입니다.
-            </p>
           </Card>
         </div>
       ) : null}

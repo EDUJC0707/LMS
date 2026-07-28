@@ -87,7 +87,7 @@ export function StudentPicker({
       <Field
         label={label}
         required={required}
-        hint={hint ?? "이름이나 원번을 입력하면 후보가 나타납니다."}
+        hint={hint}
         error={found.error}
       >
         {(props) => (
@@ -96,7 +96,7 @@ export function StudentPicker({
             type="search"
             value={term}
             onChange={(event) => setTerm(event.target.value)}
-            placeholder="김하늘 · 26001"
+            placeholder="홍길동 · 26001"
             autoComplete="off"
           />
         )}
@@ -110,14 +110,12 @@ export function StudentPicker({
             </p>
           ) : results.length === 0 ? (
             <p className="pm-picker__msg">
-              &lsquo;{query}&rsquo; 에 해당하는 학생이 없습니다. 이름이나 원번을 다시 확인해
-              주세요.
+              &lsquo;{query}&rsquo; 에 해당하는 학생이 없습니다
             </p>
           ) : (
             <>
               <p className="pm-picker__msg" role="status">
                 {total}명 중 {results.length}명
-                {total > results.length ? " — 더 좁혀 주세요" : ""}
               </p>
               <ul className="pm-picker__list">
                 {results.map((student) => (

@@ -133,7 +133,6 @@ export default function CounselingPage() {
     <>
       <PageHeader
         title="결석 상담 대기열"
-        description="출결에서 결석을 저장하면 학부모 통화 카드가 자동으로 만들어집니다. 통화 결과를 남기면 카드가 정리됩니다."
       />
 
       <div className="ui-stack">
@@ -208,17 +207,10 @@ export default function CounselingPage() {
               rowKey={(r) => r.counsel_id}
               isSelected={(r) => r.counsel_id === target?.counsel_id}
               empty={
-                all.length === 0
-                  ? "지금 통화할 대기 카드가 없습니다. 결석이 저장되면 여기에 쌓입니다."
-                  : "조건에 맞는 카드가 없습니다. 수업일이나 학생 조건을 지워 보세요."
+                all.length === 0 ? "통화할 대기 카드가 없습니다" : "조건에 맞는 카드가 없습니다"
               }
             />
 
-            <p className="ops-note" style={{ padding: "var(--space-md)" }}>
-              <strong>연결</strong>로 기록하면 카드가 완료됩니다. <strong>미연결</strong>이면
-              재시도 카드가 새로 생기고, {MAX_CALL_ATTEMPTS}회째 미연결이면 학부모에게 결석
-              안내 알림톡을 보내는 것으로 종결됩니다.
-            </p>
             </Card>
           </>
         )}
@@ -265,18 +257,18 @@ function RecordPanel({
     const name = card.student.name ?? "학생";
     if (data.closed_by_sms) {
       onDone(
-        `${name} 학부모 통화를 ${data.attempts}회 시도했습니다. 더 걸지 않고 결석 안내 알림톡으로 종결 처리했습니다.`,
+        `${name} 학부모 통화 ${data.attempts}회 시도 — 알림톡 종결`,
       );
       return;
     }
     if (data.next_counsel_id) {
       onDone(
-        `${name} 학부모와 연결되지 않았습니다. 재시도 카드를 대기열에 새로 올렸습니다(${data.attempts}회 시도).`,
+        `${name} 학부모 미연결 — 재시도 카드 생성(${data.attempts}회 시도)`,
       );
       return;
     }
     onDone(
-      `${name} 학부모 통화를 기록했습니다.${data.makeup_requested ? " 동보 희망으로 표시했습니다 — 신청이 들어오면 동보 관리에서 승인하세요." : ""}`,
+      `${name} 학부모 통화 기록${data.makeup_requested ? " · 동보 희망" : ""}`,
     );
   };
 
@@ -309,7 +301,7 @@ function RecordPanel({
         {result === "연결" ? (
           <>
             <div className="ui-grid">
-              <Field label="결석 사유" hint="학부모가 말한 사유를 그대로 적습니다.">
+              <Field label="결석 사유">
                 {(props) => (
                   <Input
                     {...props}
@@ -319,7 +311,7 @@ function RecordPanel({
                 )}
               </Field>
 
-              <Field label="후속 조치" hint="예: 다음 수업 전 보충 안내">
+              <Field label="후속 조치">
                 {(props) => (
                   <Input
                     {...props}
@@ -330,7 +322,7 @@ function RecordPanel({
               </Field>
             </div>
 
-            <Field label="통화 내용" hint="다음에 이 카드를 여는 사람이 읽습니다.">
+            <Field label="통화 내용">
               {(props) => (
                 <Textarea
                   {...props}
@@ -344,12 +336,12 @@ function RecordPanel({
             <Checkbox
               checked={makeupRequested}
               onChange={(event) => setMakeupRequested(event.target.checked)}
-              label="복습영상(동보)을 원한다고 하셨습니다"
+              label="복습영상(동보) 요청"
             />
           </>
         ) : (
           <>
-            <Field label="시도 메모" hint="언제·몇 번 걸었는지 남겨 두면 다음 사람이 압니다.">
+            <Field label="시도 메모">
               {(props) => (
                 <Textarea
                   {...props}
@@ -360,9 +352,7 @@ function RecordPanel({
               )}
             </Field>
             <Alert tone="warning">
-              {card.attempts + 1 >= MAX_CALL_ATTEMPTS
-                ? `이번이 ${MAX_CALL_ATTEMPTS}회째 시도입니다. 저장하면 더 걸지 않고 결석 안내 알림톡으로 종결됩니다.`
-                : `저장하면 재시도 카드가 대기열에 새로 올라갑니다. ${MAX_CALL_ATTEMPTS}회째 미연결이면 알림톡으로 종결됩니다.`}
+              {`${card.attempts + 1}/${MAX_CALL_ATTEMPTS}회째 시도`}
             </Alert>
           </>
         )}

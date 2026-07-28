@@ -1,6 +1,7 @@
-"""accounts 뷰 — 인증 3종(1차) + 관리자 운영(8차, PRD §4·3.1.5).
+"""accounts 뷰 — 인증(1차·2026-07-28 개편) + 관리자 운영(8차, PRD §4·3.1.5).
 
-1차: 로그인 3종·로그아웃·비밀번호 변경·CSRF·/me. 세션 인증 전제. 쓰기 요청은
+인증: 소비자 통합 로그인(`/api/auth/login` — 학생·학부모)·직원 로그인
+(`/api/auth/login/admin`)·로그아웃·비밀번호 변경·CSRF·/me. 세션 인증 전제. 쓰기 요청은
 Django 기본 CSRF 계약(쿠키 csrftoken → 헤더 X-CSRFToken)을 따르며, 프런트는
 GET /api/auth/csrf 로 쿠키를 먼저 받는다.
 
@@ -28,6 +29,7 @@ from rest_framework.views import APIView
 
 from . import provisioning, staff_admin, student_directory
 from .features import FeatureKey, effective_features
+from .login_id import LoginIdError
 from .models import Parent, ParentStudent, Student, User
 from .permissions import (
     STAFF_ROLES,
@@ -46,6 +48,9 @@ _LOGIN_FAILED_MESSAGE = "아이디 또는 비밀번호가 올바르지 않습니
 
 class RoleLoginView(APIView):
     """로그인 공통 구현 — 경로별 서브클래스가 allowed_roles 만 지정한다.
+
+    **역할 판정은 DB(users.role)** 다. 아이디 형식(학부모 `p` 접미사 등)은
+    판정에 쓰지 않는다 — 아이디 규칙은 바뀌어도 권한은 바뀌면 안 되기 때문.
 
     상태코드 설계(존재 노출 최소화에 대한 판단):
     - 401 = 자격 오류(계정 없음·비밀번호 오류·비활성 — authenticate 가 전부 None).
@@ -78,20 +83,23 @@ class RoleLoginView(APIView):
         return Response(user_summary(user))
 
 
-class StudentLoginView(RoleLoginView):
-    """POST /api/auth/login/student — 학생 역할만."""
+class ConsumerLoginView(RoleLoginView):
+    """POST /api/auth/login — 학생·학부모 공용 (2026-07-28 통합, PRD §4).
 
-    allowed_roles = frozenset({User.Role.STUDENT})
+    학생과 학부모는 같은 화면·같은 링크로 들어온다(사용자 지시). 두 역할을
+    경로로 가르지 않고 **users.role 로 판정**해 응답의 role 로 내려주면,
+    프런트가 그 값으로 홈을 고른다. 아이디 규칙(학부모 `p` 접미사)은 판정
+    근거로 쓰지 않는다 — 규칙은 바뀔 수 있고 DB 의 role 만이 권한의 준거다.
 
+    직원은 이 경로로 들어오지 못한다(403) — 관리자 로그인은 별도 경로이며
+    화면에 링크를 노출하지 않는다.
+    """
 
-class ParentLoginView(RoleLoginView):
-    """POST /api/auth/login/parent — 학부모 역할만."""
-
-    allowed_roles = frozenset({User.Role.PARENT})
+    allowed_roles = frozenset({User.Role.STUDENT, User.Role.PARENT})
 
 
 class AdminLoginView(RoleLoginView):
-    """POST /api/auth/login/admin — 직원 역할군(대표·관리자·조교)."""
+    """POST /api/auth/login/admin — 직원 역할군(대표·관리자·조교) 전용."""
 
     allowed_roles = STAFF_ROLES
 
@@ -243,10 +251,16 @@ class StaffMatrixView(APIView):
                 {"detail": "role은 관리자 또는 조교여야 합니다."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        user, initial_password = staff_admin.create_staff(name.strip(), phone.strip(), role)
+        try:
+            user, initial_password = staff_admin.create_staff(
+                name.strip(), phone.strip(), role
+            )
+        except LoginIdError as exc:
+            # 아이디를 만들 수 없는 입력(이름·번호 불량, 접미사 소진) — 사유를 그대로 전달.
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         if user is None:
             return Response(
-                {"detail": "이미 사용 중인 전화번호(아이디)입니다."},
+                {"detail": "이미 사용 중인 아이디입니다."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         payload = staff_admin.matrix_row(user)

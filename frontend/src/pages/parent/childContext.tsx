@@ -105,5 +105,3 @@ export function useChild(): ChildContext {
 
 /** 자녀가 한 명도 연결돼 있지 않을 때 화면에 띄우는 문구. */
 export const NO_CHILD_TITLE = "연결된 자녀가 없습니다";
-export const NO_CHILD_DESC =
-  "학원에서 자녀 계정을 연결하면 이 화면에 출결·성적이 나타납니다. 연결이 안 돼 있다면 학원으로 문의해 주세요.";

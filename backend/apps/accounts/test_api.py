@@ -119,21 +119,33 @@ class FeatureRequiredTests(TestCase):
 
 
 class LoginTests(TestCase):
-    """로그인 3종 분리(PRD §4) — 각 경로는 해당 역할군만 인증 성공."""
+    """로그인 진입점 2종(2026-07-28 개편) — 소비자 통합 + 직원 분리(PRD §4).
+
+    - `POST /api/auth/login` 학생·학부모 공용. 역할은 **DB 의 user.role** 로
+      판정하고 응답에 실어 프런트가 홈을 고른다.
+    - `POST /api/auth/login/admin` 직원(대표·관리자·조교) 전용, 화면 미노출.
+    """
 
     def setUp(self):
         self.client = APIClient()
 
-    def login(self, portal, login_id, password=PASSWORD):
+    def login(self, login_id, password=PASSWORD):
         return self.client.post(
-            f"/api/auth/login/{portal}",
+            "/api/auth/login",
+            {"login_id": login_id, "password": password},
+            format="json",
+        )
+
+    def login_admin(self, login_id, password=PASSWORD):
+        return self.client.post(
+            "/api/auth/login/admin",
             {"login_id": login_id, "password": password},
             format="json",
         )
 
     def test_student_login_success_establishes_session(self):
-        user = make_user("lg-stu1", User.Role.STUDENT, name="김학생")
-        resp = self.login("student", "lg-stu1")
+        user = make_user("김학생1234", User.Role.STUDENT, name="김학생")
+        resp = self.login("김학생1234")
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data["user_id"], user.user_id)
@@ -142,55 +154,79 @@ class LoginTests(TestCase):
         self.assertTrue(data["must_change_password"])  # 일괄생성 기본값
         self.assertIn("_auth_user_id", self.client.session)  # 세션 로그인 수립
 
+    def test_parent_login_uses_same_endpoint(self):
+        make_user("김학생1234p", User.Role.PARENT, name="김학생 학부모")
+        resp = self.login("김학생1234p")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["role"], "학부모")
+        self.assertIn("_auth_user_id", self.client.session)
+
+    def test_role_comes_from_db_not_id_suffix(self):
+        # 아이디 규칙은 언제든 바뀐다 — p 접미사가 아니라 users.role 이 준거.
+        make_user("이상한p", User.Role.STUDENT)  # p 로 끝나는 학생 계정
+        make_user("접미사없는학부모", User.Role.PARENT)
+        self.assertEqual(self.login("이상한p").json()["role"], "학생")
+        self.assertEqual(APIClient().post(
+            "/api/auth/login",
+            {"login_id": "접미사없는학부모", "password": PASSWORD},
+            format="json",
+        ).json()["role"], "학부모")
+
     def test_login_response_excludes_phone(self):
         # 개인정보 최소 원칙 — 연락처는 응답에 싣지 않는다
         make_user("lg-stu2", User.Role.STUDENT, phone="010-1111-2222")
-        resp = self.login("student", "lg-stu2")
+        resp = self.login("lg-stu2")
         self.assertNotIn("phone", resp.json())
 
     def test_wrong_password_401(self):
         make_user("lg-stu3", User.Role.STUDENT)
-        resp = self.login("student", "lg-stu3", password="wrong-pass-1!")
+        resp = self.login("lg-stu3", password="wrong-pass-1!")
         self.assertEqual(resp.status_code, 401)
         self.assertNotIn("_auth_user_id", self.client.session)
 
     def test_unknown_login_id_401(self):
-        resp = self.login("student", "no-such-user")
-        self.assertEqual(resp.status_code, 401)
+        self.assertEqual(self.login("no-such-user").status_code, 401)
 
     def test_inactive_user_blocked_401(self):
         make_user("lg-stu4", User.Role.STUDENT, is_active=False)
-        resp = self.login("student", "lg-stu4")
-        self.assertEqual(resp.status_code, 401)
+        self.assertEqual(self.login("lg-stu4").status_code, 401)
 
-    def test_role_mismatch_403_with_same_message(self):
-        # 학생이 관리자 경로로 — 403 이되 메시지는 401 과 동일(존재 노출 최소화)
-        make_user("lg-stu5", User.Role.STUDENT)
-        mismatch = self.login("admin", "lg-stu5")
+    def test_staff_rejected_on_consumer_endpoint_with_same_message(self):
+        # 직원이 소비자 경로로 — 403 이되 메시지는 401 과 동일(존재 노출 최소화)
+        make_user("lg-adm2", User.Role.ADMIN)
+        mismatch = self.login("lg-adm2")
         self.assertEqual(mismatch.status_code, 403)
         self.assertNotIn("_auth_user_id", self.client.session)
-        bad_cred = self.login("student", "lg-stu5", password="wrong-pass-1!")
+        bad_cred = self.login("lg-adm2", password="wrong-pass-1!")
         self.assertEqual(mismatch.json()["detail"], bad_cred.json()["detail"])
 
-    def test_parent_portal_accepts_parent_only(self):
-        make_user("lg-par1", User.Role.PARENT)
-        make_user("lg-stu6", User.Role.STUDENT)
-        self.assertEqual(self.login("parent", "lg-par1").status_code, 200)
-        self.assertEqual(self.login("parent", "lg-stu6").status_code, 403)
-
-    def test_admin_portal_accepts_all_staff_roles(self):
+    def test_admin_endpoint_accepts_all_staff_roles(self):
         make_user("lg-own1", User.Role.OWNER)
         make_user("lg-adm1", User.Role.ADMIN)
         make_user("lg-ast1", User.Role.ASSISTANT)
         for login_id in ("lg-own1", "lg-adm1", "lg-ast1"):
-            self.assertEqual(self.login("admin", login_id).status_code, 200)
+            self.assertEqual(APIClient().post(
+                "/api/auth/login/admin",
+                {"login_id": login_id, "password": PASSWORD},
+                format="json",
+            ).status_code, 200)
 
-    def test_student_portal_rejects_staff(self):
-        make_user("lg-adm2", User.Role.ADMIN)
-        self.assertEqual(self.login("student", "lg-adm2").status_code, 403)
+    def test_admin_endpoint_rejects_consumers(self):
+        make_user("lg-stu5", User.Role.STUDENT)
+        make_user("lg-par1", User.Role.PARENT)
+        self.assertEqual(self.login_admin("lg-stu5").status_code, 403)
+        self.assertEqual(self.login_admin("lg-par1").status_code, 403)
+
+    def test_role_split_login_paths_removed(self):
+        # 학생·학부모 분리 경로는 제거됨(통합 엔드포인트로 대체 — 호환 유지 없음)
+        for path in ("/api/auth/login/student", "/api/auth/login/parent"):
+            resp = self.client.post(
+                path, {"login_id": "lg-x", "password": PASSWORD}, format="json"
+            )
+            self.assertEqual(resp.status_code, 404, path)
 
     def test_missing_fields_400(self):
-        resp = self.client.post("/api/auth/login/student", {"login_id": "x"}, format="json")
+        resp = self.client.post("/api/auth/login", {"login_id": "x"}, format="json")
         self.assertEqual(resp.status_code, 400)
 
 
@@ -201,7 +237,7 @@ class LogoutTests(TestCase):
     def test_logout_clears_session(self):
         make_user("lo-stu1", User.Role.STUDENT)
         self.client.post(
-            "/api/auth/login/student",
+            "/api/auth/login",
             {"login_id": "lo-stu1", "password": PASSWORD},
             format="json",
         )
@@ -221,7 +257,7 @@ class PasswordChangeTests(TestCase):
         self.client = APIClient()
         self.user = make_user("pw-stu1", User.Role.STUDENT)
         self.client.post(
-            "/api/auth/login/student",
+            "/api/auth/login",
             {"login_id": "pw-stu1", "password": PASSWORD},
             format="json",
         )
@@ -248,7 +284,7 @@ class PasswordChangeTests(TestCase):
         self.change(PASSWORD, self.NEW_PASSWORD)
         fresh = APIClient()
         resp = fresh.post(
-            "/api/auth/login/student",
+            "/api/auth/login",
             {"login_id": "pw-stu1", "password": self.NEW_PASSWORD},
             format="json",
         )
@@ -283,15 +319,15 @@ class CsrfEndpointTests(TestCase):
 
 
 class MeTestBase(TestCase):
-    """공통: 로그인 후 GET /api/me."""
+    """공통: 로그인 후 GET /api/me — 소비자는 통합 경로, 직원만 별도 경로."""
 
-    PORTAL = {"학생": "student", "학부모": "parent"}
+    CONSUMER_ROLES = {User.Role.STUDENT, User.Role.PARENT}
 
     def me_as(self, user):
         client = APIClient()
-        portal = self.PORTAL.get(user.role, "admin")
+        path = "/api/auth/login" if user.role in self.CONSUMER_ROLES else "/api/auth/login/admin"
         login = client.post(
-            f"/api/auth/login/{portal}",
+            path,
             {"login_id": user.login_id, "password": PASSWORD},
             format="json",
         )

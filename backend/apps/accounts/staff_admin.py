@@ -15,6 +15,7 @@
 from django.db import IntegrityError, transaction
 
 from .features import ROLE_PRESETS, FeatureKey, effective_features
+from .login_id import issue_staff_login_id
 from .models import StaffFeatureGrant, User
 from .provisioning import generate_initial_password
 
@@ -84,20 +85,26 @@ def apply_feature_map(target, feature_map, actor):
 
 
 def create_staff(name, phone, role):
-    """직원 계정 생성 — login_id=전화번호(8-4 규칙과 동일 축)·랜덤 초기 비번.
+    """직원 계정 생성 — login_id={이름}{뒷4자리}(8-4 개정)·랜덤 초기 비번.
+
+    아이디 축이 학생과 같은 근거는 login_id 모듈 docstring(직원 절) 참조.
+    전화번호는 아이디가 아니라 users.phone 으로만 남는다.
 
     must_change_password 는 User 기본값(True) 그대로 — 최초 로그인 시 변경
     강제(PRD 3.1.5 와 동일 계약). 반환: (user, 초기 비밀번호) — 비밀번호는
     발급 응답에서 1회 노출(해시만 저장되므로 재조회 불가).
-    login_id 중복은 None 반환(뷰가 400) — 사전 조회 + IntegrityError 이중 방어.
+
+    동명이인+같은 뒷4자리는 접미사로 자동 해소되므로 중복은 실패 사유가
+    아니다. 아이디를 만들 수 없는 입력(이름에 쓸 글자 없음·번호 자릿수 부족·
+    접미사 소진)만 LoginIdError 로 올라가고 뷰가 400 으로 옮긴다.
+    경합으로 뒤늦게 중복이 나면 IntegrityError → None 반환(백스톱).
     """
-    if User.objects.filter(login_id=phone).exists():
-        return None, None
+    login_id = issue_staff_login_id(name, phone)  # LoginIdError 는 뷰가 400 으로
     password = generate_initial_password()
     try:
         with transaction.atomic():
             user = User.objects.create_user(
-                login_id=phone, password=password, name=name, role=role, phone=phone
+                login_id=login_id, password=password, name=name, role=role, phone=phone
             )
     except IntegrityError:
         return None, None

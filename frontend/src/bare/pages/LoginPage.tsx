@@ -10,22 +10,22 @@ const FORMS: Array<{ key: string; label: string; url: string; hint: string; home
   {
     key: "student",
     label: "학생 로그인",
-    url: "/auth/login/student",
-    hint: "예: 01010000001 / test1234",
+    url: "/auth/login",
+    hint: "예: 김하늘0001 / test1234",
     home: "/bare/student/home",
   },
   {
     key: "parent",
     label: "학부모 로그인",
-    url: "/auth/login/parent",
-    hint: "예: 01020000001 / test1234",
+    url: "/auth/login",
+    hint: "예: 김하늘0001p / test1234",
     home: "/bare/parent/home",
   },
   {
     key: "admin",
     label: "관리자 로그인(대표·관리자·조교)",
     url: "/auth/login/admin",
-    hint: "예: 01000000002 / test1234",
+    hint: "예: 김관리0002 / test1234",
     home: "/bare",
   },
 ];

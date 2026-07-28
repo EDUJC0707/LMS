@@ -401,17 +401,10 @@ export default function AttendanceSessionPage() {
             rows={visible}
             rowKey={(r) => r.student_id}
             empty={
-              blankOnly
-                ? "미입력한 학생이 없습니다. 전원 출결이 표시돼 있습니다."
-                : "이 회차에 배정된 수강생이 없습니다. 커리큘럼 주차와 강좌 수강 등록을 확인하세요."
+              blankOnly ? "미입력한 학생이 없습니다" : "이 회차에 배정된 수강생이 없습니다"
             }
           />
 
-          <p className="ops-note" style={{ padding: "var(--space-md)" }}>
-            <strong>출석</strong>으로 저장하면 그 주차 복습영상 권한이 자동으로 나가고,{" "}
-            <strong>결석</strong>으로 저장하면 학부모 통화 카드가 상담 대기열에 쌓입니다.
-            {canMakeup && " 결석 학생이 동보를 신청하면 이 표에서 바로 승인할 수 있습니다."}
-          </p>
         </Card>
       </div>
     </>
@@ -440,8 +433,8 @@ function SavedSummary({
   return (
     <Alert tone="success" onClose={onClose}>
       {parts.length > 0
-        ? `출결을 저장했습니다 — ${parts.join(" · ")}.`
-        : "출결을 저장했습니다. 이번 저장으로 새로 나간 영상 권한이나 상담 카드는 없습니다."}
+        ? `출결을 저장했습니다 — ${parts.join(" · ")}`
+        : "출결을 저장했습니다"}
     </Alert>
   );
 }

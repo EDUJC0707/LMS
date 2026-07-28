@@ -3,7 +3,7 @@ import { ReactNode } from "react";
 import { Button } from "./Button";
 
 export interface EmptyStateProps {
-  /** 왜 비어 있는지 한 줄. "데이터 없음" 같은 말은 쓰지 않는다. */
+  /** 왜 비어 있는지 짧은 한 줄. 부연 설명을 붙이지 않는다(CLAUDE.md §8). */
   title: string;
   description?: ReactNode;
   /** 비어 있는 상태를 벗어나는 행동(신청하기·업로드 등). */

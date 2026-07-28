@@ -58,9 +58,7 @@ function toDueItems(deadlines: Deadline[]): DueItem[] {
         dDay: row.d_day,
         count: 1,
         title: `클리닉 ${dayLabel(row.date)} ${row.start_time}`,
-        meta: row.link_active
-          ? "지금 입장할 수 있습니다 — 클리닉 신청 화면에서 링크를 여세요."
-          : "미트 링크는 시작 5분 전에 열립니다.",
+        meta: row.link_active ? "입장 가능" : "시작 5분 전 링크 열림",
       });
     } else if (row.kind === "영상만료") {
       const key = `video-${row.course_name}-${row.week_no}-${row.due_date ?? ""}`;
@@ -76,7 +74,7 @@ function toDueItems(deadlines: Deadline[]): DueItem[] {
         dDay: row.d_day,
         count: 1,
         title: `${row.course_name} ${row.week_no}주차 복습영상`,
-        meta: `${dateTimeLabel(row.expires_at)}까지 볼 수 있습니다.`,
+        meta: `${dateTimeLabel(row.expires_at)}까지`,
       });
     } else {
       items.push({
@@ -84,7 +82,7 @@ function toDueItems(deadlines: Deadline[]): DueItem[] {
         dDay: row.d_day,
         count: 1,
         title: `${row.product_name} 결제 전`,
-        meta: `${won(row.amount)} · 결제가 확인되면 자동으로 사라집니다.`,
+        meta: won(row.amount),
       });
     }
   }
@@ -138,20 +136,13 @@ export default function StudentHomePage() {
     const products = data.purchasable_products ?? [];
     return (
       <>
-        <PageHeader
-          title={`${student.name} 학생, 반갑습니다`}
-          description="아직 수강 등록 전이라 학습 화면은 열려 있지 않습니다. 교재를 구매하고 반이 확정되면 캘린더와 성적이 이곳에 채워집니다."
-        />
+        <PageHeader title={`${student.name} 학생`} />
         <div className="ui-stack">
           <Card title="지금 상태">
             <div className="ui-row">
               <Badge tone="warning">{student.enrollment_status}</Badge>
               {student.current_class && <Badge tone="outline">{student.current_class} 예정</Badge>}
             </div>
-            <p className="st-note" style={{ marginTop: "var(--space-sm)" }}>
-              등록이 확정되면 출결 캘린더 · 주차별 학습계획 · 성적표가 자동으로 열립니다. 절차가
-              궁금하면 학원으로 문의해 주세요.
-            </p>
           </Card>
 
           <Card title="구매 가능한 교재" aside={`${products.length}종`} padding="none">
@@ -159,7 +150,7 @@ export default function StudentHomePage() {
               rows={products}
               rowKey={(row) => row.product_id}
               caption="구매 가능한 교재 목록"
-              empty="지금 구매할 수 있는 교재가 없습니다. 등록 안내를 기다려 주세요."
+              empty="구매할 수 있는 교재가 없습니다"
               columns={[
                 { key: "name", header: "교재", cell: (row) => row.name },
                 {
@@ -179,15 +170,14 @@ export default function StudentHomePage() {
 
   /* ── 등록 학생: 캘린더 홈 ─────────────────────────────────────────── */
   const weeks = calendar.weeks;
-  const lockedCount = weeks.filter((w) => w.locked).length;
   const totalWeeks = course?.total_weeks ?? weeks.length;
   const currentWeek = course?.current_week ?? null;
   const progress = totalWeeks > 0 ? Math.min(100, ((currentWeek ?? 0) / totalWeeks) * 100) : 0;
   const classDays = (course?.class_weekdays ?? []).map(weekdayName).join("·");
 
   const description = course
-    ? `${course.name} · ${student.current_class ?? "반 미배정"} — 수업은 매주 ${classDays}요일입니다.`
-    : "이번 달 출결과 앞으로 해야 할 일입니다.";
+    ? `${course.name} · ${student.current_class ?? "반 미배정"} · 매주 ${classDays}요일`
+    : undefined;
 
   return (
     <>
@@ -209,10 +199,7 @@ export default function StudentHomePage() {
           aside={dues.length > 0 ? "기한이 가까운 순" : undefined}
         >
           {dues.length === 0 ? (
-            <EmptyState
-              title="지금 급한 일은 없습니다"
-              description="클리닉 예약, 복습영상 만료, 교재 결제가 생기면 여기에서 먼저 알려드립니다."
-            />
+            <EmptyState title="지금 급한 일은 없습니다" />
           ) : (
             <ul className="st-due">
               {dues.map((item) => (
@@ -297,10 +284,6 @@ export default function StudentHomePage() {
                   );
                 })}
             </div>
-            <p className="st-note" style={{ marginTop: "var(--space-md)" }}>
-              색이 들어간 날은 출결이 확정된 수업일입니다. 회색 "수업"은 아직 출결이 입력되지
-              않은 수업일이고, 결석한 날은 동보 신청으로 복습영상을 받을 수 있습니다.
-            </p>
           </Card>
 
           <Card title="주차별 학습계획" aside={course?.name}>
@@ -328,11 +311,6 @@ export default function StudentHomePage() {
               )}
             </div>
 
-            {lockedCount > 0 && (
-              <p className="st-note" style={{ marginTop: "var(--space-md)" }}>
-                남은 {lockedCount}개 주차는 진도에 맞춰 차례로 열립니다.
-              </p>
-            )}
           </Card>
         </div>
       </div>
@@ -360,7 +338,7 @@ function WeekPanel({ week, open }: { week: OpenWeek; open: boolean }) {
       )}
       <div className="st-daylist">
         {week.day_plans.length === 0 ? (
-          <p className="st-note">이 주차의 Day 학습계획은 아직 올라오지 않았습니다.</p>
+          <p className="st-note">학습계획이 아직 없습니다</p>
         ) : (
           week.day_plans.map((plan) => (
             <div key={plan.day_no} className="st-day">

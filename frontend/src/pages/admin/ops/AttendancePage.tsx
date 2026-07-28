@@ -123,7 +123,6 @@ export default function AttendancePage() {
     <>
       <PageHeader
         title="출결 입력"
-        description="회차를 열면 그 주차 수강생 명단이 나옵니다. 저장하는 순간 복습영상 지급과 결석 상담 대기열이 함께 처리됩니다."
       />
 
       <div className="ui-stack">
@@ -203,10 +202,10 @@ export default function AttendancePage() {
               onRowClick={(r) => navigate(`/admin/attendance/${r.session_id}`)}
               empty={
                 date
-                  ? `${shortDate(date)}에는 수업 회차가 없습니다. 다른 날짜를 골라 보세요.`
+                  ? `${shortDate(date)}에는 수업 회차가 없습니다`
                   : range === "예정"
-                    ? "앞으로 예정된 회차가 없습니다. 지난 회차 탭에서 이전 수업을 확인하세요."
-                    : "표시할 회차가 없습니다. 커리큘럼에 주차가 매핑되면 여기에 나타납니다."
+                    ? "예정된 회차가 없습니다"
+                    : "표시할 회차가 없습니다"
               }
             />
           </Card>
