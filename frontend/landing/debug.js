@@ -14,7 +14,7 @@
 
 /* 저장 키에 버전을 붙인다. 기본값이 바뀔 때 키를 올리면 옛 저장값이 자동으로
    버려진다 — 안 그러면 코드를 고쳐도 화면은 옛 값 그대로라 한참 헤맨다. */
-const LS = 'hjc-debug-v5';
+const LS = 'hjc-debug-v6';
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 /* 코드에 박힌 값. 첫 open 때 한 번만 뜬다 — 닫았다 열 때마다 뜨면 그때의
@@ -60,7 +60,7 @@ const GROUPS = [
   ['블루 · 강사', [
     ['h',       '크기',      35, 100, 1,   'css', 0],
     ['r',       '위치',     -25,  35, 1,   'css', 0],
-    ['b',       '바닥에서',    0,  30, 1,   'css', 0],
+    ['b',       '바닥에서',    0,  20, .5,  'css', 1],
   ]],
   ['먼지', [
     ['dust',    '개수',     200, 4000, 50, 'new', 0],
@@ -148,7 +148,7 @@ export function openDebug() {
   const sm = () => matchMedia('(max-width: 860px)').matches;
 
   // index.html 에 박힌 강사 기본값. 여기와 CSS 가 어긋나면 패널을 여는 순간 화면이 튄다
-  const TEACHER0 = { h: 80, r: 5, b: 5, hSm: 40, rSm: -12, bSm: 3, h1gap: .20 };
+  const TEACHER0 = { h: 80, r: 5, b: 0, hSm: 40, rSm: -12, bSm: 0, h1gap: .20 };
   if (!BASE) BASE = { teacher: { ...TEACHER0 }, blue: 'royal', cfg: api ? { ...api.cfg } : {} };
 
   const st = document.createElement('style');

@@ -128,7 +128,7 @@
   .teacher{
     /* 2026-07-28 확정: 80svh · 오른쪽에서 5%.
        바꾸면 pack-layout.py 도 다시 돌려야 한다 — 강사 왼쪽 경계가 모티프 금지선이다. */
-    position:absolute; right:var(--teacher-right, 5%); bottom:var(--teacher-bottom, 5%); z-index:1;
+    position:absolute; right:var(--teacher-right, 5%); bottom:var(--teacher-bottom, 0%); z-index:1;
     height:min(var(--teacher-h, 80svh), 820px); width:auto;
     object-fit:contain; object-position:bottom right;
     pointer-events:none; user-select:none;
@@ -241,7 +241,7 @@
     .navL nav{ display:none }
     .hero{ grid-template-columns:1fr; align-content:center; padding-bottom:32svh }
     .copy{ max-width:none }
-    .teacher{ height:var(--teacher-h-sm, 40svh); right:var(--teacher-right-sm, -12%); bottom:var(--teacher-bottom-sm, 3%) }
+    .teacher{ height:var(--teacher-h-sm, 40svh); right:var(--teacher-right-sm, -12%); bottom:var(--teacher-bottom-sm, 0%) }
     .step{ grid-template-columns:1fr; gap:.5rem }
     .step-no{ padding-top:0 }
     .tbl .hide-sm{ display:none }
