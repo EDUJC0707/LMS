@@ -79,36 +79,36 @@ const statics = [];
 const TONE = [0.61, 0.53, 0.61, 0.63, 0.58, 0.59, 0.61, 0.84, 0.78, 0.61];
 
 /* 배치는 pack-layout.py 가 계산한다 — 손으로 잡지 않는다. 순서는 UNITS 와 1:1.
-   크기는 전부 같고 자리는 고정이다(양쪽 12vw). **에셋 자체도
+   크기는 전부 같고 자리는 고정이다(데스크탑 12vw / 모바일 14vw). **에셋 자체도
    잉크 긴 변이 캔버스의 95% 가 되게 통일해 구워 두었다** — 같은 vw 를 줘도 여백이
    제각각이면 보이는 크기가 다르다(정규화 전 DNA 는 74% 라 혼자 22% 작았다).
    리듬은 자리와
    회전에서만 나온다 — 회전은 난수가 아니라 사다리(±33°, 0° 근처는 빔)를 섞는다.
    강사와 그 오른쪽은 금지구역이라 데스크탑 좌표가 전부 좌측 절반에 모인다. */
 const LAYOUT = [
-  { x: 32, y: 82, size: 12, rot: 27,  dim: 1 },   // atom
-  { x: 34, y: 55, size: 12, rot: -7,  dim: 1 },   // dna  ← 기울기 못박음(+10°)
-  { x: 50, y: 54, size: 12, rot: 17,  dim: 1 },   // chromosome
-  { x: 34, y: 20, size: 12, rot: -22, dim: 1 },   // mitochondria
-  { x: 48, y: 21, size: 12, rot: 34,  dim: 1 },   // chloroplast
-  { x: 10, y: 84, size: 12, rot: 8,   dim: 1 },   // synapse
-  { x: 22, y: 33, size: 12, rot: 10,  dim: 1 },   // population
-  { x: 49, y: 84, size: 12, rot: -24, dim: 1 },   // element
-  { x: 10, y: 60, size: 12, rot: -35, dim: 1 },   // tectonics
-  { x: 10, y: 19, size: 12, rot: -12, dim: 1 },   // universe
+  { x: 10, y: 61, size: 12, rot: 13,  dim: 1 },   // atom
+  { x: 9,  y: 85, size: 12, rot: -7,  dim: 1 },   // dna  ← 기울기 못박음(+10°)
+  { x: 49, y: 23, size: 12, rot: 25,  dim: 1 },   // chromosome
+  { x: 32, y: 58, size: 12, rot: -12, dim: 1 },   // mitochondria
+  { x: 34, y: 33, size: 12, rot: -18, dim: 1 },   // chloroplast
+  { x: 22, y: 17, size: 12, rot: -34, dim: 1 },   // synapse
+  { x: 40, y: 83, size: 12, rot: -26, dim: 1 },   // population
+  { x: 16, y: 39, size: 12, rot: 17,  dim: 1 },   // element
+  { x: 22, y: 74, size: 12, rot: 32,  dim: 1 },   // tectonics
+  { x: 49, y: 46, size: 12, rot: 8,   dim: 1 },   // universe
 ];
 
 const LAYOUT_SM = [
-  { x: 34, y: 83, size: 12, rot: 12,  dim: 1 },   // atom
-  { x: 34, y: 70, size: 12, rot: -7,  dim: 1 },   // dna  ← 기울기 못박음(+10°)
-  { x: 15, y: 30, size: 12, rot: -14, dim: 1 },   // chromosome
-  { x: 27, y: 12, size: 12, rot: -32, dim: 1 },   // mitochondria
-  { x: 35, y: 35, size: 12, rot: 7,   dim: 1 },   // chloroplast
-  { x: 18, y: 82, size: 12, rot: 29,  dim: 1 },   // synapse
-  { x: 28, y: 43, size: 12, rot: -23, dim: 1 },   // population
-  { x: 23, y: 52, size: 12, rot: 36,  dim: 1 },   // element
-  { x: 15, y: 68, size: 12, rot: 21,  dim: 1 },   // tectonics
-  { x: 15, y: 91, size: 12, rot: -18, dim: 1 },   // universe
+  { x: 26, y: 91, size: 14, rot: 25,  dim: 1 },   // atom
+  { x: 34, y: 31, size: 14, rot: -7,  dim: 1 },   // dna  ← 기울기 못박음(+10°)
+  { x: 24, y: 13, size: 14, rot: 35,  dim: 1 },   // chromosome
+  { x: 15, y: 22, size: 14, rot: 9,   dim: 1 },   // mitochondria
+  { x: 24, y: 73, size: 14, rot: -30, dim: 1 },   // chloroplast
+  { x: 31, y: 39, size: 14, rot: -18, dim: 1 },   // synapse
+  { x: 24, y: 63, size: 14, rot: 11,  dim: 1 },   // population
+  { x: 17, y: 29, size: 14, rot: -23, dim: 1 },   // element
+  { x: 29, y: 47, size: 14, rot: 21,  dim: 1 },   // tectonics
+  { x: 33, y: 55, size: 14, rot: -9,  dim: 1 },   // universe
 ];
 
 const isSmall = () => matchMedia('(max-width: 860px)').matches;

@@ -38,7 +38,10 @@ NAV = 64
 # 잉크 사이 최소 여백. **런타임 상대 이동을 여기서 덮는다** — field.js 가 개체마다
 # 위상이 다른 자율 부유(±6px)를 주므로 이웃 둘이 서로에게 최대 12px 다가온다.
 # 시차는 전원이 같은 방향이라 상대 거리를 바꾸지 않는다. 12px + 여유 = 24.
-GAP = 22 if MOBILE else 30
+# 여백을 30 → 22 로 줄였다. 30 은 뭉침을 원천 봉쇄해서(모든 쌍이 최소 60px 떨어진다)
+# 무슨 판을 뽑아도 고르게 흩어진 모양만 나왔다 — 최근접이웃 CV 0.08.
+# 22 면 런타임 상대 이동(±12px)을 여전히 10px 여유로 덮으면서 붙는 쌍이 생긴다.
+GAP = 16 if MOBILE else 22
 # 가장자리 여유. field.js 가 런타임에 개체를 최대 ±15px 흔들기 때문에(시차 8px +
 # 자율부유 6px) 여기서 그만큼을 미리 빼둬야 한다. 10px 로 두면 왼쪽·위가 잘렸다.
 EDGE = 30
@@ -132,62 +135,67 @@ print(f"// 강사 왼쪽 경계 {TEACHER_LEFT / VW * 100:.0f}% · 사용 가능 
 
 
 
-# 구도를 먼저 정한다. 순수 난수는 고르게 흩어져 평평하고, 군집 선호만 주면 한쪽으로
-# 쏠린다. 그래서 빈 공간을 격자로 쪼개 여유가 있는 칸만 존으로 쓰고, 존마다 하나씩
-# 배정한 뒤 그 안에서 흔든다 — 구도는 통제되고 리듬은 살아난다.
-# 존을 손으로 적으면 금지구역이 바뀔 때마다 어긋나므로 FORBID 에서 뽑는다.
-def make_zones(cols, rows, need):
-    cw, ch = GW / cols, GH / rows
-    cand = []
-    for j in range(rows):
-        for i in range(cols):
-            x0, x1 = int(i * cw), int((i + 1) * cw)
-            y0, y1 = int(j * ch), int((j + 1) * ch)
-            free = (~FORBID[y0:y1, x0:x1]).mean()
-            if free < 0.45:
-                continue
-            # 칸 안쪽으로 조금 물려 존 경계에 딱 붙지 않게 한다
-            mx, my = (x1 - x0) * 0.08, (y1 - y0) * 0.08
-            cand.append((free, ((x0 + mx) * CELL / VW * 100, (x1 - mx) * CELL / VW * 100,
-                                (y0 + my) * CELL / VH * 100, (y1 - my) * CELL / VH * 100)))
-    cand.sort(key=lambda z: -z[0])
-    return [z for _, z in cand[:max(need, len(cand))]]
+# 구도. **존 격자를 버렸다.**
+#
+# 빈 공간을 격자로 쪼개 칸마다 하나씩 배정하면 구도는 통제되지만, 판을 걷어놓고 보면
+# 위 4개 / 가운데 3개 / 아래 3개로 **줄이 보인다**. 격자에서 뽑은 이상 격자가 남는다.
+#
+# 그래서 자리는 자유 배치(거부 표집)로 뽑고, 대신 **유기적인지를 점수로 재서** 여러 판
+# 중 가장 흐트러진 것을 고른다. "유기적"을 눈대중이 아니라 수로 정의한 것이다.
+#
+#   ① 뭉침과 빔    최근접이웃 거리의 변동계수(CV). 고르게 흩어지면 0 에 가깝고,
+#                  어떤 둘은 붙고 어떤 곳은 비면 커진다. 이게 클수록 유기적이다.
+#   ② 정렬 벌점    x 나 y 가 비슷한 쌍의 수. 격자·줄이 보이는 원인이 이것뿐이다.
+#   ③ 퍼짐         한 구석에 몰려도 CV 는 높게 나온다. 그걸 막는 항.
+ALIGN_TOL = 0.055                     # 이 비율(화면 기준) 안이면 "같은 줄"로 센다
+# 정렬 벌점을 세게 건다. 줄이 보이는 것이 "격자 같다"의 유일한 원인이고,
+# 뭉침(CV)은 여백이 허락하는 만큼만 올라가므로 가중치를 더 줘도 소용이 없다.
+W_CV, W_ALIGN, W_SPREAD = 2.6, 0.22, 1.5
 
 
-ZONES = None
-for cols, rows in ((4, 3), (5, 4), (6, 4), (5, 5), (6, 5), (7, 5)):
-    z = make_zones(cols, rows, len(NAMES))
-    if len(z) >= len(NAMES):
-        ZONES = z
-        print(f"// 존 {cols}x{rows} 격자에서 {len(z)}칸 확보")
-        break
-if ZONES is None:
-    sys.exit("존 확보 실패 — 금지구역이 너무 넓다")
+def organic_score(centers):
+    """클수록 유기적. centers 는 (x%, y%) 목록."""
+    n = len(centers)
+    px = [(c[0] / 100 * VW, c[1] / 100 * VH) for c in centers]
+
+    nn = []
+    for i in range(n):
+        d = min(math.dist(px[i], px[j]) for j in range(n) if j != i)
+        nn.append(d)
+    mean = sum(nn) / n
+    cv = (sum((d - mean) ** 2 for d in nn) / n) ** .5 / mean if mean else 0
+
+    tolx, toly = ALIGN_TOL * VW, ALIGN_TOL * VH
+    align = sum(1 for i in range(n) for j in range(i + 1, n)
+                if abs(px[i][0] - px[j][0]) < tolx or abs(px[i][1] - px[j][1]) < toly)
+
+    mx = sum(p[0] for p in px) / n
+    my = sum(p[1] for p in px) / n
+    sx = (sum((p[0] - mx) ** 2 for p in px) / n) ** .5 / VW
+    sy = (sum((p[1] - my) ** 2 for p in px) / n) ** .5 / VH
+    spread = sx + sy
+
+    return W_CV * cv - W_ALIGN * align + W_SPREAD * spread, cv, align, spread
 
 
 def attempt(scale, seed):
-    """존마다 하나씩 배정하고 그 안에서 자리를 찾는다."""
+    """자유 배치. 잉크가 넓은 것부터 놓고, 빈 곳이면 어디든 받는다."""
     r = np.random.default_rng(seed)
-    zones = list(ZONES)
-    if len(zones) < len(NAMES):
-        return None
-    r.shuffle(zones)
     order = list(NAMES)
     r.shuffle(order)
 
-    # 크기가 같으므로 순서에 유불리가 없다. 다만 잉크가 넓은 것(chromosome 32%,
-    # element)이 뒤로 밀리면 자리가 없으므로 **잉크 면적이 큰 것부터** 놓는다.
     free = [v for v in TILT_SET[:len(order)] if v not in PIN_TILT.values()]
     r.shuffle(free)
     it = iter(free)
-    tilts = [PIN_TILT.get(n, None) for n in order]
+    tilts = [PIN_TILT.get(n) for n in order]
     tilts = [v if v is not None else next(it) for v in tilts]
-    plan = sorted(zip(order, zones, tilts), key=lambda p: -MASKS[p[0]].mean())
+    # 잉크가 넓은 것(chromosome·element)이 뒤로 밀리면 자리가 없다
+    plan = sorted(zip(order, tilts), key=lambda p: -MASKS[p[0]].mean())
 
     occ = FORBID.copy()
     placed, centers = {}, []
 
-    for n, (zx1, zx2, zy1, zy2), base_deg in plan:
+    for n, base_deg in plan:
         size_px = int(VW * scale / 100 * SIZE_EQ)
         # 못박은 것은 흔들지 않는다 — 지시한 각도 그대로여야 한다
         deg = float(base_deg if n in PIN_TILT else base_deg + r.uniform(-TILT_JIT, TILT_JIT))
@@ -196,18 +204,14 @@ def attempt(scale, seed):
         if gh >= GH or gw >= GW:
             return None
         ok = False
-        for _ in range(1600):
-            cx = r.uniform(zx1, zx2)
-            cy = r.uniform(zy1, zy2)
-            gx = int(cx / 100 * VW / CELL - gw / 2)
-            gy = int(cy / 100 * VH / CELL - gh / 2)
-            if gx < 0 or gy < 0 or gx + gw >= GW or gy + gh >= GH:
-                continue
+        for _ in range(2600):
+            gx = int(r.integers(0, GW - gw))
+            gy = int(r.integers(0, GH - gh))
             if (occ[gy:gy + gh, gx:gx + gw] & m).any():
                 continue
-            # 정렬 금지 — 다만 'x 또는 y'로 걸면 가로가 좁을 때 아예 배치가 불가능해진다.
-            # 좌표가 둘 다 가까운 경우(사실상 중복)만 거부하고, 격자스러움은 존 안
-            # 흔들기로 깬다.
+            cx = (gx + gw / 2) * CELL / VW * 100
+            cy = (gy + gh / 2) * CELL / VH * 100
+            # 사실상 겹쳐 보이는 중복만 거부한다. 줄서기는 점수가 걸러낸다
             if any(abs(cx - px) < NO_ALIGN and abs(cy - py) < NO_ALIGN for px, py in centers):
                 continue
             occ[gy:gy + gh, gx:gx + gw] |= m
@@ -220,25 +224,41 @@ def attempt(scale, seed):
     return placed
 
 
-best = None
-lo, hi = 4.0, 50.0
-for _ in range(20):
+# ① 들어가는 최대 크기를 찾는다
+lo, hi, fit_scale = 4.0, 50.0, None
+for _ in range(18):
     mid = (lo + hi) / 2
-    got = None
-    for s in range(14):                     # 시드를 바꿔가며 가능한지 확인
-        got = attempt(mid, 700 + s)
-        if got:
-            break
-    if got:
-        best = (mid, got)
+    if any(attempt(mid, 700 + s) for s in range(16)):
+        fit_scale = mid
         lo = mid
     else:
         hi = mid
-
-if not best:
+if fit_scale is None:
     sys.exit("배치 실패")
 
-scale, placed = best
+# ② 최대치에서 조금 물러선다. 꽉 채우면 놓을 자리가 하나뿐이라 어떤 판을 뽑아도
+#    같은 모양이 나온다 — 흐트러질 여유를 4% 만 남긴다.
+# 최대치의 90%. 꽉 채우면 놓을 자리가 하나뿐이라 어떤 판을 뽑아도 같은 모양이 나온다
+# (실측: 100% 에서 유효 후보 9판, 90% 에서 400판). 흐트러질 여유를 사는 값이다.
+scale = fit_scale * 0.90
+
+# ③ 그 크기로 여러 판을 뽑아 **가장 유기적인 것**을 고른다.
+#    자유 배치는 판마다 모양이 크게 달라서, 고르는 일이 곧 디자인이다.
+cands = []
+for s in range(1400):
+    got = attempt(scale, 5000 + s)
+    if not got:
+        continue
+    centers = [((gx + gw / 2) * CELL / VW * 100, (gy + gh / 2) * CELL / VH * 100)
+               for gx, gy, gw, gh, _, _ in (got[n] for n in NAMES)]
+    cands.append((organic_score(centers), got))
+if not cands:
+    sys.exit("후보 없음")
+cands.sort(key=lambda c: -c[0][0])
+(sc, cv, align, spread), placed = cands[0]
+worst = cands[-1][0]
+print(f"// 후보 {len(cands)}판 중 최고 — 점수 {sc:.2f}(최저 {worst[0]:.2f})"
+      f" · 뭉침·빔 CV {cv:.2f} · 정렬쌍 {align} · 퍼짐 {spread:.2f}")
 sizes = [placed[n][4] / VW * 100 for n in NAMES]
 print(f"// {VW}x{VH} · 기준 {scale:.1f}vw · 여백 {GAP}px · 기울기 사다리 ±33° · 잉크 충돌 판정")
 print(f"const {'LAYOUT_SM' if MOBILE else 'LAYOUT'} = [")
