@@ -10,6 +10,9 @@ __pycache__/
 frontend/dist/
 *.tsbuildinfo
 
+# 로컬 업로드·시드 산출물(워크북 사진 등) — 운영은 Tigris/S3
+backend/media/
+
 # 에이전트 worktree (임시 작업 사본 — 절대 커밋 금지)
 .claude/worktrees/
 

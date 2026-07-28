@@ -111,11 +111,7 @@ class Command(BaseCommand):
 
     def _wipe(self):
         """도메인 테이블 전체 초기화 — PROTECT FK 역순(자식 먼저)."""
-        for submission in WorkbookSubmission.objects.all():
-            try:  # 스토리지 파일 잔재 정리(없어도 무시)
-                default_storage.delete(submission.image_path)
-            except OSError:
-                pass
+        self._wipe_demo_files()
         ordered = [
             Notification,
             ClinicEvaluationItem, ClinicEvaluation, ClinicRequest,
@@ -131,6 +127,30 @@ class Command(BaseCommand):
         ]
         for model in ordered:
             model.objects.all().delete()
+
+    @staticmethod
+    def _wipe_demo_files():
+        """시드가 만든 스토리지 파일을 **경로 기준**으로 지운다.
+
+        DB 행(WorkbookSubmission.image_path)을 훑어 지우면 고아 파일이 남는다 —
+        컨테이너 재생성·스키마 리셋처럼 DB만 비워지는 일이 있으면 파일은 호스트에
+        그대로 남고, 그다음 시드가 같은 이름으로 저장할 때 Django 가 충돌을 피해
+        랜덤 접미사를 붙이므로(`26-26006_qnmd7XT.png`) 재실행마다 누적된다.
+        (2026-07-28 실측: 6회 실행 → 파일 58개.)
+
+        디렉터리째 비우면 DB 상태와 무관하게 항상 같은 결과가 된다.
+        `demo/` 하위만 지운다 — 실제 업로드본(`workbook/<다른 경로>`)은 건드리지 않는다.
+        """
+        for prefix in ("workbook/demo", "omr/demo"):
+            try:
+                _dirs, files = default_storage.listdir(prefix)
+            except (FileNotFoundError, NotImplementedError, OSError):
+                continue  # 아직 없거나 listdir 미지원 백엔드(S3 등)면 건너뛴다
+            for name in files:
+                try:
+                    default_storage.delete(f"{prefix}/{name}")
+                except OSError:
+                    pass
 
     # --- 계정 -------------------------------------------------------------
 
