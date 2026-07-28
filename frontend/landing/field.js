@@ -361,7 +361,9 @@ export function mountField(root, units) {
      않고, debug.js 는 단축키를 누르기 전까지 내려받지도 않는다. */
   window.__field = {
     cfg: CFG,
-    rebuild(n) { dust = makeDust(n ?? CFG.dust); fit(); },
+    // n 을 cfg 에도 반영한다 — 안 하면 패널이 읽는 cfg.dust 와 실제 입자 수가
+    // 갈라져, 초기화나 재열기 때 엉뚱한 개수로 돌아간다
+    rebuild(n) { if (n != null) CFG.dust = n; dust = makeDust(CFG.dust); fit(); },
     refit: fit,
   };
 

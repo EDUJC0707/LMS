@@ -11,8 +11,11 @@
  * 되메움 속도)는 값을 정해 코드에 박았다. 눈으로 봐야만 정할 수 있는 것만 남긴다.
  */
 
-const LS = 'hjc-debug';
+/* 저장 키에 버전을 붙인다. 기본값이 바뀔 때 키를 올리면 옛 저장값이 자동으로
+   버려진다 — 안 그러면 코드를 고쳐도 화면은 옛 값 그대로라 한참 헤맨다. */
+const LS = 'hjc-debug-v2';
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+let BASE = null;   // 코드에 박힌 값. 첫 open 때 한 번만 채운다
 
 /* 블루 6종. 전부 에셋에서 나온 청색계이고 색상각(H)과 채도만 다르다.
    에셋 심부 평균이 H236 이라 그걸 가운데 두고 양옆으로 벌렸다.
@@ -61,6 +64,12 @@ const CSS = `
   border:1px solid rgba(255,255,255,.14); background:var(--c);
 }
 .dbg-sw button[aria-pressed=true]{ box-shadow:0 0 0 2px #fff inset, 0 0 0 1px #fff }
+.dbg #dbgReset{
+  width:100%; margin-top:2px; padding:6px; border-radius:7px; cursor:pointer;
+  border:1px solid rgba(150,155,220,.20); background:rgba(255,255,255,.05);
+  color:#9AA0CC; font:inherit;
+}
+.dbg #dbgReset:hover{ color:#fff; border-color:rgba(150,155,220,.42) }
 .dbg-o{
   margin:11px -11px -11px; padding:9px 11px; border-top:1px solid rgba(150,155,220,.14);
   background:rgba(0,0,0,.35); color:#7E82AC; font:10px/1.55 ui-monospace,monospace;
@@ -71,6 +80,12 @@ const CSS = `
 export function openDebug() {
   if (document.querySelector('.dbg')) return;   // 이미 열려 있다
   const api = window.__field;
+  /* 초기화가 되돌아갈 자리. **처음 열 때 한 번만** 뜬다 — 닫았다 다시 열 때 뜨면
+     그때의 조정값이 "초기값"이 돼 버려 영영 원래대로 못 돌아간다. */
+  if (!BASE) {
+    BASE = api ? { dust: api.cfg.dust, aMin: api.cfg.aMin, aMax: api.cfg.aMax, R: api.cfg.R }
+               : { dust: 1200, aMin: .12, aMax: .30, R: .15 };
+  }
 
   const st = document.createElement('style');
   st.textContent = CSS;
@@ -86,6 +101,7 @@ export function openDebug() {
       <div class="dbg-r"><label>강사 위치 <i id="v1"></i></label><input id="s1" type="range" min="-25" max="35" step="1"></div>
       <div class="dbg-r"><label>먼지 진하기 <i id="v2"></i></label><input id="s2" type="range" min="0" max="100" step="1"></div>
       <div class="dbg-r"><label>바람 크기 <i id="v3"></i></label><input id="s3" type="range" min="6" max="34" step="1"></div>
+      <button id="dbgReset">초기값으로</button>
       <div class="dbg-o" id="dbgOut"></div>
     </div>`;
   document.body.append(el);
@@ -96,7 +112,7 @@ export function openDebug() {
 
   /* 저장값. 기본값은 index.html·field.js 에 박혀 있는 현재 값이다 */
   const S = Object.assign(
-    { blue: 'asset', h: 73, hSm: 36, r: 9, rSm: -14, dust: 55, wind: 15 },
+    { blue: 'asset', h: 73, hSm: 36, r: 9, rSm: -14, dust: 50, wind: 15 },
     JSON.parse(localStorage.getItem(LS) || '{}')
   );
   const save = () => localStorage.setItem(LS, JSON.stringify(S));
@@ -112,8 +128,10 @@ export function openDebug() {
   }
 
   /* 먼지 "진하기" 한 축이 개수와 밝기를 같이 움직인다. 둘을 따로 두면 노브가
-     늘어나기만 하고, 실제로 사람이 보는 건 "얼마나 자글자글한가" 하나다. */
-  const dustOf = t => ({ n: Math.round(400 + t * 22), a: 0.12 + t * 0.0030 });
+     늘어나기만 하고, 실제로 사람이 보는 건 "얼마나 자글자글한가" 하나다.
+     **눈금 50 이 정확히 코드 기본값(1200개·0.30)이 되게 맞췄다** — 어긋나면
+     패널을 여는 것만으로 화면이 바뀌어 "기본이 뭐였지"를 알 수 없게 된다. */
+  const dustOf = t => ({ n: Math.round(400 + t * 16), a: +(0.14 + t * 0.0032).toFixed(3) });
 
   function apply() {
     const b = BLUES.find(x => x.key === S.blue) || BLUES[0];
@@ -157,6 +175,25 @@ CFG dust:${d.n} aMax:${d.a.toFixed(2)} R:${(S.wind / 100).toFixed(2)}
 pack-layout.py TEACHER_H=${((mob ? S.hSm : S.h) / 100).toFixed(2)} TEACHER_RIGHT=${((mob ? S.rSm : S.r) / 100).toFixed(2)} → 경계 ${edge}%`;
     save();
   }
+
+  /* 초기화 = 코드에 박힌 값으로. 저장값을 지우고 CSS 인라인 오버라이드도 걷어낸다 —
+     지우지 않으면 :root 인라인이 스타일시트를 계속 이긴다. */
+  $('dbgReset').onclick = () => {
+    localStorage.removeItem(LS);
+    for (const k of ['dim','accent','glow','chip','t1','t2','line',
+                     'teacher-h','teacher-right','teacher-h-sm','teacher-right-sm'])
+      rootS.removeProperty('--' + k);
+    Object.assign(S, { blue: 'asset', h: 73, hSm: 36, r: 9, rSm: -14, dust: 50, wind: 15 });
+    delete S.pos;
+    if (api) { Object.assign(api.cfg, BASE); api.rebuild(BASE.dust); }
+    [...sw.children].forEach(x => x.setAttribute('aria-pressed', x.dataset.key === 'asset'));
+    $('v0').textContent = '기본'; $('v1').textContent = '기본';
+    $('v2').textContent = `${BASE.dust}개 · ${BASE.aMax}`;
+    $('v3').textContent = BASE.R.toFixed(2);
+    $('s0').value = S.h; $('s1').value = S.r; $('s2').value = S.dust; $('s3').value = S.wind;
+    $('dbgOut').textContent = '초기값 — 코드에 박힌 값 그대로다.\n노브를 만지면 다시 오버라이드가 걸린다.';
+    save();
+  };
 
   const keys = [['s0', v => { sm() ? S.hSm = v : S.h = v; }], ['s1', v => { sm() ? S.rSm = v : S.r = v; }],
                 ['s2', v => { S.dust = v; }], ['s3', v => { S.wind = v; }]];
