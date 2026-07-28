@@ -346,6 +346,16 @@ import { openChat } from './chat.js';
 /* 히어로 — 숨은 6개 */
 mountField(document.getElementById('field'), UNITS);
 
+/* 디버그 패널 — ⌘⌥D(맥) / Ctrl+Alt+D. 누르기 전에는 debug.js 를 내려받지도 않는다.
+   code 로 본다(key 가 아니라) — ⌥ 조합에서 macOS 는 key 를 '∂' 로 바꿔 준다. */
+addEventListener('keydown', async e => {
+  if (e.code !== 'KeyD' || !e.altKey || !(e.metaKey || e.ctrlKey)) return;
+  e.preventDefault();
+  if (window.__closeDebug) { window.__closeDebug(); window.__closeDebug = null; return; }
+  const { openDebug } = await import('./debug.js');
+  window.__closeDebug = openDebug();
+});
+
 /* 커리큘럼 */
 const stepsEl = document.getElementById('steps');
 function renderSteps(track) {

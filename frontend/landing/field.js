@@ -20,15 +20,16 @@
  */
 
 const CFG = {
-  /* 먼지 */
+  /* 먼지. 개수·밝기만 디버그 패널이 만지고(⌘⌥D), 나머지는 여기서 확정한다.
+     노브를 늘려 봐야 고를 수 있는 건 "얼마나 자글자글한가" 하나뿐이었다. */
   dust: 1200,        // 1440x900 기준 100px² 당 0.9개
-  dMin: 1.5, dMax: 2.5,
-  aMin: 0.10, aMax: 0.26,
+  dMin: 1.4, dMax: 2.4,
+  aMin: 0.12, aMax: 0.30,
   twinkle: 0.45,     // 밝기 흔들림 폭(비율) — "살짝살짝씩 보이게"
   buckets: 8,        // 알파를 8단으로 양자화해 globalAlpha 쓰기를 8회로 묶는다
   home: 9,           // 바람이 없을 때의 자율 부유 반경(px)
 
-  /* 바람 */
+  /* 바람. 창 반경 R 만 패널이 만진다. */
   R: 0.15,           // 창 반경 = min(W,H) × 이 값
   Rmin: 110, Rmax: 190,
   push: 0.85,        // 밀어내는 거리 = R × 이 값
@@ -355,8 +356,9 @@ export function mountField(root, units) {
     raf = requestAnimationFrame(frame);
   };
 
-  /* 조절판(tune.html) 전용 훅. 값을 CSS 로 뺄 수 없는 것들(개수·물리 상수)을
-     실시간으로 만지기 위한 창구다. 읽는 쪽이 없으면 아무 일도 하지 않는다. */
+  /* 디버그 패널(debug.js, ⌘⌥D) 전용 훅. 값을 CSS 로 뺄 수 없는 것들(입자 개수·
+     물리 상수)을 실시간으로 만지기 위한 창구다. 읽는 쪽이 없으면 아무 일도 하지
+     않고, debug.js 는 단축키를 누르기 전까지 내려받지도 않는다. */
   window.__field = {
     cfg: CFG,
     rebuild(n) { dust = makeDust(n ?? CFG.dust); fit(); },
