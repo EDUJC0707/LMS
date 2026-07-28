@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """히어로 모티프 배치 계산.
 
-겹치지 않게 · 뷰포트 안에 · 크기는 비슷하게. 다만 **균등 난수로 뿌리면 안 된다** —
-고르게 흩어진 배치는 무작위인데도 평평하고 투박하게 읽힌다. 그래서 세 가지를 넣는다.
+**크기는 전부 같다. 겹치지 않는다. 뷰포트 안에 다 들어간다.**
+그 셋을 지키면서 최대 크기를 찾는 것이 이 스크립트의 전부다.
 
-1. 뭉침과 빔 — 다음 자리를 고를 때 이미 놓인 것 바로 옆(여백 직후)을 선호하기도 하고
-   멀리 떨어진 곳을 선호하기도 한다. 확률을 섞으면 자연스러운 군집이 생긴다.
-2. 회전 — 전부 정립해 있으면 스티커를 붙인 것처럼 보인다. 각자 다르게 기울인다.
-   회전은 잉크 모양을 바꾸므로 충돌 판정도 회전 후 마스크로 한다.
-3. 깊이 — 크기를 미세하게 흔들고(±12%), 작은 것은 조금 흐리고 어둡게 한다.
-   같은 평면에 붙은 것이 아니라 공간에 떠 있는 것으로 읽힌다.
+다만 균등 난수로 뿌리면 안 된다 — 고르게 흩어진 배치는 무작위인데도 평평하고
+투박하게 읽힌다. 크기로는 리듬을 만들 수 없으므로(다 같으니까) 리듬은 두 군데서만
+나온다.
 
-정렬 금지: 두 개가 같은 x 나 y 에 놓이면 즉시 격자로 보이므로 최소 간격을 강제한다.
+1. 자리 — 빈 공간을 격자로 쪼개 여유 있는 칸만 존으로 쓰고, 존마다 하나씩 배정한
+   뒤 그 안에서 흔든다. 구도는 통제되고 리듬은 살아난다.
+2. 회전 — 난수로 뽑으면 뭉친다(실측: 10개 중 5개가 16~17°). 각도를 사다리로 깔고
+   섞어 좌우 균형과 분산을 강제하고, 0° 근처는 아예 비운다.
+
+충돌 판정은 경계상자가 아니라 **회전 후 잉크 마스크**로 한다. DNA 처럼 성긴 그림은
+경계상자로 재면 면적의 77% 를 헛되이 버린다.
 
   python3 pack-layout.py            # 데스크탑 1440x900
   python3 pack-layout.py --mobile   # 390x844
@@ -32,32 +35,39 @@ MOBILE = "--mobile" in sys.argv
 VW, VH = (390, 844) if MOBILE else (1440, 900)
 CELL = 4
 NAV = 64
-GAP = 11 if MOBILE else 16            # 잉크 사이 최소 여백(px)
+# 잉크 사이 최소 여백. **런타임 상대 이동을 여기서 덮는다** — field.js 가 개체마다
+# 위상이 다른 자율 부유(±6px)를 주므로 이웃 둘이 서로에게 최대 12px 다가온다.
+# 시차는 전원이 같은 방향이라 상대 거리를 바꾸지 않는다. 12px + 여유 = 24.
+GAP = 18 if MOBILE else 24
 # 가장자리 여유. field.js 가 런타임에 개체를 최대 ±15px 흔들기 때문에(시차 8px +
 # 자율부유 6px) 여기서 그만큼을 미리 빼둬야 한다. 10px 로 두면 왼쪽·위가 잘렸다.
 EDGE = 30
-TILT = 34                             # 최대 기울기(도)
-TILT_MIN = 7                          # 정립 금지 — 0°에 가까우면 스티커로 읽힌다
+# 기울기는 난수로 뽑지 않는다. 뽑아 보니 10개 중 5개가 16~17°에 몰려 **전부 같은
+# 방향으로 기운 정렬**이 됐다 — 무작위는 뭉치기 때문이다. 그래서 각도를 사다리로
+# 깔고 섞는다: 좌우 균형이 보장되고, 0° 근처(스티커처럼 보이는 각)가 비어 있다.
+TILT_SET = [-33, -26, -19, -12, -7, 7, 12, 19, 26, 33]
+TILT_JIT = 3                          # 사다리 위 미세 흔들기 — 등차 티를 지운다
 NO_ALIGN = 3.0                        # 중심이 x·y 둘 다 이만큼 가까우면 거부
 
-# 크기를 난수로만 흔들면 우연히 다 비슷해지는 판이 나온다. 그래서 배수를 미리
-# 사다리로 깔고 섞는다 — 큰 것·중간·작은 것이 **반드시** 섞여 있게 보장된다
-# (사용자 지시 2026-07-28: "각각을 막 좀 비정규적이게").
-# 등차가 아니라 아래로 몰린 분포다. 큰 놈 둘셋이 주인공이고 나머지가 배경이 된다.
-RAMP = [1.46, 1.30, 1.12, 0.98, 0.90, 0.84, 0.78, 0.73, 0.68, 0.62]
-JITTER = 0.06                         # 사다리 위에 얹는 미세 흔들기 — 등차 티를 지운다
+# 크기는 전부 같다(사용자 지시 2026-07-28: "크기는 같게 겹치지는 않게").
+# 크기로 리듬을 만들지 않으므로 불규칙성은 **회전과 자리**에서만 나온다.
+# 한때 크기 사다리를 썼지만 되돌렸다 — 기록만 남기고 값은 균일하다.
+SIZE_EQ = 1.0
+JITTER = 0.0
 
 # 텍스트 뒤는 지나가도 된다(사용자 지시 2026-07-28) — 톤 위계가 잡혀 있어
-# 배경(피크 휘도 68)이 헤드라인(116)보다 어둡기 때문이다. 대신 강사는 금지다.
+# 배경(피크 휘도 68)이 헤드라인(110)보다 어둡기 때문이다. 대신 강사는 금지다.
 TEACHER = HERE / "assets" / "teacher" / "nobg" / "02-검정티-턱손.webp"
-TEACHER_H = 0.44 if MOBILE else 0.88      # index.html .teacher height
+TEACHER_H = 0.36 if MOBILE else 0.73      # index.html .teacher height
 TEACHER_RIGHT = -0.14 if MOBILE else 0.09  # index.html .teacher right
 TEACHER_PAD = 26          # 인물 실루엣 주변 여유(px)
 
 GW, GH = VW // CELL, VH // CELL
 rng = np.random.default_rng(20260728)
 
-MASKS = {n: (np.array(Image.open(MOTIFS / f"{n}.webp").convert("RGBA").split()[3]) > 24)
+# 임계값을 12 로 낮춰 **실제 렌더보다 넓게** 잡는다. 화면에서는 CSS mask-image 가
+# 실루엣 최외곽을 한 번 더 깎으므로, 여기서 넉넉히 잡으면 항상 안전한 쪽으로 틀린다.
+MASKS = {n: (np.array(Image.open(MOTIFS / f"{n}.webp").convert("RGBA").split()[3]) > 12)
          for n in NAMES}
 
 
@@ -86,15 +96,15 @@ def forbidden():
     f[:e, :] = f[-e:, :] = True
     f[:, :e] = f[:, -e:] = True
 
-    # 강사와 그 오른쪽 전부를 막는다(사용자 지시 2026-07-28).
-    # 세로는 강사가 실제로 차지하는 구간만 — 모바일은 인물이 하단에만 있어
-    # 전 높이를 막으면 상단 우측을 통째로 버리게 된다.
+    # 강사 왼쪽에 **전 높이 하드 라인**을 긋는다(사용자 지시 2026-07-28:
+    # "선생님 뒤에, 오른쪽에 안된다니깐 그냥 hard line where 선생님 starts").
+    # 인물의 세로 구간만 막았더니 모바일에서 상단 우측이 열려 모티프가 인물 위쪽
+    # 공중에 떴다. 세로를 나누지 않고 한 줄로 자른다 — 경계가 명확해야 한다.
     ti = Image.open(TEACHER)
-    th = min(TEACHER_H * VH, 900)
+    th = min(TEACHER_H * VH, 742)
     tw = th * ti.width / ti.height
     left = VW - TEACHER_RIGHT * VW - tw - TEACHER_PAD
-    top = VH - th - TEACHER_PAD
-    f[max(0, int(top // CELL)):, max(0, int(left // CELL)):] = True
+    f[:, max(0, int(left // CELL)):] = True
     return f, left
 
 
@@ -148,18 +158,18 @@ def attempt(scale, seed):
     order = list(NAMES)
     r.shuffle(order)
 
-    # 배수를 이름에 무작위로 짝지어 놓고 **큰 것부터** 배치한다.
-    # 큰 것이 가장 놓기 어려우므로 나중에 돌리면 자리가 남지 않는다.
-    mult = list(RAMP[:len(order)])
-    r.shuffle(mult)
-    plan = sorted(zip(order, mult, zones), key=lambda p: -p[1])
+    # 크기가 같으므로 순서에 유불리가 없다. 다만 잉크가 넓은 것(chromosome 32%,
+    # element)이 뒤로 밀리면 자리가 없으므로 **잉크 면적이 큰 것부터** 놓는다.
+    tilts = list(TILT_SET[:len(order)])
+    r.shuffle(tilts)
+    plan = sorted(zip(order, zones, tilts), key=lambda p: -MASKS[p[0]].mean())
 
     occ = FORBID.copy()
     placed, centers = {}, []
 
-    for n, mu, (zx1, zx2, zy1, zy2) in plan:
-        size_px = int(VW * scale / 100 * mu * (1 + r.uniform(-JITTER, JITTER)))
-        deg = float(r.uniform(TILT_MIN, TILT)) * (1 if r.random() < .5 else -1)
+    for n, (zx1, zx2, zy1, zy2), base_deg in plan:
+        size_px = int(VW * scale / 100 * SIZE_EQ)
+        deg = float(base_deg + r.uniform(-TILT_JIT, TILT_JIT))
         m = stamp(n, size_px, deg)
         gh, gw = m.shape
         if gh >= GH or gw >= GW:
@@ -209,18 +219,16 @@ if not best:
 
 scale, placed = best
 sizes = [placed[n][4] / VW * 100 for n in NAMES]
-print(f"// {VW}x{VH} · 기준 {scale:.1f}vw · 여백 {GAP}px · 기울기 ±{TILT}° · 잉크 충돌 판정")
+print(f"// {VW}x{VH} · 기준 {scale:.1f}vw · 여백 {GAP}px · 기울기 사다리 ±33° · 잉크 충돌 판정")
 print(f"const {'LAYOUT_SM' if MOBILE else 'LAYOUT'} = [")
 for n in NAMES:
     gx, gy, gw, gh, size_px, deg = placed[n]
     cx = (gx + gw / 2) * CELL / VW * 100
     cy = (gy + gh / 2) * CELL / VH * 100
     sz = size_px / VW * 100
-    # 깊이 — 작은 것은 멀리 있는 것처럼 조금 흐리고 어둡게
-    t = (sz - min(sizes)) / max(1e-6, max(sizes) - min(sizes))
-    dim = round(0.74 + 0.26 * t, 2)
-    blur = round(1.1 * (1 - t), 1)
+    # 크기가 같으니 크기에서 깊이를 만들 수 없다. dim·blur 는 중립값으로 둔다 —
+    # 밝기 위계는 field.js 의 에셋별 TONE 이 이미 잡아 놓았다.
     print(f"  {{ x: {cx:.0f}, y: {cy:.0f}, size: {sz:.0f}, rot: {deg:.0f}, "
-          f"dim: {dim}, blur: {blur} }},   // {n}")
+          f"dim: 1.00, blur: 0.0 }},   // {n}")
 print("];")
 print(f"// 크기 {min(sizes):.0f}~{max(sizes):.0f}vw")

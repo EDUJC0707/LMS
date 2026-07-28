@@ -28,6 +28,8 @@
     --glow:#A5A9DD;                   /* 궤적·별밭(field.js GLOW 와 동일) */
     --chip:#131427;                   /* 버튼 면 */
     --line:rgba(120,126,215,.26);     /* 테두리도 같은 색상각에서 */
+    --t1:#676BA1;                     /* 헤드라인 1행 — 휘도 110 */
+    --t2:#F0F1FA;                     /* 헤드라인 2행 */
     --pad:clamp(20px, 4.5vw, 72px);
     --nav:64px;
   }
@@ -78,15 +80,14 @@
      아니라 개체별 스칼라로 옮겨 화면에 남는 경계선을 모티프 실루엣뿐으로 만든다.
      피크 렌더휘도 68 < 헤드라인 110 — 배경이 전경보다 어두워야 위계가 선다. */
   .field{ position:absolute; inset:0; z-index:0; overflow:hidden; contain:paint }
-  .dots, .wash, .trail{ position:absolute; pointer-events:none; display:block }
-  .dots, .trail{ inset:0 }
-  .trail{ mix-blend-mode:screen }   /* 검정 위에서 점이 빛으로 읽힌다. DOM 순서상 모티프 위 */
-  .wash{ left:0; top:0 }            /* 크기·margin 은 JS 가 감쇠 기준거리로 계산 */
+  .dust, .wash{ position:absolute; pointer-events:none; display:block }
+  .dust{ inset:0; mix-blend-mode:screen }   /* 검정 위에서 먼지가 빛으로 읽힌다 */
+  .wash{ left:0; top:0 }            /* 크기·margin 은 JS 가 창 반경으로 계산 */
   .motifs{ position:absolute; inset:0; pointer-events:none }
 
   .big{
     position:absolute; width:var(--size); aspect-ratio:1;
-    /* 바닥값 0 — 빛이 닿지 않은 곳은 아예 없다(사용자 지시 2026-07-28) */
+    /* 바닥값 0 — 먼지가 걷히지 않은 곳에는 아무것도 없다(사용자 지시 2026-07-28) */
     opacity:0;
     transform:translate(-50%,-50%);
   }
@@ -107,8 +108,9 @@
      덩어리로 읽히게 한다 — 자간을 조이지 않으면 커질수록 흩어져 보인다. */
   h1{
     font-weight:900;
-    font-size:clamp(3rem, 7.6vw, 7rem);
-    line-height:.98;
+    /* 2026-07-28: 30% 작게. 히어로의 무게중심을 글자에서 배경으로 옮긴다 */
+    font-size:clamp(2.1rem, 5.3vw, 4.9rem);
+    line-height:1.14;                     /* 두 줄 사이를 벌렸다 */
     letter-spacing:-.045em;
     word-break:keep-all;
     text-shadow:0 0 72px #000, 0 0 30px rgba(8,8,19,.95);
@@ -116,15 +118,18 @@
   h1 span{ display:block }
   /* 두 행 모두 배경과 같은 색상각(H236 네이비)이다. 1행은 물러서고 2행이 앞에 선다.
      1행 휘도 110 — 배경 피크 68 보다 높아야 위계가 무너지지 않는다. */
-  h1 .t1{ color:#676BA1 }
-  h1 .t2{ color:#F0F1FA }
+  h1 .t1{ color:var(--t1) }
+  h1 .t2{ color:var(--t2) }
 
   /* 강사 — 우측, 바닥에 선다. 100% 불투명이다.
      하단 페이드 마스크를 걷어냈다 — 부분 투명도 투명이고, 인물이 흐려지면
      배경 모티프와 같은 층으로 읽힌다. 뒤로 모티프가 지나가지도 않는다. */
   .teacher{
-    position:absolute; right:9%; bottom:0; z-index:1;
-    height:min(88svh, 900px); width:auto;
+    /* 2026-07-28: 원본 대비 -25%+10% = 0.73배, 오른쪽에서 9%.
+       tune.html 슬라이더로 맞춘 값이다 — 바꾸면 pack-layout.py 도 다시 돌려야 한다
+       (강사 왼쪽 경계가 모티프 금지선이므로). */
+    position:absolute; right:var(--teacher-right, 9%); bottom:0; z-index:1;
+    height:min(var(--teacher-h, 73svh), 742px); width:auto;
     object-fit:contain; object-position:bottom right;
     pointer-events:none; user-select:none;
     opacity:1;
@@ -236,7 +241,7 @@
     .navL nav{ display:none }
     .hero{ grid-template-columns:1fr; align-content:center; padding-bottom:32svh }
     .copy{ max-width:none }
-    .teacher{ height:44svh; right:-14% }   /* 모바일도 불투명 */
+    .teacher{ height:var(--teacher-h-sm, 36svh); right:var(--teacher-right-sm, -14%) }
     .step{ grid-template-columns:1fr; gap:.5rem }
     .step-no{ padding-top:0 }
     .tbl .hide-sm{ display:none }
@@ -265,7 +270,7 @@
 </div>
 
 <header class="hero">
-  <!-- 모티프 10개. 커서가 지나간 곳만 드러난다 -->
+  <!-- 먼지밭 + 모티프 10개. 바람이 먼지를 걷어낸 자리에서만 모티프가 나온다 -->
   <div class="field" id="field" aria-hidden="true"></div>
 
   <div class="copy">
