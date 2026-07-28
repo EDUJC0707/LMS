@@ -307,15 +307,39 @@ export interface GradeReport {
 
 /* ── /api/student/clinic ──────────────────────────────────────────── */
 
-export interface ClinicSlot {
+/**
+ * 시간 한 칸. 정원·잔여석은 계약에 없다 — 한 타임 1명 고정이라
+ * 잔여석이 늘 1이고, 그 사실은 `available` 하나로 전부 표현된다.
+ */
+export interface AvailabilityTime {
   slot_id: number;
-  weekday: number;
   start_time: string;
   end_time: string;
-  capacity: number;
-  next_date: string;
-  remaining: number;
-  is_full: boolean;
+  available: boolean;
+  /** 불가 사유. "마감" = 남이 찼다 · "내신청" = 내 활성 신청이 그 칸이다. */
+  reason: string | null;
+}
+
+export interface AvailabilityDay {
+  date: string;
+  /** 0=일 … 6=토 (JS Date.getDay() 와 같은 축). */
+  weekday: number;
+  times: AvailabilityTime[];
+}
+
+/**
+ * GET /api/student/clinic/availability?exam_id=&from=&to=
+ *
+ * ⚠ 쿼리 키는 `from`·`to` 다(`date_from` 아님 — clinic/views.py 실측).
+ * `days` 에는 **예약 가능한 날만** 담긴다: 지난 날짜·오전 8시 마감이 지난
+ * 당일·활성 슬롯이 없는 요일은 아예 빠진다. 그래서 달력은 "이 날짜가 days 에
+ * 있나"로만 생사를 판정한다 — 죽이는 규칙을 화면이 따로 갖지 않는다.
+ * 자격이 없거나 노쇼 제한이면 403 — 시간표 자체를 못 본다.
+ */
+export interface ClinicAvailability {
+  exam_id: number;
+  range: { from: string; to: string };
+  days: AvailabilityDay[];
 }
 
 export interface ClinicRequestRow {
@@ -330,13 +354,16 @@ export interface ClinicRequestRow {
   meet_url: string | null;
 }
 
+/**
+ * GET /api/student/clinic?exam_id= — 자격 판정과 내 신청 현황만.
+ * 시간표는 여기 없다(→ ClinicAvailability).
+ */
 export interface ClinicPayload {
   exam: { exam_id: number; name: string; exam_date: string };
+  /** reason 은 대상이 아닐 때만: 결석 · 미응시 · 평균이상. */
   eligibility: { is_target: boolean; reason: string | null };
   clinic_banned: boolean;
   my_requests: ClinicRequestRow[];
-  /** 대상자가 아니면 슬롯 목록 자체가 내려오지 않는다(상태 기반 노출). */
-  slots?: ClinicSlot[];
 }
 
 /* ── /api/student/workbook ────────────────────────────────────────── */

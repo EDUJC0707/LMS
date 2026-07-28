@@ -1,16 +1,24 @@
 /**
- * 학생 클리닉 신청 — PRD 3.2.4
- *   GET   /api/student/clinic?exam_id=
- *   POST  /api/student/clinic/requests            {exam_id, slot_id, requested_date}
- *   PATCH /api/student/clinic/requests/{id}       {slot_id, requested_date}
+ * 학생 클리닉 예약 — 캘린들리형 2단 분할 (PRD 3.2.4)
+ *
+ *   GET   /api/student/clinic?exam_id=                          자격 · 내 신청
+ *   GET   /api/student/clinic/availability?exam_id=&from=&to=   날짜별 가용 시간
+ *   POST  /api/student/clinic/requests           {exam_id, slot_id, requested_date}
+ *   PATCH /api/student/clinic/requests/{id}      {slot_id, requested_date}
  *   POST  /api/student/clinic/requests/{id}/cancel
  *
- * 상태 기반 노출: 대상자가 아니면 서버가 slots 자체를 안 내려준다 → 신청 UI 를
- * 회색으로 두는 게 아니라 화면에 만들지 않는다.
- * 규칙 위반(마감·당일 8시·노쇼 제한·중복)은 서버가 문장으로 돌려주므로
- * 그 문장을 그대로 사람에게 보여준다(우리가 다시 쓰지 않는다).
+ * 좌 = 날짜(달력) · 우 = 그 날의 시간. 날짜를 고르고 시간 하나를 고르면
+ * 그 칸이 반으로 접히면서 옆에 실행 버튼이 선다(캘린들리의 확인 제스처).
+ *
+ * 이 화면이 지키는 규칙은 하나다 — **정원·잔여석을 글자로 쓰지 않는다.**
+ * 한 타임에 한 명이라 남은 자리는 늘 1이고, 그 사실은 칸의 생사로만 말한다:
+ * 살아 있는 면 / 취소선 그어진 죽은 면 / 내 자리.
+ *
+ * 규칙(마감·당일 8시·중복·노쇼 제한)은 전부 API 가 강제한다. 화면은 자격이
+ * 없으면 시간표를 **부르지 않고**(availability 는 403), 실패하면 서버가 준
+ * 문장을 고쳐 쓰지 않고 그대로 보여준다.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { http, useApi, useApiAction } from "../../api";
 import {
@@ -22,30 +30,251 @@ import {
   ErrorState,
   Loading,
   Modal,
-  Radio,
   ScopeBar,
   Select,
   StatusBadge,
-  Table,
 } from "../../components";
 import {
+  AvailabilityTime,
+  ClinicAvailability,
   ClinicPayload,
   ClinicRequestRow,
-  ClinicSlot,
   GradeList,
+  WEEKDAY_LABELS,
+  currentMonth,
   dayLabel,
-  weekdayName,
+  monthGrid,
+  monthLabel,
+  shiftMonth,
 } from "./lib";
-import "./student.css";
+import "./clinic.css";
 
 /** 변경·취소가 가능한 상태(백엔드 ACTIVE_STATUSES 와 동일). */
 const ACTIVE = ["대기", "승인배정"];
 
+/** 로컬 오늘(UTC 파싱으로 하루 밀리지 않게 직접 만든다). */
+function todayIso(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+function monthOf(iso: string): string {
+  return iso.slice(0, 7);
+}
+
+/** 그 달의 1일~말일. 서버가 과거 쪽을 오늘로 잘라 주므로 그대로 보낸다. */
+function monthRange(month: string): { from: string; to: string } {
+  const [year, monthNo] = month.split("-").map(Number);
+  const last = new Date(year, monthNo, 0).getDate();
+  return { from: `${month}-01`, to: `${month}-${String(last).padStart(2, "0")}` };
+}
+
+function Chevron({ dir }: { dir: "left" | "right" }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d={dir === "left" ? "M10 3.5 5.5 8l4.5 4.5" : "M6 3.5 10.5 8 6 12.5"}
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/* ═══ 좌 · 달력 ═══════════════════════════════════════════════════════
+   "이 날짜가 days 에 있나"로만 생사를 판정한다 — 지난 날·8시 지난 오늘·
+   슬롯 없는 요일을 죽이는 로직을 화면이 따로 갖지 않는다(계약이 곧 그림). */
+
+function MonthCalendar({
+  month,
+  open,
+  selected,
+  onMonth,
+  onSelect,
+  busy,
+}: {
+  month: string;
+  open: Set<string>;
+  selected: string | null;
+  onMonth: (delta: number) => void;
+  /** 없으면 달력은 읽기 전용이다(예약 후 — 내 날짜만 가리킨다). */
+  onSelect?: (date: string) => void;
+  busy: boolean;
+}) {
+  const today = todayIso();
+  const cells = monthGrid(month).flat();
+
+  return (
+    <div className="cl-cal">
+      <div className="cl-cal__head">
+        <p className="cl-cal__month">{monthLabel(month)}</p>
+        <button
+          type="button"
+          className="cl-nav"
+          aria-label="이전 달"
+          disabled={month <= currentMonth()}
+          onClick={() => onMonth(-1)}
+        >
+          <Chevron dir="left" />
+        </button>
+        <button type="button" className="cl-nav" aria-label="다음 달" onClick={() => onMonth(1)}>
+          <Chevron dir="right" />
+        </button>
+      </div>
+
+      <div className={`cl-cal__grid${busy ? " cl-busy" : ""}`}>
+        {WEEKDAY_LABELS.map((label) => (
+          <div className="cl-cal__wd" key={label}>
+            {label}
+          </div>
+        ))}
+        {cells.map((iso, index) => {
+          if (iso === null) return <div className="cl-day" key={`pad-${index}`} />;
+          const isOpen = open.has(iso);
+          const isOn = selected === iso;
+          const clickable = isOpen && onSelect !== undefined;
+          return (
+            <div className="cl-day" key={iso}>
+              <button
+                type="button"
+                className={[
+                  "cl-day__btn",
+                  isOpen ? "cl-day__btn--open" : "",
+                  isOn ? "cl-day__btn--on" : "",
+                  iso === today ? "cl-day__btn--today" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                disabled={!clickable}
+                aria-pressed={clickable ? isOn : undefined}
+                onClick={clickable ? () => onSelect(iso) : undefined}
+              >
+                {Number(iso.slice(8))}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ═══ 우 · 그 날의 시간 ═══════════════════════════════════════════════ */
+
+function TimeColumn({
+  date,
+  times,
+  picked,
+  pending,
+  changingFrom,
+  busy,
+  onPick,
+  onConfirm,
+  onBack,
+}: {
+  date: string | null;
+  times: AvailabilityTime[];
+  picked: number | null;
+  pending: boolean;
+  /** 변경 중이면 "어디서 옮기는 중인지"가 스크롤해도 남는다. */
+  changingFrom: ClinicRequestRow | null;
+  busy: boolean;
+  onPick: (slotId: number | null) => void;
+  onConfirm: (time: AvailabilityTime) => void;
+  onBack: () => void;
+}) {
+  return (
+    <div className="cl-times">
+      {changingFrom && (
+        <div className="cl-from">
+          <span>변경 전</span>
+          <span className="cl-from__when">
+            {dayLabel(changingFrom.requested_date)}{" "}
+            <span className="num">{changingFrom.requested_time}</span>
+          </span>
+          <Button size="sm" variant="ghost" className="cl-from__back" onClick={onBack}>
+            돌아가기
+          </Button>
+        </div>
+      )}
+
+      {date === null ? (
+        <p className="cl-times__none">열려 있는 시간이 없습니다</p>
+      ) : (
+        <>
+          <p className="cl-times__head">{dayLabel(date)}</p>
+          <div className={`cl-times__list${busy ? " cl-busy" : ""}`}>
+            {times.map((time) => {
+              if (picked === time.slot_id) {
+                return (
+                  <div className="cl-slot" key={time.slot_id}>
+                    <button
+                      type="button"
+                      className="cl-time cl-time--picked"
+                      aria-pressed="true"
+                      onClick={() => onPick(null)}
+                    >
+                      {time.start_time}
+                    </button>
+                    <Button
+                      variant="primary"
+                      className="cl-slot__go"
+                      loading={pending}
+                      onClick={() => onConfirm(time)}
+                    >
+                      {changingFrom ? "변경" : "신청"}
+                    </Button>
+                  </div>
+                );
+              }
+              const mine = !time.available && time.reason === "내신청";
+              return (
+                <div className="cl-slot" key={time.slot_id}>
+                  <button
+                    type="button"
+                    className={[
+                      "cl-time",
+                      !time.available && !mine ? "cl-time--dead" : "",
+                      mine ? "cl-time--mine" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    disabled={!time.available}
+                    onClick={time.available ? () => onPick(time.slot_id) : undefined}
+                  >
+                    {time.start_time}
+                    {mine ? (
+                      <span className="cl-time__tag">내 신청</span>
+                    ) : (
+                      !time.available && <span className="sr-only">{time.reason}</span>
+                    )}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ═══ 화면 ═══════════════════════════════════════════════════════════ */
+
 export default function StudentClinicPage() {
   const [examId, setExamId] = useState<number | null>(null);
-  const [changing, setChanging] = useState<ClinicRequestRow | null>(null);
+  /** null = 아직 학생이 달을 넘기지 않았다 → 신청이 있으면 그 달을 연다. */
+  const [month, setMonth] = useState<string | null>(null);
+  const [day, setDay] = useState<string | null>(null);
+  const [picked, setPicked] = useState<number | null>(null);
+  const [changing, setChanging] = useState(false);
   const [cancelling, setCancelling] = useState<ClinicRequestRow | null>(null);
-  const [pickedSlot, setPickedSlot] = useState<number | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const [nudged, setNudged] = useState(false);
 
   const grades = useApi(() => http.get<GradeList>("/student/grades").then((r) => r.data), []);
   const exams = grades.data?.exams ?? [];
@@ -61,55 +290,108 @@ export default function StudentClinicPage() {
     [effectiveExamId],
   );
 
-  const book = useApiAction(async (slot: ClinicSlot) => {
+  // useApi 는 재조회 중에도 직전 data 를 들고 있다. 회차를 바꾸면 새 판정이
+  // 도착하기 전까지 옛 회차의 is_target 이 남아, 대상이 아닌 회차로도
+  // availability 가 한 번 나가 403 을 맞는다(자격 없는 회차에서 시간표를
+  // 부르지 않는다는 계약 위반). 판정은 **이 회차의 것일 때만** 유효로 친다.
+  const judged = clinic.data?.exam.exam_id === effectiveExamId ? clinic.data : null;
+
+  // 자격이 없거나 노쇼 제한이면 availability 는 403 이다 — 부르지 않는다.
+  const canBook = Boolean(judged && judged.eligibility.is_target && !judged.clinic_banned);
+  const active = judged?.my_requests.find((row) => ACTIVE.includes(row.status)) ?? null;
+
+  // 열 달은 렌더 중에 정한다 — 효과로 뒤늦게 바꾸면 이번 달을 한 번 부르고
+  // 곧바로 신청한 달을 다시 부른다(두 번 왕복 + 엉뚱한 달이 한 프레임 보인다).
+  const shownMonth = month ?? (active ? monthOf(active.requested_date) : currentMonth());
+  const range = monthRange(shownMonth);
+
+  const avail = useApi(
+    () =>
+      effectiveExamId === null || !canBook
+        ? Promise.resolve(null)
+        : http
+            .get<ClinicAvailability>("/student/clinic/availability", {
+              params: { exam_id: effectiveExamId, from: range.from, to: range.to },
+            })
+            .then((r) => r.data),
+    [effectiveExamId, canBook, shownMonth],
+  );
+
+  // useApiAction 의 run 은 첫 렌더의 클로저를 붙든다(useApi.ts 주석 참조).
+  // 시험 번호와 재조회는 ref 로 최신값을 넘긴다 — 안 그러면 회차를 바꾼 뒤
+  // 예전 회차로 신청이 나간다.
+  const latest = useRef({ examId: effectiveExamId, refresh: async () => {} });
+  latest.current.examId = effectiveExamId;
+  latest.current.refresh = async () => {
+    await Promise.all([clinic.reload(), avail.reload()]);
+  };
+
+  const book = useApiAction(async (date: string, time: AvailabilityTime) => {
     await http.post("/student/clinic/requests", {
-      exam_id: effectiveExamId,
-      slot_id: slot.slot_id,
-      requested_date: slot.next_date,
+      exam_id: latest.current.examId,
+      slot_id: time.slot_id,
+      requested_date: date,
     });
-    await clinic.reload();
+    setDone(`신청했습니다 — ${dayLabel(date)} ${time.start_time}`);
+    setPicked(null);
+    await latest.current.refresh();
   });
 
-  const change = useApiAction(async (row: ClinicRequestRow, slot: ClinicSlot) => {
-    await http.patch(`/student/clinic/requests/${row.clinic_id}`, {
-      slot_id: slot.slot_id,
-      requested_date: slot.next_date,
-    });
-    await clinic.reload();
-    setChanging(null);
-  });
+  const change = useApiAction(
+    async (row: ClinicRequestRow, date: string, time: AvailabilityTime) => {
+      await http.patch(`/student/clinic/requests/${row.clinic_id}`, {
+        slot_id: time.slot_id,
+        requested_date: date,
+      });
+      setDone(
+        `변경했습니다 — ${dayLabel(row.requested_date)} ${row.requested_time} → ` +
+          `${dayLabel(date)} ${time.start_time}`,
+      );
+      setChanging(false);
+      setPicked(null);
+      await latest.current.refresh();
+    },
+  );
 
   const cancel = useApiAction(async (row: ClinicRequestRow) => {
     await http.post(`/student/clinic/requests/${row.clinic_id}/cancel`);
-    await clinic.reload();
+    setDone(`취소했습니다 — ${dayLabel(row.requested_date)} ${row.requested_time}`);
     setCancelling(null);
+    setChanging(false);
+    await latest.current.refresh();
   });
 
-  // 모달을 새로 열 때마다 이전 에러·선택을 지운다.
+  const days = avail.data?.days ?? [];
+
+  // 응답이 바뀌면 고른 날짜를 다시 맞춘다 — 없어진 날에 머무르지 않고,
+  // 처음 들어왔을 때 오른쪽 열이 비어 있지 않도록 가장 빠른 날을 연다.
   useEffect(() => {
-    if (changing) {
-      setPickedSlot(changing.slot_id);
-      change.clearError();
+    if (!avail.data) return;
+    const list = avail.data.days;
+    setDay((current) =>
+      current && list.some((entry) => entry.date === current) ? current : (list[0]?.date ?? null),
+    );
+    setPicked(null);
+  }, [avail.data]);
+
+  // 이번 달에 남은 날이 하나도 없으면(월말 진입) 다음 달을 한 번만 연다.
+  useEffect(() => {
+    if (nudged || !avail.data || avail.data.days.length > 0 || shownMonth !== currentMonth()) {
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [changing]);
+    setNudged(true);
+    setMonth(shiftMonth(shownMonth, 1));
+  }, [avail.data, nudged, shownMonth]);
 
-  useEffect(() => {
-    if (cancelling) cancel.clearError();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cancelling]);
-
-  const loading = grades.loading || clinic.loading;
-  const error = grades.error ?? clinic.error;
-
-  if (loading) {
-    return <Loading label="신청 가능한 시간대를 불러오는 중…" />;
+  if (grades.initialLoading || clinic.initialLoading) {
+    return <Loading label="클리닉을 불러오는 중…" />;
   }
 
-  if (error) {
+  const loadError = grades.error ?? clinic.error;
+  if (loadError) {
     return (
       <ErrorState
-        description={error}
+        description={loadError}
         onRetry={() => {
           void grades.reload();
           void clinic.reload();
@@ -118,39 +400,166 @@ export default function StudentClinicPage() {
     );
   }
 
-  const data = clinic.data;
-
-  if (!data) {
+  if (!clinic.data && !clinic.loading) {
     return (
-      // 빈 상태는 제 여백(48px)을 갖고 있다 — 카드 여백을 겹쳐 얹지 않는다.
       <Card padding="none">
         <EmptyState title="아직 클리닉을 신청할 시험이 없습니다" />
       </Card>
     );
   }
 
-  const slots = data.slots ?? [];
-  const active = data.my_requests.filter((row) => ACTIVE.includes(row.status));
-  // 신청 버튼을 회색으로 남기지 않는다 — 지금 신청할 수 없는 이유를 문장으로 말하고
-  // 버튼 자체를 화면에서 뺀다(PRD §4 상태 기반 노출).
-  const blocked: string | null = data.clinic_banned
-    ? "신청이 제한된 상태입니다"
-    : active.length > 0
-      ? "이미 신청한 클리닉이 있습니다"
-      : null;
+  // 카드 머리는 고른 회차를 곧바로 따른다 — 판정 응답을 기다리면 회차를 바꾼
+  // 뒤에도 제목만 옛 회차로 남아 선택 상자와 어긋난다.
+  const chosen = exams.find((exam) => exam.exam_id === effectiveExamId) ?? null;
 
-  // 대상 시험은 이 화면 전체의 범위다(아래 두 카드가 통째로 바뀐다) → ScopeBar.
-  // 회차가 하나뿐이면 고를 게 없으므로 시험 이름만 카드 옆에 둔다.
-  const multipleExams = exams.length > 1;
+  // 노쇼 제한 + 남은 신청도 없음 → 이 회차에 보여줄 판이 없다. 시간표는 403 이라
+  // 달력을 세워 봐야 전부 죽은 칸이고, 우측 열은 "열려 있는 시간이 없습니다"라는
+  // 틀린 말을 하게 된다(시간이 없는 게 아니라 계정이 막힌 것). 위의 경고 한 줄이
+  // 이미 전부이므로 카드를 접는다.
+  const blocked = Boolean(judged?.clinic_banned) && active === null;
+
+  const times = days.find((entry) => entry.date === day)?.times ?? [];
+  const busy = avail.loading && !avail.initialLoading;
+  const openDates = new Set(days.map((entry) => entry.date));
+  // 종료 시각은 신청 응답에 없다 — 시간표에서 같은 슬롯을 찾아 붙인다.
+  const activeEnd = active
+    ? (days
+        .flatMap((entry) => entry.times)
+        .find((time) => time.slot_id === active.slot_id)?.end_time ?? null)
+    : null;
+
+  const startChange = () => {
+    if (!active) return;
+    change.clearError();
+    setDone(null);
+    setPicked(null);
+    setDay(active.requested_date);
+    setChanging(true);
+  };
+
+  const confirm = (time: AvailabilityTime) => {
+    if (day === null) return;
+    setDone(null);
+    if (changing && active) void change.run(active, day, time);
+    else void book.run(day, time);
+  };
+
+  const body = () => {
+    // 회차를 막 바꿨다 — 옛 회차의 판정으로 그리면 대상이 아닌 회차에
+    // 달력이 한 프레임 서고, 그 사이 availability 가 나간다.
+    if (!judged) {
+      return <Loading label="클리닉을 불러오는 중…" />;
+    }
+    if (!judged.eligibility.is_target) {
+      return (
+        <EmptyState
+          title="이번 회차는 클리닉 대상이 아닙니다"
+          description={
+            judged.eligibility.reason ? (
+              <Badge tone="neutral">{judged.eligibility.reason}</Badge>
+            ) : undefined
+          }
+        />
+      );
+    }
+    if (avail.initialLoading) {
+      return <Loading label="예약 가능한 시간을 불러오는 중…" />;
+    }
+    if (avail.error) {
+      return <ErrorState description={avail.error} onRetry={avail.reload} />;
+    }
+
+    const booked = active !== null && !changing;
+
+    return (
+      <div className="cl-split">
+        <MonthCalendar
+          month={shownMonth}
+          open={booked && active ? new Set([active.requested_date]) : openDates}
+          selected={booked && active ? active.requested_date : day}
+          onMonth={(delta) => setMonth(shiftMonth(shownMonth, delta))}
+          onSelect={
+            booked
+              ? undefined
+              : (date) => {
+                  setDay(date);
+                  setPicked(null);
+                }
+          }
+          busy={busy}
+        />
+
+        {booked && active ? (
+          <div className="cl-booked">
+            <div className="cl-booked__card">
+              <StatusBadge status={active.status} />
+              <p className="cl-booked__day">{dayLabel(active.requested_date)}</p>
+              <p className="cl-booked__time">
+                {active.requested_time}
+                {activeEnd ? ` – ${activeEnd}` : ""}
+              </p>
+              {active.meet_url && (
+                <div className="cl-booked__link">
+                  <a
+                    className="ui-btn ui-btn--primary ui-btn--sm"
+                    href={active.meet_url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    클리닉 입장
+                  </a>
+                </div>
+              )}
+            </div>
+            <div className="cl-booked__acts">
+              {!judged.clinic_banned && (
+                <Button size="sm" onClick={startChange}>
+                  시간 변경
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => setCancelling(active)}>
+                취소
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <TimeColumn
+            date={day}
+            times={times}
+            picked={picked}
+            pending={book.pending || change.pending}
+            changingFrom={changing ? active : null}
+            busy={busy}
+            onPick={(slotId) => {
+              // 새로 고르기 시작하면 직전 결과 문장은 시효가 끝난다.
+              setDone(null);
+              setPicked(slotId);
+            }}
+            onConfirm={confirm}
+            onBack={() => {
+              setChanging(false);
+              setPicked(null);
+              change.clearError();
+            }}
+          />
+        )}
+      </div>
+    );
+  };
 
   return (
     <>
-      {multipleExams && (
+      {exams.length > 1 && (
         <ScopeBar>
           <Select
             aria-label="대상 시험 선택"
             value={effectiveExamId ?? ""}
-            onChange={(event) => setExamId(Number(event.target.value))}
+            onChange={(event) => {
+              setExamId(Number(event.target.value));
+              setChanging(false);
+              setPicked(null);
+              setDone(null);
+            }}
           >
             {exams.map((exam) => (
               <option key={exam.exam_id} value={exam.exam_id}>
@@ -162,208 +571,34 @@ export default function StudentClinicPage() {
       )}
 
       <div className="ui-stack">
-        {data.clinic_banned && (
-          <Alert tone="warning">노쇼 누적으로 클리닉 신청이 제한된 상태입니다</Alert>
+        {judged?.clinic_banned && <Alert tone="warning">클리닉 신청이 제한된 계정입니다</Alert>}
+
+        {done && (
+          <Alert tone="success" onClose={() => setDone(null)}>
+            {done}
+          </Alert>
         )}
 
-        {!data.eligibility.is_target ? (
-          <Card title={data.exam.name} aside={data.exam.exam_date} padding="none">
-            <EmptyState
-              title="이번 회차는 클리닉 대상이 아닙니다"
-              description={data.eligibility.reason ?? undefined}
-            />
-          </Card>
-        ) : (
-          <Card
-            title="신청 가능한 시간대"
-            aside={multipleExams ? undefined : data.exam.name}
-            padding="none"
-          >
-            {(book.error || blocked) && (
-              <div style={{ padding: "var(--space-md) var(--space-lg)" }}>
-                {book.error ? (
-                  <Alert tone="danger" onClose={book.clearError}>
-                    {book.error}
-                  </Alert>
-                ) : (
-                  <Alert tone="info">{blocked}</Alert>
-                )}
-              </div>
-            )}
-            <Table<ClinicSlot>
-              rows={slots}
-              rowKey={(row) => row.slot_id}
-              caption="신청 가능한 클리닉 시간대"
-              empty="열려 있는 시간대가 없습니다"
-              columns={[
-                {
-                  key: "when",
-                  header: "요일 · 시간",
-                  cell: (row) => (
-                    <>
-                      <span style={{ fontWeight: "var(--weight-medium)" }}>
-                        {weekdayName(row.weekday)}요일 {row.start_time}~{row.end_time}
-                      </span>
-                      <span
-                        style={{
-                          display: "block",
-                          fontSize: "var(--text-xs)",
-                          color: "var(--color-muted)",
-                        }}
-                      >
-                        가장 가까운 날짜 {dayLabel(row.next_date)}
-                      </span>
-                    </>
-                  ),
-                },
-                {
-                  key: "remaining",
-                  header: "남은 자리",
-                  align: "right",
-                  numeric: true,
-                  sortValue: (row) => row.remaining,
-                  cell: (row) => `${row.remaining} / ${row.capacity}`,
-                },
-                {
-                  key: "action",
-                  header: "",
-                  align: "right",
-                  width: "8rem",
-                  cell: (row) => {
-                    if (row.is_full) return <Badge tone="neutral">마감</Badge>;
-                    if (blocked) return null;
-                    return (
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        loading={book.pending}
-                        onClick={() => void book.run(row)}
-                      >
-                        신청
-                      </Button>
-                    );
-                  },
-                },
-              ]}
-            />
-          </Card>
+        {book.error && (
+          <Alert tone="danger" onClose={book.clearError}>
+            {book.error}
+          </Alert>
         )}
 
-        <Card title="내 신청 현황" aside={`${data.my_requests.length}건`} padding="none">
-          <Table<ClinicRequestRow>
-            rows={data.my_requests}
-            rowKey={(row) => row.clinic_id}
-            caption="내 클리닉 신청 현황"
-            empty="신청한 클리닉이 없습니다"
-            columns={[
-              {
-                key: "when",
-                header: "일시",
-                cell: (row) => (
-                  <>
-                    <span style={{ fontWeight: "var(--weight-medium)" }}>
-                      {dayLabel(row.requested_date)}
-                    </span>
-                    <span className="num" style={{ marginLeft: "var(--space-xs)" }}>
-                      {row.requested_time}
-                    </span>
-                  </>
-                ),
-              },
-              {
-                key: "status",
-                header: "상태",
-                width: "8rem",
-                cell: (row) => <StatusBadge status={row.status} />,
-              },
-              {
-                key: "link",
-                header: "미트 링크",
-                cell: (row) =>
-                  row.meet_url ? (
-                    <a href={row.meet_url} target="_blank" rel="noreferrer">
-                      클리닉 입장하기
-                    </a>
-                  ) : row.status === "승인배정" ? (
-                    <span style={{ color: "var(--color-muted)" }}>시작 5분 전에 열립니다</span>
-                  ) : (
-                    <span style={{ color: "var(--color-neutral)" }}>—</span>
-                  ),
-              },
-              {
-                key: "action",
-                header: "",
-                align: "right",
-                width: "11rem",
-                cell: (row) =>
-                  ACTIVE.includes(row.status) ? (
-                    <span className="ui-row" style={{ justifyContent: "flex-end" }}>
-                      {!data.clinic_banned && slots.length > 0 && (
-                        <Button size="sm" onClick={() => setChanging(row)}>
-                          시간 변경
-                        </Button>
-                      )}
-                      <Button size="sm" variant="ghost" onClick={() => setCancelling(row)}>
-                        취소
-                      </Button>
-                    </span>
-                  ) : null,
-              },
-            ]}
-          />
-        </Card>
+        {change.error && (
+          <Alert tone="danger" onClose={change.clearError}>
+            {change.error}
+          </Alert>
+        )}
+
+        {!blocked && (
+          <Card title={chosen?.name ?? ""} aside={chosen?.exam_date} padding="none">
+            {body()}
+          </Card>
+        )}
       </div>
 
-      {/* 시간 변경 — 모달 안의 실패는 모달 안 Alert 로(토스트는 backdrop 아래로 가려진다) */}
-      <Modal
-        open={changing !== null}
-        onClose={() => setChanging(null)}
-        title="클리닉 시간 변경"
-        footer={
-          <>
-            <Button onClick={() => setChanging(null)}>닫기</Button>
-            <Button
-              variant="primary"
-              loading={change.pending}
-              onClick={() => {
-                const slot = slots.find((s) => s.slot_id === pickedSlot);
-                if (changing && slot) void change.run(changing, slot);
-              }}
-            >
-              이 시간으로 변경
-            </Button>
-          </>
-        }
-      >
-        {/* 실패 알림과 목록이 맞붙지 않게 한 겹으로 쌓는다(모달 안 여백 = 24px 대칭). */}
-        <div className="ui-stack ui-stack--md">
-          {change.error && <Alert tone="danger">{change.error}</Alert>}
-          <fieldset className="st-slotpick">
-            <legend className="sr-only">변경할 시간대 선택</legend>
-            {slots.map((slot) => (
-              <Radio
-                key={slot.slot_id}
-                name="clinic-slot"
-                checked={pickedSlot === slot.slot_id}
-                disabled={slot.is_full}
-                onChange={() => setPickedSlot(slot.slot_id)}
-                label={
-                  <>
-                    {weekdayName(slot.weekday)}요일 {slot.start_time} · {dayLabel(slot.next_date)}
-                    <span style={{ color: "var(--color-muted)" }}>
-                      {" "}
-                      남은 자리 {slot.remaining}
-                      {slot.is_full ? " (마감)" : ""}
-                    </span>
-                  </>
-                }
-              />
-            ))}
-          </fieldset>
-        </div>
-      </Modal>
-
-      {/* 취소 — 되돌릴 수 없으므로 확인을 받는다 */}
+      {/* 취소는 되돌릴 수 없다 — 확인을 받는다. */}
       <Modal
         open={cancelling !== null}
         onClose={() => setCancelling(null)}
@@ -387,11 +622,8 @@ export default function StudentClinicPage() {
           {cancel.error && <Alert tone="danger">{cancel.error}</Alert>}
           {cancelling && (
             <p>
-              <b>
-                {dayLabel(cancelling.requested_date)}{" "}
-                <span className="num">{cancelling.requested_time}</span>
-              </b>{" "}
-              클리닉 신청을 취소합니다.
+              {dayLabel(cancelling.requested_date)}{" "}
+              <b className="num">{cancelling.requested_time}</b>
             </p>
           )}
         </div>

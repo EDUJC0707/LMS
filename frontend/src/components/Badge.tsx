@@ -21,6 +21,7 @@ const TONE_BY_STATUS: Record<string, BadgeTone> = {
   완료: "success",
   등록: "success",
   배정: "success",
+  승인배정: "success", // 클리닉 신청 상태(ClinicRequest.Status.APPROVED) 원문
   지각: "warning",
   대기: "warning",
   보류: "warning",

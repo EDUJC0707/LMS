@@ -1,0 +1,387 @@
+/* Hallmark · component: 클리닉 예약(캘린들리형 2단 분할) · genre: modern-minimal
+ * theme: 앱 시스템(styles/tokens.css) 그대로 — 새 색·새 폰트·새 반경 0건
+ * states: default · hover · focus-visible · active · disabled · loading · error · success
+ * pre-emit critique: P5 H5 E4 S5 R5 V4
+ *
+ * 이 파일의 규칙 한 줄: **정원·잔여석을 글자로 쓰지 않는다.**
+ * 한 타임에 한 명이라 남은 자리는 늘 1이고, 그 사실은 칸의 생사(살아 있는 면 /
+ * 죽은 면)로만 말한다. student.css 와 클래스 접두사를 분리한다(cl-).
+ */
+
+/* ═══ 2단 분할 ═══════════════════════════════════════════════════════
+   좌 = 날짜(달력) · 우 = 그 날의 시간. 캘린들리 이벤트 페이지의 골격. */
+
+.cl-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 17.5rem;
+}
+
+.cl-split > * + * {
+  border-left: 1px solid var(--color-rule-2);
+}
+
+/* ═══ 좌 · 달력 ══════════════════════════════════════════════════════ */
+
+.cl-cal {
+  min-width: 0;
+  padding: var(--space-lg);
+}
+
+.cl-cal__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  margin-bottom: var(--space-md);
+}
+
+.cl-cal__month {
+  margin-right: auto;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-snug);
+  color: var(--color-ink);
+}
+
+.cl-nav {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-sm);
+  color: var(--color-ink-2);
+  transition:
+    background-color var(--dur-micro) var(--ease-out),
+    color var(--dur-micro) var(--ease-out);
+}
+
+.cl-nav:hover:not(:disabled) {
+  background: var(--color-paper-3);
+  color: var(--color-ink);
+}
+
+.cl-nav:disabled {
+  color: var(--color-neutral);
+  cursor: default;
+}
+
+.cl-cal__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--space-2xs);
+}
+
+.cl-cal__wd {
+  padding-bottom: var(--space-xs);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.cl-day {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+}
+
+/* 날짜 칸 — 살아 있는 날만 면을 갖는다. 죽은 날은 배경 없이 글자만 흐리게.
+   "예약할 수 있는 날이 몇 개인가"를 세는 대신 눈으로 보게 하는 장치다. */
+.cl-day__btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  max-width: 2.75rem; /* 44px — 터치 하한 */
+  aspect-ratio: 1;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+  color: var(--color-neutral);
+  cursor: default;
+  transition:
+    background-color var(--dur-micro) var(--ease-out),
+    color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+.cl-day__btn:focus-visible {
+  border-radius: var(--radius-pill);
+}
+
+.cl-day__btn--open {
+  background: var(--color-accent-faint);
+  color: var(--color-accent);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.cl-day__btn:disabled {
+  cursor: default;
+}
+
+.cl-day__btn--open:hover:not(:disabled) {
+  background: var(--color-accent-soft);
+  border-color: var(--color-navy-200);
+}
+
+.cl-day__btn--on {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-ink);
+  font-weight: var(--weight-medium);
+}
+
+.cl-day__btn--on:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+/* 오늘 — 글자를 덧붙이지 않고 점 하나로 표시한다. */
+.cl-day__btn--today::after {
+  content: "";
+  position: absolute;
+  bottom: 0.3125rem;
+  width: 3px;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+/* ═══ 우 · 그 날의 시간 ═══════════════════════════════════════════════ */
+
+.cl-times {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: var(--space-lg);
+}
+
+.cl-times__head {
+  margin-bottom: var(--space-md);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-snug);
+  color: var(--color-ink);
+}
+
+.cl-times__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.cl-slot {
+  display: flex;
+  gap: var(--space-2xs);
+}
+
+.cl-time {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 3.25rem;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-md);
+  background: var(--color-paper);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-snug);
+  transition:
+    background-color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out),
+    color var(--dur-micro) var(--ease-out),
+    transform var(--dur-micro) var(--ease-out);
+}
+
+.cl-time:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  background: var(--color-accent-faint);
+}
+
+.cl-time:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* 남이 가져간 칸 — 면이 죽고 취소선이 그어진다. 그게 "마감"이라는 문장을
+   대신한다. 색만으로 구분하지 않도록 취소선 + 아주 옅은 빗금을 겹친다. */
+.cl-time--dead {
+  border-color: transparent;
+  background-color: var(--color-paper-3);
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 9px,
+    var(--color-rule) 9px 10px
+  );
+  color: var(--color-neutral);
+  text-decoration: line-through;
+  cursor: default;
+}
+
+/* 내 활성 신청이 차지한 칸 — 죽은 게 아니라 "여기가 내 자리"다. */
+.cl-time--mine {
+  border-color: var(--color-navy-200);
+  background: var(--color-accent-faint);
+  color: var(--color-accent);
+  cursor: default;
+}
+
+/* 고른 칸 — 캘린들리처럼 반으로 접히고 옆에 실행 버튼이 선다.
+   고른 칸은 '연면 + 테두리'(칩), 실행 버튼은 '네이비 채움'(솔리드)으로
+   채움 방식 자체를 갈라 놓는다. 명도만 다르면 두 칸이 한 덩어리로 읽힌다. */
+.cl-time--picked {
+  flex: 0 1 45%;
+  border: 2px solid var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-navy-700);
+}
+
+.cl-slot__go {
+  flex: 1 1 55%;
+  min-width: 0;
+  min-height: 3.25rem;
+}
+
+/* 시각은 칸 정중앙에 두고 꼬리표만 절대배치로 뺀다 —
+   꼬리표가 흐름에 끼면 그 행만 중심축이 왼쪽으로 밀린다. */
+.cl-time__tag {
+  position: absolute;
+  right: var(--space-sm);
+  font-family: var(--font-sans);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-normal);
+  letter-spacing: 0;
+  color: var(--color-muted);
+  text-decoration: none;
+}
+
+.cl-times__none {
+  padding: var(--space-2xl) 0;
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+  text-align: center;
+}
+
+/* 변경 중 — 어디서 옮기는 중인지가 스크롤해도 남는다. */
+.cl-from {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+  padding-bottom: var(--space-sm);
+  margin-bottom: var(--space-md);
+  border-bottom: 1px solid var(--color-rule-2);
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.cl-from__when {
+  color: var(--color-ink-2);
+}
+
+.cl-from__back {
+  margin-left: auto;
+}
+
+/* ═══ 예약 후 패널 ═══════════════════════════════════════════════════ */
+
+.cl-booked {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+}
+
+.cl-booked__card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  border: 1px solid var(--color-navy-200);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-faint);
+}
+
+.cl-booked__day {
+  font-size: var(--text-sm);
+  color: var(--color-ink-2);
+}
+
+.cl-booked__time {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-snug);
+  color: var(--color-navy-700);
+}
+
+/* 미트 링크는 앵커지만 1차 액션이다 — 버튼 규칙을 그대로 입히고
+   앵커 기본 밑줄만 끈다. */
+.cl-booked__link {
+  margin-top: var(--space-2xs);
+}
+
+.cl-booked__link a:hover {
+  text-decoration: none;
+}
+
+.cl-booked__acts {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.cl-booked__acts > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* ═══ 재조회 중 ══════════════════════════════════════════════════════
+   달 이동은 화면을 로딩으로 갈지 않는다 — 바뀌는 면만 잠깐 물러난다. */
+
+.cl-busy {
+  opacity: 0.45;
+  pointer-events: none;
+  transition: opacity var(--dur-short) var(--ease-out);
+}
+
+/* ═══ 좁은 폭 ════════════════════════════════════════════════════════ */
+
+@media (max-width: 47.5rem) {
+  .cl-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cl-split > * + * {
+    border-left: 0;
+    border-top: 1px solid var(--color-rule-2);
+  }
+
+  .cl-cal,
+  .cl-times,
+  .cl-booked {
+    padding: var(--space-md);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-day__btn,
+  .cl-time,
+  .cl-nav,
+  .cl-busy {
+    transition-duration: 0.01ms;
+  }
+
+  .cl-time:active:not(:disabled) {
+    transform: none;
+  }
+}
