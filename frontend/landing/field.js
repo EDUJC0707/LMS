@@ -19,31 +19,32 @@ const R = {
   dotGlow: 260,     // 포인터 주변에서 점이 밝아지는 반경
 };
 
-/* 거대한 배치. 값은 히어로 기준 %(중심점)와 vw(크기).
-   겹쳐도 된다 — 마스크가 어차피 일부만 드러내므로 오히려 층이 생긴다.
-   nav(상단 64px)를 피해 y는 18% 아래에서 시작한다. */
+/* 배치는 pack-layout.py 가 계산한다 — 손으로 잡지 않는다.
+   잉크(알파)만으로 충돌을 판정하므로 DNA 처럼 성긴 형태는 더 크게 들어간다.
+   금지구역은 헤드라인과 nav 뿐이고, 강사 뒤는 지나가도 된다.
+   순서는 data.js 의 UNITS 와 1:1로 맞아야 한다. */
 const LAYOUT = [
-  { x: 18, y: 46, size: 46 },
-  { x: 44, y: 30, size: 38 },
-  { x: 70, y: 44, size: 52 },
-  { x: 33, y: 74, size: 44 },
-  { x: 58, y: 84, size: 40 },
-  { x: 86, y: 70, size: 46 },
-  { x: 8, y: 86, size: 36 },
-  { x: 92, y: 28, size: 34 },
-  { x: 52, y: 56, size: 30 },
+  { x: 61, y: 82, size: 21 },   // atom
+  { x: 73, y: 33, size: 26 },   // dna
+  { x: 35, y: 85, size: 19 },   // mitochondria
+  { x: 52, y: 22, size: 18 },   // chloroplast
+  { x: 82, y: 66, size: 22 },   // synapse
+  { x: 9,  y: 22, size: 17 },   // population
+  { x: 13, y: 83, size: 17 },   // element
+  { x: 27, y: 23, size: 16 },   // tectonics
+  { x: 89, y: 34, size: 18 },   // universe
 ];
 
 const LAYOUT_SM = [
-  { x: 22, y: 24, size: 74 },
-  { x: 72, y: 18, size: 62 },
-  { x: 16, y: 52, size: 66 },
-  { x: 76, y: 48, size: 70 },
-  { x: 30, y: 78, size: 72 },
-  { x: 82, y: 80, size: 58 },
-  { x: 50, y: 36, size: 54 },
-  { x: 50, y: 94, size: 60 },
-  { x: 6, y: 68, size: 50 },
+  { x: 34, y: 63, size: 33 },   // atom
+  { x: 74, y: 77, size: 41 },   // dna
+  { x: 30, y: 17, size: 29 },   // mitochondria
+  { x: 69, y: 93, size: 28 },   // chloroplast
+  { x: 22, y: 89, size: 34 },   // synapse
+  { x: 16, y: 74, size: 27 },   // population
+  { x: 83, y: 27, size: 27 },   // element
+  { x: 69, y: 62, size: 25 },   // tectonics
+  { x: 62, y: 15, size: 28 },   // universe
 ];
 
 const isSmall = () => matchMedia('(max-width: 860px)').matches;
