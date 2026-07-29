@@ -29,6 +29,12 @@
    404 가 나고 배경이 통째로 안 뜬다.
    여기 SPACE 에는 **큰 벌 경로만** 적는다 — 두 벌을 다 적으면 반드시 어긋난다.
 
+   **`use: true` 인 것이 실제로 깔린다.** 없으면 배경이 안 뜬다 — 지금까지 디버그
+   패널을 열어야만 켜졌다. 하나만 표시한다(둘이면 첫 번째).
+
+   **zoom 은 여기가 원본이다.** 사진마다 비율이 달라 한 값으로는 못 맞춘다.
+   생략하면 1(= cover 그대로). 확정: 고양이눈만 0.9, 나머지는 1(2026-07-29).
+
    원본 PNG 는 지웠다(2026-07-29 사용자 확인). 커밋 d825758 · 7d060e2 에 있다.
 
    영상은 걷어냈다 — 먼지가 이미 움직이는데 배경까지 움직이면 싸운다. 배선
@@ -36,7 +42,7 @@
    쓴다. 잘라 둔 루프 둘은 커밋 408a809 에 있다. */
 export const SPACE = [
   { key: 'carina',  label: '카리나 성운',   src: 'assets/space/carina.webp' },
-  { key: 'catseye', label: '고양이눈 성운', src: 'assets/space/catseye.webp' },
+  { key: 'catseye', label: '고양이눈 성운', src: 'assets/space/catseye.webp', zoom: 0.9 },
   { key: 'ngc1333', label: 'NGC 1333',      src: 'assets/space/ngc1333.webp' },
   { key: 'solar',   label: '태양계',        src: 'assets/space/solar-system.webp' },
 ];

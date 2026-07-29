@@ -40,9 +40,11 @@ const CFG = {
 
   /* 우주 — 커서 자리에서만 드러난다. 창은 먼지가 쓰는 **바로 그것**이다.
      따로 만들면 둘이 미묘하게 어긋나 "왜 여기는 걷혔는데 안 보이지" 가 된다. */
-  spaceDim: 0.55,    // 창 한복판에서의 불투명도
-  spaceWin: 3.0,     // R 의 몇 배까지 그릴까. 가우시안은 3R 에서 1% 라 거기서 끊는다
-  spaceZoom: 1.0,    // cover 배율에 곱한다. 사진마다 따로 기억한다(debug.js)
+  spaceDim: 1.0,     // 창 한복판에서의 불투명도. 확정(2026-07-29)
+  spaceWin: 1.5,     // R 의 몇 배까지 그릴까. 확정(2026-07-29) — 1.5R = 135px.
+                     // 가우시안은 1.5R 에서 32% 라 가장자리가 뚝 끊기지 않는다
+  spaceZoom: 1.0,    // cover 배율에 곱한다. **사진마다 다르다** — data.js SPACE 의
+                     // zoom 이 원본이고, 배경을 갈아 끼울 때 여기로 들어온다
 
   /* 손전등 — 모티프가 드러나는 범위. 아주 작다 */
   flash: 0.062,      // 반경 = min(W,H) × 이 값 (900 → 56px)
@@ -440,8 +442,9 @@ export function mountField(root, units) {
     refit() { fit(); statics.forEach(f => f()); },
     /* 배경 갈아 끼우기. 확장자로 사진/영상을 가른다.
        빈 값이면 우주가 없어진다(= 검정). 캔버스도 같이 지운다. */
-    space(src) {
+    space(src, zoom) {
       if (!spaceCv) return;
+      CFG.spaceZoom = zoom ?? 1;
       if (!src) {
         spaceEl = null;
         if (srcVid) { srcVid.pause(); srcVid.removeAttribute('src'); srcVid.load(); }

@@ -14,7 +14,7 @@
 
 /* 저장 키에 버전을 붙인다. 기본값이 바뀔 때 키를 올리면 옛 저장값이 자동으로
    버려진다 — 안 그러면 코드를 고쳐도 화면은 옛 값 그대로라 한참 헤맨다. */
-const LS = 'hjc-debug-v13';
+const LS = 'hjc-debug-v14';
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 /* 코드에 박힌 값. 첫 open 때 한 번만 뜬다 — 닫았다 열 때마다 뜨면 그때의
@@ -204,10 +204,12 @@ export function openDebug() {
   const setSpace = (src, name) => {
     if (src && src.startsWith('blob:')) { S.space = ''; S.spaceName = name || '(로컬 파일)'; }
     else { S.space = src || ''; S.spaceName = ''; }
-    // 사진마다 줌이 다르다 — 바꿀 때 그 사진 것을 불러온다
+    /* 줌의 원본은 data.js 의 SPACE 다. 패널에서 만진 값이 있으면 그게 이기고,
+       없으면 확정값을 쓴다 — 코드가 기준이고 패널은 그 위에 얹히는 임시값이다. */
     S.zoomOf = S.zoomOf || {};
-    S.spaceZoom = S.zoomOf[S.space] ?? 1;
-    window.__field?.space?.(src || '');
+    const entry = SPACE.find(s => s.src === S.space);
+    S.spaceZoom = S.zoomOf[S.space] ?? entry?.zoom ?? 1;
+    window.__field?.space?.(src || '', S.spaceZoom);
     save();
     apply();
   };
