@@ -287,7 +287,7 @@ export function mountField(root, units) {
     pyN = clamp01((e.clientY - r.top) / r.height);
     idle = 0;
     if (!FINE) {
-      FINE = true; wgt = 1;                // 첫 마우스 입력에서 인계 — 깜빡이지 않게
+      FINE = true;                         // wgt 는 건드리지 않는다 — 0 에서 서서히 오른다
       // 첫 자리로 **순간이동**한다. 중앙에서 끌려오면 지나온 자리가 쓸려 보인다
       sx = fx = pxN; sy = fy = pyN;
       lx = pxN; ly = pyN;
@@ -311,8 +311,9 @@ export function mountField(root, units) {
     let tx, ty;
     if (FINE) {
       idle += dt;
-      // 2.5초 정지하면 바람이 잦아든다. 켜질 때 빠르고 꺼질 때 느리다
-      wgt = clamp01(wgt + (idle < 2.5 ? 3.0 : -0.9) * dt);
+      /* 2.5초 정지하면 잦아든다. 오르는 속도 3.0 → 1.3 으로 늦췄다(2026-07-29):
+         3.0 이면 0.33초 만에 만개해 "번쩍" 하고 나타났다. 1.3 이면 0.77초. */
+      wgt = clamp01(wgt + (idle < 2.5 ? 1.3 : -0.9) * dt);
       fx += (pxN - fx) * (1 - Math.exp(-9.0 * dt));
       fy += (pyN - fy) * (1 - Math.exp(-9.0 * dt));
       tx = fx; ty = fy;
@@ -347,11 +348,15 @@ export function mountField(root, units) {
        exp(-d²/R2) 를 방사 그라디언트로 근사한다(R2 = 2R²). 3R 에서 1% 라 거기서 끊고,
        그 사각형만 건드린다 — 화면 전체를 매 프레임 다시 그리지 않는다. */
     if (sctx) {
-      const win = CFG.spaceWin * R, pad = 2;
+      /* 창은 **열리듯 자란다.** 알파만 올리면 360px 짜리 원반이 통째로 밝아져
+         "번쩍" 으로 읽힌다. 40% 에서 시작해 100% 로 벌어지면 "펼쳐진다" 가 된다.
+         smoothstep 을 먹여 시작과 끝의 가속을 눕힌다 — 선형이면 끝에서 뚝 선다. */
+      const grow = wgt * wgt * (3 - 2 * wgt);
+      const win = CFG.spaceWin * R * (0.4 + 0.6 * grow), pad = 2;
       const rect = [SX - win - pad, SY - win - pad, 2 * (win + pad), 2 * (win + pad)];
       if (prevSpaceRect) sctx.clearRect(...prevSpaceRect);
       sctx.clearRect(...rect);
-      const ready = wgt > .004 && spaceEl && (spaceEl.tagName === 'IMG'
+      const ready = grow > .002 && spaceEl && (spaceEl.tagName === 'IMG'
         ? spaceEl.complete && spaceEl.naturalWidth
         : spaceEl.readyState >= 2);
       if (ready) {
@@ -362,7 +367,7 @@ export function mountField(root, units) {
            끝을 0 으로 맞춰 두면 어디서도 경계선이 생기지 않는다. */
         for (const [q, v] of [[0, 1], [.167, .882], [.333, .607], [.5, .325],
                               [.667, .135], [.833, .044], [1, 0]])
-          g.addColorStop(q, `rgba(255,255,255,${(v * CFG.spaceDim * wgt).toFixed(4)})`);
+          g.addColorStop(q, `rgba(255,255,255,${(v * CFG.spaceDim * grow).toFixed(4)})`);
         sctx.fillStyle = g;
         sctx.fillRect(...rect);
         sctx.globalCompositeOperation = 'source-in';
