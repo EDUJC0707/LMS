@@ -34,6 +34,16 @@ primary_region = "nrt"     # 도쿄
   min_machines_running = 1
   processes = ["web"]
 
+  # 한 머신이 동시에 받을 양. **기본값은 soft 20 / hard 없음**이라, 설정하지 않으면
+  # 머신이 "그만 받겠다"고 말할 수단이 없다 — 20을 넘어도 계속 받아 큐만 쌓이고,
+  # gunicorn 워커 3개가 다 물리면 전체가 멈춘다.
+  # 지금 워커는 sync 3개라 진짜 동시 처리량이 3이다. soft 6에서 분산을 시작하고
+  # hard 12에서 끊는다 — 넘치면 느려지다 죽는 대신 빨리 실패한다.
+  [http_service.concurrency]
+    type       = "requests"
+    soft_limit = 6
+    hard_limit = 12
+
   [[http_service.checks]]
     method = "GET"
     path = "/healthz"
