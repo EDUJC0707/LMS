@@ -289,7 +289,9 @@ class AnswerSheet(models.Model):
     )
     scan_image_path = models.CharField("스캔 파일 경로", max_length=500)
     recognized_unique_id = models.CharField(  # noqa: DJ001
-        "인식된 원번", max_length=10, null=True, blank=True
+        # 폭은 students.unique_id 와 같이 간다 — 원번이 `{학년}{이름}{뒷4}` 가 되면서
+        # (2026-07-29 개정) 옛 5자리 전제의 10자로는 긴 이름 학생을 담지 못한다.
+        "인식된 원번", max_length=30, null=True, blank=True
     )
     recognized_name = models.CharField("인식된 이름", max_length=50, null=True, blank=True)  # noqa: DJ001
     match_status = models.CharField("대조 상태", max_length=20, choices=MatchStatus.choices)
@@ -660,7 +662,9 @@ class WorkbookSubmission(models.Model):
         "수행도", max_length=1, choices=PerformanceGrade.choices, null=True, blank=True
     )
     recognized_unique_id = models.CharField(  # noqa: DJ001
-        "인식된 원번", max_length=10, null=True, blank=True
+        # 폭은 students.unique_id 와 같이 간다 — 원번이 `{학년}{이름}{뒷4}` 가 되면서
+        # (2026-07-29 개정) 옛 5자리 전제의 10자로는 긴 이름 학생을 담지 못한다.
+        "인식된 원번", max_length=30, null=True, blank=True
     )
     recognized_name = models.CharField("인식된 이름", max_length=50, null=True, blank=True)  # noqa: DJ001
     match_status = models.CharField(  # noqa: DJ001

@@ -93,6 +93,7 @@ baseline 컬럼 유지(`student_id` PK, `user_id` FK·UQ, `unique_id` 원번·�
 | withdrawn_by | BIGINT | FK users, NULL | 퇴원 처리자(담임/관리자) |
 
 - 마이그레이션: `enrollment_status` 백필 = `is_registered=true→등록`, `false→예비등록`. 확정 후 `is_registered` 폐기(expand-contract). 원번(`unique_id`)은 이름과 함께 쓰는 매칭키로 **단독 UNIQUE 아님** 유지, PK는 `student_id` 유지.
+- **원번 규칙 개정(2026-07-29)**: `unique_id` = `{학년1자리}{이름}{휴대폰 뒷4자리}`(예 `3김하늘4821`) — 이름이 들어가면서 **VARCHAR(20) → VARCHAR(30)** 확장(`accounts.0003`). 값은 관리자 입력이 아니라 파생값이고 준거는 `backend/apps/accounts/unique_id.py` 하나다. **학년이 오르면 값이 바뀐다**(가변 — `manage.py promote_grade`). 반면 `student_id`·`users.login_id` 는 불변(PRD 3.1.1 식별자 3종 표).
 - **퇴원 위치 결정**: 퇴원은 학생 생애주기 상태이므로 `students`에 단일 저장(SSOT). 출결 화면에서 퇴원 액션을 노출하되 `attendances.status`에 `퇴원` 값을 두지 않음(회차별 출결과 학생상태 분리 → 이중모델 방지).
 
 #### ✏️ `parents` (변경) — 연락처 → 계정
@@ -229,7 +230,7 @@ baseline(`id` PK, `sheet_id` FK, `question_id` FK, `marked`, `result`, `is_corre
 | image_path | VARCHAR(500) | NN | 워크북 마지막 페이지 사진(스토리지). 수기 코멘트는 OCR 대상 아님(사진 그대로 노출) |
 | admin_original_text | TEXT | NULL | 관리용 원본 텍스트칸(조교 정서, 학생당 1개) |
 | performance_grade | CHAR(1) | NULL | 수행도 ABC 도장(A/B/C) |
-| recognized_unique_id | VARCHAR(10) | NULL | OCR 인식된 원번(지면 인쇄 기입칸 — 조교가 기입) **(2026-07-22 추가)** |
+| recognized_unique_id | VARCHAR(30) | NULL | OCR 인식된 원번(지면 인쇄 기입칸 — 조교가 기입) **(2026-07-22 추가)**. **폭 10 → 30 (2026-07-29)** — 원번에 이름이 들어가면서 `students.unique_id` 와 같은 폭으로 맞춤(`grades.0004`, `answer_sheets` 동일 컬럼도 함께) |
 | recognized_name | VARCHAR(50) | NULL | OCR 인식된 이름 **(2026-07-22 추가)** |
 | match_status | VARCHAR(20) | NULL | `자동매칭`/`수동확정`/`불일치`/`인식실패` — answer_sheets 대조 패턴 재사용. NULL=OCR 파이프라인 밖(수동 지정 업로드 병행) **(2026-07-22 추가)** |
 | uploaded_by | BIGINT | FK users, NULL | 업로드 조교 |

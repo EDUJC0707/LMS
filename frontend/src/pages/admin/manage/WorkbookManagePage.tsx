@@ -465,12 +465,14 @@ function MatchCard({
             <div className="ui-stack ui-stack--sm pm-actionblock">
               <Field label="사진에 적힌 원번">
                 {(props) => (
+                  // 원번은 2026-07-29 개정으로 이름이 섞인 값이다(`3김하늘4821`) —
+                  // 숫자 키패드(inputMode="numeric")로는 칠 수 없어서 뗐다. 서버 대조
+                  // (`workbook_admin.apply_recognition`)도 아직 원번 전체를 비교한다.
                   <Input
                     {...props}
                     value={uniqueId}
                     onChange={(e) => setUniqueId(e.target.value)}
-                    placeholder="26001"
-                    inputMode="numeric"
+                    placeholder="3김하늘4821"
                   />
                 )}
               </Field>

@@ -90,6 +90,18 @@ def phone_tail4(phone) -> str:
     return digits[-_PHONE_TAIL:]
 
 
+def student_phone_tail4(phone, parent_phone="") -> str:
+    """학생의 뒷4자리 — 본인 번호 우선, 없으면 학부모 번호(8-3 무전화 학생).
+
+    아이디와 **원번(`unique_id.py`)이 공유하는 규칙**이라 여기 한 곳에 둔다 —
+    두 모듈이 각자 "번호가 없으면 학부모 번호" 를 구현하면 언젠가 갈린다.
+    """
+    source = phone if _has_digits(phone) else parent_phone
+    if not _has_digits(source):
+        raise LoginIdError("학생 또는 학부모의 휴대폰 번호가 필요합니다.")
+    return phone_tail4(source)
+
+
 def person_base(name, phone) -> str:
     """사람 아이디의 원형 = 정규화 이름 + 뒷4자리 (충돌 미해소)."""
     return f"{normalize_name(name)}{phone_tail4(phone)}"
@@ -109,10 +121,8 @@ def resolve_collision(base, is_taken=None) -> str:
 
 def issue_student_login_id(name, phone, parent_phone="", is_taken=None) -> str:
     """학생 아이디 — 본인 휴대폰 뒷4자리, 없으면 학부모 번호 뒷4자리(8-4)."""
-    source = phone if _has_digits(phone) else parent_phone
-    if not _has_digits(source):
-        raise LoginIdError("학생 또는 학부모의 휴대폰 번호가 필요합니다.")
-    return resolve_collision(person_base(name, source), is_taken)
+    tail = student_phone_tail4(phone, parent_phone)  # 번호 판정이 이름 정규화보다 먼저
+    return resolve_collision(f"{normalize_name(name)}{tail}", is_taken)
 
 
 def issue_parent_login_id(student_login_id, is_taken=None) -> str:

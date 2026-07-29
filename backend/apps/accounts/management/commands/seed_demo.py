@@ -36,6 +36,7 @@ from apps.accounts.login_id import (
     issue_student_login_id,
 )
 from apps.accounts.models import Parent, ParentStudent, StaffFeatureGrant, Student, User
+from apps.accounts.unique_id import build_unique_id
 from apps.boards.models import AbsenceCounseling, ParentCounselRequest, Post, PostComment
 from apps.clinic.models import (
     ClinicEligibility,
@@ -82,6 +83,10 @@ _GIVEN = [
     "나윤", "선우", "채원", "정민", "유나", "태윤", "세아", "준서", "예준", "다인",
 ]
 _SCHOOLS = ["세화고", "반포고", "서문여고", "상문고", "숙명여고"]
+# 학년을 섞는 이유: 원번 앞자리가 학년이라(unique_id 모듈) 한 학년만 두면
+# 화면에서 원번을 봐도 학년이 반영된 건지 알 수 없다. 승급 커맨드 시연도
+# 고3(다음 학년 없음)이 섞여 있어야 성립한다.
+_GRADES = ["고1", "고2", "고3"]
 _UNITS = [
     ("역학", "등가속도 운동", "등가속도"),
     ("역학", "운동량과 충격량", "운동량 보존"),
@@ -196,12 +201,14 @@ class Command(BaseCommand):
         """학생 30(등록 28·예비등록 29/30번) + 학부모 10(자녀 1~2명).
 
         아이디는 login_id 모듈 산출값 그대로 — 학생 `{이름}{뒷4자리}`,
-        학부모 `{최초 연결 자녀 아이디}p`(8-4 개정).
+        학부모 `{최초 연결 자녀 아이디}p`(8-4 개정). 원번도 손으로 만들지 않고
+        unique_id 모듈 산출값 그대로다 — `{학년}{이름}{뒷4자리}`(2026-07-29 개정).
         """
         students = []
         for i in range(1, 31):
             name = _SURNAMES[(i - 1) % 10] + _GIVEN[i - 1]
             phone = f"010{10000000 + i:08d}"  # 01010000001 ~ 01010000030
+            grade = _GRADES[(i - 1) % 3]
             user = self._make_user(
                 issue_student_login_id(name, phone), User.Role.STUDENT, name, phone
             )
@@ -209,8 +216,8 @@ class Command(BaseCommand):
             students.append(
                 Student.objects.create(
                     user=user,
-                    unique_id=f"26{i:03d}",
-                    grade="고2",
+                    unique_id=build_unique_id(grade, name, phone),
+                    grade=grade,
                     school=_SCHOOLS[(i - 1) % 5],
                     current_class="수요반" if i % 2 else "토요반",
                     enrollment_status=(

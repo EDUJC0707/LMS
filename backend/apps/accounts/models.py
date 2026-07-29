@@ -110,6 +110,10 @@ class Student(models.Model):
       담고, D-1 배치는 랜덤 비밀번호 발급·SMS 발송·credentials_sent_at 스탬프만
       담당한다. (학부모는 parents.name/phone이 있어 사람 행 선행이 그대로 성립.)
     - unique_id(원번)는 이름과 함께 쓰는 매칭키라 단독 UNIQUE가 아니다(인덱스만).
+      값은 손입력이 아니라 (학년, 이름, 휴대폰)에서 계산되는 **파생값**이고
+      규칙은 `unique_id.py` 가 유일 준거다(2026-07-29 확정). 학년이 원번의
+      일부이므로 **승급하면 원번이 바뀐다** — 반면 student_id·login_id는 불변.
+      길이 30은 규칙의 최대치(학년 1 + 정규화 이름 20 + 뒷4자리 4 = 25)를 담는다.
     - 등록 생애주기는 enrollment_status 단일 상태(soft-delete). is_registered 없음.
     """
 
@@ -128,7 +132,7 @@ class Student(models.Model):
         related_name="student",
         verbose_name="로그인 계정",
     )
-    unique_id = models.CharField("원번", max_length=20, db_index=True)
+    unique_id = models.CharField("원번", max_length=30, db_index=True)
     grade = models.CharField("학년", max_length=20, blank=True, default="")
     school = models.CharField("학교", max_length=100, blank=True, default="")
     registered_at = models.DateTimeField("등록 처리 시각", null=True, blank=True)

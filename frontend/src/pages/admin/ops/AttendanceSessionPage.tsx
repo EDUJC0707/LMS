@@ -231,10 +231,10 @@ export default function AttendanceSessionPage() {
 
   const columns: Column<RosterStudent>[] = [
     {
+      // 원번은 2026-07-29 개정으로 이름이 섞인 값이 됐다(`3김하늘4821`) — 숫자 열이
+      // 아니므로 numeric(모노·우측정렬)을 걸지 않고, 6rem 고정폭도 뗐다(줄바꿈됐다).
       key: "unique_id",
       header: "원번",
-      numeric: true,
-      width: "6rem",
       sortValue: (r) => r.unique_id,
       cell: (r) => r.unique_id,
     },

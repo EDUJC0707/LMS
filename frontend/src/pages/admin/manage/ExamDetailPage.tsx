@@ -175,9 +175,9 @@ export default function ExamDetailPage() {
               cell: (row) => row.name,
             },
             {
+              // 원번은 이름이 섞인 값이라(2026-07-29 개정) 숫자 열이 아니다.
               key: "unique_id",
               header: "원번",
-              numeric: true,
               sortValue: (row) => row.unique_id,
               cell: (row) => row.unique_id,
             },

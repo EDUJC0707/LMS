@@ -21,6 +21,7 @@ from .login_id import (
     normalize_name,
     person_base,
     phone_tail4,
+    student_phone_tail4,
 )
 from .models import User
 
@@ -74,6 +75,23 @@ class PhoneTailTests(SimpleTestCase):
     def test_empty_rejected(self):
         with self.assertRaises(LoginIdError):
             phone_tail4("")
+
+
+class StudentPhoneTailTests(SimpleTestCase):
+    """학생 뒷4자리 선택 규칙 — 원번(unique_id 모듈)이 이 함수를 그대로 재사용한다."""
+
+    def test_own_phone_used(self):
+        self.assertEqual(student_phone_tail4("01012344821", "01099990000"), "4821")
+
+    def test_parent_phone_used_when_student_has_none(self):
+        self.assertEqual(student_phone_tail4("", "010-9999-4821"), "4821")
+
+    def test_blank_both_rejected(self):
+        with self.assertRaises(LoginIdError):
+            student_phone_tail4("", "")
+
+    def test_none_treated_as_missing(self):
+        self.assertEqual(student_phone_tail4(None, "01099994821"), "4821")
 
 
 class PersonBaseTests(SimpleTestCase):

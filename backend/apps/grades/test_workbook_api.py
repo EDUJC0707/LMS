@@ -30,6 +30,7 @@ from django.test import TestCase, override_settings
 
 from apps.accounts.features import FeatureKey
 from apps.accounts.models import Parent, ParentStudent, StaffFeatureGrant, User
+from apps.accounts.unique_id import build_unique_id
 
 from .models import Assignment, ClassSession, WorkbookSubmission
 from .test_grade_report_api import make_student, make_user
@@ -355,6 +356,29 @@ class WorkbookMatchTests(WorkbookFixtureMixin, TestCase):
         self.assertEqual(self.submission.match_status, MS.AUTO_MATCHED)
         self.assertEqual(self.submission.recognized_unique_id, "10002")
         self.assertEqual(self.submission.recognized_name, "이민준")
+
+    def test_auto_match_accepts_full_length_unique_id(self):
+        """인식 컬럼은 **원번이 가질 수 있는 길이**를 다 담아야 한다(2026-07-29 개정).
+
+        원번이 `{학년}{이름}{뒷4}` 가 되면서 이름 길이만큼 길어졌다. 화면이 보내는
+        값은 원번 전체(`workbook_admin.apply_recognition` 이 전체를 비교한다)이므로,
+        긴 이름 학생 한 명이 이 화면 전체를 500 으로 떨어뜨리면 안 된다.
+        """
+        long_name = "무하마드알리"  # 6자 → 원번 11자
+        student = make_student("stu-wb-long", long_name)
+        student.unique_id = build_unique_id("고3", long_name, "01012344821")
+        student.save(update_fields=["unique_id"])
+        self.assertGreater(len(student.unique_id), 10)
+
+        res = self.patch_match(
+            self.submission.pk,
+            {"recognized_unique_id": student.unique_id, "recognized_name": long_name},
+        )
+        self.assertEqual(res.status_code, 200)
+        self.submission.refresh_from_db()
+        self.assertEqual(self.submission.student_id, student.pk)
+        self.assertEqual(self.submission.match_status, MS.AUTO_MATCHED)
+        self.assertEqual(self.submission.recognized_unique_id, student.unique_id)
 
     def test_auto_match_strips_whitespace(self):
         res = self.patch_match(

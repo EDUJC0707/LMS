@@ -11,6 +11,7 @@ from django.db import IntegrityError
 from django.test import TestCase
 
 from apps.accounts.models import Student
+from apps.accounts.unique_id import build_unique_id
 
 from .models import (
     AnswerSheet,
@@ -153,6 +154,22 @@ class AnswerSheetTests(TestCase):
             set(AnswerSheet.MatchStatus.values),
             {"정상", "부분", "불일치", "미존재", "중복", "비정상"},
         )
+
+    def test_recognized_unique_id_holds_full_length_unique_id(self):
+        """인식 컬럼은 원번이 가질 수 있는 길이를 담아야 한다(2026-07-29 개정).
+
+        원번이 `{학년}{이름}{뒷4}` 가 되면서 이름 길이만큼 길어졌다 — 옛 5자리
+        전제로 잡힌 폭이면 긴 이름 학생의 답안지 인식 결과를 저장할 수 없다.
+        """
+        unique_id = build_unique_id("고3", "무하마드알리", "01012344821")
+        self.assertGreater(len(unique_id), 10)
+        sheet = AnswerSheet.objects.create(
+            exam=self.exam, scan_image_path="omr/2026/0722/002.jpg",
+            match_status=AnswerSheet.MatchStatus.MATCHED,
+            recognized_unique_id=unique_id, recognized_name="무하마드알리",
+        )
+        sheet.refresh_from_db()
+        self.assertEqual(sheet.recognized_unique_id, unique_id)
 
 
 class SheetAnswerTests(TestCase):

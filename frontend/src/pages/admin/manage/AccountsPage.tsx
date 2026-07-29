@@ -10,6 +10,9 @@
  * 화면 설계
  * - 명단은 엑셀에서 그대로 붙여넣는 게 현실이라 “붙여넣기 → 행 격자”가 기본이고,
  *   한두 명만 추가할 때를 위해 행을 직접 채울 수도 있다.
+ * - **원번 입력칸은 없다**(2026-07-29 개정). 원번은 학년·이름·휴대폰에서 서버가
+ *   계산하는 값이라 입력하면 그 행이 거절된다 — 대신 발급 결과 표에 실려 온다.
+ *   그래서 학년은 이제 사실상 필수 칸이다(비면 원번을 만들 수 없어 행이 실패).
  * - 전환 대기 목록은 **명부 API 가 기준**이다(예비등록으로 직접 조회). 출결 권한이
  *   있으면 그 위에 1주차 출석 여부를 얹어 판단 근거와 버튼을 같은 줄에 둔다 —
  *   출결 권한이 없어도 목록 자체는 비지 않는다.
@@ -49,7 +52,6 @@ interface EntryRow {
   name: string;
   phone: string;
   parent_phone: string;
-  unique_id: string;
   grade: string;
   school: string;
 }
@@ -60,7 +62,6 @@ const blankRow = (): EntryRow => ({
   name: "",
   phone: "",
   parent_phone: "",
-  unique_id: "",
   grade: "",
   school: "",
 });
@@ -69,7 +70,6 @@ const COLUMNS: { field: keyof Omit<EntryRow, "key">; label: string; placeholder:
   { field: "name", label: "이름", placeholder: "홍길동" },
   { field: "phone", label: "학생 휴대폰", placeholder: "01012345678" },
   { field: "parent_phone", label: "학부모 휴대폰", placeholder: "01087654321" },
-  { field: "unique_id", label: "원번", placeholder: "26901" },
   { field: "grade", label: "학년", placeholder: "고2" },
   { field: "school", label: "학교", placeholder: "세화고" },
 ];
@@ -92,17 +92,8 @@ function parsePasted(text: string): EntryRow[] {
     .filter((line) => line.length > 0)
     .map((line) => {
       const cells = line.split(/\t|,/).map((cell) => cell.trim());
-      const [name = "", phone = "", parentPhone = "", uniqueId = "", grade = "", school = ""] =
-        cells;
-      return {
-        ...blankRow(),
-        name,
-        phone,
-        parent_phone: parentPhone,
-        unique_id: uniqueId,
-        grade,
-        school,
-      };
+      const [name = "", phone = "", parentPhone = "", grade = "", school = ""] = cells;
+      return { ...blankRow(), name, phone, parent_phone: parentPhone, grade, school };
     });
 }
 
@@ -146,11 +137,18 @@ export default function AccountsPage() {
     const lines = result.results
       .filter((row) => row.status === "생성")
       .map((row) =>
-        [row.name ?? "", row.login_id ?? "", row.initial_password ?? ""].join("\t"),
+        [
+          row.name ?? "",
+          row.unique_id ?? "",
+          row.login_id ?? "",
+          row.initial_password ?? "",
+        ].join("\t"),
       );
     if (lines.length === 0) return;
     try {
-      await navigator.clipboard.writeText(`이름\t아이디\t초기 비밀번호\n${lines.join("\n")}`);
+      await navigator.clipboard.writeText(
+        `이름\t원번\t아이디\t초기 비밀번호\n${lines.join("\n")}`,
+      );
       toast.show(`${lines.length}명의 아이디·초기 비밀번호를 복사했습니다.`);
     } catch {
       toast.error("복사에 실패했습니다. 표에서 직접 선택해 복사해 주세요.");
@@ -216,14 +214,14 @@ export default function AccountsPage() {
 
           <DetailsPanel summary="엑셀에서 붙여넣기" aside="한 줄에 한 명">
             <div className="ui-stack ui-stack--sm">
-              <Field label="이름 · 학생 휴대폰 · 학부모 휴대폰 · 원번 · 학년 · 학교">
+              <Field label="이름 · 학생 휴대폰 · 학부모 휴대폰 · 학년 · 학교">
                 {(props) => (
                   <Textarea
                     {...props}
                     rows={6}
                     value={pasted}
                     onChange={(e) => setPasted(e.target.value)}
-                    placeholder={"홍길동\t01099990001\t01088880001\t26901\t고2\t세화고"}
+                    placeholder={"홍길동\t01099990001\t01088880001\t고2\t세화고"}
                   />
                 )}
               </Field>
@@ -289,6 +287,11 @@ export default function AccountsPage() {
                   ) : (
                     <Badge tone="danger">실패</Badge>
                   ),
+              },
+              {
+                key: "unique_id",
+                header: "원번",
+                cell: (row) => row.unique_id ?? "—",
               },
               {
                 key: "login_id",
@@ -475,7 +478,6 @@ function PreRegisteredPanel({
             {
               key: "unique_id",
               header: "원번",
-              numeric: true,
               sortValue: (row) => row.unique_id,
               cell: (row) => row.unique_id || "—",
             },

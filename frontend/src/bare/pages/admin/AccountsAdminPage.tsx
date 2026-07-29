@@ -5,10 +5,10 @@ import { FormEvent, useState } from "react";
 import { api, errMsg } from "../../api";
 import { Msg } from "../../ui";
 
-const PLACEHOLDER = `이름,휴대폰,학부모휴대폰,원번,학년,학교 — 한 줄에 한 명(빈 칸은 비워둠)
+const PLACEHOLDER = `이름,휴대폰,학부모휴대폰,학년,학교 — 한 줄에 한 명(빈 칸은 비워둠)
 예)
-홍길동,01099990001,01088880001,26901,고2,세화고
-김철수,,01088880002,26902,고2,반포고`;
+홍길동,01099990001,01088880001,고2,세화고
+김철수,,01088880002,고1,반포고`;
 
 export default function AccountsAdminPage() {
   const [text, setText] = useState("");
@@ -27,14 +27,14 @@ export default function AccountsAdminPage() {
       .map((line) => line.trim())
       .filter((line) => line.length > 0)
       .map((line) => {
-        const [name, phone, parentPhone, uniqueId, grade, school] = line
+        // 원번 칸은 없다 — 서버가 학년·이름·휴대폰에서 만든다(2026-07-29 개정).
+        const [name, phone, parentPhone, grade, school] = line
           .split(",")
           .map((cell) => cell.trim());
         return {
           name,
           phone: phone || "",
           parent_phone: parentPhone || "",
-          unique_id: uniqueId || "",
           grade: grade || "",
           school: school || "",
         };
@@ -64,11 +64,6 @@ export default function AccountsAdminPage() {
   return (
     <section>
       <h2>계정 일괄 발급</h2>
-      <p className="muted">
-        아이디=본인 휴대폰(무전화 학생은 학부모번호+접미사 a,b,…). 학부모 번호가 기존
-        학부모와 같으면 자녀 연결만 추가. 행 단위 실패 — 한 행이 중복이어도 나머지는
-        생성된다.
-      </p>
       <form onSubmit={submit}>
         <p>
           <textarea
@@ -93,6 +88,7 @@ export default function AccountsAdminPage() {
                 <th>행</th>
                 <th>이름</th>
                 <th>결과</th>
+                <th>원번</th>
                 <th>학생 아이디</th>
                 <th>초기 비밀번호(1회 노출)</th>
                 <th>학부모</th>
@@ -105,6 +101,7 @@ export default function AccountsAdminPage() {
                   <td>{row.index + 1}</td>
                   <td>{row.name ?? "-"}</td>
                   <td>{row.status}</td>
+                  <td>{row.unique_id ?? "-"}</td>
                   <td>{row.login_id ?? "-"}</td>
                   <td>{row.initial_password ?? "-"}</td>
                   <td>

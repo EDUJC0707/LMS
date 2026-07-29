@@ -5,6 +5,19 @@
 직접 만들지 않고 그 함수만 호출한다 — 규칙이 두 곳에 흩어지면 발급 경로마다
 아이디 체계가 갈린다.
 
+**원번도 같다 — `unique_id.py` 경유 파생값**(2026-07-29 확정). 원번은 더 이상
+명단의 입력 항목이 아니라 `{학년}{이름}{뒷4자리}` 계산값이다. 따라서:
+
+- 행에 `unique_id` 가 들어오면 **그 행을 실패**시킨다. 무시하면 호출자는 자기가
+  준 원번이 저장됐다고 믿는데, 실제로는 다른 값이 들어가고 확인할 방법도 없다 —
+  조용한 불일치보다 즉시 실패가 낫다. 전체 400 이 아니라 행 실패인 이유는 이
+  모듈의 실패 단위가 행이기 때문이고, 옛 서식을 통째로 붙여넣으면 모든 행이
+  같은 사유로 떠서 서식이 바뀐 사실이 그대로 드러나기 때문이다.
+- `grade` 는 사실상 **필수**가 됐다. 학년이 원번의 첫 자리인데 나중에 채워 넣을
+  경로(원번 수정 UI)가 없어서, 비면 OMR 로 못 찾는 학생이 조용히 생긴다.
+- 발급 결과에 `unique_id` 를 실어 보낸다 — 관리자가 OMR 답안지·워크북에 적을
+  값이라 발급 시점이 이 값을 확인하는 자리다.
+
 **행 단위 실패 판단(전체 롤백 아님)**: 명단은 엑셀 붙여넣기로 수십 행이
 한 번에 들어온다. 한 행의 중복·누락 때문에 전체를 롤백하면 관리자는 실패
 원인을 못 본 채 전량 재입력해야 한다 — 행마다 savepoint(중첩 atomic)를 걸어
@@ -24,6 +37,7 @@ from django.utils import timezone
 
 from .login_id import LoginIdError, issue_parent_login_id, issue_student_login_id
 from .models import Parent, ParentStudent, Student, User
+from .unique_id import UniqueIdError, build_unique_id
 
 # 혼동 문자(0/O/1/l/I) 제외 — SMS 로 받아 손으로 입력하는 비밀번호라
 # 시인성이 보안 엔트로피만큼 중요하다(최초 로그인 후 변경 강제가 안전망).
@@ -80,6 +94,8 @@ def _issue_row(row):
     """행 1건 처리 — 학생 User+Student 생성, 학부모 생성/연결. 실패는 RowError."""
     if not isinstance(row, dict):
         raise RowError("행 형식이 올바르지 않습니다.")
+    if str(row.get("unique_id") or "").strip():
+        raise RowError("원번은 학년·이름·휴대폰에서 자동으로 만들어집니다 — 입력할 수 없습니다.")
     name = row.get("name")
     if not (isinstance(name, str) and name.strip()):
         raise RowError("name이 필요합니다.")
@@ -88,16 +104,18 @@ def _issue_row(row):
     parent_phone = _clean_phone(row.get("parent_phone"))
     if not phone and not parent_phone:
         raise RowError("phone 또는 parent_phone이 필요합니다.")
+    grade = (row.get("grade") or "").strip()
 
     try:
         login_id = issue_student_login_id(name, phone, parent_phone)
-    except LoginIdError as exc:
+        unique_id = build_unique_id(grade, name, phone, parent_phone)
+    except (LoginIdError, UniqueIdError) as exc:
         raise RowError(str(exc)) from exc
     student_user, initial_password = _create_user(login_id, User.Role.STUDENT, name, phone)
     student = Student.objects.create(
         user=student_user,
-        unique_id=(row.get("unique_id") or "").strip(),
-        grade=(row.get("grade") or "").strip(),
+        unique_id=unique_id,
+        grade=grade,
         school=(row.get("school") or "").strip(),
     )
 
@@ -110,6 +128,7 @@ def _issue_row(row):
         "login_id": login_id,
         "initial_password": initial_password,
         "student_id": student.student_id,
+        "unique_id": student.unique_id,
         "parent": parent_block,
     }
 

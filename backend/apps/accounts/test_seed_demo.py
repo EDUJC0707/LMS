@@ -5,6 +5,8 @@
   전원 test1234 로그인 가능·must_change_password=False.
   아이디는 8-4 개정 규칙(login_id 모듈) 산출값과 일치해야 한다 —
   학생 `{이름}{뒷4자리}`, 학부모 `{자녀 아이디}p`, 직원 학생과 동일 축
+- 원번: unique_id 모듈 산출값과 일치(시드가 규칙을 우회하지 않는다) +
+  **학년이 고1·고2·고3 으로 섞여** 있어야 원번에 학년이 반영되는 것이 눈에 보인다
 - 커리큘럼: 강좌 1 + 주차 10(오늘 기준 4주차까지만 공개 — 게이팅) + Day 계획
 - 출결: 회차(수·토) + 지난 회차 출결(출석/결석/지각 혼합) → 트리거 파생
   (VideoGrant source=출석자동, AbsenceCounseling 대기열)이 실제 생성됨
@@ -22,6 +24,7 @@ from django.test import TestCase
 
 from apps.accounts.login_id import person_base
 from apps.accounts.models import Parent, ParentStudent, Student, User
+from apps.accounts.unique_id import build_unique_id
 from apps.boards.models import AbsenceCounseling, Post
 from apps.clinic.models import ClinicEligibility, ClinicRequest, ClinicSlot
 from apps.curriculum.models import Course, CourseWeek, WeekDayPlan
@@ -78,6 +81,26 @@ class SeedDemoTests(TestCase):
             self.assertEqual(
                 parent.user.login_id, f"{first_link.student.user.login_id}p"
             )
+
+    def test_unique_ids_follow_rule(self):
+        """원번이 규칙 함수 산출값과 일치 — 시드가 규칙을 우회하지 않는다."""
+        for student in Student.objects.select_related("user").order_by("student_id"):
+            user = student.user
+            self.assertEqual(
+                student.unique_id,
+                build_unique_id(student.grade, user.name, user.phone),
+            )
+
+    def test_grades_are_mixed_so_the_grade_digit_is_visible(self):
+        """학년이 한 값뿐이면 원번 앞자리가 학년이라는 사실을 눈으로 확인할 수 없다."""
+        self.assertEqual(
+            set(Student.objects.values_list("grade", flat=True)), {"고1", "고2", "고3"}
+        )
+        prefixes = {
+            student.unique_id[0]
+            for student in Student.objects.all()
+        }
+        self.assertEqual(prefixes, {"1", "2", "3"})
 
     def test_consumer_login_endpoint_accepts_seed_accounts(self):
         """시드 계정이 통합 로그인 경로로 그대로 들어간다(프런트 배선 전제)."""
