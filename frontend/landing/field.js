@@ -289,7 +289,8 @@ export function mountField(root, units) {
     if (!FINE) {
       FINE = true; wgt = 1;                // 첫 마우스 입력에서 인계 — 깜빡이지 않게
       // 첫 자리로 **순간이동**한다. 중앙에서 끌려오면 지나온 자리가 쓸려 보인다
-      cx = sx = fx = pxN; cy = sy = fy = pyN;
+      sx = fx = pxN; sy = fy = pyN;
+      lx = pxN; ly = pyN;
       woke = true;
     }
   }, { passive: true });
@@ -321,7 +322,9 @@ export function mountField(root, units) {
       ty = .46 + .20 * Math.sin(t * .170 + 1.1) + .06 * Math.sin(t * .067) + .30 * scrollP;
       wgt = 1;
     }
-    if (!woke) { tx = cx; ty = cy; wgt = 0; }   // 아직 아무 입력도 없었다
+    /* 아직 아무 입력도 없었다 — 바람도 우주도 없다. **먼지는 그대로 보인다**:
+       화면이 달라지는 게 아니라 아무 일도 안 일어나는 것이 맞다. */
+    if (!woke) { tx = sx; ty = sy; wgt = 0; }
 
     const nsx = sx + (tx - sx) * (1 - Math.exp(-6.0 * dt));
     const nsy = sy + (ty - sy) * (1 - Math.exp(-6.0 * dt));
