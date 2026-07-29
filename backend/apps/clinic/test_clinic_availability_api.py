@@ -8,15 +8,19 @@ Calendly 형 흐름(날짜 선택 → 그 날 가능한 시간 목록 → 하나
 검증 축:
 - 날짜 축: 요청 구간의 날짜마다 그 요일의 활성 슬롯 시간 목록
 - 노출 판단: 비활성 슬롯·지난 날짜·오늘은 **응답에서 제외**(오늘은 시각과
-  무관하게 항상 빠진다 — 전날 마감), 마감은 사유와 함께 **표시**
+  무관하게 항상 빠진다 — 당일 신청 불가), 마감은 사유와 함께 **표시**
   (PRD 3.2.4 "마감 표시" 요구)
+- **신청 창구**(2026-07-29 확정): 구간은 내일에서 시작해 **시험 주 다음
+  월요일**에서 끝난다. 더 먼 날짜를 요청해도 창구 끝으로 잘리고, 창구가
+  지났으면 403 이 아니라 **빈 days**(자격은 있는데 기간이 끝난 것이라
+  다른 사실이다)
 - 정원 1: 활성 신청 1건이면 그 날짜·시간은 마감
-- 구간 상한: 기본 14일 / 최대 31일, 역구간·형식 오류 400
 - 자격(§4): 비대상·무판정·영구제한은 403 — 시간표 자체를 못 본다
 - 쿼리 수: 날짜×슬롯이 늘어도 고정(N+1 회귀 방지)
 
 시간 의미론: apps.clinic.booking.timezone.now 를 patch 해 고정(Asia/Seoul).
-기준일 2026-07-22 은 수요일(모델 요일 축 0=일…6=토 → 수=3, 목=4, 금=5).
+기준일 2026-07-22 은 수요일이자 시험일 → 창구는 7/23(목)~7/27(월).
+(모델 요일 축 0=일…6=토 → 월=1, 수=3, 목=4, 금=5)
 """
 import datetime
 from unittest import mock
@@ -32,13 +36,15 @@ from .models import ClinicEligibility, ClinicRequest, ClinicSlot
 PASSWORD = "pw-Secret-77!"
 URL = "/api/student/clinic/availability"
 
-TODAY = datetime.date(2026, 7, 22)  # 수
-THU = datetime.date(2026, 7, 23)
-NEXT_WED = datetime.date(2026, 7, 29)
+TODAY = datetime.date(2026, 7, 22)  # 수 = 시험일
+THU = datetime.date(2026, 7, 23)  # 창구 첫날
+MON_END = datetime.date(2026, 7, 27)  # 창구 끝
 
 NOW = timezone.make_aware(datetime.datetime(2026, 7, 22, 7, 0))
 NOW_0800 = timezone.make_aware(datetime.datetime(2026, 7, 22, 8, 0))
 NOW_2300 = timezone.make_aware(datetime.datetime(2026, 7, 22, 23, 0))
+NOW_ON_END = timezone.make_aware(datetime.datetime(2026, 7, 27, 7, 0))
+NOW_AFTER_END = timezone.make_aware(datetime.datetime(2026, 7, 30, 7, 0))
 
 # 오늘 하루 어느 시각이든 결과가 같아야 한다(옛 08:00 경계가 사라졌다는 증거).
 ALL_DAY = (NOW, NOW_0800, NOW_2300)
@@ -60,19 +66,26 @@ def make_student(login_id, name):
 
 
 class AvailabilityFixtureMixin:
-    """수 2타임 + 목 1타임 + 금 1타임(비활성) · 대상/비대상/무판정/제한 학생."""
+    """목 2타임 + 월 1타임 + 수 1타임(창구 밖) + 금 1타임(비활성).
+
+    창구(7/23~7/27) 안에서 시간이 뜨는 날은 목 7/23 과 월 7/27 뿐이다 —
+    금 7/24 는 슬롯이 폐지, 토·일은 슬롯 없음, 수 7/29 는 창구 밖.
+    """
 
     @classmethod
     def setUpTestData(cls):
-        cls.exam = Exam.objects.create(name="7월 모의고사", exam_date=datetime.date(2026, 7, 15))
-        cls.wed_19 = ClinicSlot.objects.create(
-            weekday=3, start_time=datetime.time(19, 0), end_time=datetime.time(20, 0)
-        )
-        cls.wed_20 = ClinicSlot.objects.create(
-            weekday=3, start_time=datetime.time(20, 0), end_time=datetime.time(21, 0)
-        )
+        cls.exam = Exam.objects.create(name="7월 모의고사", exam_date=TODAY)
         cls.thu_19 = ClinicSlot.objects.create(
             weekday=4, start_time=datetime.time(19, 0), end_time=datetime.time(20, 0)
+        )
+        cls.thu_20 = ClinicSlot.objects.create(
+            weekday=4, start_time=datetime.time(20, 0), end_time=datetime.time(21, 0)
+        )
+        cls.mon_19 = ClinicSlot.objects.create(
+            weekday=1, start_time=datetime.time(19, 0), end_time=datetime.time(20, 0)
+        )
+        cls.wed_19 = ClinicSlot.objects.create(
+            weekday=3, start_time=datetime.time(19, 0), end_time=datetime.time(20, 0)
         )
         cls.fri_off = ClinicSlot.objects.create(
             weekday=5,
@@ -125,29 +138,29 @@ class ClinicAvailabilityTests(AvailabilityFixtureMixin, TestCase):
 
     # --- 날짜 축 ----------------------------------------------------------
 
-    def test_default_range_starts_tomorrow(self):
+    def test_default_range_is_tomorrow_through_window_end(self):
         body = self.fetch().json()
         self.assertEqual(body["exam_id"], self.exam.exam_id)
-        self.assertEqual(body["range"], {"from": "2026-07-23", "to": "2026-08-04"})
+        self.assertEqual(body["range"], {"from": "2026-07-23", "to": "2026-07-27"})
         dates = [d["date"] for d in body["days"]]
-        # 내일부터 8/4 까지의 수·목만 — 금은 비활성, 나머지 요일은 슬롯 없음
-        self.assertEqual(dates, ["2026-07-23", "2026-07-29", "2026-07-30"])
+        # 창구 안에서 활성 슬롯이 있는 날만 — 금은 폐지, 토·일은 슬롯 없음
+        self.assertEqual(dates, ["2026-07-23", "2026-07-27"])
         self.assertEqual(body["days"][0]["weekday"], 4)
 
     def test_day_lists_active_times_of_that_weekday(self):
-        day = self.days_by_date()["2026-07-29"]
+        day = self.days_by_date()["2026-07-23"]
         self.assertEqual(
             day["times"],
             [
                 {
-                    "slot_id": self.wed_19.slot_id,
+                    "slot_id": self.thu_19.slot_id,
                     "start_time": "19:00",
                     "end_time": "20:00",
                     "available": True,
                     "reason": None,
                 },
                 {
-                    "slot_id": self.wed_20.slot_id,
+                    "slot_id": self.thu_20.slot_id,
                     "start_time": "20:00",
                     "end_time": "21:00",
                     "available": True,
@@ -155,13 +168,11 @@ class ClinicAvailabilityTests(AvailabilityFixtureMixin, TestCase):
                 },
             ],
         )
-        self.assertEqual(len(self.days_by_date()["2026-07-23"]["times"]), 1)
+        self.assertEqual(len(self.days_by_date()["2026-07-27"]["times"]), 1)
 
     def test_inactive_slot_never_appears(self):
-        # 8/3(월)까지 기본 구간에 금요일 7/24·7/31 이 들어 있지만 비활성이라 미노출
-        dates = set(self.days_by_date())
-        self.assertNotIn("2026-07-24", dates)
-        self.assertNotIn("2026-07-31", dates)
+        # 금 7/24 는 창구 안이지만 슬롯이 폐지(is_active=false)라 존재 자체를 감춘다
+        self.assertNotIn("2026-07-24", set(self.days_by_date()))
 
     def test_days_without_active_slot_are_omitted(self):
         dates = set(self.days_by_date())
@@ -189,30 +200,53 @@ class ClinicAvailabilityTests(AvailabilityFixtureMixin, TestCase):
         body = self.fetch(**{"from": "2026-07-01", "to": "2026-07-10"}).json()
         self.assertEqual(body["days"], [])
 
+    # --- 창구 끝 ----------------------------------------------------------
+
+    def test_far_range_is_clamped_to_the_window_end(self):
+        body = self.fetch(**{"from": "2026-07-23", "to": "2026-12-31"}).json()
+        self.assertEqual(body["range"], {"from": "2026-07-23", "to": "2026-07-27"})
+        dates = {d["date"] for d in body["days"]}
+        # 활성 슬롯이 있는 요일이어도 창구 밖 날짜는 뜨지 않는다
+        self.assertNotIn("2026-07-29", dates)  # 수
+        self.assertNotIn("2026-07-30", dates)  # 목
+        self.assertNotIn("2026-08-03", dates)  # 월
+
+    def test_from_only_ends_at_the_window_end(self):
+        body = self.fetch(**{"from": "2026-07-25"}).json()
+        self.assertEqual(body["range"], {"from": "2026-07-25", "to": "2026-07-27"})
+
+    def test_range_entirely_after_the_window_returns_no_days(self):
+        res = self.fetch(**{"from": "2026-08-01", "to": "2026-08-31"})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["days"], [])
+
+    def test_closed_window_returns_empty_days_not_403(self):
+        # 자격은 그대로다 — 기간이 끝난 것이라 403(비대상)과 다른 사실이다
+        for at in (NOW_ON_END, NOW_AFTER_END):
+            res = self.fetch(at=at)
+            self.assertEqual(res.status_code, 200, at)
+            self.assertEqual(res.json()["days"], [], at)
+
     # --- 마감(정원 1) -----------------------------------------------------
 
     def test_single_active_request_closes_the_time(self):
-        self.make_request_row(self.s_other, self.wed_19, NEXT_WED)
-        days = self.days_by_date(**{"to": "2026-08-06"})
-        times = {t["slot_id"]: t for t in days["2026-07-29"]["times"]}
-        closed = times[self.wed_19.slot_id]
+        self.make_request_row(self.s_other, self.thu_19, THU)
+        days = self.days_by_date()
+        times = {t["slot_id"]: t for t in days["2026-07-23"]["times"]}
+        closed = times[self.thu_19.slot_id]
         self.assertFalse(closed["available"])
         self.assertEqual(closed["reason"], "마감")
         # 같은 날 다른 시간은 그대로 열려 있다
-        self.assertTrue(times[self.wed_20.slot_id]["available"])
-        # 다른 날짜의 같은 슬롯도 영향 없다
-        self.assertTrue(
-            {t["slot_id"]: t for t in days["2026-08-05"]["times"]}[self.wed_19.slot_id][
-                "available"
-            ]
-        )
+        self.assertTrue(times[self.thu_20.slot_id]["available"])
+        # 다른 날짜의 슬롯도 영향 없다
+        self.assertTrue(days["2026-07-27"]["times"][0]["available"])
 
     def test_approved_request_also_closes(self):
         self.make_request_row(
-            self.s_other, self.thu_19, THU, status=ClinicRequest.Status.APPROVED
+            self.s_other, self.mon_19, MON_END, status=ClinicRequest.Status.APPROVED
         )
-        times = {t["slot_id"]: t for t in self.days_by_date()["2026-07-23"]["times"]}
-        self.assertFalse(times[self.thu_19.slot_id]["available"])
+        times = {t["slot_id"]: t for t in self.days_by_date()["2026-07-27"]["times"]}
+        self.assertFalse(times[self.mon_19.slot_id]["available"])
 
     def test_cancelled_and_rejected_do_not_close(self):
         self.make_request_row(
@@ -225,35 +259,22 @@ class ClinicAvailabilityTests(AvailabilityFixtureMixin, TestCase):
         self.assertTrue(times[self.thu_19.slot_id]["available"])
 
     def test_own_request_is_marked_as_mine(self):
-        self.make_request_row(self.s_target, self.wed_19, NEXT_WED)
-        times = {t["slot_id"]: t for t in self.days_by_date()["2026-07-29"]["times"]}
-        mine = times[self.wed_19.slot_id]
+        self.make_request_row(self.s_target, self.thu_19, THU)
+        times = {t["slot_id"]: t for t in self.days_by_date()["2026-07-23"]["times"]}
+        mine = times[self.thu_19.slot_id]
         self.assertFalse(mine["available"])
         self.assertEqual(mine["reason"], "내신청")
 
-    # --- 구간 상한 --------------------------------------------------------
+    # --- 구간 입력 --------------------------------------------------------
 
     def test_explicit_range(self):
-        body = self.fetch(**{"from": "2026-07-29", "to": "2026-07-30"}).json()
-        self.assertEqual(body["range"], {"from": "2026-07-29", "to": "2026-07-30"})
-        self.assertEqual([d["date"] for d in body["days"]], ["2026-07-29", "2026-07-30"])
-
-    def test_from_only_uses_default_span(self):
-        body = self.fetch(**{"from": "2026-08-01"}).json()
-        self.assertEqual(body["range"], {"from": "2026-08-01", "to": "2026-08-14"})
-
-    def test_max_range_boundary(self):
-        # 31일(포함)까지 허용, 32일은 400
-        self.assertEqual(
-            self.fetch(**{"from": "2026-07-22", "to": "2026-08-21"}).status_code, 200
-        )
-        self.assertEqual(
-            self.fetch(**{"from": "2026-07-22", "to": "2026-08-22"}).status_code, 400
-        )
+        body = self.fetch(**{"from": "2026-07-23", "to": "2026-07-24"}).json()
+        self.assertEqual(body["range"], {"from": "2026-07-23", "to": "2026-07-24"})
+        self.assertEqual([d["date"] for d in body["days"]], ["2026-07-23"])
 
     def test_reversed_range_400(self):
         self.assertEqual(
-            self.fetch(**{"from": "2026-08-01", "to": "2026-07-30"}).status_code, 400
+            self.fetch(**{"from": "2026-07-27", "to": "2026-07-23"}).status_code, 400
         )
 
     def test_bad_date_format_400(self):
@@ -286,14 +307,60 @@ class ClinicAvailabilityTests(AvailabilityFixtureMixin, TestCase):
     # --- 쿼리 수 ----------------------------------------------------------
 
     def test_query_count_is_flat_over_dates_and_slots(self):
-        self.make_request_row(self.s_other, self.wed_19, NEXT_WED)
-        self.make_request_row(self.s_none, self.thu_19, THU)
+        self.make_request_row(self.s_other, self.thu_19, THU)
+        self.make_request_row(self.s_none, self.mon_19, MON_END)
         # 세션 2 + 학생 1 + 시험 1 + 자격 1 + 슬롯 1 + 예약현황 집계 1
         with freeze_now(), self.assertNumQueries(7):
             self.client.get(URL, {"exam_id": self.exam.exam_id})
-        # 구간을 최대(31일)로 늘려도 쿼리 수는 그대로 — 날짜×슬롯 루프에 쿼리 없음
+        # 구간을 아무리 늘려도 쿼리 수는 그대로 — 날짜×슬롯 루프에 쿼리 없음
         with freeze_now(), self.assertNumQueries(7):
             self.client.get(
                 URL,
-                {"exam_id": self.exam.exam_id, "from": "2026-07-22", "to": "2026-08-21"},
+                {"exam_id": self.exam.exam_id, "from": "2026-07-22", "to": "2026-12-31"},
             )
+
+
+class SaturdayExamWindowTests(TestCase):
+    """토요일 시험 — 창구가 이틀로 좁아지는 경계(2026-07-29 사용자 지시로 고정).
+
+    시험일 2026-08-01(토) → 창구 끝 2026-08-03(월). 당일 신청 불가와 겹쳐
+    잡을 수 있는 날짜가 하루이틀로 줄어든다. **규칙의 자연스러운 결과라
+    임의로 늘리지 않는다** — 여기서 그 좁은 창을 못박아 둔다.
+    """
+
+    SAT = timezone.make_aware(datetime.datetime(2026, 8, 1, 7, 0))  # 시험 당일
+    SUN = timezone.make_aware(datetime.datetime(2026, 8, 2, 7, 0))
+    MON = timezone.make_aware(datetime.datetime(2026, 8, 3, 7, 0))  # 창구 끝 당일
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.exam = Exam.objects.create(
+            name="8월 토요 모의고사", exam_date=datetime.date(2026, 8, 1)
+        )
+        for weekday in (0, 1, 2):  # 일·월·화 — 화(8/4)는 창구 밖이라 뜨면 안 된다
+            ClinicSlot.objects.create(
+                weekday=weekday,
+                start_time=datetime.time(19, 0),
+                end_time=datetime.time(20, 0),
+            )
+        cls.student = make_student("sat-1", "토요일")
+        ClinicEligibility.objects.create(exam=cls.exam, student=cls.student, is_target=True)
+
+    def dates(self, at):
+        with freeze_now(at):
+            res = self.client.get(URL, {"exam_id": self.exam.exam_id})
+        self.assertEqual(res.status_code, 200, res.content)
+        return [d["date"] for d in res.json()["days"]]
+
+    def setUp(self):
+        self.client.force_login(self.student.user)
+
+    def test_on_exam_day_only_sunday_and_monday_remain(self):
+        self.assertEqual(self.dates(self.SAT), ["2026-08-02", "2026-08-03"])
+
+    def test_on_sunday_only_monday_remains(self):
+        self.assertEqual(self.dates(self.SUN), ["2026-08-03"])
+
+    def test_on_the_window_end_monday_nothing_remains(self):
+        # 월요일 하루는 통째로 열려 있지만 그날 잡을 수 있는 **내일**이 없다
+        self.assertEqual(self.dates(self.MON), [])

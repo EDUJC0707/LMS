@@ -135,11 +135,12 @@ class ClinicRequestTests(TestCase):
         self.assertIn("noshow_count", doc)
 
     def test_deadline_and_link_contract_documented(self):
-        # 2026-07-29 확정: 클리닉 날짜의 전날까지만 신청·변경·취소(당일 불가).
-        # 미트 링크는 시작 5분 전부터 해당 학생에게만 노출·재사용 금지 —
-        # 둘 다 앱 레이어 계약이라 docstring 에 남긴다.
+        # 2026-07-29 확정: 신청 창구는 내일에서 시작해 **시험 주 다음 월요일**에
+        # 끝난다(당일 불가 + 창구 끝). 미트 링크는 시작 5분 전부터 해당
+        # 학생에게만 노출·재사용 금지 — 둘 다 앱 레이어 계약이라 docstring 에.
         doc = ClinicRequest.__doc__
         self.assertIn("전날", doc)
+        self.assertIn("다음 주 월요일", doc)
         self.assertIn("5분", doc)
         # 옛 규칙(당일 오전 8시 마감)이 남아 있으면 안 된다
         self.assertNotIn("8시", doc)

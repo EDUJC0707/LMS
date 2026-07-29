@@ -12,9 +12,14 @@
  *
  * 이 화면이 지키는 규칙은 하나다 — **정원·잔여석을 글자로 쓰지 않는다.**
  * 한 타임에 한 명이라 남은 자리는 늘 1이고, 그 사실은 칸의 생사로만 말한다:
- * 살아 있는 면 / 취소선 그어진 죽은 면 / 내 자리.
+ * 살아 있는 면 / 취소선 그어진 죽은 면 / 내 자리. 신청 창구의 끝도 같은
+ * 어법이다 — 창구 밖 날짜는 죽은 칸, 창구 밖 달은 죽은 화살표.
  *
- * 규칙(마감·전날까지·중복·노쇼 제한)은 전부 API 가 강제한다. 화면은 자격이
+ * 시간표는 **한 번만 부른다**(from·to 없이). 창구가 [내일, 시험 주 다음
+ * 월요일]이라 길어야 7일이고, 그 한 번의 응답이 달력이 걸칠 수 있는 달을
+ * 전부 담는다 — 달을 넘길 때마다 서버를 다시 부를 이유가 없다.
+ *
+ * 규칙(마감·전날까지·창구·중복·노쇼 제한)은 전부 API 가 강제한다. 화면은 자격이
  * 없으면 시간표를 **부르지 않고**(availability 는 403), 실패하면 서버가 준
  * 문장을 고쳐 쓰지 않고 그대로 보여준다.
  */
@@ -41,12 +46,14 @@ import {
   ClinicRequestRow,
   GradeList,
   WEEKDAY_LABELS,
+  calendarMonths,
   currentMonth,
   dayLabel,
   monthGrid,
   monthLabel,
   shiftMonth,
   timeColumn,
+  windowClosed,
 } from "./lib";
 import type { TimeColumnView } from "./lib";
 import "./clinic.css";
@@ -64,13 +71,6 @@ function todayIso(): string {
 
 function monthOf(iso: string): string {
   return iso.slice(0, 7);
-}
-
-/** 그 달의 1일~말일. 서버가 과거 쪽을 오늘로 잘라 주므로 그대로 보낸다. */
-function monthRange(month: string): { from: string; to: string } {
-  const [year, monthNo] = month.split("-").map(Number);
-  const last = new Date(year, monthNo, 0).getDate();
-  return { from: `${month}-01`, to: `${month}-${String(last).padStart(2, "0")}` };
 }
 
 function Chevron({ dir }: { dir: "left" | "right" }) {
@@ -93,6 +93,8 @@ function Chevron({ dir }: { dir: "left" | "right" }) {
 
 function MonthCalendar({
   month,
+  first,
+  last,
   open,
   selected,
   onMonth,
@@ -100,6 +102,9 @@ function MonthCalendar({
   busy,
 }: {
   month: string;
+  /** 창구가 걸친 양 끝 달 — 그 밖으로 나가는 화살표는 죽인다. */
+  first: string;
+  last: string;
   open: Set<string>;
   selected: string | null;
   onMonth: (delta: number) => void;
@@ -118,12 +123,18 @@ function MonthCalendar({
           type="button"
           className="cl-nav"
           aria-label="이전 달"
-          disabled={month <= currentMonth()}
+          disabled={month <= first}
           onClick={() => onMonth(-1)}
         >
           <Chevron dir="left" />
         </button>
-        <button type="button" className="cl-nav" aria-label="다음 달" onClick={() => onMonth(1)}>
+        <button
+          type="button"
+          className="cl-nav"
+          aria-label="다음 달"
+          disabled={month >= last}
+          onClick={() => onMonth(1)}
+        >
           <Chevron dir="right" />
         </button>
       </div>
@@ -275,14 +286,13 @@ function TimeColumn({
 
 export default function StudentClinicPage() {
   const [examId, setExamId] = useState<number | null>(null);
-  /** null = 아직 학생이 달을 넘기지 않았다 → 신청이 있으면 그 달을 연다. */
+  /** null = 아직 학생이 달을 넘기지 않았다 → 고를 게 있는 첫 달을 연다. */
   const [month, setMonth] = useState<string | null>(null);
   const [day, setDay] = useState<string | null>(null);
   const [picked, setPicked] = useState<number | null>(null);
   const [changing, setChanging] = useState(false);
   const [cancelling, setCancelling] = useState<ClinicRequestRow | null>(null);
   const [done, setDone] = useState<string | null>(null);
-  const [nudged, setNudged] = useState(false);
 
   const grades = useApi(() => http.get<GradeList>("/student/grades").then((r) => r.data), []);
   const exams = grades.data?.exams ?? [];
@@ -308,21 +318,20 @@ export default function StudentClinicPage() {
   const canBook = Boolean(judged && judged.eligibility.is_target && !judged.clinic_banned);
   const active = judged?.my_requests.find((row) => ACTIVE.includes(row.status)) ?? null;
 
-  // 열 달은 렌더 중에 정한다 — 효과로 뒤늦게 바꾸면 이번 달을 한 번 부르고
-  // 곧바로 신청한 달을 다시 부른다(두 번 왕복 + 엉뚱한 달이 한 프레임 보인다).
-  const shownMonth = month ?? (active ? monthOf(active.requested_date) : currentMonth());
-  const range = monthRange(shownMonth);
-
+  // from·to 를 보내지 않는다 — 서버가 창구 전체(내일~시험 주 다음 월요일)를
+  // 돌려주고, 그 한 번의 응답에 달력이 걸칠 수 있는 달이 전부 들어 있다.
+  // 그래서 달을 넘겨도 다시 부르지 않고, 응답의 range 가 곧 창구의 양 끝이다
+  // (달 단위로 잘라 물으면 잘린 끝과 창구의 끝을 구분할 수 없다).
   const avail = useApi(
     () =>
       effectiveExamId === null || !canBook
         ? Promise.resolve(null)
         : http
             .get<ClinicAvailability>("/student/clinic/availability", {
-              params: { exam_id: effectiveExamId, from: range.from, to: range.to },
+              params: { exam_id: effectiveExamId },
             })
             .then((r) => r.data),
-    [effectiveExamId, canBook, shownMonth],
+    [effectiveExamId, canBook],
   );
 
   // useApiAction 의 run 은 첫 렌더의 클로저를 붙든다(useApi.ts 주석 참조).
@@ -382,15 +391,6 @@ export default function StudentClinicPage() {
     setPicked(null);
   }, [avail.data]);
 
-  // 이번 달에 남은 날이 하나도 없으면(월말 진입) 다음 달을 한 번만 연다.
-  useEffect(() => {
-    if (nudged || !avail.data || avail.data.days.length > 0 || shownMonth !== currentMonth()) {
-      return;
-    }
-    setNudged(true);
-    setMonth(shiftMonth(shownMonth, 1));
-  }, [avail.data, nudged, shownMonth]);
-
   if (grades.initialLoading || clinic.initialLoading) {
     return <Loading label="클리닉을 불러오는 중…" />;
   }
@@ -425,6 +425,15 @@ export default function StudentClinicPage() {
   // 틀린 말을 하게 된다(시간이 없는 게 아니라 계정이 막힌 것). 위의 경고 한 줄이
   // 이미 전부이므로 카드를 접는다.
   const blocked = Boolean(judged?.clinic_banned) && active === null;
+
+  // 창구가 지났다 — 서버가 뒤집힌 구간으로 말해 준다(403 이 아니다).
+  const closed = avail.data !== null && windowClosed(avail.data.range);
+  // 달력이 설 달. 학생이 넘긴 달(month)이 있으면 그것을, 없으면 신청이 잡힌
+  // 달을 힌트로 주고 — 어느 쪽이든 창구가 걸친 달 밖으로는 나가지 않는다.
+  const cal = avail.data
+    ? calendarMonths(avail.data, month ?? (active ? monthOf(active.requested_date) : null))
+    : { month: currentMonth(), first: currentMonth(), last: currentMonth() };
+  const shownMonth = cal.month;
 
   const column = timeColumn(days, day);
   const busy = avail.loading && !avail.initialLoading;
@@ -507,7 +516,10 @@ export default function StudentClinicPage() {
             )}
           </div>
           <div className="cl-booked__acts">
-            {!judged.clinic_banned && (
+            {/* 창구가 지나면 옮겨 갈 날짜가 하나도 없다 — 눌러도 서버가 되돌려
+                보낼 버튼은 세우지 않는다. 취소는 남긴다(반납은 창구 밖에서도
+                받는다 — booking.py 취소 계약). */}
+            {!judged.clinic_banned && !closed && (
               <Button size="sm" onClick={startChange}>
                 시간 변경
               </Button>
@@ -520,10 +532,19 @@ export default function StudentClinicPage() {
       );
     }
 
+    // 창구가 지났다. 자격은 그대로이므로 "대상이 아닙니다"와 같은 화면을 보이면
+    // 틀린 말이 되고, 달력을 세우면 전부 죽은 칸에 "열려 있는 시간이 없습니다"가
+    // 붙어 **오늘 자리가 없는 것**처럼 읽힌다 — 다른 사실이므로 다른 화면이다.
+    if (closed) {
+      return <EmptyState title="클리닉 신청 기간이 끝났습니다" />;
+    }
+
     return (
       <div className="cl-split">
         <MonthCalendar
           month={shownMonth}
+          first={cal.first}
+          last={cal.last}
           open={openDates}
           selected={day}
           onMonth={(delta) => setMonth(shiftMonth(shownMonth, delta))}

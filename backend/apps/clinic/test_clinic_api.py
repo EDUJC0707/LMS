@@ -6,14 +6,21 @@
 - 정원 **1 고정**(2026-07-21 회의): 활성 신청(대기+승인배정)이 한 건만 있어도
   그 날짜·시간은 마감 400. 취소·미승인은 집계 제외.
   동시성은 select_for_update(경합 테스트 — 정원 1 이라 더 중요해졌다)
-- 전날 마감: 오늘 날짜는 시각과 무관하게 신청·변경·취소 전부 차단, 내일부터 허용
+- **신청 창구**(2026-07-29 확정): 내일 ~ **시험 주 다음 월요일**까지만.
+  당일·지난 날짜는 시각과 무관하게 차단(앞쪽 끝), 창구 끝 다음날부터 차단
+  (뒤쪽 끝). API 직접 호출도 같은 게이트를 통과해야 한다
 - 노쇼 영구제한: clinic_banned=true → 신청·변경 403 (취소는 허용)
 - 중복 활성 신청 400 / 본인 것만 수정·취소(타인 404)
-- 취소는 노쇼로 집계하지 않음(noshow_count·clinic_banned 불변)
+- 취소는 노쇼로 집계하지 않음(noshow_count·clinic_banned 불변) + **창구와 무관**
 - 링크: 시작 5분 전부터만 meet_url 노출(link_active)
 
 시간 의미론: apps.clinic.booking.timezone.now 를 patch 해 고정(Asia/Seoul —
-attendance_admin 테스트 선례). 기준일 2026-07-22 은 수요일(weekday=3).
+attendance_admin 테스트 선례).
+
+날짜 축(기준일 2026-07-22 = 수요일, 모델 요일 0=일…6=토):
+  시험일 = 오늘(수 7/22 — 시험은 수업 중에 본다) → 창구 끝 = 7/27(월).
+  신청 가능 날짜는 7/23(목)~7/27(월) 뿐이며, 창구가 한 주보다 짧으므로
+  **같은 요일은 창구 안에 두 번 오지 않는다**(슬롯 하나당 날짜 하나).
 """
 import datetime
 import json
@@ -21,7 +28,7 @@ import threading
 from unittest import mock
 
 from django.db import connection
-from django.test import TestCase, TransactionTestCase
+from django.test import SimpleTestCase, TestCase, TransactionTestCase
 from django.utils import timezone
 
 from apps.accounts.models import Student, User
@@ -34,12 +41,15 @@ PASSWORD = "pw-Secret-77!"
 CLINIC_URL = "/api/student/clinic"
 REQUESTS_URL = "/api/student/clinic/requests"
 
-# 2026-07-22 = 수요일. 모델 요일 축: 0=일…6=토 → 수=3, 목=4.
-TODAY = datetime.date(2026, 7, 22)
-THU = datetime.date(2026, 7, 23)
-NEXT_WED = datetime.date(2026, 7, 29)
-NEXT_THU = datetime.date(2026, 7, 30)
-LATER_WED = datetime.date(2026, 8, 5)
+# 2026-07-22 = 수요일. 모델 요일 축: 0=일…6=토 → 월=1, 화=2, 수=3, 목=4, 금=5, 토=6.
+TODAY = datetime.date(2026, 7, 22)  # 시험일 = 오늘(당일이라 신청 불가)
+THU = datetime.date(2026, 7, 23)  # 창구 첫날(내일)
+FRI = datetime.date(2026, 7, 24)
+SAT = datetime.date(2026, 7, 25)  # 비활성 슬롯 요일
+MON_END = datetime.date(2026, 7, 27)  # 창구 끝 = 시험 주 다음 월요일
+TUE_AFTER = datetime.date(2026, 7, 28)  # 창구 끝 다음날 — 여기서부터 닫힌다
+NEXT_WED = datetime.date(2026, 7, 29)  # 창구 한참 밖
+NEXT_MON = datetime.date(2026, 8, 3)  # 창구 끝의 다음 주 같은 요일
 PAST_WED = datetime.date(2026, 7, 15)
 
 NOW = timezone.make_aware(datetime.datetime(2026, 7, 22, 7, 0))
@@ -47,9 +57,14 @@ NOW_0800 = timezone.make_aware(datetime.datetime(2026, 7, 22, 8, 0))
 NOW_2300 = timezone.make_aware(datetime.datetime(2026, 7, 22, 23, 0))
 NOW_1854 = timezone.make_aware(datetime.datetime(2026, 7, 22, 18, 54))
 NOW_1855 = timezone.make_aware(datetime.datetime(2026, 7, 22, 18, 55))
+# 창구 끝 당일·그 이후 — 이 시점부터는 잡을 수 있는 날짜가 하나도 없다.
+NOW_ON_END = timezone.make_aware(datetime.datetime(2026, 7, 27, 7, 0))
+NOW_AFTER_END = timezone.make_aware(datetime.datetime(2026, 7, 28, 7, 0))
 
 # 오늘 하루 어느 시각이든 결과가 같아야 한다(옛 08:00 경계가 사라졌다는 증거).
 ALL_DAY = (NOW, NOW_0800, NOW_2300)
+
+OUT_OF_WINDOW = "클리닉 신청 기간 밖의 날짜입니다."
 
 
 def freeze_now(at=NOW):
@@ -69,20 +84,70 @@ def make_student(login_id, name):
     )
 
 
+class ClinicWindowTests(SimpleTestCase):
+    """창구 끝 계산 — 시험일 다음에 오는 첫 월요일(월요일 시험은 7일 뒤).
+
+    2026-07-29 확정: 시험을 본 주 다음 주에 클리닉을 진행하므로 월요일에
+    신청을 닫아야 그날 조교 배정을 확정할 수 있다.
+    """
+
+    def test_wednesday_exam_closes_on_the_next_monday(self):
+        # 사용자 예시: 시험일 2026-07-29(수) → 창구 끝 2026-08-03(월)
+        self.assertEqual(
+            booking.booking_window_end(datetime.date(2026, 7, 29)),
+            datetime.date(2026, 8, 3),
+        )
+
+    def test_monday_exam_closes_seven_days_later(self):
+        # 시험일이 월요일이면 "그 주"의 월요일이 아니라 다음 주 월요일
+        self.assertEqual(
+            booking.booking_window_end(datetime.date(2026, 7, 27)),
+            datetime.date(2026, 8, 3),
+        )
+
+    def test_saturday_exam_closes_two_days_later(self):
+        self.assertEqual(
+            booking.booking_window_end(datetime.date(2026, 8, 1)),
+            datetime.date(2026, 8, 3),
+        )
+
+    def test_end_is_always_a_monday_within_a_week(self):
+        start = datetime.date(2026, 7, 20)
+        for offset in range(14):
+            exam_date = start + datetime.timedelta(days=offset)
+            end = booking.booking_window_end(exam_date)
+            # 모델 요일 축(0=일…6=토)에서 월요일 = 1 — 새 요일 축을 만들지 않는다
+            self.assertEqual(booking.model_weekday(end), 1, exam_date)
+            self.assertIn((end - exam_date).days, range(1, 8), exam_date)
+
+
 class ClinicFixtureMixin:
-    """시험 1 + 슬롯(수 정원2·목 정원1·비활성) + 대상/비대상/무판정/제한 학생."""
+    """시험(오늘) + 월·화·수·목·금 슬롯(토는 비활성) · 대상/비대상/무판정/제한 학생.
+
+    창구(7/23~7/27) 안: 목 7/23 · 금 7/24 · 월 7/27.
+    창구 밖: 화 7/28 · 수 7/29(그리고 오늘 7/22 는 당일이라 앞쪽에서 막힌다).
+    """
 
     @classmethod
     def setUpTestData(cls):
-        cls.exam = Exam.objects.create(name="7월 모의고사", exam_date=PAST_WED)
+        cls.exam = Exam.objects.create(name="7월 모의고사", exam_date=TODAY)
+        cls.slot_mon = ClinicSlot.objects.create(
+            weekday=1, start_time=datetime.time(19, 0), end_time=datetime.time(20, 0),
+        )
+        cls.slot_tue = ClinicSlot.objects.create(
+            weekday=2, start_time=datetime.time(19, 0), end_time=datetime.time(20, 0),
+        )
         cls.slot_wed = ClinicSlot.objects.create(
             weekday=3, start_time=datetime.time(19, 0), end_time=datetime.time(20, 0),
         )
         cls.slot_thu = ClinicSlot.objects.create(
             weekday=4, start_time=datetime.time(19, 0), end_time=datetime.time(20, 0),
         )
-        cls.slot_off = ClinicSlot.objects.create(
+        cls.slot_fri = ClinicSlot.objects.create(
             weekday=5, start_time=datetime.time(19, 0), end_time=datetime.time(20, 0),
+        )
+        cls.slot_off = ClinicSlot.objects.create(
+            weekday=6, start_time=datetime.time(19, 0), end_time=datetime.time(20, 0),
             is_active=False,
         )
         cls.s_target = make_student("cl-1", "박선호")
@@ -229,42 +294,45 @@ class ClinicHomeTests(ClinicFixtureMixin, TestCase):
 
 
 class ClinicBookingCreateTests(ClinicFixtureMixin, TestCase):
-    """POST /api/student/clinic/requests — 자격·정원·마감·노쇼·중복 강제."""
+    """POST /api/student/clinic/requests — 자격·정원·창구·노쇼·중복 강제."""
 
     def setUp(self):
         self.login(self.s_target.user)
 
     def test_create_booking(self):
-        res = self.book(self.slot_wed, NEXT_WED)
+        res = self.book(self.slot_thu, THU)
         self.assertEqual(res.status_code, 201)
         req = ClinicRequest.objects.get(student=self.s_target)
         self.assertEqual(req.status, ClinicRequest.Status.PENDING)
         self.assertEqual(req.exam_id, self.exam.exam_id)
-        self.assertEqual(req.slot_id, self.slot_wed.slot_id)
-        self.assertEqual(req.requested_date, NEXT_WED)
+        self.assertEqual(req.slot_id, self.slot_thu.slot_id)
+        self.assertEqual(req.requested_date, THU)
         self.assertEqual(req.requested_time, datetime.time(19, 0))
         body = res.json()
         self.assertEqual(body["request"]["clinic_id"], req.clinic_id)
         self.assertEqual(body["request"]["status"], "대기")
-        self.assertEqual(body["request"]["requested_date"], "2026-07-29")
+        self.assertEqual(body["request"]["requested_date"], "2026-07-23")
         self.assertEqual(body["request"]["requested_time"], "19:00")
         # 재조회 불필요 계약 — 확정된 슬롯 요약(정원·잔여석은 싣지 않는다)
         self.assertEqual(
             body["slot"],
             {
-                "slot_id": self.slot_wed.slot_id,
-                "weekday": 3,
+                "slot_id": self.slot_thu.slot_id,
+                "weekday": 4,
                 "start_time": "19:00",
                 "end_time": "20:00",
             },
         )
 
     def test_one_active_request_closes_the_time(self):
-        # 정원 1 고정(0721 회의) — 다른 학생 활성 신청 1건이면 곧바로 마감
-        self.make_request_row(self.s_target2, self.slot_wed, NEXT_WED)
-        self.assertEqual(self.book(self.slot_wed, NEXT_WED).status_code, 400)
-        # 같은 슬롯의 다른 날짜는 영향 없다
-        self.assertEqual(self.book(self.slot_wed, LATER_WED).status_code, 201)
+        # 정원 1 고정(0721 회의) — 다른 학생 활성 신청 1건이면 곧바로 마감.
+        # 창구가 한 주보다 짧아 같은 슬롯의 다른 날짜는 없다 — 마감의 범위가
+        # (슬롯, 날짜)라는 사실은 다른 날짜·시간이 그대로 열려 있는 것으로 본다.
+        self.make_request_row(self.s_target2, self.slot_thu, THU)
+        self.assertEqual(self.book(self.slot_thu, THU).status_code, 400)
+        self.assertEqual(self.book(self.slot_fri, FRI).status_code, 201)
+
+    # --- 창구 앞쪽 끝(당일 불가) ------------------------------------------
 
     def test_today_400_at_every_hour(self):
         for at in ALL_DAY:
@@ -289,19 +357,57 @@ class ClinicBookingCreateTests(ClinicFixtureMixin, TestCase):
     def test_past_date_400(self):
         self.assertEqual(self.book(self.slot_wed, PAST_WED).status_code, 400)
 
+    # --- 창구 뒤쪽 끝(시험 주 다음 월요일) --------------------------------
+
+    def test_window_end_monday_is_open(self):
+        self.assertEqual(self.book(self.slot_mon, MON_END).status_code, 201)
+
+    def test_day_after_window_end_400(self):
+        res = self.book(self.slot_tue, TUE_AFTER)
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()["detail"], OUT_OF_WINDOW)
+        self.assertFalse(ClinicRequest.objects.exists())
+
+    def test_date_far_beyond_window_400(self):
+        self.assertEqual(self.book(self.slot_wed, NEXT_WED).status_code, 400)
+        self.assertEqual(self.book(self.slot_mon, NEXT_MON).status_code, 400)
+
+    def test_today_inside_the_window_is_still_refused(self):
+        # 오늘(7/22)은 창구 끝(7/27) 안쪽이지만 당일이라 막힌다 — 두 규칙이 함께
+        # 걸리고, 먼저 걸리는 쪽(당일)의 사실을 말한다.
+        res = self.book(self.slot_wed, TODAY)
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()["detail"], "오늘 클리닉은 신청·변경·취소할 수 없습니다.")
+
+    def test_nothing_is_bookable_once_the_window_closed(self):
+        # 창구 끝 당일(월)에는 내일(화)부터가 이미 창구 밖 — 잡을 날짜가 없다.
+        # 각 시점에서 **아직 오지 않은** 날짜만 본다(오늘·과거는 앞쪽 끝이
+        # 먼저 잡아 다른 사실을 말한다).
+        for at, dates in (
+            (NOW_ON_END, ((self.slot_tue, TUE_AFTER), (self.slot_wed, NEXT_WED))),
+            (NOW_AFTER_END, ((self.slot_wed, NEXT_WED), (self.slot_mon, NEXT_MON))),
+        ):
+            for slot, date in dates:
+                res = self.book(slot, date, at=at)
+                self.assertEqual(res.status_code, 400, (at, date))
+                self.assertEqual(res.json()["detail"], OUT_OF_WINDOW, (at, date))
+        self.assertFalse(ClinicRequest.objects.exists())
+
+    # --- 나머지 규칙 ------------------------------------------------------
+
     def test_weekday_mismatch_400(self):
-        self.assertEqual(self.book(self.slot_wed, NEXT_THU).status_code, 400)
+        self.assertEqual(self.book(self.slot_thu, FRI).status_code, 400)
 
     def test_non_target_403(self):
         for student in (self.s_not, self.s_none):
             self.login(student.user)
-            res = self.book(self.slot_wed, NEXT_WED)
+            res = self.book(self.slot_thu, THU)
             self.assertEqual(res.status_code, 403, student.unique_id)
         self.assertFalse(ClinicRequest.objects.exists())
 
     def test_banned_403(self):
         self.login(self.s_banned.user)
-        self.assertEqual(self.book(self.slot_wed, NEXT_WED).status_code, 403)
+        self.assertEqual(self.book(self.slot_thu, THU).status_code, 403)
 
     def test_full_slot_400(self):
         blocker = self.make_request_row(self.s_target2, self.slot_thu, THU)
@@ -315,36 +421,36 @@ class ClinicBookingCreateTests(ClinicFixtureMixin, TestCase):
         self.assertEqual(self.book(self.slot_thu, THU).status_code, 201)
 
     def test_duplicate_active_400(self):
-        self.make_request_row(self.s_target, self.slot_wed, NEXT_WED)
-        self.assertEqual(self.book(self.slot_thu, THU).status_code, 400)
+        self.make_request_row(self.s_target, self.slot_thu, THU)
+        self.assertEqual(self.book(self.slot_fri, FRI).status_code, 400)
 
     def test_cancelled_request_does_not_block_new_booking(self):
         self.make_request_row(
-            self.s_target, self.slot_wed, NEXT_WED, status=ClinicRequest.Status.CANCELLED
+            self.s_target, self.slot_thu, THU, status=ClinicRequest.Status.CANCELLED
         )
-        self.assertEqual(self.book(self.slot_thu, THU).status_code, 201)
+        self.assertEqual(self.book(self.slot_fri, FRI).status_code, 201)
 
     def test_invalid_body_400(self):
         for body in (
             {},
-            {"exam_id": self.exam.exam_id, "slot_id": self.slot_wed.slot_id},
-            {"exam_id": self.exam.exam_id, "requested_date": "2026-07-29"},
-            {"exam_id": "x", "slot_id": self.slot_wed.slot_id, "requested_date": "2026-07-29"},
+            {"exam_id": self.exam.exam_id, "slot_id": self.slot_thu.slot_id},
+            {"exam_id": self.exam.exam_id, "requested_date": "2026-07-23"},
+            {"exam_id": "x", "slot_id": self.slot_thu.slot_id, "requested_date": "2026-07-23"},
             {
                 "exam_id": self.exam.exam_id,
-                "slot_id": self.slot_wed.slot_id,
-                "requested_date": "07/29/2026",
+                "slot_id": self.slot_thu.slot_id,
+                "requested_date": "07/23/2026",
             },
         ):
             self.assertEqual(self.post_booking(body).status_code, 400, body)
 
     def test_unknown_or_inactive_slot_404(self):
-        self.assertEqual(self.book(self.slot_off, datetime.date(2026, 7, 24)).status_code, 404)
+        self.assertEqual(self.book(self.slot_off, SAT).status_code, 404)
         res = self.post_booking(
             {
                 "exam_id": self.exam.exam_id,
                 "slot_id": 999999,
-                "requested_date": NEXT_WED.isoformat(),
+                "requested_date": THU.isoformat(),
             }
         )
         self.assertEqual(res.status_code, 404)
@@ -353,17 +459,17 @@ class ClinicBookingCreateTests(ClinicFixtureMixin, TestCase):
         res = self.post_booking(
             {
                 "exam_id": 999999,
-                "slot_id": self.slot_wed.slot_id,
-                "requested_date": NEXT_WED.isoformat(),
+                "slot_id": self.slot_thu.slot_id,
+                "requested_date": THU.isoformat(),
             }
         )
         self.assertEqual(res.status_code, 404)
 
     def test_role_gates(self):
         self.client.logout()
-        self.assertEqual(self.book(self.slot_wed, NEXT_WED).status_code, 403)
+        self.assertEqual(self.book(self.slot_thu, THU).status_code, 403)
         self.login(self.parent_user)
-        self.assertEqual(self.book(self.slot_wed, NEXT_WED).status_code, 403)
+        self.assertEqual(self.book(self.slot_thu, THU).status_code, 403)
 
 
 class ClinicBookingChangeTests(ClinicFixtureMixin, TestCase):
@@ -371,16 +477,19 @@ class ClinicBookingChangeTests(ClinicFixtureMixin, TestCase):
 
     def setUp(self):
         self.login(self.s_target.user)
-        self.req = self.make_request_row(self.s_target, self.slot_wed, NEXT_WED)
+        self.req = self.make_request_row(self.s_target, self.slot_mon, MON_END)
 
-    def test_change_date(self):
-        res = self.patch_booking(self.req.clinic_id, {"requested_date": "2026-08-05"})
+    def test_change_slot_and_date(self):
+        res = self.patch_booking(
+            self.req.clinic_id,
+            {"slot_id": self.slot_fri.slot_id, "requested_date": FRI.isoformat()},
+        )
         self.assertEqual(res.status_code, 200)
         self.req.refresh_from_db()
-        self.assertEqual(self.req.requested_date, datetime.date(2026, 8, 5))
+        self.assertEqual(self.req.requested_date, FRI)
         self.assertEqual(self.req.status, ClinicRequest.Status.PENDING)
         self.assertEqual(self.req.updated_at, NOW)  # 시간수정 추적 스탬프
-        self.assertEqual(res.json()["request"]["requested_date"], "2026-08-05")
+        self.assertEqual(res.json()["request"]["requested_date"], "2026-07-24")
 
     def test_change_slot_resets_approval(self):
         staff = make_user("cl-staff", User.Role.ASSISTANT, name="조교")
@@ -405,10 +514,11 @@ class ClinicBookingChangeTests(ClinicFixtureMixin, TestCase):
     def test_change_away_from_today_400_at_every_hour(self):
         req = self.make_request_row(self.s_target2, self.slot_wed, TODAY)
         self.login(self.s_target2.user)
-        # 7/29 은 setUp 의 s_target 신청이 잡고 있다(정원 1) — 빈 수요일로 옮긴다
         for at in ALL_DAY:
             res = self.patch_booking(
-                req.clinic_id, {"requested_date": LATER_WED.isoformat()}, at=at
+                req.clinic_id,
+                {"slot_id": self.slot_fri.slot_id, "requested_date": FRI.isoformat()},
+                at=at,
             )
             self.assertEqual(res.status_code, 400, at)
         req.refresh_from_db()
@@ -417,7 +527,9 @@ class ClinicBookingChangeTests(ClinicFixtureMixin, TestCase):
     def test_change_onto_today_400_at_every_hour(self):
         for at in ALL_DAY:
             res = self.patch_booking(
-                self.req.clinic_id, {"requested_date": TODAY.isoformat()}, at=at
+                self.req.clinic_id,
+                {"slot_id": self.slot_wed.slot_id, "requested_date": TODAY.isoformat()},
+                at=at,
             )
             self.assertEqual(res.status_code, 400, at)
 
@@ -429,6 +541,36 @@ class ClinicBookingChangeTests(ClinicFixtureMixin, TestCase):
         )
         self.assertEqual(res.status_code, 200)
 
+    def test_change_onto_window_end_monday_200(self):
+        req = self.make_request_row(self.s_target2, self.slot_thu, THU)
+        self.login(self.s_target2.user)
+        # 7/27 은 setUp 의 s_target 신청이 잡고 있다 — 비켜 준 뒤 옮긴다
+        self.req.status = ClinicRequest.Status.CANCELLED
+        self.req.save(update_fields=["status"])
+        res = self.patch_booking(
+            req.clinic_id,
+            {"slot_id": self.slot_mon.slot_id, "requested_date": MON_END.isoformat()},
+        )
+        self.assertEqual(res.status_code, 200)
+
+    def test_change_onto_day_after_window_end_400(self):
+        res = self.patch_booking(
+            self.req.clinic_id,
+            {"slot_id": self.slot_tue.slot_id, "requested_date": TUE_AFTER.isoformat()},
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()["detail"], OUT_OF_WINDOW)
+        self.req.refresh_from_db()
+        self.assertEqual(self.req.requested_date, MON_END)
+
+    def test_change_onto_same_weekday_next_week_400(self):
+        # 슬롯 요일은 맞지만 그 다음 주 월요일은 창구 밖이다
+        res = self.patch_booking(
+            self.req.clinic_id, {"requested_date": NEXT_MON.isoformat()}
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()["detail"], OUT_OF_WINDOW)
+
     def test_change_to_full_slot_400(self):
         self.make_request_row(self.s_target2, self.slot_thu, THU)
         res = self.patch_booking(
@@ -438,25 +580,26 @@ class ClinicBookingChangeTests(ClinicFixtureMixin, TestCase):
         self.assertEqual(res.status_code, 400)
 
     def test_change_excludes_self_from_capacity(self):
-        # 정원 1 슬롯 안에서 날짜만 옮기기 — 본인 신청이 정원을 막지 않는다
-        req = self.make_request_row(self.s_target2, self.slot_thu, THU)
-        self.login(self.s_target2.user)
-        res = self.patch_booking(req.clinic_id, {"requested_date": NEXT_THU.isoformat()})
+        # 정원 1 슬롯에 그대로 머무르는 변경 — 본인 신청이 정원을 막지 않는다
+        res = self.patch_booking(self.req.clinic_id, {"slot_id": self.slot_mon.slot_id})
         self.assertEqual(res.status_code, 200)
 
     def test_change_weekday_mismatch_400(self):
-        res = self.patch_booking(self.req.clinic_id, {"requested_date": NEXT_THU.isoformat()})
+        res = self.patch_booking(self.req.clinic_id, {"requested_date": FRI.isoformat()})
         self.assertEqual(res.status_code, 400)
 
     def test_change_others_request_404(self):
         other = self.make_request_row(self.s_target2, self.slot_thu, THU)
-        res = self.patch_booking(other.clinic_id, {"requested_date": NEXT_THU.isoformat()})
+        res = self.patch_booking(other.clinic_id, {"requested_date": FRI.isoformat()})
         self.assertEqual(res.status_code, 404)
 
     def test_change_cancelled_request_400(self):
         self.req.status = ClinicRequest.Status.CANCELLED
         self.req.save(update_fields=["status"])
-        res = self.patch_booking(self.req.clinic_id, {"requested_date": "2026-08-05"})
+        res = self.patch_booking(
+            self.req.clinic_id,
+            {"slot_id": self.slot_fri.slot_id, "requested_date": FRI.isoformat()},
+        )
         self.assertEqual(res.status_code, 400)
 
     def test_change_requires_some_field(self):
@@ -469,7 +612,10 @@ class ClinicBookingChangeTests(ClinicFixtureMixin, TestCase):
     def test_change_banned_403(self):
         req = self.make_request_row(self.s_banned, self.slot_thu, THU)
         self.login(self.s_banned.user)
-        res = self.patch_booking(req.clinic_id, {"requested_date": NEXT_THU.isoformat()})
+        res = self.patch_booking(
+            req.clinic_id,
+            {"slot_id": self.slot_fri.slot_id, "requested_date": FRI.isoformat()},
+        )
         self.assertEqual(res.status_code, 403)
 
 
@@ -478,7 +624,7 @@ class ClinicBookingCancelTests(ClinicFixtureMixin, TestCase):
 
     def setUp(self):
         self.login(self.s_target.user)
-        self.req = self.make_request_row(self.s_target, self.slot_wed, NEXT_WED)
+        self.req = self.make_request_row(self.s_target, self.slot_mon, MON_END)
 
     def test_cancel_pending(self):
         res = self.cancel_booking(self.req.clinic_id)
@@ -528,6 +674,21 @@ class ClinicBookingCancelTests(ClinicFixtureMixin, TestCase):
         self.login(self.s_target2.user)
         self.assertEqual(self.cancel_booking(req.clinic_id, at=NOW_2300).status_code, 200)
 
+    def test_cancel_is_not_gated_by_the_window(self):
+        # 창구 밖 날짜로 잡혀 있는 예약(관리자·이관 데이터)도 무를 수 있다 —
+        # 취소는 자원 반납이라 창구를 보지 않는다(신청·변경만 창구를 본다).
+        req = self.make_request_row(self.s_target2, self.slot_wed, NEXT_WED)
+        self.login(self.s_target2.user)
+        self.assertEqual(self.cancel_booking(req.clinic_id).status_code, 200)
+        req.refresh_from_db()
+        self.assertEqual(req.status, ClinicRequest.Status.CANCELLED)
+
+    def test_cancel_works_after_the_window_closed(self):
+        req = self.make_request_row(self.s_target2, self.slot_wed, NEXT_WED)
+        self.login(self.s_target2.user)
+        # 창구가 닫힌 뒤(7/28)에도 아직 오지 않은 날짜는 무를 수 있다
+        self.assertEqual(self.cancel_booking(req.clinic_id, at=NOW_AFTER_END).status_code, 200)
+
     def test_banned_student_can_still_cancel(self):
         req = self.make_request_row(self.s_banned, self.slot_thu, THU)
         self.login(self.s_banned.user)
@@ -544,19 +705,22 @@ class ClinicBookingRaceTests(TransactionTestCase):
     정원 1 고정(2026-07-21 회의)으로 경합 창이 좁아진 만큼 결과는 더 치명적이다
     (2명이 같은 시간에 배정되면 조교·미트 스페이스가 하나뿐이라 운영이 깨진다).
     동시 신청 4건과 '신청 vs 변경' 교차 경합 둘 다 1건만 통과해야 한다.
+
+    시각을 얼리지 않고 실제 now 로 돈다 — 시험일을 오늘로 두면 창구 끝(다음
+    월요일)이 늘 미래라 당일·창구 규칙에 걸리지 않는다.
     """
 
     def setUp(self):
-        self.exam = Exam.objects.create(name="경합시험", exam_date=datetime.date(2026, 7, 15))
+        today = timezone.localdate()
+        self.exam = Exam.objects.create(name="경합시험", exam_date=today)
+        self.target_date = booking.booking_window_end(today)  # 창구 끝(월) = 항상 미래
+        weekday = booking.model_weekday(self.target_date)
         self.slot = ClinicSlot.objects.create(
-            weekday=4, start_time=datetime.time(19, 0), end_time=datetime.time(20, 0),
+            weekday=weekday, start_time=datetime.time(19, 0), end_time=datetime.time(20, 0),
         )
         self.other_slot = ClinicSlot.objects.create(
-            weekday=4, start_time=datetime.time(20, 0), end_time=datetime.time(21, 0),
+            weekday=weekday, start_time=datetime.time(20, 0), end_time=datetime.time(21, 0),
         )
-        # 실제 now 기준 다음 주 목요일(모델 요일 4) — 당일 마감 규칙과 무관한 미래일
-        today = timezone.localdate()
-        self.target_date = today + datetime.timedelta(days=((3 - today.weekday()) % 7) + 7)
 
     def make_targets(self, count):
         students = [make_student(f"race-{i}", f"경합{i}") for i in range(count)]

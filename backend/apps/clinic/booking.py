@@ -8,17 +8,26 @@
      집계는 clinic_requests 를 센다(잔여석 사본 금지 — ClinicSlot 모델 계약).
      동시성은 트랜잭션 + select_for_update(슬롯 행 잠금)로 막는다 — 정원이
      1 이라 경합 창이 그만큼 좁고 결과는 더 치명적이다.
-  ③ 전날 마감: 클리닉 날짜의 **전날까지만** 신청·변경·취소할 수 있다 —
-     오늘(Asia/Seoul)과 지난 날짜는 시각과 무관하게 불가(2026-07-29 확정,
-     구 "당일 오전 8시까지" 규칙은 폐기). 취소를 '변경'에 포함시킨 판단
-     근거: 마감의 목적이 당일 배정 인력 확정인데, 취소만 열어두면 마감 후
-     이탈로 같은 문제가 생긴다.
+  ③ 신청 창구: 신청할 수 있는 **날짜**는 [내일, 창구 끝] 구간뿐이다.
+     - 앞쪽 끝(전날 마감): 오늘(Asia/Seoul)과 지난 날짜는 시각과 무관하게
+       불가(2026-07-29 확정, 구 "당일 오전 8시까지" 규칙은 폐기). 취소를
+       '변경'에 포함시킨 판단 근거: 마감의 목적이 당일 배정 인력 확정인데,
+       취소만 열어두면 마감 후 이탈로 같은 문제가 생긴다.
+     - 뒤쪽 끝(창구 끝): 그 시험 회차의 **시험일이 속한 주의 다음 주 월요일**
+       까지(2026-07-29 확정 — `booking_window_end`). 창구 끝은 **취소에는
+       걸지 않는다**(아래 취소 항목).
   ④ 노쇼 영구제한: students.clinic_banned(원천 — 사본 금지) → 신청·변경
      403. 취소는 허용(자원 반납 행위).
   ⑤ 중복: 같은 시험에 활성 신청 1건만.
 
 취소는 노쇼로 집계하지 않는다(PRD 3.2.4) — cancelled_at 스탬프만 남기고
 attendance_status·noshow_count·clinic_banned 를 건드리지 않는다.
+**취소에는 창구 끝을 걸지 않는다**(2026-07-29): 신청·변경은 자리를 잡는
+행위라 배정 계획 안에 들어와야 하지만, 취소는 이미 잡은 자리를 반납하는
+행위다 — 막으면 안 올 학생의 자리가 잠긴 채 남는다(운영이 잃기만 한다).
+전날 마감은 그대로 걸린다(당일 이탈 방지). 창구가 닫힌 시점에는 아직
+오지 않은 신청 날짜가 남을 수 없으므로(신청 날짜 ≤ 창구 끝 ≤ 오늘) 이
+판단이 실제로 갈리는 건 관리자·이관으로 들어온 창구 밖 예약뿐이다.
 
 시간 의미론: 기준 시각은 각 진입 함수의 timezone.now() 1회로 고정하고
 마감 판정은 Asia/Seoul 로컬 날짜(timezone.localdate) 기준
@@ -37,19 +46,15 @@ CLINIC_LINK_LEAD = datetime.timedelta(minutes=5)
 # 정원 집계 대상 상태(ClinicSlot 모델 계약 — 대기+승인배정).
 ACTIVE_STATUSES = (ClinicRequest.Status.PENDING, ClinicRequest.Status.APPROVED)
 
-# 예약 가능 기간(GET .../availability) — 기본 14일, 최대 31일.
-#   기본 14일: 클리닉 자격은 시험 회차 단위로 열리고 회차 주기가 주 단위라
-#     2주면 다음 회차 판정 전까지를 덮고, 요일 기반 슬롯이 모든 요일 2회씩
-#     노출되어 달력 한 화면이 비어 보이지 않는다.
-#   최대 31일: 달력 UI 가 한 번에 그리는 최대 단위(한 달)이자 운영 상한 —
-#     그보다 먼 미래는 조교 배정 계획이 서지 않아 열어도 지킬 수 없는 약속이
-#     된다(무한정 미래 개방 금지). 초과 요청은 400.
-AVAILABILITY_DEFAULT_DAYS = 14
-AVAILABILITY_MAX_DAYS = 31
+# 창구 끝의 요일 — 모델 요일 축(0=일…6=토)의 월요일.
+WINDOW_END_WEEKDAY = 1
 
 # 예약 불가 사유(응답 reason) — 마감은 숨기지 않고 사유와 함께 내린다.
 REASON_FULL = "마감"
 REASON_MINE = "내신청"
+
+# 창구 밖 날짜 — 신청·변경 거부 문구(취소에는 쓰지 않는다).
+OUT_OF_WINDOW_MESSAGE = "클리닉 신청 기간 밖의 날짜입니다."
 
 
 class ClinicError(Exception):
@@ -66,8 +71,27 @@ def model_weekday(date):
     return (date.weekday() + 1) % 7
 
 
+def booking_window_end(exam_date):
+    """③ 창구 끝 — 시험일 다음에 오는 첫 **월요일**(시험일이 월요일이면 7일 뒤).
+
+    "시험일이 속한 주의 다음 주 월요일"(2026-07-29 사용자 확정)의 계산식이자
+    창구 끝을 정하는 **유일한 지점** — availability·create·change 가 전부
+    이 함수를 부른다.
+
+    왜 월요일인가: 시험을 본 주 다음 주에 클리닉을 진행한다. 월요일에 신청을
+    닫아야 그날 조교 배정을 확정하고 그 주를 돌릴 수 있다 — 창구가 무한정
+    열려 있으면 배정 계획이 서지 않는다.
+
+    요일 축은 모델 축(0=일…6=토) 하나만 쓴다(`model_weekday`) — 파이썬
+    weekday(월=0)를 여기서 또 꺼내면 축이 둘이 되어 읽는 사람이 매번
+    어느 축인지 되짚어야 한다.
+    """
+    ahead = (WINDOW_END_WEEKDAY - model_weekday(exam_date)) % 7
+    return exam_date + datetime.timedelta(days=ahead or 7)
+
+
 def _check_date_open(target_date, now):
-    """③ 전날 마감 — 오늘·지난 날짜 차단(신청·변경·취소 공통).
+    """③ 창구 앞쪽 끝 — 오늘·지난 날짜 차단(신청·변경·취소 공통).
 
     오늘은 시각을 보지 않는다 — 자정이든 밤이든 오늘 날짜면 닫혀 있다.
     """
@@ -76,6 +100,16 @@ def _check_date_open(target_date, now):
         raise ClinicError("지난 날짜에는 신청·변경·취소할 수 없습니다.")
     if target_date == today:
         raise ClinicError("오늘 클리닉은 신청·변경·취소할 수 없습니다.")
+
+
+def _check_in_window(target_date, exam):
+    """③ 창구 뒤쪽 끝 — 신청·변경 전용(취소는 부르지 않는다, 모듈 docstring).
+
+    availability 에서 안 보이는 날짜라도 API 를 직접 때리면 여기서 걸린다
+    (§4 상태 기반 노출 — 숨김은 보조, 강제는 API 레벨).
+    """
+    if target_date > booking_window_end(exam.exam_date):
+        raise ClinicError(OUT_OF_WINDOW_MESSAGE)
 
 
 def _ensure_can_book(student, exam):
@@ -115,6 +149,7 @@ def create_booking(student, exam, slot, requested_date):
     if model_weekday(requested_date) != slot.weekday:
         raise ClinicError("희망일이 슬롯 요일과 일치하지 않습니다.")
     _check_date_open(requested_date, now)
+    _check_in_window(requested_date, exam)
     _check_duplicate(student, exam)
     with transaction.atomic():
         locked = ClinicSlot.objects.select_for_update().get(pk=slot.pk)
@@ -144,6 +179,9 @@ def change_booking(request, slot, requested_date):
     if model_weekday(requested_date) != slot.weekday:
         raise ClinicError("희망일이 슬롯 요일과 일치하지 않습니다.")
     _check_date_open(requested_date, now)
+    # 창구는 **옮겨 갈 날짜**에만 건다 — 기존 날짜까지 보면 창구 밖으로
+    # 들어온 예약(관리자·이관)을 창구 안으로 되돌릴 길이 막힌다.
+    _check_in_window(requested_date, request.exam)
     _check_duplicate(request.student, request.exam, exclude_pk=request.pk)
     with transaction.atomic():
         locked = ClinicSlot.objects.select_for_update().get(pk=slot.pk)
@@ -221,12 +259,26 @@ def availability(student, exam, date_from=None, date_to=None):
     자격 게이트(§4)는 신청과 동일(`_ensure_can_book`) — 대상이 아니거나 영구
     제한이면 403 으로 **시간표 자체를 못 본다**.
 
+    구간은 **창구**(모듈 docstring ③)와 같다: 내일에서 시작해
+    `booking_window_end(시험일)` 에서 끝난다. 호출자가 `to` 를 더 멀리
+    보내도 창구 끝으로 잘린다 — 잡을 수 없는 날짜를 달력에 세우면 화면이
+    지킬 수 없는 약속을 하게 된다. 창구가 이미 지났으면 `days` 는 빈 배열이고
+    `range.to` 가 `range.from` 보다 앞선다(닫힘의 표현) — **403 이 아니다**:
+    자격은 그대로인데 기간이 끝난 것이라 비대상과 다른 사실이다.
+
+    구간 상한 상수(옛 `AVAILABILITY_DEFAULT_DAYS`=14 / `AVAILABILITY_MAX_DAYS`
+    =31)는 없앴다(2026-07-29). 둘 다 "끝이 없는 창구"를 임시로 잘라 두던
+    값이다 — 이제 끝은 시험일이 정하고 그 길이는 최대 7일(시험 다음 첫
+    월요일까지)이라 14일 기본값은 늘 창구 밖을 가리키는 거짓말이 되고,
+    31일 초과 400 은 잘라내면 그만인 입력에 에러를 내는 이중 규칙이 된다.
+    상한은 창구 끝 하나로 통일한다.
+
     노출 판단(무엇을 빼고 무엇을 사유와 함께 보여줄지):
-    - **날짜 축에서 제거**: 지난 날짜 / 오늘(전날 마감 — 시각 무관) / 그 요일에
-      활성 슬롯이 없는 날. 근거 — 학생이 취할 수 있는 행동이 없고, "지났다"는
-      날짜 전체에 걸리는 사유라 시간마다 반복하면 달력이 사유 문구로 덮인다.
-      폐지(is_active=false) 슬롯도 같은 이유로 존재 자체를 감춘다(신청 시
-      404 존재 비노출과 같은 계약).
+    - **날짜 축에서 제거**: 지난 날짜 / 오늘(당일 신청 불가 — 시각 무관) /
+      창구 끝 이후 / 그 요일에 활성 슬롯이 없는 날. 근거 — 학생이 취할 수
+      있는 행동이 없고, "지났다"는 날짜 전체에 걸리는 사유라 시간마다
+      반복하면 달력이 사유 문구로 덮인다. 폐지(is_active=false) 슬롯도 같은
+      이유로 존재 자체를 감춘다(신청 시 404 존재 비노출과 같은 계약).
     - **시간 축에 사유와 함께 표시**: 마감. 근거 — PRD 3.2.4 가 "정원에 도달한
       슬롯은 신청 버튼 비활성(**마감 표시**)"를 명시한다. 숨기면 학생은 그
       시간이 원래 없는 건지 찼는지 구분할 수 없다. 내 활성 신청이 차지한
@@ -239,17 +291,17 @@ def availability(student, exam, date_from=None, date_to=None):
     _ensure_can_book(student, exam)
     today = timezone.localdate(now)
     date_from = date_from or today
-    if date_to is None:
-        date_to = date_from + datetime.timedelta(days=AVAILABILITY_DEFAULT_DAYS - 1)
-    if date_to < date_from:
+    # 역구간은 **호출자가 준 값끼리만** 본다 — 창구 끝을 채워 넣고 비교하면
+    # 창구가 지난 정상 조회(from=다음 달)가 400 이 되어 버린다.
+    if date_to is not None and date_to < date_from:
         raise ClinicError("조회 시작일이 종료일보다 늦습니다.")
-    if (date_to - date_from).days + 1 > AVAILABILITY_MAX_DAYS:
-        raise ClinicError(f"조회 구간은 최대 {AVAILABILITY_MAX_DAYS}일입니다.")
+    window_end = booking_window_end(exam.exam_date)
     start = max(date_from, today + datetime.timedelta(days=1))  # 오늘은 항상 뺀다
+    end = min(date_to, window_end) if date_to is not None else window_end
     return {
         "exam_id": exam.exam_id,
-        "range": {"from": start.isoformat(), "to": date_to.isoformat()},
-        "days": _day_blocks(student, start, date_to),
+        "range": {"from": start.isoformat(), "to": end.isoformat()},
+        "days": _day_blocks(student, start, end),
     }
 
 

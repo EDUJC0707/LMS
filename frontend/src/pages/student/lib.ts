@@ -331,15 +331,56 @@ export interface AvailabilityDay {
  * GET /api/student/clinic/availability?exam_id=&from=&to=
  *
  * ⚠ 쿼리 키는 `from`·`to` 다(`date_from` 아님 — clinic/views.py 실측).
- * `days` 에는 **예약 가능한 날만** 담긴다: 지난 날짜·오늘(전날 마감이라 시각과
- * 무관)·활성 슬롯이 없는 요일은 아예 빠진다. 그래서 달력은 "이 날짜가 days 에
- * 있나"로만 생사를 판정한다 — 죽이는 규칙을 화면이 따로 갖지 않는다.
+ * `days` 에는 **예약 가능한 날만** 담긴다: 지난 날짜·오늘(당일 신청 불가라
+ * 시각과 무관)·**신청 창구 끝(시험 주 다음 월요일) 이후**·활성 슬롯이 없는
+ * 요일은 아예 빠진다. 그래서 달력은 "이 날짜가 days 에 있나"로만 생사를
+ * 판정한다 — 죽이는 규칙을 화면이 따로 갖지 않는다.
+ * 창구가 지났으면 `days` 가 비고 `range.to` 가 `range.from` 보다 앞선다
+ * (403 이 아니다 — 자격은 있는데 기간이 끝난 것).
  * 자격이 없거나 노쇼 제한이면 403 — 시간표 자체를 못 본다.
  */
 export interface ClinicAvailability {
   exam_id: number;
   range: { from: string; to: string };
   days: AvailabilityDay[];
+}
+
+/**
+ * 창구가 지났는가 — 서버는 403 이 아니라 **뒤집힌 구간**으로 말한다
+ * (자격은 그대로인데 기간만 끝난 것이라 비대상과 다른 사실이다).
+ * 시작(내일)이 끝(시험 주 다음 월요일)을 넘어서면 창구가 지난 것이다.
+ */
+export function windowClosed(range: { from: string; to: string }): boolean {
+  return range.to < range.from;
+}
+
+/** 달력이 설 달과, 좌우 화살표가 갈 수 있는 양 끝. */
+export interface CalendarMonths {
+  month: string;
+  first: string;
+  last: string;
+}
+
+/**
+ * 달력의 달 — 창구가 걸친 달 밖으로는 나가지 않는다.
+ *
+ * 창구는 길어야 7일(내일~시험 주 다음 월요일)이라 걸치는 달은 많아야 둘이다.
+ * 그래서 화살표를 열어 두면 학생이 고를 게 하나도 없는 달을 계속 넘기게 된다 —
+ * 끝을 화살표의 생사로 말한다(칸의 생사와 같은 어법).
+ *
+ * `picked` 는 학생이 화살표로 넘긴 달(null = 아직 안 넘겼다). 처음 열 달은
+ * **고를 게 있는 첫 달**이다: 창구가 달을 넘겨 걸치면(7/31 시험 → 8/3 만 열림)
+ * 이번 달로 열어 봐야 전부 죽은 칸이다.
+ */
+export function calendarMonths(
+  avail: ClinicAvailability,
+  picked: string | null,
+): CalendarMonths {
+  const open = avail.days;
+  const first = (open[0]?.date ?? avail.range.from).slice(0, 7);
+  const last = (open[open.length - 1]?.date ?? avail.range.from).slice(0, 7);
+  const month = picked === null || picked < first ? first : picked > last ? last : picked;
+  return { month, first, last };
 }
 
 /** 시간 열이 그릴 것 — 고를 날짜가 없다 / 그 날은 닫혔다 / 시간 목록. */
