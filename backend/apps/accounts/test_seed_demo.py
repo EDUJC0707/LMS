@@ -158,10 +158,18 @@ class SeedDemoTests(TestCase):
         self.assertTrue(Score.objects.filter(is_taken=True).exists())
 
     def test_clinic_seeded(self):
-        self.assertEqual(ClinicSlot.objects.count(), 5)
+        # 월~금 × 4교시. 정원이 1 고정(2026-07-21 회의)이라 요일당 시간이 하나뿐이면
+        # 전교생이 하루 한 자리를 두고 다투는 셈이라 예약 화면이 성립하지 않는다.
         self.assertEqual(
-            sorted(ClinicSlot.objects.values_list("weekday", flat=True)), [1, 2, 3, 4, 5]
+            sorted(ClinicSlot.objects.values_list("weekday", flat=True)),
+            sorted([1, 2, 3, 4, 5] * 4),
         )
+        self.assertEqual(
+            sorted({s.start_time.hour for s in ClinicSlot.objects.all()}),
+            [17, 18, 19, 20],
+        )
+        # 정원은 컬럼이 아니라 운영 사실이다 — 전 슬롯이 1이어야 한다.
+        self.assertEqual(set(ClinicSlot.objects.values_list("capacity", flat=True)), {1})
         self.assertTrue(ClinicEligibility.objects.filter(is_target=True).exists())
         req_statuses = set(ClinicRequest.objects.values_list("status", flat=True))
         self.assertIn(ClinicRequest.Status.PENDING, req_statuses)

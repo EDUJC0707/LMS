@@ -501,6 +501,12 @@ class Command(BaseCommand):
             .order_by("counsel_id")
             .first()
         )
+        # 대기열은 출결 트리거가 만든다 — 비어 있다면 그 트리거가 안 돈 것이고,
+        # 여기서 AttributeError 로 죽으면 원인이 안 보인다.
+        if card is None:
+            raise RuntimeError(
+                "결석 상담 대기열이 비어 있다 — 출결 트리거가 돌지 않았다."
+            )
         card.called_at = now
         card.status = AbsenceCounseling.Status.COMPLETED
         card.absence_reason = "감기몸살"
