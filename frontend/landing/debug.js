@@ -14,7 +14,7 @@
 
 /* 저장 키에 버전을 붙인다. 기본값이 바뀔 때 키를 올리면 옛 저장값이 자동으로
    버려진다 — 안 그러면 코드를 고쳐도 화면은 옛 값 그대로라 한참 헤맨다. */
-const LS = 'hjc-debug-v10';
+const LS = 'hjc-debug-v11';
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 /* 코드에 박힌 값. 첫 open 때 한 번만 뜬다 — 닫았다 열 때마다 뜨면 그때의
@@ -196,18 +196,32 @@ export function openDebug() {
     JSON.parse(localStorage.getItem(LS) || '{}')
   );
   const save = () => localStorage.setItem(LS, JSON.stringify(S));
-  // blob: 은 세션을 못 넘긴다 — 저장된 것은 파일 경로일 때만 되건다
-  if (S.space) rootS.setProperty('--space-img', `url("${S.space}")`);
+  // blob: 은 세션을 못 넘긴다 — 저장된 것은 파일 경로일 때만 되건다.
+  // 실제 복원은 setSpace 가 아래에서 한 번 부른다(영상/사진 분기를 한 곳에 둔다).
 
   /* 사진은 CSS 변수 하나로 건다.
      blob: URL(로컬에서 연 파일)은 **저장하지 않는다** — 새로고침하면 죽는 주소라
      남겨 두면 "코드에 없는 이미지가 뜨다 말다 한다" 는 유령이 된다.
      assets/space/ 의 경로일 때만 기억한다. */
   let pick = null;
+  const vid = document.querySelector('.spacevid');
+  const isVideo = s => /\.(mp4|webm|mov)(\?|$)/i.test(s || '');
   const setSpace = (src, name) => {
     if (src && src.startsWith('blob:')) { S.space = ''; S.spaceName = name || '(로컬 파일)'; }
     else { S.space = src || ''; S.spaceName = ''; }
-    rootS.setProperty('--space-img', src ? `url("${src}")` : 'none');
+
+    /* 사진과 영상은 **한 번에 하나만** 켠다. 둘 다 켜 두면 위아래로 겹쳐서
+       밝기가 두 배가 되고 무엇을 보고 있는지 알 수 없게 된다. */
+    const v = isVideo(src) || (name && isVideo(name));
+    if (v && vid) {
+      rootS.setProperty('--space-img', 'none');
+      if (vid.src !== src) vid.src = src;
+      vid.dataset.on = '';
+      vid.play().catch(() => {});      // 자동재생이 막히면 조용히 넘어간다
+    } else {
+      if (vid) { vid.removeAttribute('data-on'); vid.pause(); }
+      rootS.setProperty('--space-img', src ? `url("${src}")` : 'none');
+    }
     save();
     apply();
   };
@@ -293,6 +307,7 @@ export function openDebug() {
       rootS.removeProperty('--' + k);
     Object.assign(S, { blue: BASE.blue, ...BASE.teacher, space: '', spaceName: '' });
     if (S.blobURL) { URL.revokeObjectURL(S.blobURL); S.blobURL = null; }
+    if (vid) { vid.removeAttribute('data-on'); vid.pause(); vid.removeAttribute('src'); vid.load(); }
     if (pick) pick.sel.value = '';
     delete S.pos;
     for (const [, rows] of GROUPS)
@@ -399,6 +414,7 @@ pack-layout.py TEACHER_H=${((mob ? S.hSm : S.h) / 100).toFixed(2)} TEACHER_RIGHT
   });
 
   document.body.append(el);
+  if (S.space) { setSpace(S.space); if (pick) pick.sel.value = S.space; }
   apply('new');            // 저장값이 없으면 코드값 그대로 — 여는 것만으로 화면이 안 바뀐다
   fold(!!S.folded);
   place();

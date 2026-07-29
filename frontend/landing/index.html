@@ -102,14 +102,20 @@
      그 전까지는 걷혀도 검정뿐이라 볼 것이 없었다.
      밝기를 눌러 두는 이유: 별이 밝아 그냥 깔면 헤드라인(휘도 110)을 이긴다.
      톤 위계가 무너지는 것이 예전에 "촌스러움" 의 정체였다(SPEC §4-옛 ①). */
-  .space{
+  .space, .spacevid{
     position:absolute; inset:0; z-index:0; pointer-events:none;
-    background:var(--space-img, none) var(--space-pos, center) / cover no-repeat;
     opacity:var(--space-dim, .45);
     filter:brightness(var(--space-bright, 1)) saturate(var(--space-sat, 1));
     transform:scale(var(--space-zoom, 1));
     transform-origin:center;
   }
+  .space{ background:var(--space-img, none) var(--space-pos, center) / cover no-repeat }
+  /* 영상도 사진과 **같은 변수**를 쓴다. 따로 두면 밝기를 두 번 맞춰야 하고,
+     한쪽만 고치는 날이 온다. 고를 때 하나만 켜진다. */
+  .spacevid{ width:100%; height:100%; object-fit:cover; display:none }
+  .spacevid[data-on]{ display:block }
+  /* 움직임을 원치 않는 사용자에게 배경이 계속 도는 것은 그 자체가 문제다 */
+  @media (prefers-reduced-motion: reduce){ .spacevid{ display:none !important } }
 
   .dust, .wash, .motifs{ position:absolute; pointer-events:none; display:block }
   .dust, .motifs{ inset:0 }
@@ -295,6 +301,7 @@
   <!-- 우주 사진(정적) → 먼지밭. 커서가 지나가면 먼지가 걷히고 우주가 드러난다 -->
   <div class="field" id="field" aria-hidden="true">
     <div class="space"></div>
+    <video class="spacevid" muted loop playsinline preload="none"></video>
   </div>
 
   <div class="copy">
