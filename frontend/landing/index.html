@@ -1,4 +1,11 @@
 <!doctype html>
+<!--
+  한종철 통합과학 — 비로그인 랜딩
+
+  배경은 먼지밭이다. 커서가 지나가면 그 자리의 먼지가 밀려나며 옅어지고, 떠나면
+  서서히 되메워진다. **모티프판은 2026-07-29 에 걷어냈다**(다른 비주얼로 교체 예정) —
+  왜 있었고 무엇을 배웠는지는 SPEC.md §4-옛 에 남겨 두었다.
+-->
 <html lang="ko">
 <head>
 <meta charset="utf-8">
@@ -75,7 +82,7 @@
     color:var(--accent); background:var(--chip);
     transition:color .2s, border-color .2s, background .2s;
   }
-  .login:hover{ color:#090B12; background:var(--accent); border-color:var(--accent) }
+  .login:hover{ color:#080813; background:var(--accent); border-color:var(--accent) }
 
   /* ── 히어로 ────────────────────────────────────────────── */
   .hero{
@@ -89,15 +96,10 @@
      아니라 개체별 스칼라로 옮겨 화면에 남는 경계선을 모티프 실루엣뿐으로 만든다.
      피크 렌더휘도 68 < 헤드라인 110 — 배경이 전경보다 어두워야 위계가 선다. */
   .field{ position:absolute; inset:0; z-index:0; overflow:hidden; contain:paint }
-  /* 판 검수 모드(?bare) — 판과 강사만 남긴다 */
-  [data-bare] .nav, [data-bare] .copy, [data-bare] section,
-  [data-bare] footer, [data-bare] .dust{ display:none !important }
-  [data-bare] .hero{ min-height:100svh; padding-top:0 }
-  [data-bare] body{ overflow:hidden }
-
-  /* 아래에서 위로: 모티프 → 먼지. 먼지가 맨 위인 이유는 덮개이기 때문이다 */
-  .motifs, .dust{ position:absolute; inset:0; pointer-events:none; display:block }
-  .dust{ mix-blend-mode:screen }   /* 검정 위에서 먼지가 빛으로 읽힌다 */
+  .dust, .wash, .motifs{ position:absolute; pointer-events:none; display:block }
+  .dust, .motifs{ inset:0 }
+  .dust{ mix-blend-mode:screen }    /* 검정 위에서 먼지가 빛으로 읽힌다 */
+  .wash{ left:0; top:0 }            /* 크기·margin 은 JS 가 창 반경으로 계산 */
 
   /* 모티프는 DOM 요소가 아니라 캔버스 한 장이다. 개체별 opacity 로는 "원자의
      왼쪽 고리만 보인다" 를 표현할 수 없어서 — 반응 단위가 개체가 아니라
@@ -119,7 +121,7 @@
     line-height:1;
     letter-spacing:-.045em;
     word-break:keep-all;
-    text-shadow:0 0 72px #000, 0 0 30px rgba(9,11,18,.95);
+    text-shadow:0 0 72px #000, 0 0 30px rgba(8,8,19,.95);
   }
   h1 span{ display:block }
   /* 두 행 모두 배경과 같은 색상각(H236 네이비)이다. 1행은 물러서고 2행이 앞에 선다.
@@ -152,14 +154,14 @@
   .wrap{ max-width:60rem; margin:0 auto }
 
   /* 커리큘럼 — 밝음 */
-  #curriculum{ background:#F4F2ED; color:#10131D; --dim:#5E6782; --line:rgba(16,19,29,.13) }
+  #curriculum{ background:#F4F2ED; color:#14151C; --dim:#666B7A; --line:rgba(20,21,28,.12) }
   .tracks{ display:flex; gap:8px; margin-bottom:2.4rem; flex-wrap:wrap }
   .track{
     padding:.6rem 1.15rem; border-radius:999px; border:1px solid var(--line);
     font-size:.9rem; font-weight:600; color:var(--dim); cursor:pointer;
     background:transparent; font-family:inherit;
   }
-  .track[aria-selected="true"]{ background:#10131D; color:#F1F1F3; border-color:#10131D }
+  .track[aria-selected="true"]{ background:#14151C; color:#fff; border-color:#14151C }
   .steps{ display:grid; gap:12px }
   .step{
     display:grid; grid-template-columns:9.5rem 1fr; gap:1.4rem;
@@ -172,7 +174,7 @@
   .badge{
     display:inline-block; margin-left:.5rem; padding:.15rem .5rem; border-radius:5px;
     font-size:.7rem; font-weight:700; letter-spacing:.02em;
-    background:#10131D; color:#F1F1F3; vertical-align:.12em;
+    background:#14151C; color:#fff; vertical-align:.12em;
   }
   .units{ display:flex; flex-wrap:wrap; gap:6px; margin-top:.75rem }
   .unit{
@@ -187,7 +189,7 @@
   .note{ margin-top:2.4rem; font-size:.82rem; color:var(--dim); line-height:1.6 }
 
   /* 정오표 — 중간톤 */
-  #errata{ background:#0E1018; color:#E9EBF1; --dim:#848FAD; --line:rgba(107,135,222,.22) }
+  #errata{ background:#15161F; color:#E7E8F0; --dim:#8A8DA8; --line:rgba(120,126,215,.22) }
   .tbl{ width:100%; border-collapse:collapse; font-size:.92rem }
   .tbl th{
     text-align:left; font-size:.78rem; font-weight:600; letter-spacing:.03em;
@@ -199,7 +201,7 @@
   .title-cell{ font-weight:600 }
   .new{
     display:inline-block; margin-left:.45rem; padding:.1rem .42rem; border-radius:4px;
-    font-size:.66rem; font-weight:700; background:#E9EBF1; color:#0E1018; vertical-align:.14em;
+    font-size:.66rem; font-weight:700; background:#E8EAEE; color:#1C1E23; vertical-align:.14em;
   }
   .detail td{ padding:0; border-bottom:1px solid var(--line) }
   .detail-in{ display:none; padding:0 0 1.4rem }
@@ -209,19 +211,19 @@
   .rows td{ padding:.6rem .8rem; border-top:1px solid var(--line) }
   .rows tr td:first-child{ color:var(--dim); white-space:nowrap }
   .was{ color:var(--dim); text-decoration:line-through }
-  .now{ color:#F1F1F3; font-weight:600 }
+  .now{ color:#fff; font-weight:600 }
   .dl{
     display:inline-block; margin-top:1rem; font-size:.82rem; color:var(--dim);
     border:1px solid var(--line); border-radius:999px; padding:.45rem 1rem;
   }
-  .dl:hover{ color:#F1F1F3; border-color:rgba(158,174,225,.42) }
+  .dl:hover{ color:#fff; border-color:rgba(255,255,255,.35) }
   .empty{ padding:2.5rem 0; color:var(--dim); font-size:.95rem }
   .report{
     margin-top:2.6rem; padding-top:2rem; border-top:1px solid var(--line);
     display:flex; justify-content:flex-end;
   }
   .btn{
-    padding:.7rem 1.4rem; border-radius:999px; background:#E9EBF1; color:#0E1018;
+    padding:.7rem 1.4rem; border-radius:999px; background:#E7E8F0; color:#15161F;
     font-size:.88rem; font-weight:700; white-space:nowrap; border:0; cursor:pointer;
     font-family:inherit;
   }
@@ -231,7 +233,7 @@
   #contact .sec-head{ margin-bottom:2rem }
   .ch{
     display:inline-block; padding:.85rem 1.8rem; border-radius:999px;
-    background:var(--accent); color:#090B12; font-weight:700; font-size:.95rem;
+    background:var(--accent); color:#080813; font-weight:700; font-size:.95rem;
     border:0; cursor:pointer; font-family:inherit;
   }
   footer{
@@ -344,21 +346,16 @@
 </footer>
 
 <script type="module">
-import { UNITS, CURRICULUM, ERRATA } from './data.js';
+import { CURRICULUM, ERRATA } from './data.js';
 import { mountField, mountNavDust } from './field.js';
 import { openChat } from './chat.js';
 
-/* 판 검수 모드 — index.html?bare
-   모티프 10개를 전부 100% 로 깔고 강사만 남긴다. 배치가 겹치는지 균형이 맞는지
-   눈으로 보기 위한 것이고, **별도 페이지를 만들지 않는다** — 판이 두 군데 있으면
-   반드시 한쪽만 고치는 날이 온다(tune.html 을 접은 이유). field.js 가 이미 굽는
-   ink 캔버스를 그대로 쓰므로 LAYOUT 을 고치면 여기도 자동으로 따라온다. */
-const BARE = new URLSearchParams(location.search).has('bare');
-if (BARE) document.documentElement.dataset.bare = '';
-
-/* 히어로 */
-mountField(document.getElementById('field'), UNITS, { bare: BARE });
-if (!BARE) mountNavDust(document.querySelector('.nav'));
+/* 히어로 — 숨은 6개 */
+/* 배경. **모티프판은 걷어냈다**(2026-07-29) — 빈 목록을 넘기면 이미지를 받지도
+   굽지도 않고, 오려낼 잉크가 없어 먼지와 바람만 남는다. 렌더 코드는 그대로 두었다:
+   다른 비주얼이 정해지면 그 자리에 넣으면 된다. 기록은 SPEC.md §4-옛. */
+mountField(document.getElementById('field'), []);
+mountNavDust(document.querySelector('.nav'));
 
 /* 디버그 패널 — ⌘⌥D(맥) / Ctrl+Alt+D. 누르기 전에는 debug.js 를 내려받지도 않는다.
    code 로 본다(key 가 아니라) — ⌥ 조합에서 macOS 는 key 를 '∂' 로 바꿔 준다. */
@@ -447,7 +444,7 @@ if (!ERRATA.length) {
 
 /* 채널톡 */
 document.querySelectorAll('[data-chat]').forEach(b =>
-  b.addEventListener('click', () => (BARE ? (()=>{}) : openChat)(b.dataset.chat)));
+  b.addEventListener('click', () => openChat(b.dataset.chat)));
 </script>
 </body>
 </html>

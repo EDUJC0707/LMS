@@ -7,10 +7,11 @@
  * 읽어오는 자리다(SPEC §7-2).
  */
 
-/* 히어로에 숨는 것들. 순서가 곧 화면 배치 순서다(field.js LAYOUT과 짝).
-   accent 계열을 쓴다 — 같은 개념의 base 버전은 검정에서 흐릿한 유리 덩어리가 되는데,
-   accent 는 형태가 또렷하고 색이 남는다(미토콘드리아 크리스타·나선은하·지구 판 경계). */
-export const UNITS = [
+/* 히어로에 숨던 모티프 10종 — **2026-07-29 폐기.** 다른 비주얼로 교체한다.
+   화면은 더 이상 이걸 읽지 않는다(index.html 이 mountField 에 빈 목록을 넘긴다).
+   되살릴 때를 위해 이름과 경로만 남긴다. 왜 있었고 무엇을 배웠는지는 SPEC.md §4-옛.
+   에셋은 assets/motifs/ 에 그대로 있고 굽기 전 원본은 local/assets/motifs_accent/. */
+export const RETIRED_UNITS = [
   { key: 'atom', asset: 'assets/motifs/atom.webp' },
   { key: 'dna', asset: 'assets/motifs/dna.webp' },
   { key: 'chromosome', asset: 'assets/motifs/chromosome.webp' },
@@ -22,7 +23,6 @@ export const UNITS = [
   { key: 'tectonics', asset: 'assets/motifs/tectonics.webp' },
   { key: 'universe', asset: 'assets/motifs/universe.webp' },
 ];
-
 /**
  * 커리큘럼 — 4단계 × 2트랙.
  * 통합과학은 2028이 첫 시행이라 수능 기출이 없어 `기출분석` 단계를 두지 않았다.
