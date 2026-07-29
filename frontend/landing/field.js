@@ -41,7 +41,7 @@ const CFG = {
   /* 우주 — 커서 자리에서만 드러난다. 창은 먼지가 쓰는 **바로 그것**이다.
      따로 만들면 둘이 미묘하게 어긋나 "왜 여기는 걷혔는데 안 보이지" 가 된다. */
   spaceDim: 1.0,     // 창 한복판에서의 불투명도. 확정(2026-07-29)
-  spaceWin: 1.5,     // 드러나는 반경 = R × 이 값. 확정(2026-07-29) — 135px.
+  spaceWin: 4.0,     // 드러나는 반경 = R × 이 값. 확정(2026-07-29) — 360px.
                      // 곡선 전체가 이 안으로 압축된다(자르는 게 아니다)
   spaceZoom: 1.0,    // cover 배율에 곱한다. **사진마다 다르다** — data.js SPACE 의
                      // zoom 이 원본이고, 배경을 갈아 끼울 때 여기로 들어온다
@@ -121,6 +121,15 @@ export function mountField(root, units) {
      히어로가 검정으로 남는다. 기본값은 false(=자율 배회가 대신 분다)이고,
      마우스/펜 pointermove 가 한 번 들어온 뒤에야 바람이 커서 소유로 넘어간다. */
   let FINE = false;
+
+  /* **입력이 오기 전에는 아무것도 드러나지 않는다**(사용자 지시 2026-07-29).
+     전에는 마운트하자마자 자율 배회가 돌아 화면 한복판에 우주가 떠 있었다 —
+     커서가 거기 있지도 않은데. 열자마자 검정이고, 손을 움직여야 열린다.
+
+     터치에는 pointermove 가 오지 않으므로 배경을 영영 못 본다. 그래서 스크롤을
+     신호로 쓴다 — 손가락으로 화면을 만졌다는 유일한 증거이고, 타이머처럼
+     "가만히 있었는데 저절로 켜지는" 일이 없다. */
+  let woke = false;
 
   /* ── 워시 — 커서를 따라다니는 아주 옅은 빛.
      2026-07-29 사용자 지시로 절반으로 낮췄다(.070 → .034). 이건 남기되 눈에
@@ -277,9 +286,17 @@ export function mountField(root, units) {
     pxN = clamp01((e.clientX - r.left) / r.width);
     pyN = clamp01((e.clientY - r.top) / r.height);
     idle = 0;
-    if (!FINE) { FINE = true; wgt = 1; }   // 첫 마우스 입력에서 인계 — 깜빡이지 않게
+    if (!FINE) {
+      FINE = true; wgt = 1;                // 첫 마우스 입력에서 인계 — 깜빡이지 않게
+      // 첫 자리로 **순간이동**한다. 중앙에서 끌려오면 지나온 자리가 쓸려 보인다
+      cx = sx = fx = pxN; cy = sy = fy = pyN;
+      woke = true;
+    }
   }, { passive: true });
-  addEventListener('scroll', () => { scrollP = clamp01(scrollY / innerHeight); }, { passive: true });
+  addEventListener('scroll', () => {
+    scrollP = clamp01(scrollY / innerHeight);
+    woke = true;                            // 터치가 화면을 만졌다는 신호
+  }, { passive: true });
 
   /* ── 렌더 ───────────────────────────────────────────────── */
   let sx = .5, sy = .5, fx = .5, fy = .5;    // 바람의 눈(정규화)
@@ -304,6 +321,8 @@ export function mountField(root, units) {
       ty = .46 + .20 * Math.sin(t * .170 + 1.1) + .06 * Math.sin(t * .067) + .30 * scrollP;
       wgt = 1;
     }
+    if (!woke) { tx = cx; ty = cy; wgt = 0; }   // 아직 아무 입력도 없었다
+
     const nsx = sx + (tx - sx) * (1 - Math.exp(-6.0 * dt));
     const nsy = sy + (ty - sy) * (1 - Math.exp(-6.0 * dt));
     // 속도는 정규화 좌표가 아니라 px/s 로 — 화면 비율에 따라 쓸림이 달라지면 안 된다
@@ -329,7 +348,7 @@ export function mountField(root, units) {
       const rect = [SX - win - pad, SY - win - pad, 2 * (win + pad), 2 * (win + pad)];
       if (prevSpaceRect) sctx.clearRect(...prevSpaceRect);
       sctx.clearRect(...rect);
-      const ready = spaceEl && (spaceEl.tagName === 'IMG'
+      const ready = wgt > .004 && spaceEl && (spaceEl.tagName === 'IMG'
         ? spaceEl.complete && spaceEl.naturalWidth
         : spaceEl.readyState >= 2);
       if (ready) {
@@ -340,7 +359,7 @@ export function mountField(root, units) {
            끝을 0 으로 맞춰 두면 어디서도 경계선이 생기지 않는다. */
         for (const [q, v] of [[0, 1], [.167, .882], [.333, .607], [.5, .325],
                               [.667, .135], [.833, .044], [1, 0]])
-          g.addColorStop(q, `rgba(255,255,255,${(v * CFG.spaceDim).toFixed(4)})`);
+          g.addColorStop(q, `rgba(255,255,255,${(v * CFG.spaceDim * wgt).toFixed(4)})`);
         sctx.fillStyle = g;
         sctx.fillRect(...rect);
         sctx.globalCompositeOperation = 'source-in';
