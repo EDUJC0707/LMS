@@ -158,14 +158,16 @@
 
   /* ── 아래 섹션 — 색이 바뀐다 ──────────────────────────────── */
   section{ padding:clamp(80px,13vh,180px) var(--pad) }
-  .sec-head{ max-width:60rem; margin:0 auto clamp(40px,6vh,72px) }
+  .sec-head{ max-width:52rem; margin:0 auto clamp(32px,5vh,56px) }
   .sec-head h2{
     font-weight:900; font-size:clamp(2rem,4.2vw,3.2rem);
     letter-spacing:-.04em; line-height:1.05; margin-bottom:.9rem;
   }
   .sec-head p{ color:var(--dim); font-size:clamp(.95rem,1.3vw,1.05rem); line-height:1.7 }
   .stamp{ display:block; margin-top:1rem; font-size:.8rem; color:var(--dim); opacity:.75 }
-  .wrap{ max-width:60rem; margin:0 auto }
+  /* 52rem(832px) — 60rem 은 규칙선이 글보다 450px 더 가서 오른쪽이 비었다.
+     한 줄 길이도 여기가 읽기 좋다(한글 45~50자). */
+  .wrap{ max-width:52rem; margin:0 auto }
 
   /* 커리큘럼 — 밝음 */
   #curriculum{ background:#F4F2ED; color:#14151C; --dim:#666B7A; --line:rgba(20,21,28,.12) }
@@ -178,7 +180,7 @@
   .track[aria-selected="true"]{ background:#14151C; color:#fff; border-color:#14151C }
   .steps{ display:grid; gap:12px }
   .step{
-    display:grid; grid-template-columns:9.5rem 1fr; gap:1.4rem;
+    display:grid; grid-template-columns:5.5rem 1fr; gap:1.6rem;
     padding:1.5rem 0; border-top:1px solid var(--line);
   }
   .step:last-child{ border-bottom:1px solid var(--line) }
@@ -195,12 +197,18 @@
     font-size:.76rem; color:var(--dim); border:1px solid var(--line);
     padding:.2rem .55rem; border-radius:999px;
   }
+  /* 단계 목록에서 떼어낸다. 붙어 있으면 STEP 05 로 읽힌다 —
+     "단계와 별도" 라고 써 놓고 배치가 반대였다. */
   .mock{
-    margin-top:2.6rem; padding:1.6rem; border:1px solid var(--line); border-radius:14px;
+    margin-top:4.5rem; padding-left:1.1rem; border-left:2px solid var(--line);
   }
-  .mock h3{ font-size:.95rem; font-weight:700; margin-bottom:.4rem }
-  .mock p{ color:var(--dim); font-size:.9rem; line-height:1.6 }
-  .note{ margin-top:2.4rem; font-size:.82rem; color:var(--dim); line-height:1.6 }
+  .mock h3{ font-size:1rem; font-weight:800; margin-bottom:.35rem; letter-spacing:-.02em }
+  .mock p{ color:var(--dim); font-size:.92rem; line-height:1.6 }
+  /* 커리큘럼 구조의 근거. 법적 고지는 성격이 달라 footer 로 내렸다 */
+  .note{
+    margin-top:3.2rem; padding-top:1.4rem; border-top:1px solid var(--line);
+    font-size:.84rem; color:var(--dim); line-height:1.7; max-width:38rem;
+  }
 
   /* 정오표 — 중간톤 */
   #errata{ background:#15161F; color:#E7E8F0; --dim:#8A8DA8; --line:rgba(120,126,215,.22) }
@@ -231,29 +239,40 @@
     border:1px solid var(--line); border-radius:999px; padding:.45rem 1rem;
   }
   .dl:hover{ color:#fff; border-color:rgba(255,255,255,.35) }
-  .empty{ padding:2.5rem 0; color:var(--dim); font-size:.95rem }
-  .report{
-    margin-top:2.6rem; padding-top:2rem; border-top:1px solid var(--line);
-    display:flex; justify-content:flex-end;
-  }
+  .empty{ padding:1.2rem 0 0; color:var(--dim); font-size:.95rem }
+  /* 왼쪽 정렬. 오른쪽 끝에 혼자 떠 있으면 표가 비었을 때 갈 곳 없는 버튼이 된다 */
+  .report{ margin-top:2rem; display:flex }
   .btn{
     padding:.7rem 1.4rem; border-radius:999px; background:#E7E8F0; color:#15161F;
     font-size:.88rem; font-weight:700; white-space:nowrap; border:0; cursor:pointer;
     font-family:inherit;
   }
 
-  /* 컨택트 — 검정으로 되돌아온다 */
-  #contact{ background:#000; text-align:center }
-  #contact .sec-head{ margin-bottom:2rem }
+  /* 컨택트 — 검정으로 되돌아온다. 셋 중 혼자 가운데 정렬이라 튀었다: 왼쪽으로 맞췄다.
+     세로 180px 패딩에 h2 하나 + 버튼 하나뿐이라 미완성으로 읽혀서
+     footer 와 한 덩어리로 묶었다(아래 여백을 걷고 구분선으로 잇는다). */
+  #contact{ background:#000; padding-bottom:clamp(48px,7vh,88px) }
+  #contact .sec-head{ margin-bottom:1.6rem }
   .ch{
     display:inline-block; padding:.85rem 1.8rem; border-radius:999px;
     background:var(--accent); color:#080813; font-weight:700; font-size:.95rem;
     border:0; cursor:pointer; font-family:inherit;
   }
   footer{
-    padding:3rem var(--pad) 4rem; background:#000;
-    color:var(--dim); font-size:.8rem; line-height:1.9; text-align:center;
+    padding:clamp(28px,4vh,44px) var(--pad) clamp(48px,7vh,80px); background:#000;
+    color:var(--dim); font-size:.8rem; line-height:1.8;
   }
+  .foot{
+    max-width:52rem; margin:0 auto;
+    padding-top:clamp(24px,3.5vh,36px); border-top:1px solid var(--line);
+    display:flex; gap:1.5rem 3rem; flex-wrap:wrap; justify-content:space-between;
+  }
+  .foot b{ color:var(--fg); font-weight:700; font-size:.86rem; letter-spacing:-.02em }
+  .foot dl{ display:grid; grid-template-columns:auto 1fr; gap:.25rem .9rem; margin:0 }
+  .foot dt{ opacity:.6 }
+  .foot dd{ margin:0 }
+  /* 커리큘럼의 법적 고지가 여기로 내려왔다 — 근거와 고지는 성격이 다르다 */
+  .foot .fine{ flex-basis:100%; margin-top:.4rem; font-size:.76rem; opacity:.7; line-height:1.7 }
 
   /* ── 모바일 ──────────────────────────────────────────────── */
   @media (max-width:860px){
@@ -330,8 +349,7 @@
 
     <p class="note">
       통합과학은 2028학년도가 첫 시행이라 수능 기출이 없습니다.
-      기출 분석 단계를 두지 않고, 개념과 문제풀이로 그 자리를 채웁니다.<br><br>
-      본 커리큘럼은 2028학년도 대비 기준이며, 교육과정·출제 방향 확정에 따라 일부 변경될 수 있습니다.
+      기출 분석 단계를 두지 않고, 개념과 문제풀이로 그 자리를 채웁니다.
     </p>
   </div>
 </section>
@@ -351,7 +369,7 @@
 
 <section id="contact">
   <div class="wrap">
-    <div class="sec-head" style="text-align:center">
+    <div class="sec-head">
       <h2>문의</h2>
     </div>
     <button class="ch" data-chat="상담 문의">상담 문의하기</button>
@@ -359,8 +377,23 @@
 </section>
 
 <footer>
-  한종철 통합과학<br>
-  <span style="opacity:.7">© 2026</span>
+  <div class="foot">
+    <div>
+      <b>한종철 통합과학</b><br>
+      © 2026
+    </div>
+    <!-- TODO 사업자 정보 — 상호·대표·등록번호·통신판매업신고·주소·전화.
+         교육 서비스는 전자상거래법상 표시 의무가 있다. 값이 오면 dd 를 채운다. -->
+    <dl>
+      <dt>사업자등록번호</dt><dd>—</dd>
+      <dt>통신판매업신고</dt><dd>—</dd>
+      <dt>대표</dt><dd>—</dd>
+      <dt>주소</dt><dd>—</dd>
+    </dl>
+    <p class="fine">
+      본 커리큘럼은 2028학년도 대비 기준이며, 교육과정·출제 방향 확정에 따라 일부 변경될 수 있습니다.
+    </p>
+  </div>
 </footer>
 
 <script type="module">

@@ -2,6 +2,9 @@ name: fly deploy
 on:
   push:
     branches: [main]
+  # 손으로도 돌릴 수 있어야 한다 — 토큰·시크릿을 갈아 끼운 뒤 확인하려고
+  # 의미 없는 커밋을 밀 수는 없다.
+  workflow_dispatch:
 jobs:
   deploy:
     runs-on: ubuntu-latest
