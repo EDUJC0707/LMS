@@ -62,7 +62,3 @@
 - [ ] **박 대표 컨펌**: 채널톡 도입 · 영상 업체(Mux/VdoCipher) · UI 방향 (0721 회의에서 당일 컨펌 예정이었음)
 - [ ] 결제선생 연동 스펙 / OMR 인식 엔진 / Meet API(현재 meet_url 수동 입력)
 - [ ] **Carbon MCP 인바이트** — IBM 승인 대기(7/22 요청). 코드 오면 `claude mcp add-json carbon-mcp ...` → 세션 재시작. **단 현재 디자인은 hallmark 네이비로 확정됐으므로 참고용으로 격하**
-
-## 보류·판단 대기
-
-- [ ] 백엔드 플러그인 설치 검토: pyright-lsp, context7 (사용자 승인 대기)
