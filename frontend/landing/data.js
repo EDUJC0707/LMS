@@ -42,7 +42,7 @@
    쓴다. 잘라 둔 루프 둘은 커밋 408a809 에 있다. */
 export const SPACE = [
   { key: 'carina',  label: '카리나 성운',   src: 'assets/space/carina.webp' },
-  { key: 'catseye', label: '고양이눈 성운', src: 'assets/space/catseye.webp', zoom: 0.9 },
+  { key: 'catseye', label: '고양이눈 성운', src: 'assets/space/catseye.webp', zoom: 0.9, use: true },
   { key: 'ngc1333', label: 'NGC 1333',      src: 'assets/space/ngc1333.webp' },
   { key: 'solar',   label: '태양계',        src: 'assets/space/solar-system.webp' },
 ];
