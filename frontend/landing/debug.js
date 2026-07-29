@@ -14,7 +14,7 @@
 
 /* 저장 키에 버전을 붙인다. 기본값이 바뀔 때 키를 올리면 옛 저장값이 자동으로
    버려진다 — 안 그러면 코드를 고쳐도 화면은 옛 값 그대로라 한참 헤맨다. */
-const LS = 'hjc-debug-v11';
+const LS = 'hjc-debug-v12';
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 /* 코드에 박힌 값. 첫 open 때 한 번만 뜬다 — 닫았다 열 때마다 뜨면 그때의
@@ -49,10 +49,6 @@ const CSSVARS = {
   r:     { v: '--teacher-right', sm: '--teacher-right-sm', smKey: 'rSm', unit: '%' },
   b:     { v: '--teacher-bottom', sm: '--teacher-bottom-sm', smKey: 'bSm', unit: '%' },
   h1gap:  { v: '--h1-gap', unit: 'em' },
-  sDim:   { v: '--space-dim',    unit: '' },
-  sBright:{ v: '--space-bright', unit: '' },
-  sSat:   { v: '--space-sat',    unit: '' },
-  sZoom:  { v: '--space-zoom',   unit: '' },
 };
 
 /* 노브. [키, 라벨, 최소, 최대, 간격, 어디에 쓰나, 소수자리]
@@ -62,10 +58,10 @@ const CSSVARS = {
           'fit' = CFG 대입 + fit() 재실행(픽셀로 환산되는 값이라서) */
 const GROUPS = [
   ['배경 (우주)', [
-    ['sDim',    '밝기',      0,   1, .01,'css', 2],
-    ['sBright', '노출',     .2, 1.6, .02,'css', 2],
-    ['sSat',    '채도',      0,   2, .05,'css', 2],
-    ['sZoom',   '확대',      1, 2.5, .01,'css', 2],
+    /* 캔버스로 오려내므로 CSS opacity/filter 는 안 걸린다 — CFG 로 간다.
+       노출·채도·확대 노브는 뺐다: 캔버스에서는 아무 일도 안 했다. */
+    ['spaceDim', '밝기',      0,   1, .01,'cfg', 2],
+    ['spaceWin', '드러나는 범위', 1.5, 6, .1, 'cfg', 1],
   ]],
   ['블루 · 강사', [
     ['h',       '크기',      35, 100, 1,   'css', 0],
@@ -172,8 +168,7 @@ export function openDebug() {
   const sm = () => matchMedia('(max-width: 860px)').matches;
 
   // index.html 에 박힌 강사 기본값. 여기와 CSS 가 어긋나면 패널을 여는 순간 화면이 튄다
-  const TEACHER0 = { h: 80, r: 5, b: 0, hSm: 40, rSm: -12, bSm: 0, h1gap: .20,
-                     sDim: .45, sBright: 1, sSat: 1, sZoom: 1 };
+  const TEACHER0 = { h: 80, r: 5, b: 0, hSm: 40, rSm: -12, bSm: 0, h1gap: .20 };
   if (!BASE) BASE = { teacher: { ...TEACHER0 }, blue: 'royal', cfg: api ? { ...api.cfg } : {} };
 
   const st = document.createElement('style');
@@ -198,29 +193,15 @@ export function openDebug() {
   // blob: 은 세션을 못 넘긴다 — 저장된 것은 파일 경로일 때만 되건다.
   // 실제 복원은 setSpace 가 아래에서 한 번 부른다(영상/사진 분기를 한 곳에 둔다).
 
-  /* 사진은 CSS 변수 하나로 건다.
-     blob: URL(로컬에서 연 파일)은 **저장하지 않는다** — 새로고침하면 죽는 주소라
-     남겨 두면 "코드에 없는 이미지가 뜨다 말다 한다" 는 유령이 된다.
-     assets/space/ 의 경로일 때만 기억한다. */
+  /* 배경 갈아 끼우기. 실제로 그리는 일은 field.js 가 한다 — 커서 창으로 오려내는
+     계산이 거기 있고, 사진/영상 분기가 두 군데 있으면 반드시 갈라진다.
+     blob: URL(로컬에서 연 파일)은 저장하지 않는다 — 새로고침하면 죽는 주소라
+     남겨 두면 "코드에 없는 이미지가 뜨다 말다 한다" 는 유령이 된다. */
   let pick = null;
-  const vid = document.querySelector('.spacevid');
-  const isVideo = s => /\.(mp4|webm|mov)(\?|$)/i.test(s || '');
   const setSpace = (src, name) => {
     if (src && src.startsWith('blob:')) { S.space = ''; S.spaceName = name || '(로컬 파일)'; }
     else { S.space = src || ''; S.spaceName = ''; }
-
-    /* 사진과 영상은 **한 번에 하나만** 켠다. 둘 다 켜 두면 위아래로 겹쳐서
-       밝기가 두 배가 되고 무엇을 보고 있는지 알 수 없게 된다. */
-    const v = isVideo(src) || (name && isVideo(name));
-    if (v && vid) {
-      rootS.setProperty('--space-img', 'none');
-      if (vid.src !== src) vid.src = src;
-      vid.dataset.on = '';
-      vid.play().catch(() => {});      // 자동재생이 막히면 조용히 넘어간다
-    } else {
-      if (vid) { vid.removeAttribute('data-on'); vid.pause(); }
-      rootS.setProperty('--space-img', src ? `url("${src}")` : 'none');
-    }
+    window.__field?.space?.(src || '');
     save();
     apply();
   };
@@ -239,7 +220,7 @@ export function openDebug() {
         + SPACE.map(s => `<option value="${s.src}">${s.label || s.key}</option>`).join('');
       sel.onchange = () => setSpace(sel.value);
       const file = document.createElement('input');
-      file.type = 'file'; file.accept = 'image/*'; file.hidden = true;
+      file.type = 'file'; file.accept = 'image/*,video/*'; file.hidden = true;
       /* 로컬 파일은 blob: URL 로 건다. 새로고침하면 사라지는 것이 맞다 —
          남으면 "코드에 없는 이미지가 계속 뜬다" 는 유령이 된다. */
       file.onchange = () => {
@@ -302,11 +283,11 @@ export function openDebug() {
     for (const k of ['dim', 'accent', 'glow', 'chip', 't1', 't2', 'line',
                      'teacher-h', 'teacher-right', 'teacher-bottom',
                      'teacher-h-sm', 'teacher-right-sm', 'teacher-bottom-sm', 'h1-gap',
-                     'space-img', 'space-dim', 'space-bright', 'space-sat', 'space-zoom'])
+                     'space-img'])
       rootS.removeProperty('--' + k);
     Object.assign(S, { blue: BASE.blue, ...BASE.teacher, space: '', spaceName: '' });
     if (S.blobURL) { URL.revokeObjectURL(S.blobURL); S.blobURL = null; }
-    if (vid) { vid.removeAttribute('data-on'); vid.pause(); vid.removeAttribute('src'); vid.load(); }
+    window.__field?.space?.('');
     if (pick) pick.sel.value = '';
     delete S.pos;
     for (const [, rows] of GROUPS)
@@ -356,8 +337,7 @@ export function openDebug() {
     const edge = tEl ? (tEl.getBoundingClientRect().left / innerWidth * 100).toFixed(0) : '?';
     stat.textContent = `${b.key}·${mob ? S.hSm : S.h}svh·${edge}%`;
     out.textContent =
-`배경: ${S.spaceName || S.space || '없음(검정)'}
-  dim:${(+S.sDim).toFixed(2)} bright:${(+S.sBright).toFixed(2)} sat:${(+S.sSat).toFixed(2)} zoom:${(+S.sZoom).toFixed(2)}
+`배경: ${S.spaceName || S.space || '없음(검정)'}  밝기 ${(+S.spaceDim).toFixed(2)} 범위 ${(+S.spaceWin).toFixed(1)}R
 --dim:${b.dim} --accent:${b.accent} --glow:${b.glow}
 --chip:${b.chip} --t1:${b.t1} --t2:${b.t2}
 .teacher{ right:${mob ? S.rSm : S.r}%; height:${mob ? S.hSm : S.h}svh }

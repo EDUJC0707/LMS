@@ -38,6 +38,11 @@ const CFG = {
   kOut: 9.0,         // 밀릴 때(빠르게)
   kIn: 1.6,          // 되메워질 때(느리게) — 여기서 "되메워진다"가 보인다
 
+  /* 우주 — 커서 자리에서만 드러난다. 창은 먼지가 쓰는 **바로 그것**이다.
+     따로 만들면 둘이 미묘하게 어긋나 "왜 여기는 걷혔는데 안 보이지" 가 된다. */
+  spaceDim: 0.55,    // 창 한복판에서의 불투명도
+  spaceWin: 3.0,     // R 의 몇 배까지 그릴까. 가우시안은 3R 에서 1% 라 거기서 끊는다
+
   /* 손전등 — 모티프가 드러나는 범위. 아주 작다 */
   flash: 0.062,      // 반경 = min(W,H) × 이 값 (900 → 56px)
   flashMin: 34, flashMax: 92,
@@ -145,6 +150,23 @@ export function mountField(root, units) {
   const imgs = [];
   let baked = false;
 
+  /* ── 우주 — 커서 자리에서만 오려낸다 ──────────────────────
+     원본(img/video)은 화면에 안 나오고 여기서 읽어 가기만 한다. cover 로 맞추는
+     계산을 직접 한다 — object-fit 은 요소에만 걸리고 캔버스에는 안 걸린다. */
+  const spaceCv = root.querySelector('.space');
+  const sctx = spaceCv ? spaceCv.getContext('2d') : null;
+  const srcImg = document.getElementById('spaceImg');
+  const srcVid = document.getElementById('spaceVid');
+  let spaceEl = null;                 // 지금 쓰는 원본. null 이면 우주가 없다
+  let prevSpaceRect = null;
+
+  /* cover 매핑 — 원본의 어느 부분을 화면 어디에 대응시킬지.
+     비율이 다르면 짧은 쪽을 채우고 긴 쪽을 잘라낸다. */
+  const coverMap = (sw, sh) => {
+    const k = Math.max(W / sw, H / sh);
+    return { dw: sw * k, dh: sh * k, dx: (W - sw * k) / 2, dy: (H - sh * k) / 2 };
+  };
+
   /* ── 먼지 ────────────────────────────────────────────────
      DPR 은 1 로 고정한다. 매 프레임 지우고 4000번 찍는 레이어라 백킹 픽셀 수가
      곧 프레임 비용이고, 1~4px 짜리 점에 2배 해상도는 아무 의미가 없다. */
@@ -215,7 +237,7 @@ export function mountField(root, units) {
     wash.style.width = wash.style.height = ws + 'px';
     wash.style.margin = `${-ws / 2}px 0 0 ${-ws / 2}px`;
 
-    for (const cv of [dustCv, lit]) {
+    for (const cv of [spaceCv, lit, dustCv].filter(Boolean)) {
       cv.width = Math.round(W);
       cv.height = Math.round(H);
       cv.style.width = W + 'px';
@@ -223,6 +245,7 @@ export function mountField(root, units) {
     }
     dctx.fillStyle = GLOW;                 // resize 가 컨텍스트 상태를 지운다
 
+    prevSpaceRect = null;   // 캔버스 크기가 바뀌면 내용이 날아간다 — 다음 프레임에 새로 그린다
     for (const p of dust) { p.hx = p.u * W; p.hy = p.v * H; p.x = p.hx; p.y = p.hy; }
     bake();
   };
@@ -292,6 +315,35 @@ export function mountField(root, units) {
     /* ② 워시 */
     wash.style.transform = `translate3d(${SX.toFixed(1)}px,${SY.toFixed(1)}px,0)`;
     wash.style.opacity = wgt.toFixed(3);
+
+    /* ②-b 우주 — 먼지와 **같은 창**으로 오려낸다.
+       exp(-d²/R2) 를 방사 그라디언트로 근사한다(R2 = 2R²). 3R 에서 1% 라 거기서 끊고,
+       그 사각형만 건드린다 — 화면 전체를 매 프레임 다시 그리지 않는다. */
+    if (sctx) {
+      const win = CFG.spaceWin * R, pad = 2;
+      const rect = [SX - win - pad, SY - win - pad, 2 * (win + pad), 2 * (win + pad)];
+      if (prevSpaceRect) sctx.clearRect(...prevSpaceRect);
+      sctx.clearRect(...rect);
+      const ready = spaceEl && (spaceEl.tagName === 'IMG'
+        ? spaceEl.complete && spaceEl.naturalWidth
+        : spaceEl.readyState >= 2);
+      if (ready) {
+        const g = sctx.createRadialGradient(SX, SY, 0, SX, SY, win);
+        // exp(-d²/2R²) 를 그대로 따라간다 — 먼지가 느끼는 세기와 같아야 한다
+        for (const [q, v] of [[0, 1], [.167, .882], [.333, .607], [.5, .325],
+                              [.667, .135], [.833, .044], [1, 0]])
+          g.addColorStop(q, `rgba(255,255,255,${(v * CFG.spaceDim).toFixed(4)})`);
+        sctx.fillStyle = g;
+        sctx.fillRect(...rect);
+        sctx.globalCompositeOperation = 'source-in';
+        const sw = spaceEl.naturalWidth || spaceEl.videoWidth;
+        const sh = spaceEl.naturalHeight || spaceEl.videoHeight;
+        const m = coverMap(sw, sh);
+        sctx.drawImage(spaceEl, m.dx, m.dy, m.dw, m.dh);
+        sctx.globalCompositeOperation = 'source-over';
+      }
+      prevSpaceRect = rect;
+    }
 
     /* ③ 먼지 — 밀려나고, 쓸려가고, 옅어진다 */
     for (const b of bucket) b.length = 0;
@@ -383,6 +435,27 @@ export function mountField(root, units) {
     // 갈라져, 초기화나 재열기 때 엉뚱한 개수로 돌아간다
     rebuild(n) { if (n != null) CFG.dust = n; dust = makeDust(CFG.dust); fit(); statics.forEach(f => f()); },
     refit() { fit(); statics.forEach(f => f()); },
+    /* 배경 갈아 끼우기. 확장자로 사진/영상을 가른다.
+       빈 값이면 우주가 없어진다(= 검정). 캔버스도 같이 지운다. */
+    space(src) {
+      if (!spaceCv) return;
+      if (!src) {
+        spaceEl = null;
+        if (srcVid) { srcVid.pause(); srcVid.removeAttribute('src'); srcVid.load(); }
+        sctx.clearRect(0, 0, W, H);
+        prevSpaceRect = null;
+        return;
+      }
+      if (/\.(mp4|webm|mov)(\?|$)/i.test(src)) {
+        srcVid.src = src;
+        srcVid.play().catch(() => {});   // 자동재생이 막히면 조용히 넘어간다
+        spaceEl = srcVid;
+      } else {
+        if (srcVid) { srcVid.pause(); srcVid.removeAttribute('src'); srcVid.load(); }
+        srcImg.src = src;
+        spaceEl = srcImg;
+      }
+    },
   };
 
   if (reduce) {
