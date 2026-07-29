@@ -16,21 +16,17 @@
      carina 26 · catseye 17 · ngc1333 46
    헤드라인 1행이 110 이므로 ngc1333 은 빡빡하다. 쓰려면 밝기를 더 눌러야 한다.
 
-   영상 둘은 원본 24.9초(컷 없는 단일 샷, 별이 블랙홀에 찢겨 들어감)에서 잘랐다.
-     tde-dark   0~6초. 가장 어둡고(좌45% 휘도 5.0) 가장 느리다(모션 0.52).
-                다만 밝은 별 덩어리가 x21~52% · y33~53% 에 있어 **헤드라인과 겹친다**.
-                루프에 크로스페이드 15프레임을 넣었는데, 시작·끝의 별 위치가 달라
-                이음새에서 별이 0.6초간 절반쯤 어두워진다(피할 방법 없음 — 4~8초
-                창 460개를 다 훑었다).
-     tde-nebula 14~19초. 확산형 성운이라 **이음새가 거의 완벽하다**. 대신 2.5배 밝고
-                3배 빠르다. 좌상단 성운 기둥이 헤드라인 윗줄에 얹힐 수 있다.
-   확장자로 사진/영상을 가른다(.mp4 면 영상). */
+   **cover 로 깔린다** — 비율을 지키고 짧은 쪽을 채운 뒤 넘치는 쪽을 잘라낸다.
+   1440x900 에서 잘리는 양: carina 좌우 4% · ngc1333 위아래 12% · catseye 위아래 20%.
+   세로가 긴 사진일수록 많이 잘리고 넓은 화면에서 더 심해진다.
+
+   영상은 걷어냈다(2026-07-29) — 먼지가 이미 움직이는데 배경까지 움직이면 싸운다.
+   배선(field.js 의 .mp4 분기와 spaceVid)은 남겨 뒀다: 패널의 "파일 열기" 로 영상을
+   던져 보는 데 쓴다. 원본 영상과 잘라 둔 루프 둘은 커밋 408a809 에 있다. */
 export const SPACE = [
-  { key: 'carina',  label: '사진 · 카리나 성운',        src: 'assets/space/carina.webp' },
-  { key: 'catseye', label: '사진 · 고양이눈 성운',      src: 'assets/space/catseye.webp' },
-  { key: 'ngc1333', label: '사진 · NGC 1333',           src: 'assets/space/ngc1333.webp' },
-  { key: 'tdeDark', label: '영상 · 별이 빨려듦 (6초)',  src: 'assets/space/tde-dark.mp4' },
-  { key: 'tdeNeb',  label: '영상 · 성운 (5초)',         src: 'assets/space/tde-nebula.mp4' },
+  { key: 'carina',  label: '카리나 성운',   src: 'assets/space/carina.webp' },
+  { key: 'catseye', label: '고양이눈 성운', src: 'assets/space/catseye.webp' },
+  { key: 'ngc1333', label: 'NGC 1333',      src: 'assets/space/ngc1333.webp' },
 ];
 
 /* 히어로에 숨던 모티프 10종 — **2026-07-29 폐기.** 다른 비주얼로 교체한다.
