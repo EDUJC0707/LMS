@@ -96,6 +96,21 @@
      아니라 개체별 스칼라로 옮겨 화면에 남는 경계선을 모티프 실루엣뿐으로 만든다.
      피크 렌더휘도 68 < 헤드라인 110 — 배경이 전경보다 어두워야 위계가 선다. */
   .field{ position:absolute; inset:0; z-index:0; overflow:hidden; contain:paint }
+
+  /* 우주 사진 — 히어로 배경 한 장. **가만히 있는다**(사용자 지시 2026-07-29):
+     hover 에 반응하지 않고 손전등도 없다. 먼지가 걷힌 자리에서 이게 드러난다 —
+     그 전까지는 걷혀도 검정뿐이라 볼 것이 없었다.
+     밝기를 눌러 두는 이유: 별이 밝아 그냥 깔면 헤드라인(휘도 110)을 이긴다.
+     톤 위계가 무너지는 것이 예전에 "촌스러움" 의 정체였다(SPEC §4-옛 ①). */
+  .space{
+    position:absolute; inset:0; z-index:0; pointer-events:none;
+    background:var(--space-img, none) var(--space-pos, center) / cover no-repeat;
+    opacity:var(--space-dim, .45);
+    filter:brightness(var(--space-bright, 1)) saturate(var(--space-sat, 1));
+    transform:scale(var(--space-zoom, 1));
+    transform-origin:center;
+  }
+
   .dust, .wash, .motifs{ position:absolute; pointer-events:none; display:block }
   .dust, .motifs{ inset:0 }
   .dust{ mix-blend-mode:screen }    /* 검정 위에서 먼지가 빛으로 읽힌다 */
@@ -278,7 +293,9 @@
 
 <header class="hero">
   <!-- 먼지밭 + 모티프 10개. 바람이 먼지를 걷어낸 자리에서만 모티프가 나온다 -->
-  <div class="field" id="field" aria-hidden="true"></div>
+  <div class="field" id="field" aria-hidden="true">
+    <div class="space"></div>
+  </div>
 
   <div class="copy">
     <h1>

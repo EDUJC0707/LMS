@@ -14,7 +14,7 @@
 
 /* 저장 키에 버전을 붙인다. 기본값이 바뀔 때 키를 올리면 옛 저장값이 자동으로
    버려진다 — 안 그러면 코드를 고쳐도 화면은 옛 값 그대로라 한참 헤맨다. */
-const LS = 'hjc-debug-v9';
+const LS = 'hjc-debug-v10';
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 /* 코드에 박힌 값. 첫 open 때 한 번만 뜬다 — 닫았다 열 때마다 뜨면 그때의
@@ -48,7 +48,11 @@ const CSSVARS = {
   h:     { v: '--teacher-h',     sm: '--teacher-h-sm',     smKey: 'hSm', unit: 'svh' },
   r:     { v: '--teacher-right', sm: '--teacher-right-sm', smKey: 'rSm', unit: '%' },
   b:     { v: '--teacher-bottom', sm: '--teacher-bottom-sm', smKey: 'bSm', unit: '%' },
-  h1gap: { v: '--h1-gap', unit: 'em' },
+  h1gap:  { v: '--h1-gap', unit: 'em' },
+  sDim:   { v: '--space-dim',    unit: '' },
+  sBright:{ v: '--space-bright', unit: '' },
+  sSat:   { v: '--space-sat',    unit: '' },
+  sZoom:  { v: '--space-zoom',   unit: '' },
 };
 
 /* 노브. [키, 라벨, 최소, 최대, 간격, 어디에 쓰나, 소수자리]
@@ -84,6 +88,12 @@ const GROUPS = [
      (2026-07-29). 아무 일도 안 하는 노브가 붙어 있으면 그걸 돌려 보고 "왜 안 되지"
      로 시간을 버린다. CFG 의 flash·soft·ink·lag 는 남겨 둔다 — 새 비주얼이 그
      자리를 쓸 수 있고, 그때 이 그룹을 되살리면 된다. */
+  ['배경 (우주)', [
+    ['sDim',    '밝기',      0,   1, .01,'css', 2],
+    ['sBright', '노출',     .2, 1.6, .02,'css', 2],
+    ['sSat',    '채도',      0,   2, .05,'css', 2],
+    ['sZoom',   '확대',      1, 2.5, .01,'css', 2],
+  ]],
   ['헤드라인', [
     ['h1gap',   '줄 간격',    0,  .8, .01,'css', 2],
   ]],
@@ -120,6 +130,17 @@ const CSS = `
 .dbg-r label{ display:flex; color:#8F94BC; font-size:11px; margin-bottom:2px }
 .dbg-r label i{ margin-left:auto; font-style:normal; color:#fff; font-variant-numeric:tabular-nums }
 .dbg input[type=range]{ width:100%; accent-color:var(--accent,#787ED7); margin:0; display:block; height:14px }
+.dbg-pick{ display:flex; gap:5px; margin-bottom:9px }
+.dbg-pick select{
+  flex:1; min-width:0; height:26px; border-radius:6px; padding:0 6px;
+  border:1px solid rgba(150,155,220,.22); background:#14151F; color:#D6D8EC; font:inherit;
+}
+.dbg-pick button{
+  flex:none; height:26px; padding:0 9px; border-radius:6px; cursor:pointer;
+  border:1px solid rgba(150,155,220,.22); background:rgba(255,255,255,.05);
+  color:#9AA0CC; font:inherit;
+}
+.dbg-pick button:hover{ color:#fff; border-color:rgba(150,155,220,.45) }
 .dbg-sw{ display:flex; gap:4px; margin-bottom:9px }
 .dbg-sw button{
   flex:1; height:24px; border-radius:6px; cursor:pointer; padding:0;
@@ -139,6 +160,12 @@ const CSS = `
 }
 `;
 
+/* 배경 후보는 data.js 의 SPACE 에서 읽는다. 동적 import 라 debug.js 를 열 때만
+   따라온다. 목록이 비어 있어도 "파일 열기" 로 아무 이미지나 즉석에서 볼 수 있다 —
+   고를 때까지는 코드를 고치는 것보다 그게 빠르다. */
+let SPACE = [];
+import('./data.js').then(m => { SPACE = m.SPACE || []; }).catch(() => {});
+
 export function openDebug() {
   if (document.querySelector('.dbg')) return null;   // 이미 열려 있다
   const api = window.__field;
@@ -146,7 +173,8 @@ export function openDebug() {
   const sm = () => matchMedia('(max-width: 860px)').matches;
 
   // index.html 에 박힌 강사 기본값. 여기와 CSS 가 어긋나면 패널을 여는 순간 화면이 튄다
-  const TEACHER0 = { h: 80, r: 5, b: 0, hSm: 40, rSm: -12, bSm: 0, h1gap: .20 };
+  const TEACHER0 = { h: 80, r: 5, b: 0, hSm: 40, rSm: -12, bSm: 0, h1gap: .20,
+                     sDim: .45, sBright: 1, sSat: 1, sZoom: 1 };
   if (!BASE) BASE = { teacher: { ...TEACHER0 }, blue: 'royal', cfg: api ? { ...api.cfg } : {} };
 
   const st = document.createElement('style');
@@ -168,6 +196,21 @@ export function openDebug() {
     JSON.parse(localStorage.getItem(LS) || '{}')
   );
   const save = () => localStorage.setItem(LS, JSON.stringify(S));
+  // blob: 은 세션을 못 넘긴다 — 저장된 것은 파일 경로일 때만 되건다
+  if (S.space) rootS.setProperty('--space-img', `url("${S.space}")`);
+
+  /* 사진은 CSS 변수 하나로 건다.
+     blob: URL(로컬에서 연 파일)은 **저장하지 않는다** — 새로고침하면 죽는 주소라
+     남겨 두면 "코드에 없는 이미지가 뜨다 말다 한다" 는 유령이 된다.
+     assets/space/ 의 경로일 때만 기억한다. */
+  let pick = null;
+  const setSpace = (src, name) => {
+    if (src && src.startsWith('blob:')) { S.space = ''; S.spaceName = name || '(로컬 파일)'; }
+    else { S.space = src || ''; S.spaceName = ''; }
+    rootS.setProperty('--space-img', src ? `url("${src}")` : 'none');
+    save();
+    apply();
+  };
 
   /* ── 노브 만들기 ── */
   const inputs = {};
@@ -175,6 +218,32 @@ export function openDebug() {
     const h4 = document.createElement('h4');
     h4.textContent = title;
     body.append(h4);
+    if (title.startsWith('배경')) {
+      const row = document.createElement('div');
+      row.className = 'dbg-pick';
+      const sel = document.createElement('select');
+      sel.innerHTML = '<option value="">— 없음(검정) —</option>'
+        + SPACE.map(s => `<option value="${s.src}">${s.label || s.key}</option>`).join('');
+      sel.onchange = () => setSpace(sel.value);
+      const file = document.createElement('input');
+      file.type = 'file'; file.accept = 'image/*'; file.hidden = true;
+      /* 로컬 파일은 blob: URL 로 건다. 새로고침하면 사라지는 것이 맞다 —
+         남으면 "코드에 없는 이미지가 계속 뜬다" 는 유령이 된다. */
+      file.onchange = () => {
+        const f = file.files && file.files[0];
+        if (!f) return;
+        if (S.blobURL) URL.revokeObjectURL(S.blobURL);
+        S.blobURL = URL.createObjectURL(f);
+        sel.value = '';
+        setSpace(S.blobURL, f.name);
+      };
+      const btn = document.createElement('button');
+      btn.textContent = '파일 열기';
+      btn.onclick = () => file.click();
+      row.append(sel, btn, file);
+      body.append(row);
+      pick = { sel, btn };
+    }
     if (title.startsWith('블루')) {
       const sw = document.createElement('div');
       sw.className = 'dbg-sw';
@@ -219,9 +288,12 @@ export function openDebug() {
        계속 이겨, 나중에 CSS 를 고쳐도 화면이 안 바뀌는 유령이 남는다. */
     for (const k of ['dim', 'accent', 'glow', 'chip', 't1', 't2', 'line',
                      'teacher-h', 'teacher-right', 'teacher-bottom',
-                     'teacher-h-sm', 'teacher-right-sm', 'teacher-bottom-sm', 'h1-gap'])
+                     'teacher-h-sm', 'teacher-right-sm', 'teacher-bottom-sm', 'h1-gap',
+                     'space-img', 'space-dim', 'space-bright', 'space-sat', 'space-zoom'])
       rootS.removeProperty('--' + k);
-    Object.assign(S, { blue: BASE.blue, ...BASE.teacher });
+    Object.assign(S, { blue: BASE.blue, ...BASE.teacher, space: '', spaceName: '' });
+    if (S.blobURL) { URL.revokeObjectURL(S.blobURL); S.blobURL = null; }
+    if (pick) pick.sel.value = '';
     delete S.pos;
     for (const [, rows] of GROUPS)
       for (const [key, , , , , where] of rows) if (where !== 'css') S[key] = BASE.cfg[key];
@@ -270,7 +342,9 @@ export function openDebug() {
     const edge = tEl ? (tEl.getBoundingClientRect().left / innerWidth * 100).toFixed(0) : '?';
     stat.textContent = `${b.key}·${mob ? S.hSm : S.h}svh·${edge}%`;
     out.textContent =
-`--dim:${b.dim} --accent:${b.accent} --glow:${b.glow}
+`배경: ${S.spaceName || S.space || '없음(검정)'}
+  dim:${(+S.sDim).toFixed(2)} bright:${(+S.sBright).toFixed(2)} sat:${(+S.sSat).toFixed(2)} zoom:${(+S.sZoom).toFixed(2)}
+--dim:${b.dim} --accent:${b.accent} --glow:${b.glow}
 --chip:${b.chip} --t1:${b.t1} --t2:${b.t2}
 .teacher{ right:${mob ? S.rSm : S.r}%; height:${mob ? S.hSm : S.h}svh }
 CFG dust:${S.dust} d:${S.dMin}~${S.dMax} a:${S.aMin}~${S.aMax}
