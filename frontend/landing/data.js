@@ -16,6 +16,10 @@
    여기 SPACE 에는 **큰 벌 경로만** 적는다 — 두 벌을 다 적으면 반드시 어긋난다.
 
    원본 PNG 51MB 는 지웠다(2026-07-29 사용자 확인). 커밋 d825758 에 있다.
+
+   **태양계만 원본이 작다**(1536x1024). 다른 셋은 4000px 급이라 3200 으로 줄였지만
+   이건 늘리지 않았다 — 없는 정보는 만들 수 없고 용량만 는다. 레티나에서 1.88배
+   확대되므로 넷 중 가장 무르다. 대신 가장 어둡다(밝기 .55 적용 시 좌측 휘도 4). */
    배경은 cover 로 깔리고 opacity .45 로 눌리므로 더 키워도 안 보이고 무게만 는다.
    원본은 같은 폴더에 남겨 둔다(다시 구울 일이 있으므로).
 
@@ -34,6 +38,7 @@ export const SPACE = [
   { key: 'carina',  label: '카리나 성운',   src: 'assets/space/carina.webp' },
   { key: 'catseye', label: '고양이눈 성운', src: 'assets/space/catseye.webp' },
   { key: 'ngc1333', label: 'NGC 1333',      src: 'assets/space/ngc1333.webp' },
+  { key: 'solar',   label: '태양계',        src: 'assets/space/solar-system.webp' },
 ];
 
 /* 히어로에 숨던 모티프 10종 — **2026-07-29 폐기.** 다른 비주얼로 교체한다.
