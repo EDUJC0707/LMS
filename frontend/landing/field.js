@@ -449,6 +449,12 @@ export function mountField(root, units) {
         prevSpaceRect = null;
         return;
       }
+      /* 좁은 화면·저해상도에서는 작은 벌을 받는다. 캔버스라 srcset 이 안 걸리므로
+         여기서 고른다 — 안 그러면 모바일이 3200폭(0.9MB)을 통째로 내려받는다.
+         기준은 실제로 필요한 픽셀: 화면 폭 × DPR. 그게 1600 을 넘으면 큰 벌. */
+      const need = W * Math.min(devicePixelRatio || 1, 2);
+      if (need <= 1600) src = src.replace(/\.webp$/, '-1600.webp');
+
       if (/\.(mp4|webm|mov)(\?|$)/i.test(src)) {
         srcVid.src = src;
         srcVid.play().catch(() => {});   // 자동재생이 막히면 조용히 넘어간다
