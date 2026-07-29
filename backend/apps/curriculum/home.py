@@ -331,6 +331,15 @@ def _payment_status(orders):
     ]
 
 
+# 동보 축에 있는 결석 — `결석`(신청 가능) + `결석(동보)`(이미 확정, 중복 신청 차단
+# 근거). `결석(현보)` 는 뺀다: 현장 보강이 끝난 결석이라 동보 신청 대상이 아니고,
+# 학부모 화면에 띄우면 신청 버튼을 눌러 400 을 맞는다(2026-07-29 값집합 개편).
+# 캘린더 도장(days[].attendance)에는 네 값이 그대로 실리므로 결석 사실은 보인다.
+_MAKEUP_TRACK_STATUSES = frozenset(
+    {Attendance.Status.ABSENT, Attendance.Status.ABSENT_MAKEUP}
+)
+
+
 def _makeup_status_map(attendances):
     """결석별 최신 동보 상태 {attendance_id: status} — 1쿼리, 결석 없으면 0쿼리.
 
@@ -340,7 +349,7 @@ def _makeup_status_map(attendances):
     반환에 없는 결석 = 미신청(소비자 응답에서는 null).
     """
     absent_ids = [
-        a.id for a in attendances if a.status == Attendance.Status.ABSENT
+        a.id for a in attendances if a.status in _MAKEUP_TRACK_STATUSES
     ]
     if not absent_ids:
         return {}
@@ -349,7 +358,11 @@ def _makeup_status_map(attendances):
 
 
 def _absences(attendances, makeup_status_map):
-    """월 내 결석일 + 동보 신청 근거·상태(학부모 홈, PRD 3.2.0 학부모 관점).
+    """월 내 **동보 신청 대상 결석** + 신청 근거·상태(학부모 홈, PRD 3.2.0).
+
+    이름은 `absences` 지만 결석 전체 목록이 아니라 동보 축의 목록이다 —
+    대상 값집합은 `_MAKEUP_TRACK_STATUSES` 주석 참조. 결석 사실 자체는
+    캘린더 도장(days[].attendance)이 네 값 그대로 보여 준다.
 
     attendance_id 는 학부모 동보 신청 API 의 body 키이고, makeup_status 는
     중복 신청 차단 근거다(캘린더 일자와 같은 필드명·값집합). None = 미신청.
@@ -361,5 +374,5 @@ def _absences(attendances, makeup_status_map):
             "makeup_status": makeup_status_map.get(a.id),
         }
         for a in attendances
-        if a.status == Attendance.Status.ABSENT
+        if a.status in _MAKEUP_TRACK_STATUSES
     ]

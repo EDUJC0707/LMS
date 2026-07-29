@@ -142,7 +142,7 @@ export default function StudentGradesPage() {
                     <span style={{ color: "var(--color-muted)" }}> / {num(row.max_score)}</span>
                   </>
                 ) : (
-                  <Badge tone="neutral">미응시</Badge>
+                  <Badge tone="neutral">시험 미제출</Badge>
                 ),
             },
             {

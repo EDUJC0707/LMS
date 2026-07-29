@@ -31,13 +31,21 @@ export interface CalendarDayLike {
 const ACTIVE_STATUSES = ["신청", "승인", "지급완료"];
 
 /**
+ * 동보 축에 있는 출결 값 — 서버 `_MAKEUP_TRACK_STATUSES`(curriculum/home.py)와 같다.
+ * `결석(현보)` 는 뺀다: 현장 보강이 끝난 결석이라 서버가 동보 신청을 400 으로 막는다.
+ * (출결 값집합은 2026-07-29 개편으로 출석/결석/결석(동보)/결석(현보) 4종)
+ */
+const MAKEUP_TRACK_STATUSES = ["결석", "결석(동보)"];
+
+/**
  * 캘린더 날짜 배열에서 동보 신청 대상(결석)만 뽑는다.
  * 출결 번호가 없는 결석은 신청할 방법이 없으므로 목록에 넣지 않는다.
  */
 export function absencesFromDays(days: CalendarDayLike[]): MakeupAbsence[] {
   const rows: MakeupAbsence[] = [];
   for (const day of days) {
-    if (day.attendance !== "결석" || day.attendance_id === null) continue;
+    if (day.attendance === null || !MAKEUP_TRACK_STATUSES.includes(day.attendance)) continue;
+    if (day.attendance_id === null) continue;
     rows.push({
       date: day.date,
       attendance_id: day.attendance_id,

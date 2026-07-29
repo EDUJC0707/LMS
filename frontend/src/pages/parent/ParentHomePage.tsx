@@ -9,6 +9,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { http, useApi } from "../../api";
+import { shortAttendance } from "../../features/attendance";
 import {
   Badge,
   Button,
@@ -210,7 +211,11 @@ function MonthCard({
                 {isToday && <span className="parent-cal__today">오늘</span>}
               </span>
               {info?.attendance ? (
-                <StatusBadge status={info.attendance} />
+                // 칸이 좁아 원문(`결석(동보)`)이 들어가지 않는다 — 아래 범례가 원문이다.
+                <StatusBadge
+                  status={info.attendance}
+                  label={shortAttendance(info.attendance)}
+                />
               ) : info?.has_class_session ? (
                 <span className="parent-cal__pending">수업</span>
               ) : null}
@@ -221,8 +226,9 @@ function MonthCard({
 
       <div className="parent-legend">
         <StatusBadge status="출석" />
-        <StatusBadge status="지각" />
         <StatusBadge status="결석" />
+        <StatusBadge status="결석(동보)" />
+        <StatusBadge status="결석(현보)" />
       </div>
     </Card>
   );

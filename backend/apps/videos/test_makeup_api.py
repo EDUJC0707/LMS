@@ -19,6 +19,7 @@ from django.utils import timezone
 
 from apps.accounts.features import FeatureKey
 from apps.accounts.models import Parent, ParentStudent, StaffFeatureGrant, Student, User
+from apps.boards.models import AbsenceCounseling
 from apps.curriculum.models import Course, CourseWeek
 from apps.grades.models import Attendance, ClassSession
 
@@ -333,6 +334,27 @@ class AdminMakeupApproveRejectTests(MakeupFixtureMixin, TestCase):
         self.assertEqual(body["makeup"]["status"], "지급완료")
         self.assertEqual(body["video_grant"]["grant_id"], grant.grant_id)
         self.assertEqual(body["video_grant"]["course_week_id"], self.week1.week_id)
+
+    def test_approve_promotes_attendance_to_makeup_absence(self):
+        """승인도 출결을 `결석(동보)` 로 올린다 — 입구 셋의 끝 상태 단일화.
+
+        지급은 났는데 출결은 `결석` 이면 출결 SSOT 만 보고는 이 학생이 동보인지
+        알 수 없고, 담임이 그 결석을 다시 상담 대기열에서 만나게 된다.
+        """
+        self.approve(self.makeup.makeup_id)
+        self.att_s1_absent.refresh_from_db()
+        self.assertEqual(self.att_s1_absent.status, Attendance.Status.ABSENT_MAKEUP)
+        self.assertEqual(self.att_s1_absent.updated_at, NOW)
+
+    def test_approve_removes_untouched_counseling_row(self):
+        row = AbsenceCounseling.objects.create(
+            student=self.s1,
+            attendance=self.att_s1_absent,
+            target=AbsenceCounseling.Target.PARENT,
+            status=AbsenceCounseling.Status.PENDING,
+        )
+        self.approve(self.makeup.makeup_id)
+        self.assertFalse(AbsenceCounseling.objects.filter(pk=row.counsel_id).exists())
 
     def test_approve_unknown_404(self):
         self.assertEqual(self.approve(999999).status_code, 404)

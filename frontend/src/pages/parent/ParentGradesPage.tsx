@@ -105,7 +105,7 @@ export default function ParentGradesPage() {
                     row.is_taken ? (
                       <Link to={`/parent/grades/${row.exam_id}`}>성적표 보기</Link>
                     ) : (
-                      <Badge tone="outline">미응시</Badge>
+                      <Badge tone="outline">시험 미제출</Badge>
                     ),
                 },
               ]}
@@ -134,7 +134,7 @@ export default function ParentGradesPage() {
                   header: "자녀 점수",
                   align: "right",
                   numeric: true,
-                  cell: (row) => (row.is_taken ? score(row.my_score) : "미응시"),
+                  cell: (row) => (row.is_taken ? score(row.my_score) : "시험 미제출"),
                 },
                 {
                   key: "percentile",

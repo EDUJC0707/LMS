@@ -26,6 +26,7 @@ from rest_framework.views import APIView
 from apps.accounts.features import FeatureKey
 from apps.accounts.models import Parent, ParentStudent, Student
 from apps.accounts.permissions import FeatureRequired, IsParent, IsStudent
+from apps.grades import attendance_admin
 from apps.grades.models import Attendance
 
 from .makeup import complete_makeup
@@ -220,6 +221,11 @@ class AdminMakeupApproveView(APIView):
         now = timezone.now()
         with transaction.atomic():
             grant = complete_makeup(makeup, request.user, now)
+            # 승인도 출결 SSOT 를 `결석(동보)` 로 올린다(2026-07-29 입구 단일화 —
+            # attendance_admin 모듈 docstring). 지급은 났는데 출결은 `결석` 이면
+            # 담임이 그 결석을 상담 대기열에서 다시 만나고, 출결만 보고는 이
+            # 학생이 동보인지 알 수 없다. 같은 트랜잭션이어야 갈리지 않는다.
+            attendance_admin.promote_to_makeup_absence(attendance, request.user, now)
         return Response(
             {
                 "makeup": _makeup_block(makeup),

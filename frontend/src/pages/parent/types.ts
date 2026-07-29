@@ -29,7 +29,7 @@ export interface HomeCourse {
 
 export interface HomeDay {
   date: string;
-  /** 출석·지각·결석. 아직 입력 전이면 null */
+  /** 출석 · 결석 · 결석(동보) · 결석(현보). 아직 입력 전이면 null */
   attendance: string | null;
   /** 출결 레코드 PK. 기록이 없으면 null */
   attendance_id: number | null;

@@ -12,11 +12,36 @@ test("결석한 날만 동보 대상이 된다", () => {
   const rows = absencesFromDays([
     { date: "2026-07-01", attendance: "출석", attendance_id: 211, makeup_status: null },
     { date: "2026-07-04", attendance: "결석", attendance_id: 243, makeup_status: null },
-    { date: "2026-07-08", attendance: "지각", attendance_id: 271, makeup_status: null },
     { date: "2026-07-25", attendance: null, attendance_id: null, makeup_status: null },
   ]);
 
   assert.deepEqual(rows, [{ date: "2026-07-04", attendance_id: 243, makeup_status: null }]);
+});
+
+test("현장 보강으로 끝난 결석은 동보 대상이 아니다", () => {
+  // 서버도 absences[] 에서 뺀다(backend curriculum/home.py _MAKEUP_TRACK_STATUSES)
+  // — 띄워 두면 신청 버튼을 눌러 400 을 맞는다.
+  const rows = absencesFromDays([
+    { date: "2026-07-08", attendance: "결석(현보)", attendance_id: 271, makeup_status: null },
+  ]);
+
+  assert.deepEqual(rows, []);
+});
+
+test("이미 동보로 찍힌 결석은 남기되 신청 버튼은 닫는다", () => {
+  const rows = absencesFromDays([
+    {
+      date: "2026-07-11",
+      attendance: "결석(동보)",
+      attendance_id: 281,
+      makeup_status: "지급완료",
+    },
+  ]);
+
+  assert.deepEqual(rows, [
+    { date: "2026-07-11", attendance_id: 281, makeup_status: "지급완료" },
+  ]);
+  assert.equal(isRequestable(rows[0]), false);
 });
 
 test("출결 번호가 없는 결석은 신청할 수 없으므로 목록에서 뺀다", () => {

@@ -10,6 +10,7 @@
 import { useMemo, useState } from "react";
 
 import { http, useApi } from "../../api";
+import { attendanceTone, shortAttendance } from "../../features/attendance";
 import {
   Badge,
   Button,
@@ -258,8 +259,14 @@ export default function StudentHomePage() {
                       {isToday && <span className="st-cal__today">오늘</span>}
                     </span>
                     {mark && (
-                      <span className={`st-cal__mark st-cal__mark--${mark}`}>
-                        {mark === "예정" ? "수업" : mark}
+                      // 값이 `결석(동보)` 처럼 괄호를 품는다 — 클래스에 그대로 꽂으면
+                      // 선택자가 성립하지 않는다. 색 토큰과 짧은 이름으로 옮긴다.
+                      <span
+                        className={`st-cal__mark st-cal__mark--${
+                          mark === "예정" ? "planned" : attendanceTone(mark)
+                        }`}
+                      >
+                        {mark === "예정" ? "수업" : shortAttendance(mark)}
                       </span>
                     )}
                   </div>

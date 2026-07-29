@@ -53,7 +53,10 @@ class HomeFixtureMixin:
 
     - 1~4주차: 시작일 경과(공개), 5주차: 미래 시작일(잠김)
     - 수업 요일: 수(3) — 회차 7/8(2주차)·7/22(4주차)
-    - 출결: 7/8 출석, 7/15 결석(별도 회차), 7/18 지각(별도 회차)
+    - 출결: 7/8 출석, 7/15 결석(별도 회차), 7/18 결석(현보)(별도 회차)
+      — 7/18 은 2026-07-29 값집합 개편 전 `지각` 자리. 현보로 바꾼 이유는 캘린더가
+      네 값을 **그대로** 내려보내는지와, 결석 계열이라도 **현보는 동보 신청
+      대상이 아님**(absences 목록 제외)을 같이 잡기 위해서다.
     """
 
     @classmethod
@@ -105,8 +108,10 @@ class HomeFixtureMixin:
         cls.att_absent = Attendance.objects.create(
             session=cls.session_0715, student=cls.student, status=Attendance.Status.ABSENT
         )
-        cls.att_late = Attendance.objects.create(
-            session=cls.session_0718, student=cls.student, status=Attendance.Status.LATE
+        cls.att_onsite = Attendance.objects.create(
+            session=cls.session_0718,
+            student=cls.student,
+            status=Attendance.Status.ABSENT_ONSITE,
         )
 
     def login_student(self):
@@ -216,7 +221,7 @@ class StudentHomeCalendarTests(HomeFixtureMixin, TestCase):
         days = {d["date"]: d for d in self.get_home().json()["calendar"]["days"]}
         self.assertEqual(days["2026-07-08"]["attendance"], "출석")
         self.assertEqual(days["2026-07-15"]["attendance"], "결석")
-        self.assertEqual(days["2026-07-18"]["attendance"], "지각")
+        self.assertEqual(days["2026-07-18"]["attendance"], "결석(현보)")
         self.assertTrue(days["2026-07-08"]["has_class_session"])
         # 미래 예정 수업일 — 출결 도장 없이 예정만 표시
         self.assertIsNone(days["2026-07-29"]["attendance"])
@@ -592,6 +597,30 @@ class ParentHomeTests(HomeFixtureMixin, TestCase):
         # 학부모 동보 신청(POST /api/parent/makeup-request) body 키
         entry = self.get_parent_home().json()["absences"][0]
         self.assertEqual(entry["attendance_id"], self.att_absent.id)
+
+    def test_absences_exclude_onsite_makeup_absence(self):
+        """`absences` 는 결석 목록이 아니라 **동보 신청 목록**이다.
+
+        `결석(현보)` 는 현장 보강이 끝난 결석이라 동보 신청 대상이 아니다 —
+        여기 띄우면 학부모가 신청 버튼을 누르고 400 을 맞는다. 캘린더 도장
+        (days[].attendance)에는 그대로 보이므로 결석 사실이 감춰지지도 않는다.
+        """
+        dates = [a["date"] for a in self.get_parent_home().json()["absences"]]
+        self.assertEqual(dates, ["2026-07-15"])
+
+    def test_absences_include_makeup_absence_with_granted_status(self):
+        """`결석(동보)` 는 남긴다 — 중복 신청 차단 근거(makeup_status)가 필요하다."""
+        self.att_absent.status = Attendance.Status.ABSENT_MAKEUP
+        self.att_absent.save(update_fields=["status"])
+        MakeupGrant.objects.create(
+            student=self.student,
+            attendance=self.att_absent,
+            source=MakeupGrant.Source.ADMIN_CHECK,
+            status=MakeupGrant.Status.GRANTED,
+        )
+        entry = self.get_parent_home().json()["absences"][0]
+        self.assertEqual(entry["date"], "2026-07-15")
+        self.assertEqual(entry["makeup_status"], "지급완료")
 
     def test_parent_days_carry_attendance_id_and_makeup_status(self):
         # 학생 홈과 같은 조립부(_days) — 형태 동일

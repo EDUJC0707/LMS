@@ -73,7 +73,7 @@ export function TrendChart({ data, maxScore }: { data: TrendDatum[]; maxScore: n
       className="st-chart"
       viewBox={`0 0 ${width} ${height}`}
       role="img"
-      aria-label={`회차별 점수 추이. 마지막 회차 내 점수 ${last.mine ?? "미응시"}점, 전체 평균 ${last.average ?? "-"}점.`}
+      aria-label={`회차별 점수 추이. 마지막 회차 내 점수 ${last.mine ?? "시험 미제출"}, 전체 평균 ${last.average ?? "-"}점.`}
     >
       {gridValues.map((value) => (
         <g key={value}>

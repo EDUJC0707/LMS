@@ -163,22 +163,30 @@
   line-height: 1.5rem;
 }
 
-.st-cal__mark--출석 {
+/* 토큰 이름은 값(`결석(동보)`)이 아니라 색 축이다 — 값에 괄호가 있어 클래스로
+   쓸 수 없다(src/features/attendance.ts attendanceTone). */
+.st-cal__mark--present {
   background: var(--color-success-bg);
   color: var(--color-success);
 }
 
-.st-cal__mark--지각 {
+.st-cal__mark--makeup {
   background: var(--color-warning-bg);
   color: var(--color-warning);
 }
 
-.st-cal__mark--결석 {
+.st-cal__mark--onsite {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.st-cal__mark--absent {
   background: var(--color-danger-bg);
   color: var(--color-danger);
 }
 
-.st-cal__mark--예정 {
+.st-cal__mark--blank,
+.st-cal__mark--planned {
   background: var(--color-paper-3);
   color: var(--color-ink-2);
 }
