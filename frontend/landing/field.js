@@ -279,14 +279,18 @@ export function mountField(root, units) {
   addEventListener('resize', fit);
 
   /* ── 입력 — 이벤트에서는 기록만. 물리는 rAF 에서만 돈다 ── */
-  let pxN = .5, pyN = .5, idle = 99, wgt = 0, scrollP = 0;
+  /* over — 커서가 히어로 안에 있는가. **가만히 있다고 닫히지는 않는다**
+     (사용자 지시 2026-07-29: "꼭 사라져야돼?"). 멈춤으로 닫히던 건 먼지에서
+     물려온 규칙이었는데, 읽으려고 멈춘 사람에게 배경이 꺼지는 건 벌처럼 읽힌다.
+     닫히는 건 커서가 히어로를 **떠날 때**뿐이다 — 따라갈 대상이 없어졌을 때. */
+  let pxN = .5, pyN = .5, over = false, wgt = 0, scrollP = 0;
   root.parentElement.addEventListener('pointermove', e => {
     // 손가락은 바람을 일으키지 않는다 — 스크롤 중 pointermove 가 쏟아진다
     if (e.pointerType === 'touch') return;
     const r = root.getBoundingClientRect();
     pxN = clamp01((e.clientX - r.left) / r.width);
     pyN = clamp01((e.clientY - r.top) / r.height);
-    idle = 0;
+    over = true;
     if (!FINE) {
       FINE = true;                         // wgt 는 건드리지 않는다 — 0 에서 서서히 오른다
       // 첫 자리로 **순간이동**한다. 중앙에서 끌려오면 지나온 자리가 쓸려 보인다
@@ -294,6 +298,11 @@ export function mountField(root, units) {
       lx = pxN; ly = pyN;
       woke = true;
     }
+  }, { passive: true });
+  // 커서가 히어로를 벗어나면 따라갈 대상이 없다 — 그때만 닫힌다
+  root.parentElement.addEventListener('pointerleave', e => {
+    if (e.pointerType === 'touch') return;
+    over = false;
   }, { passive: true });
   addEventListener('scroll', () => {
     scrollP = clamp01(scrollY / innerHeight);
@@ -311,10 +320,10 @@ export function mountField(root, units) {
     /* ① 바람의 눈. 포인터가 있으면 포인터가 전부 가져간다 */
     let tx, ty;
     if (FINE) {
-      idle += dt;
-      /* 2.5초 정지하면 잦아든다. 닫히는 속도는 여는 속도의 0.8배 — 열 때보다
-         조금 빠르되 크게 다르지 않아야 한 동작으로 읽힌다. */
-      wgt = clamp01(wgt + (idle < 2.5 ? CFG.wake : -CFG.wake * 0.8) * dt);
+      /* 닫히는 속도는 여는 속도의 0.8배 — 열 때보다 조금 빠르되 크게 다르지 않아야
+         한 동작으로 읽힌다. 멈춰 있어도 닫히지 않는다: over 는 시간이 아니라
+         커서가 히어로 안에 있느냐만 본다. */
+      wgt = clamp01(wgt + (over ? CFG.wake : -CFG.wake * 0.8) * dt);
       fx += (pxN - fx) * (1 - Math.exp(-9.0 * dt));
       fy += (pyN - fy) * (1 - Math.exp(-9.0 * dt));
       tx = fx; ty = fy;
