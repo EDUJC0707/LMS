@@ -1,6 +1,18 @@
 [
   {
     "date": "2026-07-28",
+    "scope": "app-shell redesign (구조 3번 · 상단바 56px)",
+    "genre": "modern-minimal",
+    "macrostructure": "n/a (앱 셸)",
+    "nav": "N3 side-rail + 항목별 선 아이콘 18px / 상단바에 현재 페이지(아이콘 20 + 이름 16px)",
+    "footer": "n/a",
+    "theme": "custom (기존 시스템 유지 — 새 토큰 없음)",
+    "theme_axes": "light / geometric-sans / cool",
+    "enrichment": "none — 선 아이콘 15종(PageIcon)만 추가, RoleIcon 과 같은 결(viewBox 24 · stroke 1.7 · currentColor)",
+    "brief": "화면이 스스로를 설명하는 말 제거: 상단바 역할 라벨·본문 PageHeader 제목 폐기, 페이지 이름은 nav 단일 준거(auth/nav.ts)에서만. 학생 6화면 이전 완료"
+  },
+  {
+    "date": "2026-07-28",
     "scope": "app-system",
     "genre": "modern-minimal",
     "macrostructure": "n/a (앱 셸 — 마케팅 페이지 아님)",
