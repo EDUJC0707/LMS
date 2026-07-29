@@ -96,7 +96,7 @@ export function StudentPicker({
             type="search"
             value={term}
             onChange={(event) => setTerm(event.target.value)}
-            placeholder="홍길동 · 3김하늘4821"
+            placeholder="홍길동 · 김하늘0001"
             autoComplete="off"
           />
         )}

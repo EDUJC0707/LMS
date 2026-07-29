@@ -1,15 +1,16 @@
 """seed_demo 관리 커맨드 테스트 — 데모·개발용 시드 데이터 (기능 전시 환경).
 
 검증 축:
-- 계정: 직원 3(대표/관리자/조교) + 학생 30(등록 28·예비등록 2) + 학부모 10,
+- 계정: 직원 3(대표/관리자/조교) + 학생 30(등록 26·퇴원 2·예비등록 2) + 학부모 10,
   전원 test1234 로그인 가능·must_change_password=False.
   아이디는 8-4 개정 규칙(login_id 모듈) 산출값과 일치해야 한다 —
   학생 `{이름}{뒷4자리}`, 학부모 `{자녀 아이디}p`, 직원 학생과 동일 축
 - 원번: unique_id 모듈 산출값과 일치(시드가 규칙을 우회하지 않는다) +
   **학년이 고1·고2·고3 으로 섞여** 있어야 원번에 학년이 반영되는 것이 눈에 보인다
 - 커리큘럼: 강좌 1 + 주차 10(오늘 기준 4주차까지만 공개 — 게이팅) + Day 계획
-- 출결: 회차(수·토) + 지난 회차 출결(출석/결석/지각 혼합) → 트리거 파생
-  (VideoGrant source=출석자동, AbsenceCounseling 대기열)이 실제 생성됨
+- 출결: 회차(수·토) + 지난 회차 출결(값 **4종 전부** 혼합 — 2026-07-29 개편) →
+  트리거 파생(VideoGrant 출석자동/동보, AbsenceCounseling 대기열, MakeupGrant
+  지급완료)이 실제 생성됨. 퇴원생 1명 이상(명단 퇴원 행 표시 확인용)
 - 성적: 시험 3 × 문항 20(테마·오답 가이드 포함) + 답안·점수(일부 미응시)
 - 클리닉: 슬롯 5(월~금) + 자격 판정 + 신청(대기·승인배정 혼합)
 - 게시판·결제·워크북·알림: 카테고리별 글(비밀글 포함)·교재 1+주문 혼합·
@@ -38,7 +39,7 @@ from apps.grades.models import (
 )
 from apps.notifications.models import Notification
 from apps.payments.models import Order, Product
-from apps.videos.models import VideoGrant
+from apps.videos.models import MakeupGrant, VideoGrant
 
 
 def run_seed():
@@ -87,20 +88,19 @@ class SeedDemoTests(TestCase):
         for student in Student.objects.select_related("user").order_by("student_id"):
             user = student.user
             self.assertEqual(
-                student.unique_id,
-                build_unique_id(student.grade, user.name, user.phone),
+                student.unique_id, build_unique_id(user.name, user.phone)
             )
 
-    def test_grades_are_mixed_so_the_grade_digit_is_visible(self):
-        """학년이 한 값뿐이면 원번 앞자리가 학년이라는 사실을 눈으로 확인할 수 없다."""
+    def test_unique_id_equals_login_id(self):
+        """시드에는 아이디 충돌이 없다 — 그러면 원번과 아이디가 같은 문자열이다."""
+        for student in Student.objects.select_related("user").order_by("student_id"):
+            self.assertEqual(student.unique_id, student.user.login_id)
+
+    def test_grades_are_mixed(self):
+        """학년은 원번에서 빠졌지만 학생 정보로 계속 쓴다 — 한 값만 있으면 안 된다."""
         self.assertEqual(
             set(Student.objects.values_list("grade", flat=True)), {"고1", "고2", "고3"}
         )
-        prefixes = {
-            student.unique_id[0]
-            for student in Student.objects.all()
-        }
-        self.assertEqual(prefixes, {"1", "2", "3"})
 
     def test_consumer_login_endpoint_accepts_seed_accounts(self):
         """시드 계정이 통합 로그인 경로로 그대로 들어간다(프런트 배선 전제)."""
@@ -127,11 +127,18 @@ class SeedDemoTests(TestCase):
             Student.objects.filter(
                 enrollment_status=Student.EnrollmentStatus.REGISTERED
             ).count(),
-            28,
+            26,
         )
         self.assertEqual(
             Student.objects.filter(
                 enrollment_status=Student.EnrollmentStatus.PRE_REGISTERED
+            ).count(),
+            2,
+        )
+        # 퇴원 2명 — 출결 명단의 퇴원 표시 행(2026-07-29)을 확인할 재료
+        self.assertEqual(
+            Student.objects.filter(
+                enrollment_status=Student.EnrollmentStatus.WITHDRAWN
             ).count(),
             2,
         )
@@ -157,8 +164,9 @@ class SeedDemoTests(TestCase):
     def test_sessions_and_attendance_with_triggers(self):
         self.assertTrue(ClassSession.objects.exists())
         statuses = set(Attendance.objects.values_list("status", flat=True))
-        self.assertEqual(statuses, {"출석", "결석", "지각"})
-        # 출석 트리거 — 영상 권한 자동 지급
+        # 값 4종이 **전부** 섞여야 화면에서 구분이 눈에 보인다(2026-07-29 개편)
+        self.assertEqual(statuses, {"출석", "결석", "결석(동보)", "결석(현보)"})
+        # 출석·현보 트리거 — 영상 권한 자동 지급
         self.assertTrue(
             VideoGrant.objects.filter(source=VideoGrant.Source.ATTENDANCE_AUTO).exists()
         )
@@ -168,6 +176,29 @@ class SeedDemoTests(TestCase):
                 status=AbsenceCounseling.Status.PENDING
             ).exists()
         )
+        # 결석(동보) 트리거 — 동보 지급 체인(출결 값만으로 여기까지 간다)
+        self.assertTrue(
+            MakeupGrant.objects.filter(
+                status=MakeupGrant.Status.GRANTED,
+                attendance__status=Attendance.Status.ABSENT_MAKEUP,
+            ).exists()
+        )
+        self.assertTrue(VideoGrant.objects.filter(source=VideoGrant.Source.MAKEUP).exists())
+        # 상담 대기열은 보강 미정 결석만 — 동보·현보에는 붙지 않는다
+        self.assertFalse(
+            AbsenceCounseling.objects.exclude(
+                attendance__status=Attendance.Status.ABSENT
+            ).exists()
+        )
+
+    def test_withdrawn_students_stay_on_roster_as_display_rows(self):
+        # 퇴원 표시를 확인하려면 시드에 퇴원생이 최소 1명 있어야 한다.
+        withdrawn = Student.objects.filter(
+            enrollment_status=Student.EnrollmentStatus.WITHDRAWN
+        )
+        self.assertTrue(withdrawn.exists())
+        # 퇴원생에게는 출결 레코드를 만들지 않는다(명단에 남되 입력 대상 아님)
+        self.assertFalse(Attendance.objects.filter(student__in=withdrawn).exists())
 
     def test_exams_scores_and_report_material(self):
         self.assertEqual(Exam.objects.count(), 3)

@@ -6,8 +6,11 @@
  *
  * 화면 설계
  * - 위: 서버가 준 통계만 한 줄로(평균·표준편차·최고·상위 30%). 만들어낸 수치 없음.
- * - 학생 표: 석차순이 기본. 응시/미응시를 탭으로 갈라 놓는 이유는 미응시자가
+ * - 학생 표: 석차순이 기본. 제출/미제출을 탭으로 갈라 놓는 이유는 미제출자가
  *   섞여 있으면 평균·석차를 잘못 읽기 때문이다.
+ *   "미응시"가 아니라 "시험 미제출"인 근거: 판정 근거가 OMR 카드가 들어왔는가
+ *   (scores.is_taken)이고, 수업 초반 시험이라 늦게 온 학생은 앉아 있었어도
+ *   카드를 못 낸다 — 관측한 사실 그대로 부른다(2026-07-29 값집합 개편).
  * - 문항 표: 정답률이 낮은 문항이 곧 다음 수업의 재료라 정답률 정렬을 붙이고
  *   40% 미만에는 표시를 남긴다(기준은 색이 아니라 라벨로도 읽힌다).
  */
@@ -31,7 +34,7 @@ import { score } from "./ExamsPage";
 import "./manage.css";
 import type { ExamDetail, ExamQuestionRow, ExamStudentRow } from "./types";
 
-type TakenTab = "응시" | "미응시" | "전체";
+type TakenTab = "제출" | "미제출" | "전체";
 
 export default function ExamDetailPage() {
   const { examId } = useParams();
@@ -40,15 +43,15 @@ export default function ExamDetailPage() {
     [examId],
   );
 
-  const [tab, setTab] = useState<TakenTab>("응시");
+  const [tab, setTab] = useState<TakenTab>("제출");
   const [query, setQuery] = useState("");
 
   const students = useMemo(() => {
     const list = detail.data?.students ?? [];
     const needle = query.trim();
     return list.filter((student) => {
-      if (tab === "응시" && !student.is_taken) return false;
-      if (tab === "미응시" && student.is_taken) return false;
+      if (tab === "제출" && !student.is_taken) return false;
+      if (tab === "미제출" && student.is_taken) return false;
       if (!needle) return true;
       return student.name.includes(needle) || student.unique_id.includes(needle);
     });
@@ -121,13 +124,13 @@ export default function ExamDetailPage() {
           <div className="ui-tabbar">
             <Tabs
               items={[
-                { key: "응시", label: "응시", count: takenCount },
-                { key: "미응시", label: "미응시", count: missingCount },
+                { key: "제출", label: "제출", count: takenCount },
+                { key: "미제출", label: "미제출", count: missingCount },
                 { key: "전체", label: "전체", count: takenCount + missingCount },
               ]}
               value={tab}
               onChange={setTab}
-              label="응시 여부"
+              label="시험 제출 여부"
             />
           </div>
           <div className="pm-toolbar">
@@ -153,8 +156,8 @@ export default function ExamDetailPage() {
           empty={
             <EmptyState
               title={
-                tab === "미응시"
-                  ? "이 회차는 모든 학생이 응시했습니다"
+                tab === "미제출"
+                  ? "이 회차는 모든 학생이 시험을 제출했습니다"
                   : "조건에 맞는 학생이 없습니다"
               }
             />
@@ -206,13 +209,13 @@ export default function ExamDetailPage() {
             },
             {
               key: "taken",
-              header: "응시",
-              width: "5rem",
+              header: "시험",
+              width: "6.5rem",
               cell: (row) =>
                 row.is_taken ? (
-                  <Badge tone="success">응시</Badge>
+                  <Badge tone="success">제출</Badge>
                 ) : (
-                  <Badge tone="warning">미응시</Badge>
+                  <Badge tone="warning">시험 미제출</Badge>
                 ),
             },
           ]}

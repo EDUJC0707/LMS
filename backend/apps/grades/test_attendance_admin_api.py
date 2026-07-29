@@ -1,13 +1,14 @@
-"""출결 입력 API 3차 슬라이스 테스트 — SSOT 쓰기 + 파생 트리거 (PRD 3.1.6·3.1.4①·3.2.3).
+"""출결 입력 API 테스트 — SSOT 쓰기 + 파생 트리거 (PRD 3.1.6·3.1.4①·3.2.3).
 
 검증 축:
-- 기능 키 게이트: 출결 조회/입력 = 출결입력, 동보 = 영상지급관리 (프리셋 ⊕ delta)
-- 회차 목록/상세: 강좌·주차·날짜, 명단(수강생만·퇴원 제외), 기존 출결 값, 집계
+- 기능 키 게이트: 출결 조회/입력·퇴원 처리 = 출결입력, 동보 = 영상지급관리
+- 회차 목록/상세: 강좌·주차·날짜, 명단(수강생 + **퇴원생도 남김**), 출결 값, 집계
 - SSOT 쓰기: 부분/전체 upsert, 정정 시 updated_at 앱 레이어 갱신(auto_now 아님)
-- 파생 트리거(동기·같은 트랜잭션):
-  ① 출석 → VideoGrant(출석자동, 그 회차 주차, +7일) / 정정 시 revoke·재활성
-  ② 결석 → AbsenceCounseling 대기열 / 정정 시 미통화 대기 행만 정리
-- 동보 체인: MakeupGrant(관리자체크, 지급완료) + VideoGrant(동보), 비결석 400
+- 파생 트리거(동기·같은 트랜잭션) — 값집합 4종(2026-07-29 개편) 기준:
+  ① 출석·결석(현보) → VideoGrant(출석자동, 그 회차 주차, +7일) / 정정 시 revoke·재활성
+  ② 결석 → AbsenceCounseling 대기열 / 결석 아님으로 정정 시 미통화 대기 행만 정리
+  ③ 결석(동보) → MakeupGrant(지급완료) + VideoGrant(동보) / 정정 시 revoke·재활성
+- 동보 체인: 관리자 체크 = 출결을 `결석(동보)` 로 올리는 것과 같다(입구 단일화)
 - 쿼리 효율: assertNumQueries 고정(N+1 회귀 방지)
 
 기준 시각은 `apps.grades.attendance_admin.timezone.now` 를 patch 해 고정한다
@@ -31,6 +32,7 @@ from .models import Attendance, ClassSession
 PASSWORD = "pw-Secret-77!"
 SESSIONS_URL = "/api/admin/attendance/sessions"
 MAKEUP_URL = "/api/admin/attendance/makeup"
+WITHDRAW_URL = "/api/admin/attendance/withdraw"
 
 # 기준 시각: 2026-07-22(수) 22:00 KST — 수업 당일 성적처리 후 출결 입력 시점
 NOW = timezone.make_aware(datetime.datetime(2026, 7, 22, 22, 0))
@@ -110,6 +112,12 @@ class AttendanceAdminFixtureMixin:
         with freeze_now(at):
             return self.client.post(
                 MAKEUP_URL, data=json.dumps(body), content_type="application/json"
+            )
+
+    def post_withdraw(self, body, at=NOW):
+        with freeze_now(at):
+            return self.client.post(
+                WITHDRAW_URL, data=json.dumps(body), content_type="application/json"
             )
 
 
@@ -211,21 +219,31 @@ class SessionListTests(AttendanceAdminFixtureMixin, TestCase):
 
 
 class SessionDetailTests(AttendanceAdminFixtureMixin, TestCase):
-    """GET /sessions/{id} — 명단(수강생만·퇴원 제외) + 기존 출결 + 집계."""
+    """GET /sessions/{id} — 명단(퇴원생 포함·표시만) + 기존 출결 + 집계."""
 
     def setUp(self):
         self.login(self.admin)
 
-    def test_roster_is_enrolled_students_excluding_withdrawn(self):
+    def test_roster_keeps_withdrawn_students_as_display_only_rows(self):
+        # 2026-07-29: 퇴원생을 명단에서 빼지 않는다 — 담임 화면에서 5종처럼
+        # 보이게 하려면 그 행이 남아 `퇴원` 으로 떠야 한다(출결 값은 4종 유지).
         res = self.client.get(self.detail_url(self.session_w2.session_id))
         self.assertEqual(res.status_code, 200)
         body = res.json()
         ids = [s["student_id"] for s in body["students"]]
         self.assertEqual(
-            ids, [self.s1.student_id, self.s2.student_id, self.s3.student_id]
-        )  # 퇴원·타강좌 제외
-        names = [s["name"] for s in body["students"]]
-        self.assertEqual(names, ["김서연", "이준호", "박민지"])
+            ids,
+            [
+                self.s1.student_id,
+                self.s2.student_id,
+                self.s3.student_id,
+                self.s_withdrawn.student_id,
+            ],
+        )  # 타강좌만 제외
+        by_id = {s["student_id"]: s for s in body["students"]}
+        self.assertTrue(by_id[self.s_withdrawn.student_id]["is_withdrawn"])
+        self.assertEqual(by_id[self.s_withdrawn.student_id]["enrollment_status"], "퇴원")
+        self.assertFalse(by_id[self.s1.student_id]["is_withdrawn"])
         self.assertEqual(body["session"]["week_no"], 2)
 
     def test_existing_attendance_values_and_summary(self):
@@ -241,8 +259,19 @@ class SessionDetailTests(AttendanceAdminFixtureMixin, TestCase):
         self.assertIsNone(by_id[self.s1.student_id]["attendance"]["updated_at"])
         self.assertEqual(by_id[self.s2.student_id]["attendance"]["status"], "결석")
         self.assertIsNone(by_id[self.s3.student_id]["attendance"])
+        # 집계는 **입력 대상**만 센다 — 퇴원생을 미입력에 넣으면 "아직 1명 남았다"는
+        # 거짓 신호가 되므로 별도 칸으로 빼고 total 에서도 제외한다.
         self.assertEqual(
-            body["summary"], {"출석": 1, "결석": 1, "지각": 0, "미입력": 1, "total": 3}
+            body["summary"],
+            {
+                "출석": 1,
+                "결석": 1,
+                "결석(동보)": 0,
+                "결석(현보)": 0,
+                "미입력": 1,
+                "퇴원": 1,
+                "total": 3,
+            },
         )
 
     def test_roster_rows_carry_attendance_id_for_makeup_grant(self):
@@ -290,7 +319,16 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
         self.assertIsNone(att.updated_at)  # 최초 입력은 정정 아님(모델 계약)
         body = res.json()
         self.assertEqual(
-            body["summary"], {"출석": 1, "결석": 1, "지각": 0, "미입력": 1, "total": 3}
+            body["summary"],
+            {
+                "출석": 1,
+                "결석": 1,
+                "결석(동보)": 0,
+                "결석(현보)": 0,
+                "미입력": 1,
+                "퇴원": 1,
+                "total": 3,
+            },
         )
         by_id = {s["student_id"]: s for s in body["students"]}
         self.assertEqual(by_id[self.s2.student_id]["attendance"]["status"], "결석")
@@ -300,13 +338,15 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
             self.session_w2.session_id, [{"student_id": self.s1.student_id, "status": "출석"}]
         )
         self.put_attendance(
-            self.session_w2.session_id, [{"student_id": self.s2.student_id, "status": "지각"}]
+            self.session_w2.session_id,
+            [{"student_id": self.s2.student_id, "status": "결석(현보)"}],
         )
         self.assertEqual(
             Attendance.objects.get(session=self.session_w2, student=self.s1).status, "출석"
         )
         self.assertEqual(
-            Attendance.objects.get(session=self.session_w2, student=self.s2).status, "지각"
+            Attendance.objects.get(session=self.session_w2, student=self.s2).status,
+            "결석(현보)",
         )
 
     def test_correction_sets_updated_at_app_layer(self):
@@ -354,22 +394,36 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
     # --- 입력 검증 -------------------------------------------------------
 
     def test_rejects_student_outside_roster(self):
-        for bad in (self.s_withdrawn, self.s_other):
-            res = self.put_attendance(
-                self.session_w2.session_id,
-                [
-                    {"student_id": self.s1.student_id, "status": "출석"},
-                    {"student_id": bad.student_id, "status": "출석"},
-                ],
-            )
-            self.assertEqual(res.status_code, 400)
+        res = self.put_attendance(
+            self.session_w2.session_id,
+            [
+                {"student_id": self.s1.student_id, "status": "출석"},
+                {"student_id": self.s_other.student_id, "status": "출석"},
+            ],
+        )
+        self.assertEqual(res.status_code, 400)
         # 검증 실패 시 아무것도 저장되지 않는다(원자성)
         self.assertEqual(Attendance.objects.filter(session=self.session_w2).count(), 0)
         self.assertEqual(VideoGrant.objects.count(), 0)
 
+    def test_rejects_entry_for_withdrawn_student(self):
+        # 퇴원생은 명단에 **보이지만** 입력 대상이 아니다 — 출결 레코드를
+        # 만들지 않는다(퇴원은 students.enrollment_status 단일 원천).
+        res = self.put_attendance(
+            self.session_w2.session_id,
+            [
+                {"student_id": self.s1.student_id, "status": "출석"},
+                {"student_id": self.s_withdrawn.student_id, "status": "출석"},
+            ],
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("퇴원", res.json()["detail"])
+        self.assertEqual(Attendance.objects.filter(session=self.session_w2).count(), 0)
+
     def test_rejects_invalid_status_and_body_shape(self):
         cases = [
             [{"student_id": self.s1.student_id, "status": "퇴원"}],  # 값집합 밖(모델 계약)
+            [{"student_id": self.s1.student_id, "status": "지각"}],  # 2026-07-29 제거된 값
             [{"student_id": self.s1.student_id}],  # status 누락
             [{"status": "출석"}],  # student_id 누락
             {"student_id": self.s1.student_id, "status": "출석"},  # 리스트 아님
@@ -425,13 +479,142 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
         # 재저장이 만료를 연장하지 않는다(최초 지급 유지)
         self.assertEqual(grants[0].expires_at, NOW + GRANT_DURATION)
 
-    def test_late_does_not_create_grant_or_counseling(self):
-        # 자동지급은 '출석' 확정만(PRD 3.1.4 ①) — 지각은 지급·상담 대기열 모두 없음
+    def test_onsite_makeup_absence_grants_review_video_without_counseling(self):
+        """`결석(현보)` = 다른 회차에서 그 주 수업을 **실제로 들은** 결석.
+
+        자동지급의 근거는 "그 주 수업을 들었다"이지 출결 라벨 자체가 아니다 —
+        영상 보강(동보)조차 "출석생과 동일한 그 주 복습영상 권한"을 받는데
+        (PRD 3.2.3) 현장에서 들은 학생을 빼면 앞뒤가 맞지 않는다.
+        상담 대기열은 없다 — 보강이 이미 끝났으므로 전화할 사유가 없다.
+        """
         self.put_attendance(
-            self.session_w2.session_id, [{"student_id": self.s1.student_id, "status": "지각"}]
+            self.session_w2.session_id,
+            [{"student_id": self.s1.student_id, "status": "결석(현보)"}],
         )
-        self.assertEqual(VideoGrant.objects.count(), 0)
+        att = Attendance.objects.get(session=self.session_w2, student=self.s1)
+        grant = VideoGrant.objects.get(attendance=att)
+        self.assertEqual(grant.source, VideoGrant.Source.ATTENDANCE_AUTO)
+        self.assertEqual(grant.course_week_id, self.week2.week_id)
+        self.assertEqual(grant.expires_at, NOW + GRANT_DURATION)
         self.assertEqual(AbsenceCounseling.objects.count(), 0)
+        self.assertEqual(MakeupGrant.objects.count(), 0)
+
+    def test_makeup_absence_grants_makeup_chain_without_counseling(self):
+        """`결석(동보)` 는 담임이 찍는 순간 동보 지급까지 확정된다(입구 단일화)."""
+        self.put_attendance(
+            self.session_w2.session_id,
+            [{"student_id": self.s1.student_id, "status": "결석(동보)"}],
+        )
+        att = Attendance.objects.get(session=self.session_w2, student=self.s1)
+        makeup = MakeupGrant.objects.get(attendance=att)
+        self.assertEqual(makeup.source, MakeupGrant.Source.ADMIN_CHECK)
+        self.assertEqual(makeup.status, MakeupGrant.Status.GRANTED)
+        self.assertEqual(makeup.granted_at, NOW)
+        grant = VideoGrant.objects.get(makeup=makeup)
+        self.assertEqual(grant.source, VideoGrant.Source.MAKEUP)
+        self.assertEqual(grant.course_week_id, self.week2.week_id)
+        self.assertEqual(grant.expires_at, NOW + GRANT_DURATION)
+        # 보강 방법이 확정된 결석이므로 상담 대기열에 올리지 않는다
+        self.assertEqual(AbsenceCounseling.objects.count(), 0)
+        # 출석 근거 지급은 없다 — 동보는 makeup 근거로만 매달린다
+        self.assertFalse(VideoGrant.objects.filter(attendance=att).exists())
+
+    def test_makeup_absence_resubmit_is_idempotent(self):
+        entries = [{"student_id": self.s1.student_id, "status": "결석(동보)"}]
+        self.put_attendance(self.session_w2.session_id, entries)
+        self.put_attendance(
+            self.session_w2.session_id, entries, at=NOW + datetime.timedelta(hours=2)
+        )
+        att = Attendance.objects.get(session=self.session_w2, student=self.s1)
+        self.assertEqual(MakeupGrant.objects.filter(attendance=att).count(), 1)
+        self.assertEqual(VideoGrant.objects.filter(makeup__attendance=att).count(), 1)
+        self.assertEqual(
+            VideoGrant.objects.get(makeup__attendance=att).expires_at, NOW + GRANT_DURATION
+        )
+
+    def test_makeup_absence_absorbs_pending_student_request(self):
+        """학생이 이미 신청해 둔 결석을 담임이 `결석(동보)` 로 찍으면 그 신청이 승인된다.
+
+        새 MakeupGrant 를 따로 만들면 학생 신청이 영원히 `신청` 으로 남아
+        "동보로 찍혔는데 신청은 안 된" 상태가 된다 — 겹치는 두 흐름을 한
+        레코드로 합치는 지점이다.
+        """
+        self.put_attendance(
+            self.session_w2.session_id, [{"student_id": self.s1.student_id, "status": "결석"}]
+        )
+        att = Attendance.objects.get(session=self.session_w2, student=self.s1)
+        pending = MakeupGrant.objects.create(
+            student=self.s1,
+            attendance=att,
+            source=MakeupGrant.Source.STUDENT_REQUEST,
+            requested_by=self.s1.user,
+        )
+        later = NOW + datetime.timedelta(hours=1)
+        self.put_attendance(
+            self.session_w2.session_id,
+            [{"student_id": self.s1.student_id, "status": "결석(동보)"}],
+            at=later,
+        )
+        self.assertEqual(MakeupGrant.objects.filter(attendance=att).count(), 1)
+        pending.refresh_from_db()
+        self.assertEqual(pending.status, MakeupGrant.Status.GRANTED)
+        self.assertEqual(pending.source, MakeupGrant.Source.STUDENT_REQUEST)  # 이력 보존
+        self.assertEqual(VideoGrant.objects.get(makeup=pending).granted_at, later)
+
+    def test_absent_to_makeup_absence_removes_untouched_counseling(self):
+        self.put_attendance(
+            self.session_w2.session_id, [{"student_id": self.s2.student_id, "status": "결석"}]
+        )
+        att = Attendance.objects.get(session=self.session_w2, student=self.s2)
+        self.assertEqual(AbsenceCounseling.objects.filter(attendance=att).count(), 1)
+        self.put_attendance(
+            self.session_w2.session_id,
+            [{"student_id": self.s2.student_id, "status": "결석(동보)"}],
+            at=NOW + datetime.timedelta(hours=1),
+        )
+        self.assertEqual(AbsenceCounseling.objects.filter(attendance=att).count(), 0)
+
+    def test_makeup_absence_to_present_revokes_makeup_grant(self):
+        self.put_attendance(
+            self.session_w2.session_id,
+            [{"student_id": self.s1.student_id, "status": "결석(동보)"}],
+        )
+        later = NOW + datetime.timedelta(hours=1)
+        self.put_attendance(
+            self.session_w2.session_id,
+            [{"student_id": self.s1.student_id, "status": "출석"}],
+            at=later,
+        )
+        att = Attendance.objects.get(session=self.session_w2, student=self.s1)
+        makeup_grant = VideoGrant.objects.get(makeup__attendance=att)
+        self.assertEqual(makeup_grant.revoked_at, later)
+        self.assertNotIn(makeup_grant, VideoGrant.objects.active(at=later))
+        # 출석 자동지급은 새로 난다
+        self.assertEqual(VideoGrant.objects.filter(attendance=att).count(), 1)
+
+    def test_makeup_absence_reentry_reactivates_revoked_grant(self):
+        self.put_attendance(
+            self.session_w2.session_id,
+            [{"student_id": self.s1.student_id, "status": "결석(동보)"}],
+        )
+        self.put_attendance(
+            self.session_w2.session_id,
+            [{"student_id": self.s1.student_id, "status": "출석"}],
+            at=NOW + datetime.timedelta(hours=1),
+        )
+        t2 = NOW + datetime.timedelta(hours=2)
+        self.put_attendance(
+            self.session_w2.session_id,
+            [{"student_id": self.s1.student_id, "status": "결석(동보)"}],
+            at=t2,
+        )
+        att = Attendance.objects.get(session=self.session_w2, student=self.s1)
+        grants = VideoGrant.objects.filter(makeup__attendance=att)
+        self.assertEqual(grants.count(), 1)  # 부분 UQ — 동보 1건당 지급 1행(재활성)
+        self.assertIsNone(grants[0].revoked_at)
+        self.assertEqual(grants[0].expires_at, t2 + GRANT_DURATION)
+        # 출석으로 났던 자동지급은 회수된다
+        self.assertEqual(VideoGrant.objects.get(attendance=att).revoked_at, t2)
 
     def test_present_to_absent_revokes_auto_grant(self):
         self.put_attendance(
@@ -542,6 +725,28 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
                 "video_grants_reactivated": 0,
                 "counselings_created": 1,
                 "counselings_removed": 0,
+                "makeups_granted": 0,
+            },
+        )
+
+    def test_put_response_counts_makeup_absence_triggers(self):
+        res = self.put_attendance(
+            self.session_w2.session_id,
+            [
+                {"student_id": self.s1.student_id, "status": "결석(동보)"},
+                {"student_id": self.s2.student_id, "status": "결석(현보)"},
+            ],
+        )
+        self.assertEqual(
+            res.json()["triggers"],
+            {
+                # 동보 1건(makeup 근거) + 현보 1건(출결 근거)
+                "video_grants_created": 2,
+                "video_grants_revoked": 0,
+                "video_grants_reactivated": 0,
+                "counselings_created": 0,
+                "counselings_removed": 0,
+                "makeups_granted": 1,
             },
         )
 
@@ -549,11 +754,12 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
         entries = [
             {"student_id": self.s1.student_id, "status": "출석"},
             {"student_id": self.s2.student_id, "status": "결석"},
-            {"student_id": self.s3.student_id, "status": "지각"},
+            {"student_id": self.s3.student_id, "status": "결석(현보)"},
         ]
         # 세션인증 2 + 기능키 1 + 회차 1 + 명단 1 + SAVEPOINT/RELEASE 2
-        # + 기존출결 1 + INSERT 3 + 지급조회/생성 2 + 대기열조회/생성 2 = 15
-        with freeze_now(), self.assertNumQueries(15):
+        # + 기존출결 1 + INSERT 3 + 지급조회/생성 2(출석·현보 묶음 INSERT 아님 → 3)
+        # + 동보조회 1(지급건 없음 → 2번째 쿼리 생략) + 대기열조회/생성 2
+        with freeze_now(), self.assertNumQueries(17):
             self.client.put(
                 self.detail_url(self.session_w2.session_id),
                 data=json.dumps(entries),
@@ -581,6 +787,27 @@ class MakeupCheckTests(AttendanceAdminFixtureMixin, TestCase):
         att = att or self.absent_att
         student = student or self.s2
         return {"student_id": student.student_id, "attendance_id": att.id}
+
+    def test_makeup_promotes_attendance_to_makeup_absence(self):
+        """관리자 체크 = 출결을 `결석(동보)` 로 올리는 것과 같다(입구 단일화).
+
+        출결은 `결석` 인데 동보만 지급된 상태를 남기지 않는다 — 그러면 출결
+        SSOT 만 보고는 이 학생이 동보인지 알 수 없다.
+        """
+        self.post_makeup(self._body())
+        self.absent_att.refresh_from_db()
+        self.assertEqual(self.absent_att.status, Attendance.Status.ABSENT_MAKEUP)
+        self.assertEqual(self.absent_att.updated_at, NOW)
+
+    def test_makeup_removes_untouched_counseling_row(self):
+        row = AbsenceCounseling.objects.create(
+            student=self.s2,
+            attendance=self.absent_att,
+            target=AbsenceCounseling.Target.PARENT,
+            status=AbsenceCounseling.Status.PENDING,
+        )
+        self.post_makeup(self._body())
+        self.assertFalse(AbsenceCounseling.objects.filter(pk=row.counsel_id).exists())
 
     def test_makeup_creates_grant_chain(self):
         res = self.post_makeup(self._body())
@@ -633,3 +860,62 @@ class MakeupCheckTests(AttendanceAdminFixtureMixin, TestCase):
         res = self.post_makeup(self._body(att=att))
         self.assertEqual(res.status_code, 400)
         self.assertEqual(MakeupGrant.objects.count(), 0)
+
+
+class WithdrawTests(AttendanceAdminFixtureMixin, TestCase):
+    """POST /api/admin/attendance/withdraw — 출결 화면에서 퇴원 처리 (PRD 3.1.6).
+
+    출결 값집합에 `퇴원` 을 넣지 않기로 한 대가다 — 담임이 명단에서 바로
+    퇴원을 찍을 수 있어야 화면이 5종처럼 보인다. 한 번 처리하면 이후 회차
+    명단에는 자동으로 퇴원 행으로 뜬다(생애주기 상태이므로 회차와 무관).
+    """
+
+    def setUp(self):
+        self.login(self.admin)
+
+    def test_withdraw_sets_enrollment_status_and_audit_fields(self):
+        res = self.post_withdraw(
+            {"student_id": self.s1.student_id, "reason": "타 학원 이동"}
+        )
+        self.assertEqual(res.status_code, 200)
+        self.s1.refresh_from_db()
+        self.assertEqual(self.s1.enrollment_status, Student.EnrollmentStatus.WITHDRAWN)
+        self.assertEqual(self.s1.withdrawn_at, NOW)
+        self.assertEqual(self.s1.withdrawn_by, self.admin)
+        self.assertEqual(self.s1.withdrawn_reason, "타 학원 이동")
+        self.assertEqual(res.json()["enrollment_status"], "퇴원")
+
+    def test_withdrawn_student_becomes_display_only_row_on_next_session(self):
+        self.post_withdraw({"student_id": self.s1.student_id})
+        res = self.client.get(self.detail_url(self.session_w2.session_id))
+        by_id = {s["student_id"]: s for s in res.json()["students"]}
+        self.assertTrue(by_id[self.s1.student_id]["is_withdrawn"])
+        self.assertEqual(res.json()["summary"]["퇴원"], 2)
+        self.assertEqual(res.json()["summary"]["total"], 2)
+
+    def test_withdraw_does_not_create_attendance_rows(self):
+        self.post_withdraw({"student_id": self.s1.student_id})
+        self.assertEqual(Attendance.objects.count(), 0)
+
+    def test_withdraw_is_idempotent(self):
+        self.post_withdraw({"student_id": self.s_withdrawn.student_id})
+        res = self.post_withdraw({"student_id": self.s_withdrawn.student_id})
+        self.assertEqual(res.status_code, 200)
+        self.s_withdrawn.refresh_from_db()
+        self.assertEqual(
+            self.s_withdrawn.enrollment_status, Student.EnrollmentStatus.WITHDRAWN
+        )
+
+    def test_withdraw_missing_student_is_404(self):
+        self.assertEqual(self.post_withdraw({"student_id": 99999}).status_code, 404)
+
+    def test_withdraw_invalid_body_is_400(self):
+        for body in ({}, {"student_id": "abc"}, {"student_id": True}):
+            self.assertEqual(self.post_withdraw(body).status_code, 400)
+
+    def test_withdraw_requires_attendance_entry_feature(self):
+        self.client.logout()
+        self.login(self.assistant)  # 조교 프리셋에 출결입력 없음
+        self.assertEqual(
+            self.post_withdraw({"student_id": self.s1.student_id}).status_code, 403
+        )

@@ -1,9 +1,48 @@
 """출결 입력 서비스 — SSOT 쓰기 + 파생 트리거 (PRD 3.1.6·3.1.4①·3.2.3, §4 배치 ③④).
 
-담임의 출결 입력 한 번(Attendance upsert)이 파생 소비자 둘을 **동기로, 같은
+담임의 출결 입력 한 번(Attendance upsert)이 파생 소비자 셋을 **동기로, 같은
 트랜잭션 안에서** 갱신한다(Celery 보류 결정 — 태스크 없음):
-  ① `출석` 확정 → videos.VideoGrant(source=출석자동, 그 회차 주차, 지급+7일)
+  ① `출석`·`결석(현보)` 확정 → videos.VideoGrant(source=출석자동, 그 회차 주차, +7일)
   ② `결석` 확정 → boards.AbsenceCounseling 대기열 행(1차 통화 대상=학부모)
+  ③ `결석(동보)` 확정 → videos.MakeupGrant(지급완료) + VideoGrant(source=동보)
+
+**값집합 4종의 트리거 판정 근거** (2026-07-29 개편 — `지각` 제거, 결석 3분화).
+
+| status | 복습영상 | 상담 대기열 | 동보 체인 |
+|---|---|---|---|
+| `출석` | 지급(출석자동) | — | — |
+| `결석` | — | **생성** | — |
+| `결석(동보)` | 동보 근거로 지급 | — | **지급완료** |
+| `결석(현보)` | 지급(출석자동) | — | — |
+
+- **상담 대기열은 `결석` 만.** 이 대기열은 "결석했다"의 대기열이 아니라 **"보강이
+  정해지지 않았다"의 대기열**이다 — PRD 3.1.9·3.2.3 의 흐름이 `결석 → 전화상담 →
+  보강 방법 확정` 이기 때문이다. `결석(동보)`·`결석(현보)` 는 담임이 찍는 순간
+  보강 방법이 이미 확정(동영상)·완료(현장)된 상태라 전화할 사유가 없다. 통화
+  이력이 남은 행은 결석 아님으로 정정돼도 보존한다(아래 정정 정책).
+- **`결석(현보)` 도 복습영상을 준다.** 자동지급의 근거는 "그 주 수업을 실제로
+  들었다"이지 출결 라벨 자체가 아니다(PRD 3.1.4 ① 이 `출석` 을 트리거로 삼는
+  이유). 영상 보강(동보)조차 "출석생과 동일한 그 주 복습영상 권한"을 받는데
+  (PRD 3.2.3) 현장에서 실제로 들은 학생을 빼면 앞뒤가 맞지 않는다. source 는
+  `출석자동` 그대로 쓴다 — 이 값은 "담임의 출결 입력이 자동으로 낸 지급"을
+  뜻하며 수동·동보·학생신청과 구분하는 축이고, 현보 지급도 정확히 그 축이다
+  (부분 UQ `uq_video_grants_attendance` 도 출결 1건당 1행으로 그대로 성립).
+
+**`결석(동보)` 와 학생 동보 신청 흐름의 겹침 정리 (2026-07-29).**
+같은 사실("이 결석은 동영상으로 보강한다")에 입구가 셋이었다:
+  (a) 담임의 출결 값 `결석(동보)`   (b) POST /api/admin/attendance/makeup(관리자 체크)
+  (c) 학생·학부모 신청 → 관리자 승인(videos.views)
+셋을 그대로 두면 "출결은 `결석` 인데 동보만 지급된" / "동보로 찍혔는데 신청
+레코드는 `신청` 인 채 남은" 갈린 상태가 생긴다. **끝 상태를 하나로 못 박는다** —
+어느 입구로 들어와도 `attendance.status == 결석(동보)` **그리고** 그 결석에
+`MakeupGrant(지급완료)` 1건 **그리고** 그 동보에 `VideoGrant(동보)` 1건:
+  - (a) 는 트리거 ③ 이 지급 체인을 만든다. 그 결석에 **이미 신청 중인
+    MakeupGrant 가 있으면 새로 만들지 않고 그 행을 지급완료로 전이**한다 —
+    담임이 동보로 찍은 것이 곧 그 신청의 승인이다(source 는 신청 경로 그대로
+    보존 — 누가 시작했는지가 감사 이력이다).
+  - (b) 는 `grant_makeup()` 이 **출결 값을 `결석(동보)` 로 올린 뒤** 같은 트리거를
+    태운다. 즉 (a) 의 축약일 뿐 별도 경로가 아니다.
+  - (c) 승인도 `promote_to_makeup_absence()` 로 출결을 올린다(videos.views).
 
 **원자성 판단 — 출결 저장과 트리거를 한 트랜잭션으로 묶는다.**
 근거: 출결은 SSOT(grades.Attendance 계약)이고 지급·대기열은 그 파생이다.
@@ -13,12 +52,23 @@
 실패는 곧 DB 장애이며, 그 경우 출결 저장도 함께 롤백해 관리자가 화면에서
 재시도하는 편이 안전하다(수업 당일 현장 대응 불가 전제 — key_considerations §5).
 
+**퇴원생은 명단에 남기되 입력 대상에서 뺀다** (2026-07-29 사용자 지시 "한번에
+찍고 그 이후에는 이미 퇴원함"). 출결 값집합에 `퇴원` 을 넣지 않는 결정은 그대로다
+(퇴원은 회차마다 바뀌는 게 아니라 한 번 일어나는 사건이라 회차별로 찍게 하면
+"3회차는 퇴원인데 5회차는 출석" 같은 모순이 저장된다 — 모델 계약). 대신 화면에서
+5종처럼 보이도록 명단에 행을 남기고 `is_withdrawn` 을 실어 보낸다. 그 행에는
+출결 레코드를 만들지 않으며(쓰기는 400) 집계에서도 별도 칸으로 뺀다.
+
 **정정 시나리오 정책** (PRD 3.1.1 발송 후 수정 가능 — 정정은 언제든 온다):
-- 출석 → 결석/지각: 자동지급(출석자동) revoke(revoked_at 스탬프 — 행 보존, 이력).
-- 결석/지각 → 출석: revoke 된 자동지급을 **재활성**(revoked_at 해제 + 지급/만료
+- 출석 → 결석 계열: 자동지급(출석자동) revoke(revoked_at 스탬프 — 행 보존, 이력).
+- 결석 계열 → 출석: revoke 된 자동지급을 **재활성**(revoked_at 해제 + 지급/만료
   재산정). 부분 UQ(uq_video_grants_attendance)가 출석 1건당 1행을 강제하므로
-  행 복제가 아니라 재활성이 계약에 맞는 형태다.
-- 결석 → 출석/지각: 대기열 행 중 **사람 손이 닿지 않은 행만** 삭제
+  행 복제가 아니라 재활성이 계약에 맞는 형태다. `결석(현보)` 도 같은 축을 쓴다.
+- 결석(동보) → 다른 값: 동보 지급(VideoGrant source=동보)을 revoke 한다. 다시
+  `결석(동보)` 로 돌아오면 재활성(부분 UQ `uq_video_grants_makeup` — 동보 1건당
+  지급 1행). MakeupGrant 행 자체는 `지급완료` 로 남긴다 — 누가 언제 동보를
+  확정했는지는 감사 이력이고, 권한을 실제로 끄는 것은 VideoGrant 쪽이다.
+- 결석 → 결석 아님(출석·동보·현보): 대기열 행 중 **사람 손이 닿지 않은 행만** 삭제
   (status=대기 AND called_at IS NULL). 통화 이력이 남은 행(완료·미연결,
   called_at 존재)은 감사 이력이므로 보존한다. 삭제 근거: 대기열은 SSOT 파생
   데이터라 잘못된 대기 행을 남기면 비결석 학생 학부모에게 전화가 나간다.
@@ -63,11 +113,15 @@ def load_session(session_id):
 
 
 def load_roster(session):
-    """회차 명단 = 그 주차 강좌의 활성 수강생(`수강`), **퇴원 제외**.
+    """회차 명단 = 그 주차 강좌의 활성 수강생(`수강`) — **퇴원생도 남긴다**.
 
     예비등록생은 포함한다 — 1주차 실제 출석이 '등록' 전환의 근거(PRD 3.1.5·
-    3.1.6)이므로 명단에 있어야 첫 출석을 입력할 수 있다. 주차 미매핑 회차는
-    명단 산정 불가([]) — 쓰기는 뷰에서 400 처리.
+    3.1.6)이므로 명단에 있어야 첫 출석을 입력할 수 있다.
+
+    퇴원생은 2026-07-29 부터 **제외하지 않는다**(구 동작: `.exclude(퇴원)`).
+    담임 화면이 4종 값 + 퇴원 표시로 5종처럼 보여야 하기 때문이며, 대신 그
+    행은 표시 전용이다(`is_entry_target` 이 False → 쓰기 400). 주차 미매핑
+    회차는 명단 산정 불가([]) — 쓰기는 뷰에서 400 처리.
     """
     if session.course_week is None:
         return []
@@ -76,10 +130,24 @@ def load_roster(session):
             course_enrollments__course=session.course_week.course,
             course_enrollments__status=CourseEnrollment.Status.ENROLLED,
         )
-        .exclude(enrollment_status=Student.EnrollmentStatus.WITHDRAWN)
         .select_related("user")
         .order_by("student_id")
     )
+
+
+def is_entry_target(student):
+    """출결을 입력할 수 있는 행인가 — 퇴원생은 표시만 하고 레코드를 만들지 않는다."""
+    return student.enrollment_status != Student.EnrollmentStatus.WITHDRAWN
+
+
+def entry_target_ids(roster):
+    """명단 중 출결 입력 대상 student_id 목록(퇴원 제외) — 뷰의 검증 준거."""
+    return [s.student_id for s in roster if is_entry_target(s)]
+
+
+def withdrawn_ids(roster):
+    """명단 중 퇴원 행의 student_id 집합 — 뷰가 오류 문구를 가르는 데 쓴다."""
+    return {s.student_id for s in roster if not is_entry_target(s)}
 
 
 def load_attendance_map(session, student_ids):
@@ -112,16 +180,42 @@ def session_block(session):
 def build_detail_payload(session, roster, attendance_by_student):
     """상세·PUT 공용 응답 — 명단 + 출결 값 + 집계(프런트 재조회 불필요).
 
-    행의 `attendance_id` 는 동보 즉시 지급(POST /api/admin/attendance/makeup)의
-    body 키다 — 명단에서 결석 학생에게 바로 지급하려면 기존 출결의 PK 가 응답에
-    있어야 한다(2026-07-28 보강). 미입력 학생은 null(키는 항상 존재).
+    **응답 계약** (2026-07-29 개정 — 퇴원 행 포함으로 형태가 바뀌었다):
+
+        {
+          "session": {...},
+          "students": [
+            {
+              "student_id": 1, "name": "김서연", "unique_id": "김서연0001",
+              "current_class": "수요반", "enrollment_status": "등록",
+              "is_withdrawn": false,      # true = 표시 전용 행(출결 입력칸 없음)
+              "attendance_id": 12|null,   # 동보 즉시 지급 API 의 body 키
+              "attendance": {"status","exam_taken","marked_at","updated_at"}|null
+            }, ...
+          ],
+          "summary": {"출석":n,"결석":n,"결석(동보)":n,"결석(현보)":n,
+                      "미입력":n,"퇴원":n,"total":n}
+        }
+
+    - `students` 에는 **퇴원생도 들어온다**. `is_withdrawn` 이 true 인 행은
+      출결 입력칸 대신 `퇴원` 을 표시하고 PUT 대상에서 뺀다(보내면 400).
+    - `summary` 는 **입력 대상만** 센다: 값 4종 + `미입력` 의 합이 `total` 과
+      같고, 퇴원생은 그 밖의 `퇴원` 칸에만 잡힌다. 퇴원생을 `미입력` 에 넣으면
+      "아직 n명 남았다"가 영원히 0이 되지 않는 거짓 신호가 된다.
+    - `attendance_id` 는 동보 즉시 지급(POST /api/admin/attendance/makeup)의
+      body 키다 — 명단에서 결석 학생에게 바로 지급하려면 기존 출결의 PK 가
+      응답에 있어야 한다(2026-07-28 보강). 미입력 학생은 null(키는 항상 존재).
     """
     students = []
     counts = {status: 0 for status in Attendance.Status.values}
+    withdrawn = 0
     for student in roster:
         att = attendance_by_student.get(student.student_id)
-        if att is not None:
+        entry_target = is_entry_target(student)
+        if entry_target and att is not None:
             counts[att.status] += 1
+        if not entry_target:
+            withdrawn += 1
         students.append(
             {
                 "student_id": student.student_id,
@@ -129,14 +223,16 @@ def build_detail_payload(session, roster, attendance_by_student):
                 "unique_id": student.unique_id,
                 "current_class": student.current_class,
                 "enrollment_status": student.enrollment_status,
+                "is_withdrawn": not entry_target,
                 "attendance_id": att.id if att is not None else None,
                 "attendance": _attendance_block(att),
             }
         )
-    entered = sum(counts.values())
+    total = len(roster) - withdrawn
     summary = dict(counts)
-    summary["미입력"] = len(roster) - entered
-    summary["total"] = len(roster)
+    summary["미입력"] = total - sum(counts.values())
+    summary["퇴원"] = withdrawn
+    summary["total"] = total
     return {"session": session_block(session), "students": students, "summary": summary}
 
 
@@ -165,22 +261,44 @@ def apply_entries(session, entries, actor, roster_ids):
       없이 표시할 수 있게 한다.
     """
     now = timezone.now()
-    triggers = {
-        "video_grants_created": 0,
-        "video_grants_revoked": 0,
-        "video_grants_reactivated": 0,
-        "counselings_created": 0,
-        "counselings_removed": 0,
-    }
+    triggers = empty_triggers()
     student_ids = [entry["student_id"] for entry in entries]
     with transaction.atomic():
         att_map = load_attendance_map(session, roster_ids)
         for entry in entries:
             _upsert_row(session, entry, att_map, actor, now)
         touched = [att_map[sid] for sid in student_ids]
-        _sync_video_grants(session, touched, actor, now, triggers)
-        _sync_counseling_queue(touched, triggers)
+        _run_triggers(session, touched, actor, now, triggers)
     return att_map, triggers
+
+
+def empty_triggers():
+    """응답용 트리거 카운터 초기값 — 응답 형태가 값 유무에 따라 흔들리지 않게 한다.
+
+    `video_grants_*` 는 경로(출석자동·동보)를 가리지 않고 이번 저장이 만든/회수한/
+    되살린 시청 권한 수다 — 화면이 "복습영상 n건 지급"으로 옮기는 값이므로 학생이
+    체감하는 단위(권한)와 같아야 한다. `makeups_granted` 는 그중 동보 확정 건수다.
+    """
+    return {
+        "video_grants_created": 0,
+        "video_grants_revoked": 0,
+        "video_grants_reactivated": 0,
+        "counselings_created": 0,
+        "counselings_removed": 0,
+        "makeups_granted": 0,
+    }
+
+
+def _run_triggers(session, attendances, actor, now, triggers):
+    """파생 트리거 ①②③ 을 정해진 순서로 태운다(호출측이 트랜잭션을 소유).
+
+    순서가 의미를 갖는 지점은 없다 — 셋은 서로 다른 표를 건드리고 같은 출결
+    스냅샷만 읽는다. 한 곳에 모아 둔 이유는 출결 값이 바뀌는 **모든 경로**가
+    같은 파생을 태우게 하기 위함이다(담임 입력 · 관리자 동보 체크 · 신청 승인).
+    """
+    _sync_video_grants(session, attendances, actor, now, triggers)
+    _sync_makeup_grants(attendances, actor, now, triggers)
+    _sync_counseling_queue(attendances, triggers)
 
 
 def _upsert_row(session, entry, att_map, actor, now):
@@ -209,10 +327,19 @@ def _upsert_row(session, entry, att_map, actor, now):
     att.save(update_fields=["status", "exam_taken", "marked_by", "updated_at"])
 
 
-def _sync_video_grants(session, attendances, actor, now, triggers):
-    """트리거 ① — 자동지급은 status=`출석` 인 동안만 활성(PRD 3.1.4 ①).
+#: 출결 근거 복습영상 지급(source=출석자동)이 활성인 값들 — 모듈 docstring 의
+#: 판정표 ①. `결석(현보)` 가 여기 있는 근거도 같은 곳에 적혀 있다.
+_REVIEW_VIDEO_STATUSES = frozenset(
+    {Attendance.Status.PRESENT, Attendance.Status.ABSENT_ONSITE}
+)
 
-    지각은 지급 대상이 아니다 — SSOT 계약이 `출석` 확정만 트리거로 명시.
+
+def _sync_video_grants(session, attendances, actor, now, triggers):
+    """트리거 ① — 출결 근거 자동지급은 `출석`·`결석(현보)` 인 동안만 활성.
+
+    `결석(현보)` 를 포함하는 근거는 모듈 docstring(그 주 수업을 실제로 들었으므로
+    출석과 동등). `결석(동보)` 는 여기가 아니라 트리거 ③ 이 동보 근거로 지급한다 —
+    한 결석에 출결 근거·동보 근거 지급이 겹치면 같은 주차 권한이 2행이 된다.
     기존 지급 1쿼리 로드 후 상태별 생성/재활성/revoke(모듈 docstring 정책).
     """
     grant_map = {
@@ -221,7 +348,7 @@ def _sync_video_grants(session, attendances, actor, now, triggers):
     }
     for att in attendances:
         grant = grant_map.get(att.id)
-        if att.status == Attendance.Status.PRESENT:
+        if att.status in _REVIEW_VIDEO_STATUSES:
             if grant is None:
                 VideoGrant.objects.create(
                     student_id=att.student_id,
@@ -252,12 +379,78 @@ def _sync_video_grants(session, attendances, actor, now, triggers):
             triggers["video_grants_revoked"] += 1
 
 
-def _sync_counseling_queue(attendances, triggers):
-    """트리거 ② — 결석 상담 대기열(PRD §4 배치 ④, 동기 구현).
+def _sync_makeup_grants(attendances, actor, now, triggers):
+    """트리거 ③ — `결석(동보)` 확정 = 동보 지급 확정 (2026-07-29 입구 단일화).
 
+    담임이 값을 찍는 순간 MakeupGrant `지급완료` + VideoGrant(동보)까지 간다.
+    학생 신청을 기다리지 않는 근거는 모듈 docstring — 담임이 찍는 값과 학생
+    신청이 같은 사실을 가리키므로 둘을 한 레코드로 합친다:
+      - 그 결석에 아직 MakeupGrant 가 없으면 `관리자체크` 로 새로 만든다.
+      - **신청 중인 행이 있으면 그 행을 지급완료로 전이**한다(새로 만들지 않는다).
+        source 는 신청 경로 그대로 둔다 — 누가 시작했는지가 감사 이력이다.
+      - 이미 지급완료면 아무것도 하지 않는다(멱등 — 만료를 연장하지 않는다).
+    `결석(동보)` 가 아니게 정정되면 동보 지급을 revoke, 되돌아오면 재활성한다.
+    """
+    makeup_by_att = {}
+    for makeup in MakeupGrant.objects.filter(
+        attendance_id__in=[a.id for a in attendances]
+    ).order_by("makeup_id"):
+        # 같은 결석에 거절 후 재신청이 쌓일 수 있다 — 지급완료 행이 있으면 그것이
+        # 사실이고(부분 UQ 가 지급 1건을 보장), 없으면 최신 행을 재사용 대상으로 본다.
+        current = makeup_by_att.get(makeup.attendance_id)
+        if current is None or current.status != MakeupGrant.Status.GRANTED:
+            makeup_by_att[makeup.attendance_id] = makeup
+    grant_by_makeup = {}
+    if makeup_by_att:
+        grant_by_makeup = {
+            g.makeup_id: g
+            for g in VideoGrant.objects.filter(
+                makeup_id__in=[m.makeup_id for m in makeup_by_att.values()]
+            )
+        }
+    for att in attendances:
+        makeup = makeup_by_att.get(att.id)
+        if att.status == Attendance.Status.ABSENT_MAKEUP:
+            if makeup is None:
+                makeup = MakeupGrant.objects.create(
+                    student_id=att.student_id,
+                    attendance=att,
+                    source=MakeupGrant.Source.ADMIN_CHECK,
+                    requested_by=actor,
+                )
+            if makeup.status != MakeupGrant.Status.GRANTED:
+                complete_makeup(makeup, actor, now)
+                triggers["makeups_granted"] += 1
+                triggers["video_grants_created"] += 1
+                continue
+            grant = grant_by_makeup.get(makeup.makeup_id)
+            if grant is not None and grant.revoked_at is not None:
+                grant.revoked_at = None
+                grant.granted_at = now
+                grant.expires_at = now + GRANT_DURATION
+                grant.granted_by = actor
+                grant.save(
+                    update_fields=["revoked_at", "granted_at", "expires_at", "granted_by"]
+                )
+                triggers["video_grants_reactivated"] += 1
+            continue
+        if makeup is None or makeup.status != MakeupGrant.Status.GRANTED:
+            continue
+        grant = grant_by_makeup.get(makeup.makeup_id)
+        if grant is not None and grant.revoked_at is None:
+            grant.revoked_at = now
+            grant.save(update_fields=["revoked_at"])
+            triggers["video_grants_revoked"] += 1
+
+
+def _sync_counseling_queue(attendances, triggers):
+    """트리거 ② — **보강 미정 결석**(`결석`)만 상담 대기열(PRD §4 배치 ④, 동기).
+
+    `결석(동보)`·`결석(현보)` 는 대기열 대상이 아니다 — 이 대기열은 "결석했다"가
+    아니라 **"보강이 정해지지 않았다"**의 대기열이라서다(근거는 모듈 docstring).
     결석 1건당 대기열 1행(기존 행 존재 시 상태 불문 미생성 — 중복 금지).
-    1차 통화 대상=학부모(PRD 3.1.9). 결석 아님 정정 시 미통화 대기 행만 삭제
-    (모듈 docstring 정책).
+    1차 통화 대상=학부모(PRD 3.1.9). 대기열 대상 아님으로 정정 시 미통화 대기
+    행만 삭제(모듈 docstring 정책).
     """
     existing = {
         c.attendance_id: c
@@ -292,21 +485,79 @@ def _sync_counseling_queue(attendances, triggers):
 
 
 def grant_makeup(attendance, actor):
-    """동보 지급 체인 — MakeupGrant(관리자체크) 생성 + 지급완료 전이.
+    """관리자 동보 체크 — **출결을 `결석(동보)` 로 올리고** 지급 체인을 태운다.
 
-    지급완료 전이·VideoGrant(동보) 생성은 videos.makeup.complete_makeup 공용
-    서비스가 담당한다(신청 승인 경로와 단일 구현 — 4차 슬라이스 추출, 같은
-    트랜잭션 계약 유지). requested_by 에는 체크한 관리자를 남긴다(신청 주체
-    감사 이력). 중복은 뷰의 지급완료 선재 검사 + 부분 UQ(uq_video_grants_
-    makeup)가 이중 방어.
+    2026-07-29 개편 전에는 MakeupGrant 만 만들었다. 그러면 출결은 `결석` 인데
+    동보만 지급된 상태가 남아 **출결 SSOT 만 보고는 이 학생이 동보인지 알 수
+    없었다.** 이제 이 엔드포인트는 담임이 `결석(동보)` 를 찍는 것의 축약이며,
+    지급·상담 대기열 정리는 같은 트리거(_run_triggers)를 그대로 탄다.
+    중복은 뷰의 지급완료 선재 검사 + 부분 UQ(uq_video_grants_makeup)가 이중 방어.
     """
     now = timezone.now()
     with transaction.atomic():
-        makeup = MakeupGrant.objects.create(
-            student_id=attendance.student_id,
-            attendance=attendance,
-            source=MakeupGrant.Source.ADMIN_CHECK,
-            requested_by=actor,
+        promote_to_makeup_absence(attendance, actor, now)
+        # 살아있는 신청이 있으면 그 행을 승인한다(새로 만들지 않는다 — 트리거 ③과
+        # 같은 규칙). 뷰가 지급완료 선재 검사를 마쳤으므로 여기 오는 행은 신청·승인
+        # 상태이거나 아예 없다. 거절된 행은 재사용하지 않는다(이력이므로).
+        makeup = (
+            MakeupGrant.objects.filter(attendance=attendance)
+            .exclude(status=MakeupGrant.Status.REJECTED)
+            .order_by("makeup_id")
+            .first()
         )
+        if makeup is None:
+            makeup = MakeupGrant.objects.create(
+                student_id=attendance.student_id,
+                attendance=attendance,
+                source=MakeupGrant.Source.ADMIN_CHECK,
+                requested_by=actor,
+            )
         grant = complete_makeup(makeup, actor, now)
     return makeup, grant
+
+
+def promote_to_makeup_absence(attendance, actor, now):
+    """동보 지급이 확정된 결석의 출결 값을 `결석(동보)` 로 올린다(신청 승인 경로).
+
+    videos.views 의 승인이 호출한다 — 지급은 났는데 출결은 `결석` 인 갈린 상태를
+    남기지 않기 위함(모듈 docstring 의 입구 단일화). 지급 체인 자체는 호출측이
+    이미 태웠으므로 여기서는 출결 값과 **상담 대기열 정리**만 맞춘다.
+    트랜잭션은 호출측 소유(승인과 같은 트랜잭션).
+    """
+    if attendance.status == Attendance.Status.ABSENT_MAKEUP:
+        return
+    attendance.status = Attendance.Status.ABSENT_MAKEUP
+    attendance.marked_by = actor
+    attendance.updated_at = now
+    attendance.save(update_fields=["status", "marked_by", "updated_at"])
+    _sync_counseling_queue([attendance], empty_triggers())
+
+
+# --- 퇴원 처리 -------------------------------------------------------------
+
+
+def withdraw_student(student, actor, now, reason=None):
+    """퇴원 처리 (PRD 3.1.6) — 출결 화면에서 담임이 누른다.
+
+    출결 값집합에 `퇴원` 을 넣지 않기로 한 결정(모델 계약)의 짝이다: 값 대신
+    **학생 생애주기 상태**를 한 번 바꾸고, 이후 회차 명단에서는 표시 전용 행으로
+    자동으로 뜬다("한번에 찍고 그 이후에는 이미 퇴원함" — 2026-07-29 사용자).
+
+    이미 퇴원인 학생은 **덮어쓰지 않는다**(멱등) — 최초 퇴원 시각·처리자가
+    감사 이력이므로 재요청이 그것을 지우면 안 된다.
+    """
+    if student.enrollment_status == Student.EnrollmentStatus.WITHDRAWN:
+        return student
+    student.enrollment_status = Student.EnrollmentStatus.WITHDRAWN
+    student.withdrawn_at = now
+    student.withdrawn_by = actor
+    student.withdrawn_reason = reason or None
+    student.save(
+        update_fields=[
+            "enrollment_status",
+            "withdrawn_at",
+            "withdrawn_by",
+            "withdrawn_reason",
+        ]
+    )
+    return student

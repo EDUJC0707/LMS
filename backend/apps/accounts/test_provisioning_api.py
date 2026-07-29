@@ -9,9 +9,9 @@
   학부모 번호 뒷4자리**(8-4 개정) / 동명이인+같은 뒷4자리는 **접미사로 해소** /
   아이디를 만들 수 없는 행(이름·번호 불량)은 **해당 행만 실패**(행 단위
   savepoint — 성공 행은 유지) / 초기 비밀번호는 응답 반환·credentials_sent_at 미스탬프
-- 원번(2026-07-29 개정): 입력이 아니라 **(학년, 이름, 휴대폰) 파생값** —
-  손입력 원번은 거절, 학년을 못 읽는 행은 실패, 같은 학년·이름·뒷4자리 두 명은
-  둘 다 생성(원번 단독 UNIQUE 아님)
+- 원번(2026-07-29 재개정): 입력이 아니라 **(이름, 휴대폰) 파생값** — 손입력
+  원번은 거절, **학년은 원번에 관여하지 않는다**(없거나 못 읽어도 발급된다),
+  동명이인+같은 뒷4자리 두 명은 둘 다 생성되고 **원번이 같다**(단독 UNIQUE 아님)
 - 등록 전환: 예비등록→등록 + registered_at (그 외 상태 400)
 """
 import json
@@ -95,10 +95,10 @@ class BulkIssueTests(ProvisioningFixtureMixin, TestCase):
 
         student = Student.objects.get(user=student_user)
         self.assertEqual(student.enrollment_status, Student.EnrollmentStatus.PRE_REGISTERED)
-        # 원번은 파생값 — 학년(고3) + 이름 + 뒷4자리. 응답에도 실려 나간다
+        # 원번은 파생값 — 이름 + 뒷4자리. 응답에도 실려 나간다
         # (관리자가 OMR 답안지에 적을 값이라 발급 시점에 보여야 한다).
-        self.assertEqual(student.unique_id, "3김학생2222")
-        self.assertEqual(result["unique_id"], "3김학생2222")
+        self.assertEqual(student.unique_id, "김학생2222")
+        self.assertEqual(result["unique_id"], "김학생2222")
         self.assertEqual(student.grade, "고3")
         self.assertEqual(student.school, "한종철고")
         self.assertIsNone(student.credentials_sent_at)  # 발송은 알림톡 연동 대기
@@ -168,7 +168,7 @@ class BulkIssueTests(ProvisioningFixtureMixin, TestCase):
         self.assertEqual(body["results"][0]["login_id"], "무폰생4821")
         self.assertEqual(body["results"][0]["parent"]["login_id"], "무폰생4821p")
         # 원번도 같은 뒷자리 규칙을 쓴다(학부모 번호 뒷4자리)
-        self.assertEqual(body["results"][0]["unique_id"], "2무폰생4821")
+        self.assertEqual(body["results"][0]["unique_id"], "무폰생4821")
         self.assertTrue(User.objects.filter(login_id="무폰생4821").exists())
         self.assertTrue(
             User.objects.filter(login_id="무폰생4821p", role=User.Role.PARENT).exists()
@@ -194,11 +194,11 @@ class BulkIssueTests(ProvisioningFixtureMixin, TestCase):
         self.assertEqual(body["results"][1]["parent"]["login_id"], "김민준1234ap")
         self.assertEqual(body["summary"]["created"], 2)
 
-    def test_same_grade_name_and_tail_share_one_unique_id(self):
-        """원번은 **단독 UNIQUE 가 아니다** — 같은 학년·이름·뒷4자리 두 명이 성립한다.
+    def test_same_name_and_tail_share_one_unique_id(self):
+        """원번은 **단독 UNIQUE 가 아니다** — 같은 이름·뒷4자리 두 명이 성립한다.
 
-        아이디는 접미사로 갈라지지만(위 테스트) 원번은 갈리지 않는다. 이름과
-        함께 쓰는 매칭키라서다(Student.unique_id 계약 — 2026-07-29 유지 확인).
+        아이디는 접미사로 갈라지지만(위 테스트) 원번은 갈리지 않는다. 겹치면
+        지면 매칭에서 중복으로 떨어지고 관리자가 고른다(2026-07-29 확정).
         """
         rows = [
             {"name": "김민준", "phone": "01011111234", "grade": "고2"},
@@ -208,18 +208,19 @@ class BulkIssueTests(ProvisioningFixtureMixin, TestCase):
         body = res.json()
         self.assertEqual(body["summary"]["created"], 2)
         self.assertEqual(
-            [row["unique_id"] for row in body["results"]], ["2김민준1234", "2김민준1234"]
+            [row["unique_id"] for row in body["results"]], ["김민준1234", "김민준1234"]
         )
-        self.assertEqual(Student.objects.filter(unique_id="2김민준1234").count(), 2)
+        self.assertEqual(Student.objects.filter(unique_id="김민준1234").count(), 2)
 
-    def test_grade_is_part_of_the_unique_id(self):
+    def test_grade_is_not_part_of_the_unique_id(self):
+        """학년이 달라도 이름·뒷4자리가 같으면 원번이 같다(2026-07-29 재개정)."""
         rows = [
-            {"name": "고일생", "phone": "01011110001", "grade": "고1"},
-            {"name": "고삼생", "phone": "01011110003", "grade": "고3"},
+            {"name": "동명이", "phone": "01011110001", "grade": "고1"},
+            {"name": "동명이", "phone": "01022220001", "grade": "고3"},
         ]
         body = self.post_bulk(rows).json()
-        self.assertEqual(body["results"][0]["unique_id"], "1고일생0001")
-        self.assertEqual(body["results"][1]["unique_id"], "3고삼생0003")
+        self.assertEqual(body["results"][0]["unique_id"], "동명이0001")
+        self.assertEqual(body["results"][1]["unique_id"], "동명이0001")
 
     def test_supplied_unique_id_rejected(self):
         """손입력 원번은 **행 실패**다 — 무시하면 준 값이 저장됐다고 오해한다.
@@ -243,32 +244,30 @@ class BulkIssueTests(ProvisioningFixtureMixin, TestCase):
             "created": 1, "failed": 1, "parents_created": 0, "parents_linked": 0
         })
 
-    def test_row_without_grade_fails_that_row(self):
-        # 학년은 원번의 첫 자리다 — 없으면 원번을 만들 수 없어 그 행만 실패한다
-        rows = [
-            {"name": "무학년", "phone": "01011110001"},
-            {"name": "정상생", "phone": "01011110002", "grade": "고2"},
-        ]
-        body = self.post_bulk(rows).json()
-        self.assertEqual(body["results"][0]["status"], "실패")
-        self.assertFalse(User.objects.filter(name="무학년").exists())
-        self.assertEqual(body["results"][1]["status"], "생성")
+    def test_row_without_grade_is_issued(self):
+        """학년이 비어도 발급된다 — 원번의 재료가 아니게 됐다(2026-07-29 재개정).
 
-    def test_n_su_is_grade_four(self):
-        """N수 = 자리값 4 (2026-07-29 사용자 확정 — "n수는 학년이 4야 그게 끝")."""
-        body = self.post_bulk(
-            [{"name": "엔수생", "phone": "01011110001", "grade": "N수"}]
-        ).json()
+        학년은 학생 정보로 계속 쓰지만(승급·명단) 계정 발급을 막을 이유가 없다.
+        비면 그대로 빈 문자열로 저장되고 승급 커맨드가 건너뛰며 드러난다.
+        """
+        body = self.post_bulk([{"name": "무학년", "phone": "01011110001"}]).json()
         self.assertEqual(body["results"][0]["status"], "생성")
-        self.assertEqual(body["results"][0]["unique_id"], "4엔수생0001")
+        self.assertEqual(body["results"][0]["unique_id"], "무학년0001")
+        self.assertEqual(Student.objects.get(user__name="무학년").grade, "")
 
-    def test_row_with_unreadable_grade_fails_that_row(self):
-        """숫자도 없고 이름표에도 없는 학년 — 어느 학년인지 알 수 없다."""
+    def test_free_form_grade_is_stored_as_is(self):
+        """학년 표기는 원번에 관여하지 않으므로 파싱하지 않는다 — 적힌 대로 저장."""
         body = self.post_bulk(
-            [{"name": "미상생", "phone": "01011110001", "grade": "고등부"}]
+            [
+                {"name": "엔수생", "phone": "01011110001", "grade": "N수"},
+                {"name": "미상생", "phone": "01011110002", "grade": "고등부"},
+            ]
         ).json()
-        self.assertEqual(body["results"][0]["status"], "실패")
-        self.assertFalse(User.objects.filter(name="미상생").exists())
+        self.assertEqual(
+            [row["status"] for row in body["results"]], ["생성", "생성"]
+        )
+        self.assertEqual(body["results"][0]["unique_id"], "엔수생0001")
+        self.assertEqual(Student.objects.get(user__name="미상생").grade, "고등부")
 
     def test_name_with_spaces_normalized(self):
         res = self.post_bulk(
@@ -323,7 +322,7 @@ class RegisterTests(ProvisioningFixtureMixin, TestCase):
         super().setUpTestData()
         cls.student = Student.objects.create(
             user=make_user("rg-stu", User.Role.STUDENT, name="예비생"),
-            unique_id="3예비생0001",
+            unique_id="예비생0001",
         )
 
     def register(self, student_id, user=None):

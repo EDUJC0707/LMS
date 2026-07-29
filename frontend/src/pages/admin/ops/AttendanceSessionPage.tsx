@@ -16,6 +16,7 @@ import { useParams } from "react-router-dom";
 
 import { http, useApi, useApiAction } from "../../../api";
 import { useMe } from "../../../auth";
+import { attendanceTone, shortAttendance } from "../../../features/attendance";
 import {
   Alert,
   Button,
@@ -44,15 +45,10 @@ import { ATTENDANCE_STATUSES } from "./types";
 type Draft = { status: AttendanceStatus | ""; examTaken: boolean };
 type DraftMap = Record<number, Draft>;
 
-const TONE: Record<AttendanceStatus, "present" | "late" | "absent"> = {
-  출석: "present",
-  지각: "late",
-  결석: "absent",
-};
-
 function draftFrom(students: RosterStudent[]): DraftMap {
   const next: DraftMap = {};
   for (const student of students) {
+    if (student.is_withdrawn) continue;
     next[student.student_id] = {
       status: student.attendance?.status ?? "",
       examTaken: student.attendance?.exam_taken === true,
@@ -127,19 +123,23 @@ export default function AttendanceSessionPage() {
       [studentId]: { ...(prev[studentId] ?? { status: "", examTaken: false }), ...patch },
     }));
 
+  // 퇴원 행은 입력 대상이 아니라 집계에도 넣지 않는다 — 넣으면 미입력이
+  // 영원히 0 이 되지 않아 "몇 명 남았나"가 거짓말을 한다(서버 summary 와 같은 규칙).
+  const entryTargets = useMemo(() => students.filter((s) => !s.is_withdrawn), [students]);
+
   const live = useMemo(() => {
-    const counts = { 출석: 0, 지각: 0, 결석: 0, 미입력: 0 };
-    for (const student of students) {
+    const counts = { 출석: 0, 결석: 0, "결석(동보)": 0, "결석(현보)": 0, 미입력: 0 };
+    for (const student of entryTargets) {
       const status = draft[student.student_id]?.status;
       if (status) counts[status] += 1;
       else counts.미입력 += 1;
     }
     return counts;
-  }, [students, draft]);
+  }, [entryTargets, draft]);
 
   const changed = useMemo(
     () =>
-      students.filter((student) => {
+      entryTargets.filter((student) => {
         const row = draft[student.student_id];
         if (!row?.status) return false;
         const nextExam = examMode ? row.examTaken : null;
@@ -147,7 +147,7 @@ export default function AttendanceSessionPage() {
         if (!savedRow) return true;
         return savedRow.status !== row.status || (savedRow.exam_taken ?? null) !== nextExam;
       }),
-    [students, draft, examMode],
+    [entryTargets, draft, examMode],
   );
 
   const save = useApiAction(async (entries: AttendanceEntry[]) => {
@@ -192,7 +192,7 @@ export default function AttendanceSessionPage() {
 
   const fillBlanks = () => {
     const before = draft;
-    const blanks = students.filter((s) => !draft[s.student_id]?.status);
+    const blanks = entryTargets.filter((s) => !draft[s.student_id]?.status);
     if (blanks.length === 0) return;
     setDraft((prev) => {
       const next = { ...prev };
@@ -227,11 +227,14 @@ export default function AttendanceSessionPage() {
   if (!detail.data) return null;
 
   const session = detail.data.session;
-  const visible = blankOnly ? students.filter((s) => !draft[s.student_id]?.status) : students;
+  const summary = detail.data.summary;
+  const visible = blankOnly
+    ? entryTargets.filter((s) => !draft[s.student_id]?.status)
+    : students;
 
   const columns: Column<RosterStudent>[] = [
     {
-      // 원번은 2026-07-29 개정으로 이름이 섞인 값이 됐다(`3김하늘4821`) — 숫자 열이
+      // 원번은 2026-07-29 개정으로 이름이 섞인 값이 됐다(`김하늘0001`) — 숫자 열이
       // 아니므로 numeric(모노·우측정렬)을 걸지 않고, 6rem 고정폭도 뗐다(줄바꿈됐다).
       key: "unique_id",
       header: "원번",
@@ -264,15 +267,18 @@ export default function AttendanceSessionPage() {
     {
       key: "status",
       header: "출결",
-      width: "11.5rem",
-      cell: (r) => (
-        <StatusPicker
-          name={`att-${r.student_id}`}
-          label={`${r.name ?? r.unique_id} 출결`}
-          value={draft[r.student_id]?.status ?? ""}
-          onChange={(status) => setRow(r.student_id, { status })}
-        />
-      ),
+      width: "13rem",
+      cell: (r) =>
+        r.is_withdrawn ? (
+          <span className="ops-withdrawn">퇴원</span>
+        ) : (
+          <StatusPicker
+            name={`att-${r.student_id}`}
+            label={`${r.name ?? r.unique_id} 출결`}
+            value={draft[r.student_id]?.status ?? ""}
+            onChange={(status) => setRow(r.student_id, { status })}
+          />
+        ),
     },
     ...(examMode
       ? [
@@ -281,15 +287,22 @@ export default function AttendanceSessionPage() {
             header: "현장 시험",
             align: "center" as const,
             width: "7rem",
-            cell: (r: RosterStudent) => (
-              <span className="ops-examcell">
-                <Checkbox
-                  checked={draft[r.student_id]?.examTaken ?? false}
-                  onChange={(event) => setRow(r.student_id, { examTaken: event.target.checked })}
-                  label={<span className="sr-only">{r.name ?? r.unique_id} 현장 시험 응시</span>}
-                />
-              </span>
-            ),
+            cell: (r: RosterStudent) =>
+              r.is_withdrawn ? (
+                <span className="ops-dash">—</span>
+              ) : (
+                <span className="ops-examcell">
+                  <Checkbox
+                    checked={draft[r.student_id]?.examTaken ?? false}
+                    onChange={(event) =>
+                      setRow(r.student_id, { examTaken: event.target.checked })
+                    }
+                    label={
+                      <span className="sr-only">{r.name ?? r.unique_id} 현장 시험 제출</span>
+                    }
+                  />
+                </span>
+              ),
           },
         ]
       : []),
@@ -299,8 +312,12 @@ export default function AttendanceSessionPage() {
             key: "makeup",
             header: "동보(복습영상)",
             width: "11rem",
+            // 담임이 `결석(동보)` 를 직접 찍으면 지급까지 자동으로 간다 —
+            // 이 열은 그 결과(지급완료)와, 아직 `결석` 인 학생의 신청 승인만 남는다.
             cell: (r: RosterStudent) => {
-              if (r.attendance?.status !== "결석") return <span className="ops-dash">—</span>;
+              const status = r.attendance?.status;
+              if (status !== "결석" && status !== "결석(동보)")
+                return <span className="ops-dash">—</span>;
               const row = makeupByStudent.get(r.student_id);
               if (!row) return <span className="ops-sub">신청 없음</span>;
               if (row.status === "신청")
@@ -349,15 +366,17 @@ export default function AttendanceSessionPage() {
         <div className="ops-id">
           <span className="ops-id__title">{longDate(session.session_date)}</span>
           <span className="ops-id__meta">
-            {sessionLabel(session)} · 명단 {students.length}명
+            {sessionLabel(session)} · 명단 {summary.total}명
+            {summary.퇴원 > 0 ? ` · 퇴원 ${summary.퇴원}명` : ""}
             {session.memo ? ` · ${session.memo}` : ""}
           </span>
         </div>
 
         <div className="ops-figs">
           <Fig tone="present" n={live.출석} label="출석" />
-          <Fig tone="late" n={live.지각} label="지각" />
           <Fig tone="absent" n={live.결석} label="결석" />
+          <Fig tone="makeup" n={live["결석(동보)"]} label="동보" />
+          <Fig tone="onsite" n={live["결석(현보)"]} label="현보" />
           <Fig tone="blank" n={live.미입력} label="미입력" />
         </div>
 
@@ -404,7 +423,7 @@ export default function AttendanceSessionPage() {
                 <kbd>Tab</kbd> 다음 학생
               </span>
               <span>
-                <kbd>←</kbd> <kbd>→</kbd> 출석 · 지각 · 결석
+                <kbd>←</kbd> <kbd>→</kbd> 출석 · 결석 · 동보 · 현보
               </span>
               <span>
                 <kbd>⌘</kbd>+<kbd>S</kbd> 저장
@@ -436,6 +455,7 @@ function SavedSummary({
   onClose: () => void;
 }) {
   const parts: string[] = [];
+  if (triggers.makeups_granted > 0) parts.push(`동보 ${triggers.makeups_granted}건 지급`);
   if (triggers.video_grants_created > 0)
     parts.push(`복습영상 ${triggers.video_grants_created}건 지급`);
   if (triggers.video_grants_reactivated > 0)
@@ -470,15 +490,19 @@ function StatusPicker({
   return (
     <span className="ops-seg" role="radiogroup" aria-label={label}>
       {ATTENDANCE_STATUSES.map((status) => (
-        <label key={status} className={`ops-seg__opt ops-seg__opt--${TONE[status]}`}>
+        <label
+          key={status}
+          className={`ops-seg__opt ops-seg__opt--${attendanceTone(status)}`}
+        >
           <input
             type="radio"
             name={name}
             value={status}
             checked={value === status}
             onChange={() => onChange(status)}
+            aria-label={status}
           />
-          <span>{status}</span>
+          <span aria-hidden="true">{shortAttendance(status)}</span>
         </label>
       ))}
     </span>

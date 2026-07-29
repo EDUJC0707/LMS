@@ -1,128 +1,108 @@
-"""원번 생성 규칙 전수 테스트 — 2026-07-29 개정(원번 = 학년 + 이름 + 뒷4자리).
+"""원번 생성 규칙 전수 테스트 — 2026-07-29 재개정(원번 = 이름 + 뒷4자리).
+
+같은 날 오전에 넣었던 학년 자리를 **걷어냈다**. 지면(OMR·워크북)에 들어오는
+것이 이름 + 뒷4자리이므로 원번도 그 두 축뿐이다.
 
 검증 축:
-- 형식: `{학년숫자}{정규화 이름}{휴대폰 뒷4자리}` — 예 `3김하늘4821`
-- 학년 반영: 같은 학생도 학년이 다르면 원번이 다르다(원번은 가변)
-- 로그인 아이디와의 관계: 원번 몸통 == 로그인 아이디 몸통(뒷자리 규칙 공유)
+- 형식: `{정규화 이름}{휴대폰 뒷4자리}` — 예 `김하늘4821`
+- 로그인 아이디와의 관계: **원번 == 아이디에서 충돌 접미사를 뗀 값**
+- 동명이인+같은 뒷4자리: 아이디는 접미사로 갈리고 **원번은 둘 다 같다**
 - 무전화 학생: 학부모 번호 뒷4자리(login_id 8-3 과 같은 규칙)
-- 학년 파싱 실패: 숫자를 못 뽑거나 여러 자리면 예외
-- OMR 숫자부: 학년1 + 뒷4 = 5자리(이름은 한글이라 버블로 못 마킹한다)
+- 학년 비관여: 학년은 원번에 영향을 주지 않는다(인자로도 받지 않는다)
 - 순수성: DB 없이 규칙 전수가 성립(SimpleTestCase)
 """
+import inspect
+
 from django.test import SimpleTestCase
 
-from .login_id import LoginIdError, person_base, student_phone_tail4
+from . import unique_id as unique_id_module
+from .login_id import LoginIdError, issue_student_login_id, person_base, student_phone_tail4
 from .models import Student
-from .unique_id import UniqueIdError, build_unique_id, grade_digit, numeric_key
-
-
-class GradeDigitTests(SimpleTestCase):
-    def test_high_school_grades(self):
-        self.assertEqual(grade_digit("고1"), "1")
-        self.assertEqual(grade_digit("고2"), "2")
-        self.assertEqual(grade_digit("고3"), "3")
-
-    def test_middle_school_notation(self):
-        self.assertEqual(grade_digit("중3"), "3")
-
-    def test_bare_digit(self):
-        self.assertEqual(grade_digit("2"), "2")
-
-    def test_surrounding_spaces_ignored(self):
-        self.assertEqual(grade_digit(" 고2 "), "2")
-
-    def test_no_digit_rejected(self):
-        # 숫자도 없고 이름표에도 없는 표기 — 어느 학년인지 알 수 없다
-        with self.assertRaises(UniqueIdError):
-            grade_digit("고등부")
-
-    def test_blank_rejected(self):
-        with self.assertRaises(UniqueIdError):
-            grade_digit("")
-
-    def test_none_rejected(self):
-        with self.assertRaises(UniqueIdError):
-            grade_digit(None)
-
-    def test_multiple_digits_rejected(self):
-        # 원번의 학년부는 한 자리다 — 두 자리가 섞이면 어느 쪽이 학년인지 알 수 없다
-        with self.assertRaises(UniqueIdError):
-            grade_digit("고2-3반")
-
-    def test_error_is_value_error(self):
-        # 호출자가 ValueError 로 잡던 자리에서 그대로 잡힌다(LoginIdError 와 같은 결)
-        self.assertTrue(issubclass(UniqueIdError, ValueError))
+from .unique_id import build_unique_id
 
 
 class BuildUniqueIdTests(SimpleTestCase):
-    def test_grade_name_and_phone_tail(self):
-        self.assertEqual(build_unique_id("고3", "김하늘", "01012344821"), "3김하늘4821")
-
-    def test_grade_changes_the_unique_id(self):
-        # 원번은 가변이다 — 학년이 올라가면 앞자리가 바뀐다(2026-07-29 확정)
-        self.assertEqual(build_unique_id("고1", "김하늘", "01012344821"), "1김하늘4821")
-        self.assertEqual(build_unique_id("고2", "김하늘", "01012344821"), "2김하늘4821")
+    def test_name_and_phone_tail(self):
+        self.assertEqual(build_unique_id("김하늘", "01012344821"), "김하늘4821")
 
     def test_name_normalized_like_login_id(self):
-        self.assertEqual(build_unique_id("고2", " 김 하늘 ", "010-1234-4821"), "2김하늘4821")
+        self.assertEqual(build_unique_id(" 김 하늘 ", "010-1234-4821"), "김하늘4821")
 
-    def test_body_equals_login_id_body(self):
-        # 원번 = 학년 + 로그인아이디 몸통 — 두 규칙이 갈리지 않는지 못 박는다
+    def test_equals_login_id_body(self):
+        # 원번 = 로그인 아이디에서 충돌 접미사를 뗀 값 — 두 규칙이 갈리지 않게 못 박는다
         self.assertEqual(
-            build_unique_id("고2", "김하늘", "01012344821")[1:],
+            build_unique_id("김하늘", "01012344821"),
             person_base("김하늘", "01012344821"),
+        )
+
+    def test_equals_login_id_when_there_is_no_collision(self):
+        """충돌이 없으면 원번과 로그인 아이디가 **같은 문자열**이다."""
+        self.assertEqual(
+            build_unique_id("김하늘", "01012344821"),
+            issue_student_login_id("김하늘", "01012344821", is_taken=lambda _: False),
         )
 
     def test_phoneless_student_uses_parent_tail(self):
         self.assertEqual(
-            build_unique_id("고2", "김하늘", "", parent_phone="010-9999-4821"),
-            "2김하늘4821",
+            build_unique_id("김하늘", "", parent_phone="010-9999-4821"), "김하늘4821"
         )
 
     def test_own_phone_wins_over_parent_phone(self):
         self.assertEqual(
-            build_unique_id("고2", "김하늘", "01011111111", parent_phone="01099994821"),
-            "2김하늘1111",
+            build_unique_id("김하늘", "01011111111", parent_phone="01099994821"),
+            "김하늘1111",
         )
 
     def test_no_phone_at_all_rejected(self):
         with self.assertRaises(LoginIdError):
-            build_unique_id("고2", "김하늘", "", parent_phone="")
+            build_unique_id("김하늘", "", parent_phone="")
 
     def test_unusable_name_rejected(self):
         with self.assertRaises(LoginIdError):
-            build_unique_id("고2", "!!!", "01012344821")
-
-    def test_unparseable_grade_rejected(self):
-        with self.assertRaises(UniqueIdError):
-            build_unique_id("고등부", "김하늘", "01012344821")
+            build_unique_id("!!!", "01012344821")
 
     def test_longest_possible_fits_the_column(self):
         # 이름 상한(login_id 정규화 20자)까지 쓴 원번이 students.unique_id 에 들어가야 한다
-        longest = build_unique_id("고3", "가" * 40, "01012344821")
-        self.assertEqual(len(longest), 1 + 20 + 4)
+        longest = build_unique_id("가" * 40, "01012344821")
+        self.assertEqual(len(longest), 20 + 4)
         column = Student._meta.get_field("unique_id")
         self.assertLessEqual(len(longest), column.max_length)
 
 
-class NumericKeyTests(SimpleTestCase):
-    def test_five_digits_grade_then_tail(self):
-        # OMR 답안지는 숫자부 5칸만 마킹한다(이름은 한글이라 버블 대상이 아니다)
-        key = numeric_key("고2", "01012344821")
-        self.assertEqual(key, "24821")
-        self.assertEqual(len(key), 5)
-        self.assertTrue(key.isdigit())
+class DuplicateUniqueIdTests(SimpleTestCase):
+    """동명이인 + 같은 뒷4자리 — 아이디는 갈리고 원번은 갈리지 않는다.
 
-    def test_phoneless_student_uses_parent_tail(self):
-        self.assertEqual(numeric_key("고1", "", parent_phone="010-9999-4821"), "14821")
+    이것이 원번의 성격이다(2026-07-29 사용자 확정). 겹치면 지면 매칭에서
+    중복으로 떨어지고 **관리자가 고른다** — 접미사로 자동 해소하지 않는다.
+    """
 
-    def test_matches_the_digits_of_the_unique_id(self):
-        full = build_unique_id("고3", "김하늘", "01012344821")
-        self.assertEqual(numeric_key("고3", "01012344821"), full[0] + full[-4:])
+    def test_two_students_share_one_unique_id(self):
+        first = build_unique_id("김민준", "01011111234")
+        second = build_unique_id("김민준", "01022221234")
+        self.assertEqual(first, second)
+        self.assertEqual(first, "김민준1234")
 
-    def test_unparseable_grade_rejected(self):
-        with self.assertRaises(UniqueIdError):
-            numeric_key("고등부", "01012344821")
+    def test_login_ids_split_while_unique_ids_do_not(self):
+        taken = set()
+
+        def is_taken(candidate):
+            return candidate in taken
+
+        first = issue_student_login_id("김민준", "01011111234", is_taken=is_taken)
+        taken.add(first)
+        second = issue_student_login_id("김민준", "01022221234", is_taken=is_taken)
+        self.assertEqual((first, second), ("김민준1234", "김민준1234a"))
+        self.assertEqual(
+            build_unique_id("김민준", "01011111234"),
+            build_unique_id("김민준", "01022221234"),
+        )
+
+    def test_unique_id_is_the_login_id_without_its_suffix(self):
+        login_id = issue_student_login_id(
+            "김민준", "01022221234", is_taken=lambda c: c == "김민준1234"
+        )
+        self.assertEqual(login_id, "김민준1234a")
+        self.assertEqual(build_unique_id("김민준", "01022221234"), login_id[:-1])
 
 
 class SharedTailRuleTests(SimpleTestCase):
@@ -130,29 +110,22 @@ class SharedTailRuleTests(SimpleTestCase):
 
     def test_unique_id_tail_is_login_id_tail(self):
         self.assertEqual(
-            build_unique_id("고2", "김하늘", "", parent_phone="01099994821")[-4:],
+            build_unique_id("김하늘", "", parent_phone="01099994821")[-4:],
             student_phone_tail4("", "01099994821"),
         )
 
 
-class NSuGradeTests(SimpleTestCase):
-    """N수 = 자리값 4 (2026-07-29 사용자 확정 — "n수는 학년이 4야 그게 끝").
+class NoGradeInUniqueIdTests(SimpleTestCase):
+    """학년은 원번에서 빠졌다 — 모듈에 학년이 남아 있으면 안 된다.
 
-    숫자가 없는 표기라 `_DIGITS` 로는 못 뽑는다. 이름으로 알아본다.
+    (같은 날 오전 개정의 잔재를 못 박아 둔다. `grade_digit`·`numeric_key` 는
+    원번 때문에 있었고, 지면 전제가 이름+뒷4 로 바뀌면서 쓸 데가 사라졌다.)
     """
 
-    def test_n_su_is_four(self):
-        for label in ("N수", "n수", "N 수", "재수"):
-            self.assertEqual(grade_digit(label), "4", label)
+    def test_signature_has_no_grade_argument(self):
+        params = list(inspect.signature(build_unique_id).parameters)
+        self.assertEqual(params, ["name", "phone", "parent_phone"])
 
-    def test_n_su_unique_id(self):
-        self.assertEqual(
-            build_unique_id("N수", "김하늘", "01012344821"), "4김하늘4821"
-        )
-
-    def test_no_such_thing_as_go4(self):
-        """자리값 4는 오직 N수다 — `고4` 라는 학년 표기는 쓰지 않는다.
-
-        (표기 자체를 막지는 않는다. 여기서 못 박는 건 N수가 4를 차지한다는 것.)
-        """
-        self.assertEqual(grade_digit("N수"), grade_digit("재수"))
+    def test_module_exposes_nothing_grade_shaped(self):
+        for gone in ("grade_digit", "numeric_key", "UniqueIdError"):
+            self.assertFalse(hasattr(unique_id_module, gone), gone)

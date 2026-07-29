@@ -26,4 +26,9 @@ urlpatterns = [
         views.MakeupCheckView.as_view(),
         name="attendance-makeup",
     ),
+    path(
+        "admin/attendance/withdraw",
+        views.AttendanceWithdrawView.as_view(),
+        name="attendance-withdraw",
+    ),
 ]

@@ -360,15 +360,15 @@ class WorkbookMatchTests(WorkbookFixtureMixin, TestCase):
     def test_auto_match_accepts_full_length_unique_id(self):
         """인식 컬럼은 **원번이 가질 수 있는 길이**를 다 담아야 한다(2026-07-29 개정).
 
-        원번이 `{학년}{이름}{뒷4}` 가 되면서 이름 길이만큼 길어졌다. 화면이 보내는
-        값은 원번 전체(`workbook_admin.apply_recognition` 이 전체를 비교한다)이므로,
-        긴 이름 학생 한 명이 이 화면 전체를 500 으로 떨어뜨리면 안 된다.
+        원번이 `{이름}{뒷4}` 가 되면서 이름 길이만큼 길어졌다. 지면에 들어오는
+        것이 곧 원번이고 화면도 원번 전체를 보내므로(`apply_recognition` 이
+        전체를 비교한다), 긴 이름 학생 한 명이 이 화면을 500 으로 떨어뜨리면 안 된다.
         """
-        long_name = "무하마드알리"  # 6자 → 원번 11자
+        long_name = "무하마드알리"  # 6자 → 원번 10자
         student = make_student("stu-wb-long", long_name)
-        student.unique_id = build_unique_id("고3", long_name, "01012344821")
+        student.unique_id = build_unique_id(long_name, "01012344821")
         student.save(update_fields=["unique_id"])
-        self.assertGreater(len(student.unique_id), 10)
+        self.assertGreater(len(student.unique_id), 5)
 
         res = self.patch_match(
             self.submission.pk,
@@ -431,6 +431,34 @@ class WorkbookMatchTests(WorkbookFixtureMixin, TestCase):
         self.assertEqual(res.status_code, 200)
         self.submission.refresh_from_db()
         self.assertEqual(self.submission.match_status, MS.MISMATCH)
+
+    def test_duplicate_unique_id_falls_to_the_admin(self):
+        """원번이 겹치면 **관리자가 고른다** — 2026-07-29 확정의 실제 경로.
+
+        동명이인 + 같은 뒷4자리는 원번이 같다(접미사로 해소하지 않는다). 지면에
+        적힌 값만으로는 둘을 못 가르므로 자동매칭이 서지 않고, 관리자가 학생을
+        지목해 수동확정한다.
+        """
+        shared = build_unique_id("최중복", "01011110001")
+        for student in (self.student_dup1, self.student_dup2):
+            student.unique_id = shared
+            student.save(update_fields=["unique_id"])
+
+        recognized = self.patch_match(
+            self.submission.pk,
+            {"recognized_unique_id": shared, "recognized_name": "최중복"},
+        )
+        self.assertEqual(recognized.status_code, 200)
+        self.submission.refresh_from_db()
+        self.assertEqual(self.submission.match_status, MS.MISMATCH)
+
+        chosen = self.patch_match(
+            self.submission.pk, {"student_id": self.student_dup2.pk}
+        )
+        self.assertEqual(chosen.status_code, 200)
+        self.submission.refresh_from_db()
+        self.assertEqual(self.submission.student_id, self.student_dup2.pk)
+        self.assertEqual(self.submission.match_status, MS.MANUAL_CONFIRMED)
 
     def test_auto_match_without_name_mismatch(self):
         """이름 없이 원번 단독으론 확정하지 않는다 — 이름과 함께 매칭키."""

@@ -83,9 +83,9 @@ _GIVEN = [
     "나윤", "선우", "채원", "정민", "유나", "태윤", "세아", "준서", "예준", "다인",
 ]
 _SCHOOLS = ["세화고", "반포고", "서문여고", "상문고", "숙명여고"]
-# 학년을 섞는 이유: 원번 앞자리가 학년이라(unique_id 모듈) 한 학년만 두면
-# 화면에서 원번을 봐도 학년이 반영된 건지 알 수 없다. 승급 커맨드 시연도
-# 고3(다음 학년 없음)이 섞여 있어야 성립한다.
+# 학년을 섞는 이유: 학년은 원번에서 빠졌지만(2026-07-29 재개정) 명단·필터에
+# 그대로 노출되는 학생 정보다. 승급 커맨드 시연도 고3(다음이 N수)과 나머지가
+# 섞여 있어야 성립한다.
 _GRADES = ["고1", "고2", "고3"]
 _UNITS = [
     ("역학", "등가속도 운동", "등가속도"),
@@ -198,11 +198,16 @@ class Command(BaseCommand):
         return {"owner": owner, "admin": admin, "assistant": assistant}
 
     def _create_students_and_parents(self, now):
-        """학생 30(등록 28·예비등록 29/30번) + 학부모 10(자녀 1~2명).
+        """학생 30(등록 1~26 · 퇴원 27/28 · 예비등록 29/30) + 학부모 10(자녀 1~2명).
+
+        퇴원생 2명은 2026-07-29 추가 — 출결 명단이 퇴원생을 **빼지 않고 표시
+        전용 행으로 남기는** 동작(attendance_admin)을 화면에서 확인하려면
+        시드에 퇴원생이 있어야 한다.
 
         아이디는 login_id 모듈 산출값 그대로 — 학생 `{이름}{뒷4자리}`,
         학부모 `{최초 연결 자녀 아이디}p`(8-4 개정). 원번도 손으로 만들지 않고
-        unique_id 모듈 산출값 그대로다 — `{학년}{이름}{뒷4자리}`(2026-07-29 개정).
+        unique_id 모듈 산출값 그대로다 — `{이름}{뒷4자리}`(2026-07-29 재개정).
+        시드는 이름·번호가 전부 달라 아이디 충돌이 없으므로 원번 == 아이디다.
         """
         students = []
         for i in range(1, 31):
@@ -212,20 +217,28 @@ class Command(BaseCommand):
             user = self._make_user(
                 issue_student_login_id(name, phone), User.Role.STUDENT, name, phone
             )
-            pre_registered = i >= 29
+            if i >= 29:
+                enrollment = Student.EnrollmentStatus.PRE_REGISTERED
+            elif i >= 27:
+                enrollment = Student.EnrollmentStatus.WITHDRAWN
+            else:
+                enrollment = Student.EnrollmentStatus.REGISTERED
+            withdrawn = enrollment == Student.EnrollmentStatus.WITHDRAWN
             students.append(
                 Student.objects.create(
                     user=user,
-                    unique_id=build_unique_id(grade, name, phone),
+                    unique_id=build_unique_id(name, phone),
                     grade=grade,
                     school=_SCHOOLS[(i - 1) % 5],
                     current_class="수요반" if i % 2 else "토요반",
-                    enrollment_status=(
-                        Student.EnrollmentStatus.PRE_REGISTERED
-                        if pre_registered
-                        else Student.EnrollmentStatus.REGISTERED
+                    enrollment_status=enrollment,
+                    registered_at=(
+                        None
+                        if enrollment == Student.EnrollmentStatus.PRE_REGISTERED
+                        else now
                     ),
-                    registered_at=None if pre_registered else now,
+                    withdrawn_at=now if withdrawn else None,
+                    withdrawn_reason="타 학원 이동" if withdrawn else None,
                 )
             )
         parents = []
@@ -386,36 +399,59 @@ class Command(BaseCommand):
     def _enter_attendance(self, sessions, students, exams, staff, today, rng):
         """지난 회차 출결 upsert — attendance_admin.apply_entries 경유.
 
-        출석 확정 → VideoGrant(출석자동), 결석 확정 → 상담 대기열이 실제
-        트리거로 생성된다(직접 INSERT 금지 — 모듈 docstring).
+        값 **4종을 모두 섞는다**(2026-07-29 개편) — 화면에서 넷이 구분되는지
+        눈으로 봐야 하기 때문이다. 각 값이 서로 다른 트리거를 태우므로 파생
+        데이터도 넷 다 생긴다(직접 INSERT 금지 — 모듈 docstring):
+          출석/결석(현보) → VideoGrant(출석자동) · 결석 → 상담 대기열
+          결석(동보) → MakeupGrant(지급완료) + VideoGrant(동보)
+
+        퇴원생은 entries 에서 뺀다 — 명단에는 남지만 출결 레코드를 만들지
+        않는 것이 계약이다(attendance_admin.is_entry_target).
+
+        `exam_taken` 은 **출석생만** True 후보다. 결석 계열은 그 회차 교실에
+        없었으므로 현장 시험을 볼 수 없다. 출석인데 False 인 학생(skip_exam)이
+        곧 사용자가 말한 "지각해서 OMR 카드가 안 들어온" 경우이며, 리포트에는
+        `시험 미제출`로 나간다 — 지각을 출결 값에서 없앤 자리가 여기다.
         """
         exam_session_ids = {e.class_sessions.first().session_id for e in exams}
         totals = {}
-        roster_ids = [s.student_id for s in students]
+        target_ids = [
+            s.student_id
+            for s in students
+            if s.enrollment_status != Student.EnrollmentStatus.WITHDRAWN
+        ]
+        registered_ids = [
+            s.student_id
+            for s in students
+            if s.enrollment_status == Student.EnrollmentStatus.REGISTERED
+        ]
         for session in sessions:
             if session.session_date > today:
                 continue
-            absent = set(rng.sample(roster_ids[:28], 3))
-            late = set(rng.sample([sid for sid in roster_ids[:28] if sid not in absent], 2))
-            skip_exam = set(rng.sample(
-                [sid for sid in roster_ids[:28] if sid not in absent], 2
-            ))
+            drawn = rng.sample(registered_ids, 5)
+            absent = set(drawn[:2])  # 보강 미정
+            absent_makeup = set(drawn[2:4])  # 동영상 보강
+            absent_onsite = {drawn[4]}  # 현장 보강(다른 회차에서 수강)
+            present_ids = [sid for sid in registered_ids if sid not in drawn]
+            skip_exam = set(rng.sample(present_ids, 2))
             entries = []
-            for sid in roster_ids:
+            for sid in target_ids:
                 if sid in absent:
                     status = Attendance.Status.ABSENT
-                elif sid in late:
-                    status = Attendance.Status.LATE
+                elif sid in absent_makeup:
+                    status = Attendance.Status.ABSENT_MAKEUP
+                elif sid in absent_onsite:
+                    status = Attendance.Status.ABSENT_ONSITE
                 else:
                     status = Attendance.Status.PRESENT
                 entry = {"student_id": sid, "status": status}
                 if session.session_id in exam_session_ids:
                     entry["exam_taken"] = (
-                        status != Attendance.Status.ABSENT and sid not in skip_exam
+                        status == Attendance.Status.PRESENT and sid not in skip_exam
                     )
                 entries.append(entry)
             _, triggers = attendance_admin.apply_entries(
-                session, entries, staff["admin"], roster_ids
+                session, entries, staff["admin"], target_ids
             )
             for key, value in triggers.items():
                 totals[key] = totals.get(key, 0) + value
@@ -425,8 +461,11 @@ class Command(BaseCommand):
 
     @staticmethod
     def _create_scores(exams, sessions, students, rng):
-        """답안지·문항 채점·성적 — 출결과 정합(결석/미응시는 성적표 없음)."""
-        registered = students[:28]
+        """답안지·문항 채점·성적 — 출결과 정합(결석·시험 미제출은 성적표 없음)."""
+        registered = [
+            s for s in students
+            if s.enrollment_status == Student.EnrollmentStatus.REGISTERED
+        ]
         for exam in exams:
             session = exam.class_sessions.first()
             att_map = {
@@ -436,9 +475,11 @@ class Command(BaseCommand):
             questions = list(exam.questions.order_by("q_number"))
             for idx, student in enumerate(registered):
                 att = att_map.get(student.student_id)
+                # 결석 계열은 그 교실에 없었으므로 현장 시험을 볼 수 없다.
+                # 출석인데 exam_taken=False 인 학생 = OMR 미제출(리포트 '시험 미제출').
                 taken = (
                     att is not None
-                    and att.status != Attendance.Status.ABSENT
+                    and att.status == Attendance.Status.PRESENT
                     and bool(att.exam_taken)
                 )
                 if not taken:
@@ -485,7 +526,13 @@ class Command(BaseCommand):
 
     @staticmethod
     def _create_makeup_and_counseling(staff, students, now):
-        """동보(관리자체크 지급 1건 + 학생신청 대기 1건) + 상담 기록 1건."""
+        """동보(관리자체크 지급 1건 + 학생신청 대기 1건) + 상담 기록 1건.
+
+        대상은 **보강 미정 결석**(`결석`)뿐이다 — `결석(동보)` 는 담임의 출결
+        입력만으로 이미 지급 체인이 완료됐고(트리거 ③), 관리자 체크는 그 결석의
+        출결 값을 `결석(동보)` 로 올리며 같은 결과에 도달한다. 즉 이 함수는
+        "출결 화면 밖에서 들어오는 두 입구"를 시연한다.
+        """
         absences = list(
             Attendance.objects.filter(status=Attendance.Status.ABSENT)
             .select_related("session__course_week")
@@ -561,10 +608,15 @@ class Command(BaseCommand):
         ]
         average = sum(taken_totals) / len(taken_totals)
         eligible = []
-        for student in students[:28]:
+        registered = [
+            s for s in students
+            if s.enrollment_status == Student.EnrollmentStatus.REGISTERED
+        ]
+        for student in registered:
             att = att_map.get(student.student_id)
             score = scores.get(student.student_id)
-            if att is None or att.status == Attendance.Status.ABSENT:
+            # 결석 계열은 전부 미대상(사유 `결석`) — 클리닉 전제가 '출석 + 응시'다
+            if att is None or att.status in Attendance.ABSENT_STATUSES:
                 is_target, reason = False, ClinicEligibility.Reason.ABSENT
             elif score is None or not score.is_taken:
                 is_target, reason = False, ClinicEligibility.Reason.NOT_TAKEN

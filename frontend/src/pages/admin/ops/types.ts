@@ -3,8 +3,12 @@
  * 전부 실제 응답을 확인해 옮긴 것이다(src/bare + curl 실측) — 추측 필드 없음.
  */
 
-export type AttendanceStatus = "출석" | "결석" | "지각";
-export const ATTENDANCE_STATUSES: AttendanceStatus[] = ["출석", "지각", "결석"];
+// 출결 값집합·색·짧은 이름은 소비자 화면과 공유한다(src/features/attendance.ts) —
+// 담임이 찍는 값과 학생·학부모가 보는 값이 갈리면 안 된다.
+import type { AttendanceStatus } from "../../../features/attendance";
+
+export type { AttendanceStatus };
+export { ATTENDANCE_STATUSES } from "../../../features/attendance";
 
 export interface SessionCourse {
   course_id: number;
@@ -36,14 +40,19 @@ export interface RosterStudent {
   unique_id: string;
   current_class: string | null;
   enrollment_status: string;
+  /** 퇴원 행. 명단에는 남지만 출결 입력 대상이 아니다(보내면 400). */
+  is_withdrawn: boolean;
   attendance: AttendanceBlock | null;
 }
 
+/** 값 4종 + 미입력의 합이 total. 퇴원은 입력 대상 밖이라 total 에 들지 않는다. */
 export interface AttendanceSummary {
   출석: number;
-  지각: number;
   결석: number;
+  "결석(동보)": number;
+  "결석(현보)": number;
   미입력: number;
+  퇴원: number;
   total: number;
 }
 
@@ -54,6 +63,8 @@ export interface AttendanceTriggers {
   video_grants_revoked: number;
   counselings_created: number;
   counselings_removed: number;
+  /** 결석(동보)로 확정돼 동보 지급까지 간 건수. */
+  makeups_granted: number;
 }
 
 export interface SessionDetail {

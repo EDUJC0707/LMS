@@ -93,7 +93,11 @@ baseline 컬럼 유지(`student_id` PK, `user_id` FK·UQ, `unique_id` 원번·�
 | withdrawn_by | BIGINT | FK users, NULL | 퇴원 처리자(담임/관리자) |
 
 - 마이그레이션: `enrollment_status` 백필 = `is_registered=true→등록`, `false→예비등록`. 확정 후 `is_registered` 폐기(expand-contract). 원번(`unique_id`)은 이름과 함께 쓰는 매칭키로 **단독 UNIQUE 아님** 유지, PK는 `student_id` 유지.
-- **원번 규칙 개정(2026-07-29)**: `unique_id` = `{학년1자리}{이름}{휴대폰 뒷4자리}`(예 `3김하늘4821`) — 이름이 들어가면서 **VARCHAR(20) → VARCHAR(30)** 확장(`accounts.0003`). 값은 관리자 입력이 아니라 파생값이고 준거는 `backend/apps/accounts/unique_id.py` 하나다. **학년이 오르면 값이 바뀐다**(가변 — `manage.py promote_grade`). 반면 `student_id`·`users.login_id` 는 불변(PRD 3.1.1 식별자 3종 표).
+- **원번 규칙 재개정(2026-07-29, 같은 날 두 번째)**: `unique_id` = `{이름}{휴대폰 뒷4자리}`(예 `김하늘0001`) — 이름이 들어가면서 **VARCHAR(20) → VARCHAR(30)** 확장(`accounts.0003`). 값은 관리자 입력이 아니라 파생값이고 준거는 `backend/apps/accounts/unique_id.py` 하나다.
+  - 같은 날 오전 판의 `{학년1자리}{이름}{뒷4}`(`3김하늘4821`)는 **폐기**됐다 — 지면(OMR·워크북)에 들어오는 것이 "이름 + 뒷4자리"로 확정되면서 학년 자리가 설 자리가 없어졌다. `students.grade` 는 학생 정보로만 남는다.
+  - 따라서 **원번은 승급으로 바뀌지 않는다**(`manage.py promote_grade` 는 `grade` 한 컬럼만 쓴다). `student_id`·`users.login_id` 와 함께 **셋 다 불변**(PRD 3.1.1 식별자 3종 표).
+  - **원번은 중복될 수 있다**(동명이인 + 같은 뒷4자리). 아이디처럼 접미사(`a`·`b`…)로 해소하지 **않는다** — 접미사는 지면에 나타날 수 없어 대조되지 않기 때문. 그래서 단독 UNIQUE 를 두지 않고 인덱스만 둔다. 겹치면 자동매칭이 서지 않고 관리자가 고른다 — 상태값은 테이블마다 다르다: `answer_sheets.match_status` 는 `중복`(6분기), `workbook_submissions.match_status` 는 4종뿐이라 `불일치` 로 떨어진다(PRD 3.1.1 대조 6분기 · 3.1.7).
+  - 폭 30 은 새 최대치(24자)보다 넉넉하지만 **줄이지 않는다** — 축소 `AlterField` 는 이미 저장된 구 형식 값을 자를 위험만 있고 얻는 것이 없다. `answer_sheets`·`workbook_submissions.recognized_unique_id` 도 같은 이유로 30 을 유지해 저장 가능한 원번과 인식 가능한 원번을 어긋나지 않게 한다.
 - **퇴원 위치 결정**: 퇴원은 학생 생애주기 상태이므로 `students`에 단일 저장(SSOT). 출결 화면에서 퇴원 액션을 노출하되 `attendances.status`에 `퇴원` 값을 두지 않음(회차별 출결과 학생상태 분리 → 이중모델 방지).
 
 #### ✏️ `parents` (변경) — 연락처 → 계정
@@ -424,7 +428,7 @@ baseline(`clinic_id` PK, `student_id` FK, `requested_date`, `requested_time`, `s
 
 - UQ(exam_id, student_id). 전제 = 출석(`attendances`) + 응시(`scores.is_taken`/`attendances.exam_taken`) + 평균미달.
 
-- **[구현 각주 2026-07-22]** 도메인 6 전체를 `backend/apps/clinic`에 그린필드 최종 상태로 구현(슬롯·신청·판정 + baseline 평가 3표, §4.8 인덱스 포함). 편차·확정 2건: ① `clinic_evaluations`는 baseline 문구("클리닉 1건당 1개")를 OneToOne(UQ)로 DB 강제. ② 출석·응시 값은 `clinic_eligibilities`에 복사하지 않고 grades(`attendances`/`scores.is_taken`/`exams.avg_score`) 참조·계산 경로를 모델 docstring 계약으로 명시(cutoff_score NULL=전체평균 자동 판정 — 헤더 노트 ⑤). 정원 마감(활성 신청 수 ≥ capacity — capacity 는 1 고정, 2026-07-28 각주 참조)·당일 8시 마감·노쇼 누적(`students.noshow_count`/`clinic_banned`가 원천)은 앱 레이어 계약.
+- **[구현 각주 2026-07-22]** 도메인 6 전체를 `backend/apps/clinic`에 그린필드 최종 상태로 구현(슬롯·신청·판정 + baseline 평가 3표, §4.8 인덱스 포함). 편차·확정 2건: ① `clinic_evaluations`는 baseline 문구("클리닉 1건당 1개")를 OneToOne(UQ)로 DB 강제. ② 출석·응시 값은 `clinic_eligibilities`에 복사하지 않고 grades(`attendances`/`scores.is_taken`/`exams.avg_score`) 참조·계산 경로를 모델 docstring 계약으로 명시(cutoff_score NULL=전체평균 자동 판정 — 헤더 노트 ⑤). 정원 마감(활성 신청 수 ≥ capacity — capacity 는 1 고정, 2026-07-28 각주 참조)·전날 마감(당일 신청·변경·취소 불가 — 2026-07-29 확정, 구 "당일 8시 마감" 폐기)·노쇼 누적(`students.noshow_count`/`clinic_banned`가 원천)은 앱 레이어 계약.
 
 ### 도메인 7 — 게시판 · 문의 · 상담
 

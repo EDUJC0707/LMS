@@ -32,8 +32,8 @@ test("첫 페이지는 page 를 붙이지 않는다", () => {
 });
 
 test("조건은 겹쳐서 보낼 수 있다", () => {
-  assert.deepEqual(directoryParams({ q: "26001", enrollment_status: "등록", page: 3 }), {
-    q: "26001",
+  assert.deepEqual(directoryParams({ q: "김하늘0001", enrollment_status: "등록", page: 3 }), {
+    q: "김하늘0001",
     enrollment_status: "등록",
     page: 3,
   });
@@ -45,7 +45,7 @@ test("예비등록 명부에 출석부의 출결을 붙인다", () => {
       {
         student_id: 59,
         name: "장예준",
-        unique_id: "26029",
+        unique_id: "장예준0029",
         grade: "고2",
         current_class: "수요반",
         enrollment_status: "예비등록",
@@ -53,7 +53,7 @@ test("예비등록 명부에 출석부의 출결을 붙인다", () => {
       {
         student_id: 60,
         name: "임다인",
-        unique_id: "26030",
+        unique_id: "임다인0030",
         grade: "고2",
         current_class: "토요반",
         enrollment_status: "예비등록",
@@ -63,7 +63,7 @@ test("예비등록 명부에 출석부의 출결을 붙인다", () => {
       {
         student_id: 59,
         name: "장예준",
-        unique_id: "26029",
+        unique_id: "장예준0029",
         current_class: "수요반",
         enrollment_status: "예비등록",
         attendance: { status: "출석", exam_taken: false, marked_at: null, updated_at: null },

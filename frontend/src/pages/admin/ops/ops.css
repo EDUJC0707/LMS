@@ -217,13 +217,17 @@
   color: var(--color-neutral);
 }
 
-/* 상태색은 의미 전용 — 출석/지각/결석 집계에만 쓴다. */
+/* 상태색은 의미 전용 — 출결 값 4종 집계에만 쓴다(2026-07-29 값집합 개편). */
 .ops-fig--present .ops-fig__n:not(.is-zero) {
   color: var(--color-success);
 }
 
-.ops-fig--late .ops-fig__n:not(.is-zero) {
+.ops-fig--makeup .ops-fig__n:not(.is-zero) {
   color: var(--color-warning);
+}
+
+.ops-fig--onsite .ops-fig__n:not(.is-zero) {
+  color: var(--color-accent);
 }
 
 .ops-fig--absent .ops-fig__n:not(.is-zero) {
@@ -393,14 +397,31 @@
   color: var(--color-success);
 }
 
-.ops-seg__opt--late input:checked + span {
+.ops-seg__opt--makeup input:checked + span {
   background: var(--color-warning-bg);
   color: var(--color-warning);
+}
+
+.ops-seg__opt--onsite input:checked + span {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
 }
 
 .ops-seg__opt--absent input:checked + span {
   background: var(--color-danger-bg);
   color: var(--color-danger);
+}
+
+/* 값이 넷이 됐다(2026-07-29) — 3rem × 4 는 좁은 폭에서 표를 밀어낸다.
+   칸 이름은 짧게(동보·현보) 가되 저장된 값 열에는 원문이 그대로 뜬다. */
+.ops-seg__opt span {
+  min-width: 2.75rem;
+}
+
+/* 퇴원 행은 입력칸 자리에 표시만 남는다 — 누를 것이 없다는 게 눈에 보여야 한다. */
+.ops-withdrawn {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
 }
 
 /* 표 안 체크박스는 관리자 밀도(36px)로 낮춘다 — 30행을 한 화면에 담기 위해. */

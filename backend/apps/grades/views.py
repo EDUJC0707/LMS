@@ -44,6 +44,12 @@ from .models import Attendance, ClassSession, WorkbookSubmission
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
 _STATUS_VALUES = set(Attendance.Status.values)
+# 동보 지급을 걸 수 있는 출결 — `결석`(보강 미정) 과 이미 동보로 찍힌 결석.
+# 후자를 허용해야 관리자 체크가 멱등하게 400(이미 지급됨)으로 떨어진다.
+_MAKEUP_ELIGIBLE_STATUSES = {
+    Attendance.Status.ABSENT,
+    Attendance.Status.ABSENT_MAKEUP,
+}
 
 
 class AttendanceSessionListView(APIView):
@@ -104,8 +110,10 @@ class AttendanceSessionDetailView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         roster = attendance_admin.load_roster(session)
-        roster_ids = [s.student_id for s in roster]
-        error = _validate_entries(request.data, set(roster_ids))
+        roster_ids = attendance_admin.entry_target_ids(roster)
+        error = _validate_entries(
+            request.data, set(roster_ids), attendance_admin.withdrawn_ids(roster)
+        )
         if error is not None:
             return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
         att_map, triggers = attendance_admin.apply_entries(
@@ -116,8 +124,12 @@ class AttendanceSessionDetailView(APIView):
         return Response(payload)
 
 
-def _validate_entries(data, roster_ids):
-    """PUT 본문 검증 — 오류 메시지 또는 None. 전량 검증 후에만 저장(원자성)."""
+def _validate_entries(data, roster_ids, withdrawn_ids):
+    """PUT 본문 검증 — 오류 메시지 또는 None. 전량 검증 후에만 저장(원자성).
+
+    퇴원생은 명단에 **보이지만** 입력 대상이 아니다(attendance_admin 계약) —
+    "명단에 없는 학생"과 다른 사유이므로 문구를 갈라 준다.
+    """
     if not isinstance(data, list):
         return "요청 본문은 학생별 출결 리스트여야 합니다."
     seen = set()
@@ -130,10 +142,12 @@ def _validate_entries(data, roster_ids):
         if student_id in seen:
             return "학생이 중복 포함되어 있습니다."
         seen.add(student_id)
+        if student_id in withdrawn_ids:
+            return "퇴원 학생에게는 출결을 입력할 수 없습니다."
         if student_id not in roster_ids:
             return "명단에 없는 학생이 포함되어 있습니다."
         if entry.get("status") not in _STATUS_VALUES:
-            return "status 값이 올바르지 않습니다(출석/결석/지각)."
+            return f"status 값이 올바르지 않습니다({'/'.join(Attendance.Status.values)})."
         if "exam_taken" in entry and not (
             entry["exam_taken"] is None or isinstance(entry["exam_taken"], bool)
         ):
@@ -168,8 +182,10 @@ class MakeupCheckView(APIView):
                 {"detail": "student_id가 결석 출결과 일치하지 않습니다."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if attendance.status != Attendance.Status.ABSENT:
-            # 동보는 결석 보강이다(PRD 3.2.3 정의) — 출석·지각 근거 지급 차단
+        if attendance.status not in _MAKEUP_ELIGIBLE_STATUSES:
+            # 동보는 결석 보강이다(PRD 3.2.3 정의) — 출석 근거 지급 차단.
+            # `결석(현보)` 도 막는다: 현장 보강을 이미 받은 결석이라 동영상
+            # 보강을 겹쳐 줄 이유가 없다(권한 2행이 되고 사실도 어긋난다).
             return Response(
                 {"detail": "결석 출결에만 동보를 지급할 수 있습니다."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -207,6 +223,45 @@ class MakeupCheckView(APIView):
                 },
             },
             status=status.HTTP_201_CREATED,
+        )
+
+
+class AttendanceWithdrawView(APIView):
+    """POST /api/admin/attendance/withdraw — 출결 화면에서 퇴원 처리 (PRD 3.1.6).
+
+    기능 키가 `출결입력` 인 근거: 퇴원을 누르는 사람은 명단을 보고 있는 담임이고
+    (features.ATTENDANCE_ENTRY 주석이 이미 "출결 SSOT 입력·퇴원 처리"로 묶어 뒀다),
+    출결 값집합에 `퇴원` 을 넣지 않는 대신 이 버튼이 그 자리를 대신한다.
+
+    body: `{"student_id": int, "reason": str?}` — 이미 퇴원인 학생은 최초 처리
+    이력을 지키기 위해 덮어쓰지 않는다(멱등, 200).
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.ATTENDANCE_ENTRY)]
+
+    def post(self, request):
+        body = request.data if isinstance(request.data, dict) else {}
+        student_id = body.get("student_id")
+        if not isinstance(student_id, int) or isinstance(student_id, bool):
+            return Response(
+                {"detail": "student_id가 올바르지 않습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        student = Student.objects.filter(pk=student_id).first()
+        if student is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        raw_reason = body.get("reason")
+        reason = raw_reason.strip() if isinstance(raw_reason, str) else None
+        attendance_admin.withdraw_student(
+            student, request.user, timezone.now(), reason=reason
+        )
+        return Response(
+            {
+                "student_id": student.student_id,
+                "enrollment_status": student.enrollment_status,
+                "withdrawn_at": timezone_iso(student.withdrawn_at),
+                "withdrawn_reason": student.withdrawn_reason,
+            }
         )
 
 

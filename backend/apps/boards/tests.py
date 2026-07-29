@@ -4,9 +4,9 @@
 통합), baseline lms-db-spec.html Domain 6, PRD 3.3.1(게시판)·3.3.2(문의 통합)·
 3.1.9/3.4(상담). 질답 공개 방식은 2026-07-22 결정(기본 공개 + 비밀글 옵션).
 """
-import datetime
 
 from django.test import TestCase
+from django.utils import timezone
 
 from apps.accounts.models import Parent, Student, User
 
@@ -135,4 +135,7 @@ class ParentCounselRequestTests(TestCase):
         req = ParentCounselRequest.objects.create(
             parent=self.parent, request_content="상담 신청"
         )
-        self.assertEqual(req.requested_at.date(), datetime.date.today())
+        # 양쪽 다 Asia/Seoul 로 맞춘다 — auto_now_add 는 UTC 로 저장되므로
+        # `.date()` 와 `date.today()` 를 비교하면 새벽 0~9시에 하루가 어긋난다
+        # (2026-07-30 00:0x 에 실제로 깨졌다).
+        self.assertEqual(timezone.localdate(req.requested_at), timezone.localdate())

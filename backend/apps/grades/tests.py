@@ -79,8 +79,20 @@ class AttendanceTests(TestCase):
             )
 
     def test_status_value_set_follows_design(self):
-        # 설계: status 값집합 = 출석/결석/지각 (baseline 유지)
-        self.assertEqual(set(Attendance.Status.values), {"출석", "결석", "지각"})
+        # 2026-07-29 사용자 확정: 출석/결석/결석(동보)/결석(현보) 4종.
+        # 결석 3종은 "왔는가"가 아니라 "보강이 어떻게 됐는가"로 갈린다 —
+        # 미정(결석) / 동영상 보강(동보) / 현장 보강(현보).
+        self.assertEqual(
+            set(Attendance.Status.values),
+            {"출석", "결석", "결석(동보)", "결석(현보)"},
+        )
+
+    def test_status_has_no_late_value(self):
+        # 2026-07-29 사용자 확정 — 지각 제거. 시험을 수업 **초반**에 보므로
+        # 지각하면 OMR 카드가 안 들어온다. 즉 지각은 출결 값이 아니라 성적이
+        # '시험 미제출'(scores.is_taken=False)로 나가는 것으로 드러난다.
+        # 별도 값으로 두면 같은 사실이 attendances 와 scores 두 곳에 갈린다.
+        self.assertNotIn("지각", Attendance.Status.values)
 
     def test_status_has_no_withdrawn_value(self):
         # 설계 결정(도메인 1): 퇴원은 students.enrollment_status 에 단일 저장.
@@ -96,7 +108,9 @@ class AttendanceTests(TestCase):
     def test_correction_fields_default_empty(self):
         # 설계: exam_taken NULL(잠정), marked_by NULL, updated_at NULL(정정 추적)
         att = Attendance.objects.create(
-            session=self.session, student=self.student, status=Attendance.Status.LATE
+            session=self.session,
+            student=self.student,
+            status=Attendance.Status.ABSENT_ONSITE,
         )
         self.assertIsNone(att.exam_taken)
         self.assertIsNone(att.marked_by)
@@ -158,11 +172,11 @@ class AnswerSheetTests(TestCase):
     def test_recognized_unique_id_holds_full_length_unique_id(self):
         """인식 컬럼은 원번이 가질 수 있는 길이를 담아야 한다(2026-07-29 개정).
 
-        원번이 `{학년}{이름}{뒷4}` 가 되면서 이름 길이만큼 길어졌다 — 옛 5자리
-        전제로 잡힌 폭이면 긴 이름 학생의 답안지 인식 결과를 저장할 수 없다.
+        원번이 `{이름}{뒷4}` 가 되면서 이름 길이만큼 길어졌다 — 옛 5자리 전제로
+        잡힌 폭이면 긴 이름 학생의 답안지 인식 결과를 저장할 수 없다.
         """
-        unique_id = build_unique_id("고3", "무하마드알리", "01012344821")
-        self.assertGreater(len(unique_id), 10)
+        unique_id = build_unique_id("무하마드알리", "01012344821")
+        self.assertGreater(len(unique_id), 5)
         sheet = AnswerSheet.objects.create(
             exam=self.exam, scan_image_path="omr/2026/0722/002.jpg",
             match_status=AnswerSheet.MatchStatus.MATCHED,

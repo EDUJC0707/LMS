@@ -226,8 +226,9 @@ function SessionRow({ detail, today }: { detail: SessionDetail; today: string })
 
       <div className="ops-figs">
         <Fig tone="present" n={summary.출석} label="출석" />
-        <Fig tone="late" n={summary.지각} label="지각" />
         <Fig tone="absent" n={summary.결석} label="결석" />
+        <Fig tone="makeup" n={summary["결석(동보)"]} label="동보" />
+        <Fig tone="onsite" n={summary["결석(현보)"]} label="현보" />
         <Fig tone="blank" n={summary.미입력} label="미입력" />
       </div>
 

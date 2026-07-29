@@ -107,7 +107,7 @@ export interface HomeCourse {
 
 export interface CalendarDay {
   date: string;
-  attendance: string | null; // "출석" | "지각" | "결석" | null
+  attendance: string | null; // "출석" | "결석" | "결석(동보)" | "결석(현보)" | null
   /** 출결 레코드 PK. null = 그날 출결 기록 없음. 동보 신청 body 의 키가 그대로 이 값이다. */
   attendance_id: number | null;
   /** null = 동보 미신청. 그 외 신청 · 승인 · 지급완료 · 거절 */
@@ -331,8 +331,8 @@ export interface AvailabilityDay {
  * GET /api/student/clinic/availability?exam_id=&from=&to=
  *
  * ⚠ 쿼리 키는 `from`·`to` 다(`date_from` 아님 — clinic/views.py 실측).
- * `days` 에는 **예약 가능한 날만** 담긴다: 지난 날짜·오전 8시 마감이 지난
- * 당일·활성 슬롯이 없는 요일은 아예 빠진다. 그래서 달력은 "이 날짜가 days 에
+ * `days` 에는 **예약 가능한 날만** 담긴다: 지난 날짜·오늘(전날 마감이라 시각과
+ * 무관)·활성 슬롯이 없는 요일은 아예 빠진다. 그래서 달력은 "이 날짜가 days 에
  * 있나"로만 생사를 판정한다 — 죽이는 규칙을 화면이 따로 갖지 않는다.
  * 자격이 없거나 노쇼 제한이면 403 — 시간표 자체를 못 본다.
  */
@@ -340,6 +340,25 @@ export interface ClinicAvailability {
   exam_id: number;
   range: { from: string; to: string };
   days: AvailabilityDay[];
+}
+
+/** 시간 열이 그릴 것 — 고를 날짜가 없다 / 그 날은 닫혔다 / 시간 목록. */
+export type TimeColumnView =
+  | { kind: "no-date" }
+  | { kind: "closed"; date: string }
+  | { kind: "open"; date: string; times: AvailabilityTime[] };
+
+/**
+ * 고른 날짜가 `days` 밖일 수 있다 — 전날 마감으로 오늘이 응답에서 빠진 뒤
+ * 오늘로 잡힌 예약을 [시간 변경]으로 열면 화면은 그 예약의 날짜를 고른다.
+ * 그때 `closed` 를 돌려주지 않으면 시간 열이 날짜만 쓰고 아래를 비운 채
+ * 멈춘다 — 눌렀는데 아무 말도 없는 화면이 된다.
+ */
+export function timeColumn(days: AvailabilityDay[], date: string | null): TimeColumnView {
+  if (date === null) return { kind: "no-date" };
+  const day = days.find((entry) => entry.date === date);
+  if (!day || day.times.length === 0) return { kind: "closed", date };
+  return { kind: "open", date, times: day.times };
 }
 
 export interface ClinicRequestRow {

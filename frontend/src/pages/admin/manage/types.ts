@@ -46,7 +46,7 @@ export interface BulkResultRow {
   login_id?: string;
   initial_password?: string;
   student_id?: number;
-  /** 서버가 학년·이름·휴대폰에서 만든 원번(입력값이 아니다). */
+  /** 서버가 이름·휴대폰에서 만든 원번(입력값이 아니다). */
   unique_id?: string;
   parent?: BulkParentBlock | null;
   error?: string;

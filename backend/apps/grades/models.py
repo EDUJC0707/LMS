@@ -83,9 +83,30 @@ class Attendance(models.Model):
     반드시 이 표를 참조한다. "와야 하는데 안 온 날" = status `결석` 레코드
     존재(담임이 결석분도 입력 — 별도 스케줄 마스터 불필요).
 
-    - status 값집합은 `출석/결석/지각` 뿐이다. **`퇴원` 값 금지** — 퇴원은
-      학생 생애주기 상태라 students.enrollment_status 에 단일 저장(회차별
-      출결과 분리, 이중모델 방지 — 설계 도메인 1 결정).
+    **status 값집합 4종** (2026-07-29 사용자 확정 — 구 `출석/결석/지각` 개정).
+    결석 3종은 "왔는가"가 아니라 **보강이 어떻게 됐는가**로 갈린다:
+
+    | 값 | 뜻 | 파생 트리거 |
+    |---|---|---|
+    | `출석` | 정상 출석 | 복습영상 자동지급(출석자동) |
+    | `결석` | 결석 · **보강 미정** | 결석 상담 대기열 |
+    | `결석(동보)` | 결석 + **동**영상 **보**강 확정 | 동보 지급 체인(→VideoGrant 동보) |
+    | `결석(현보)` | 결석 + **현**장 **보**강 완료(타 회차 실수강) | 복습영상 지급(출석과 동등) |
+
+    셋 다 담임이 출결 화면에서 직접 찍는다 — `결석(동보)`·`결석(현보)`도 별도
+    신청 절차 없이 출결 입력이 곧 확정이다(사용자 지시 "출결은 둘다 찍는거야").
+
+    - **`지각` 없음**(2026-07-29 제거). 시험을 수업 **초반**에 보므로 지각하면
+      **OMR 카드가 안 들어온다.** 즉 지각은 출결로 남길 사실이 아니라 성적이
+      **"시험 미제출"**(scores.is_taken=False)로 나가는 것으로 드러난다. 이미
+      그 자리가 있는데 출결 값을 하나 더 두면 같은 사실이 attendances 와
+      scores 두 곳에 갈려 서로 어긋날 수 있다.
+    - **`퇴원` 값 금지** — 퇴원은 학생 생애주기 상태라
+      students.enrollment_status 에 단일 저장(회차별 출결과 분리, 이중모델
+      방지 — 설계 도메인 1 결정). 퇴원은 회차마다 바뀌는 게 아니라 한 번
+      일어나는 사건이라, 회차별로 찍게 하면 "3회차는 퇴원인데 5회차는 출석"
+      같은 모순이 저장된다. **화면에서는** 회차 명단에 퇴원생을 남기고 출결
+      입력칸 대신 `퇴원`으로 표시해 5종처럼 보이게 한다(attendance_admin).
     - exam_taken: 현장 시험 응시 여부 -- 잠정: scores.is_taken 재사용 vs
       별도 축(클리닉 대상 판정용).
     - updated_at: 정정 추적(권한 회수 트리거 근거). 설계가 NULL 로 명시 —
@@ -98,7 +119,11 @@ class Attendance(models.Model):
     class Status(models.TextChoices):
         PRESENT = "출석", "출석"
         ABSENT = "결석", "결석"
-        LATE = "지각", "지각"
+        ABSENT_MAKEUP = "결석(동보)", "결석(동보)"
+        ABSENT_ONSITE = "결석(현보)", "결석(현보)"
+
+    #: 결석 계열 — "안 왔다"가 참인 값들. 보강 여부로만 갈린다.
+    ABSENT_STATUSES = frozenset({Status.ABSENT, Status.ABSENT_MAKEUP, Status.ABSENT_ONSITE})
 
     id = models.BigAutoField(primary_key=True)
     session = models.ForeignKey(
@@ -289,8 +314,10 @@ class AnswerSheet(models.Model):
     )
     scan_image_path = models.CharField("스캔 파일 경로", max_length=500)
     recognized_unique_id = models.CharField(  # noqa: DJ001
-        # 폭은 students.unique_id 와 같이 간다 — 원번이 `{학년}{이름}{뒷4}` 가 되면서
-        # (2026-07-29 개정) 옛 5자리 전제의 10자로는 긴 이름 학생을 담지 못한다.
+        # 폭은 students.unique_id 와 같이 간다(30) — 지면에 들어오는 값이 곧 원번이고
+        # (2026-07-29 재개정) 원번이 `{이름}{뒷4}` 라 옛 5자리 전제로는 못 담는다.
+        # 학년이 빠져 최대치는 24로 줄었지만 폭은 줄이지 않는다 — students.unique_id
+        # 와 어긋나면 저장할 수 있는 원번과 인식할 수 있는 원번이 갈린다.
         "인식된 원번", max_length=30, null=True, blank=True
     )
     recognized_name = models.CharField("인식된 이름", max_length=50, null=True, blank=True)  # noqa: DJ001
@@ -662,8 +689,10 @@ class WorkbookSubmission(models.Model):
         "수행도", max_length=1, choices=PerformanceGrade.choices, null=True, blank=True
     )
     recognized_unique_id = models.CharField(  # noqa: DJ001
-        # 폭은 students.unique_id 와 같이 간다 — 원번이 `{학년}{이름}{뒷4}` 가 되면서
-        # (2026-07-29 개정) 옛 5자리 전제의 10자로는 긴 이름 학생을 담지 못한다.
+        # 폭은 students.unique_id 와 같이 간다(30) — 지면에 들어오는 값이 곧 원번이고
+        # (2026-07-29 재개정) 원번이 `{이름}{뒷4}` 라 옛 5자리 전제로는 못 담는다.
+        # 학년이 빠져 최대치는 24로 줄었지만 폭은 줄이지 않는다 — students.unique_id
+        # 와 어긋나면 저장할 수 있는 원번과 인식할 수 있는 원번이 갈린다.
         "인식된 원번", max_length=30, null=True, blank=True
     )
     recognized_name = models.CharField("인식된 이름", max_length=50, null=True, blank=True)  # noqa: DJ001
