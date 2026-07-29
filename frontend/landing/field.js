@@ -42,6 +42,7 @@ const CFG = {
      따로 만들면 둘이 미묘하게 어긋나 "왜 여기는 걷혔는데 안 보이지" 가 된다. */
   spaceDim: 0.55,    // 창 한복판에서의 불투명도
   spaceWin: 3.0,     // R 의 몇 배까지 그릴까. 가우시안은 3R 에서 1% 라 거기서 끊는다
+  spaceZoom: 1.0,    // cover 배율에 곱한다. 사진마다 따로 기억한다(debug.js)
 
   /* 손전등 — 모티프가 드러나는 범위. 아주 작다 */
   flash: 0.062,      // 반경 = min(W,H) × 이 값 (900 → 56px)
@@ -163,7 +164,9 @@ export function mountField(root, units) {
   /* cover 매핑 — 원본의 어느 부분을 화면 어디에 대응시킬지.
      비율이 다르면 짧은 쪽을 채우고 긴 쪽을 잘라낸다. */
   const coverMap = (sw, sh) => {
-    const k = Math.max(W / sw, H / sh);
+    // 줌 1 미만이면 가장자리가 빈다. 거기는 검정이고 "우주가 없는 자리" 와
+    // 구분되지 않으므로 자연스럽다 — letterbox 로 보이지 않는다.
+    const k = Math.max(W / sw, H / sh) * (CFG.spaceZoom || 1);
     return { dw: sw * k, dh: sh * k, dx: (W - sw * k) / 2, dy: (H - sh * k) / 2 };
   };
 

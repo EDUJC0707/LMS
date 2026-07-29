@@ -14,7 +14,7 @@
 
 /* 저장 키에 버전을 붙인다. 기본값이 바뀔 때 키를 올리면 옛 저장값이 자동으로
    버려진다 — 안 그러면 코드를 고쳐도 화면은 옛 값 그대로라 한참 헤맨다. */
-const LS = 'hjc-debug-v12';
+const LS = 'hjc-debug-v13';
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 /* 코드에 박힌 값. 첫 open 때 한 번만 뜬다 — 닫았다 열 때마다 뜨면 그때의
@@ -62,6 +62,9 @@ const GROUPS = [
        노출·채도·확대 노브는 뺐다: 캔버스에서는 아무 일도 안 했다. */
     ['spaceDim', '밝기',      0,   1, .01,'cfg', 2],
     ['spaceWin', '드러나는 범위', 1.5, 6, .1, 'cfg', 1],
+    /* 줌은 **사진마다 따로** 기억한다. 비율이 제각각이라 한 값으로는 못 맞춘다
+       (1440x900 에서 cover 로 잘리는 양: carina 좌우 4% · ngc1333 12% · catseye 20%). */
+    ['spaceZoom','확대',       .5, 2, .01,'cfg', 2],
   ]],
   ['블루 · 강사', [
     ['h',       '크기',      35, 100, 1,   'css', 0],
@@ -201,6 +204,9 @@ export function openDebug() {
   const setSpace = (src, name) => {
     if (src && src.startsWith('blob:')) { S.space = ''; S.spaceName = name || '(로컬 파일)'; }
     else { S.space = src || ''; S.spaceName = ''; }
+    // 사진마다 줌이 다르다 — 바꿀 때 그 사진 것을 불러온다
+    S.zoomOf = S.zoomOf || {};
+    S.spaceZoom = S.zoomOf[S.space] ?? 1;
     window.__field?.space?.(src || '');
     save();
     apply();
@@ -261,6 +267,8 @@ export function openDebug() {
       inp.oninput = () => {
         const v = +inp.value, cv = CSSVARS[key];
         S[where === 'css' && cv.sm && sm() ? cv.smKey : key] = v;
+        // 줌은 지금 보고 있는 사진에 매달아 둔다
+        if (key === 'spaceZoom') { S.zoomOf = S.zoomOf || {}; S.zoomOf[S.space] = v; }
         apply(where);
       };
       wrap.append(lab, inp);
@@ -285,7 +293,7 @@ export function openDebug() {
                      'teacher-h-sm', 'teacher-right-sm', 'teacher-bottom-sm', 'h1-gap',
                      'space-img'])
       rootS.removeProperty('--' + k);
-    Object.assign(S, { blue: BASE.blue, ...BASE.teacher, space: '', spaceName: '' });
+    Object.assign(S, { blue: BASE.blue, ...BASE.teacher, space: '', spaceName: '', zoomOf: {} });
     if (S.blobURL) { URL.revokeObjectURL(S.blobURL); S.blobURL = null; }
     window.__field?.space?.('');
     if (pick) pick.sel.value = '';
@@ -337,7 +345,8 @@ export function openDebug() {
     const edge = tEl ? (tEl.getBoundingClientRect().left / innerWidth * 100).toFixed(0) : '?';
     stat.textContent = `${b.key}·${mob ? S.hSm : S.h}svh·${edge}%`;
     out.textContent =
-`배경: ${S.spaceName || S.space || '없음(검정)'}  밝기 ${(+S.spaceDim).toFixed(2)} 범위 ${(+S.spaceWin).toFixed(1)}R
+`배경: ${S.spaceName || S.space || '없음(검정)'}
+  밝기 ${(+S.spaceDim).toFixed(2)} · 범위 ${(+S.spaceWin).toFixed(1)}R · 확대 ${(+S.spaceZoom).toFixed(2)}
 --dim:${b.dim} --accent:${b.accent} --glow:${b.glow}
 --chip:${b.chip} --t1:${b.t1} --t2:${b.t2}
 .teacher{ right:${mob ? S.rSm : S.r}%; height:${mob ? S.hSm : S.h}svh }
