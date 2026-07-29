@@ -66,5 +66,3 @@
 ## 보류·판단 대기
 
 - [ ] 백엔드 플러그인 설치 검토: pyright-lsp, context7 (사용자 승인 대기)
-- [ ] A/B/C 디자인 실험 worktree 3개 — hallmark 네이비 전면 재구현으로 **역할 종료**. 삭제 여부 사용자 확인 필요(`.claude/worktrees/`)
-- [ ] `docs/backlog.md` — 내용이 PRD §8.1로 흡수됨. 삭제 후보
