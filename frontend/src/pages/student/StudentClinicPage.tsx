@@ -14,7 +14,7 @@
  * 한 타임에 한 명이라 남은 자리는 늘 1이고, 그 사실은 칸의 생사로만 말한다:
  * 살아 있는 면 / 취소선 그어진 죽은 면 / 내 자리.
  *
- * 규칙(마감·당일 8시·중복·노쇼 제한)은 전부 API 가 강제한다. 화면은 자격이
+ * 규칙(마감·전날까지·중복·노쇼 제한)은 전부 API 가 강제한다. 화면은 자격이
  * 없으면 시간표를 **부르지 않고**(availability 는 403), 실패하면 서버가 준
  * 문장을 고쳐 쓰지 않고 그대로 보여준다.
  */
@@ -46,7 +46,9 @@ import {
   monthGrid,
   monthLabel,
   shiftMonth,
+  timeColumn,
 } from "./lib";
+import type { TimeColumnView } from "./lib";
 import "./clinic.css";
 
 /** 변경·취소가 가능한 상태(백엔드 ACTIVE_STATUSES 와 동일). */
@@ -86,7 +88,7 @@ function Chevron({ dir }: { dir: "left" | "right" }) {
 }
 
 /* ═══ 좌 · 달력 ═══════════════════════════════════════════════════════
-   "이 날짜가 days 에 있나"로만 생사를 판정한다 — 지난 날·8시 지난 오늘·
+   "이 날짜가 days 에 있나"로만 생사를 판정한다 — 지난 날·오늘·
    슬롯 없는 요일을 죽이는 로직을 화면이 따로 갖지 않는다(계약이 곧 그림). */
 
 function MonthCalendar({
@@ -166,8 +168,7 @@ function MonthCalendar({
 /* ═══ 우 · 그 날의 시간 ═══════════════════════════════════════════════ */
 
 function TimeColumn({
-  date,
-  times,
+  view,
   picked,
   pending,
   changingFrom,
@@ -176,8 +177,7 @@ function TimeColumn({
   onConfirm,
   onBack,
 }: {
-  date: string | null;
-  times: AvailabilityTime[];
+  view: TimeColumnView;
   picked: number | null;
   pending: boolean;
   /** 변경 중이면 "어디서 옮기는 중인지"가 스크롤해도 남는다. */
@@ -202,13 +202,21 @@ function TimeColumn({
         </div>
       )}
 
-      {date === null ? (
+      {view.kind === "no-date" ? (
         <p className="cl-times__none">열려 있는 시간이 없습니다</p>
+      ) : view.kind === "closed" ? (
+        // 고른 날짜가 응답 밖이다 — 전날 마감으로 빠진 오늘이 여기 온다(오늘로
+        // 잡힌 예약에서 [시간 변경]). 날짜만 쓰고 아래를 비우면 눌렀는데
+        // 아무 말도 없는 화면이 된다.
+        <>
+          <p className="cl-times__head">{dayLabel(view.date)}</p>
+          <p className="cl-times__none">열려 있는 시간이 없습니다</p>
+        </>
       ) : (
         <>
-          <p className="cl-times__head">{dayLabel(date)}</p>
+          <p className="cl-times__head">{dayLabel(view.date)}</p>
           <div className={`cl-times__list${busy ? " cl-busy" : ""}`}>
-            {times.map((time) => {
+            {view.times.map((time) => {
               if (picked === time.slot_id) {
                 return (
                   <div className="cl-slot" key={time.slot_id}>
@@ -418,7 +426,7 @@ export default function StudentClinicPage() {
   // 이미 전부이므로 카드를 접는다.
   const blocked = Boolean(judged?.clinic_banned) && active === null;
 
-  const times = days.find((entry) => entry.date === day)?.times ?? [];
+  const column = timeColumn(days, day);
   const busy = avail.loading && !avail.initialLoading;
   const openDates = new Set(days.map((entry) => entry.date));
   // 종료 시각은 신청 응답에 없다 — 시간표에서 같은 슬롯을 찾아 붙인다.
@@ -527,8 +535,7 @@ export default function StudentClinicPage() {
         />
 
         <TimeColumn
-          date={day}
-          times={times}
+          view={column}
           picked={picked}
           pending={book.pending || change.pending}
           changingFrom={changing ? active : null}

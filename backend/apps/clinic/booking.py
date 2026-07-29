@@ -8,9 +8,11 @@
      집계는 clinic_requests 를 센다(잔여석 사본 금지 — ClinicSlot 모델 계약).
      동시성은 트랜잭션 + select_for_update(슬롯 행 잠금)로 막는다 — 정원이
      1 이라 경합 창이 그만큼 좁고 결과는 더 치명적이다.
-  ③ 당일 마감: 당일 오전 8시(Asia/Seoul) 이후 그 날짜의 신청·변경·취소
-     불가. 취소를 '변경'에 포함시킨 판단 근거: 8시 마감의 목적이 당일
-     배정 인력 확정인데, 취소만 열어두면 마감 후 이탈로 같은 문제가 생긴다.
+  ③ 전날 마감: 클리닉 날짜의 **전날까지만** 신청·변경·취소할 수 있다 —
+     오늘(Asia/Seoul)과 지난 날짜는 시각과 무관하게 불가(2026-07-29 확정,
+     구 "당일 오전 8시까지" 규칙은 폐기). 취소를 '변경'에 포함시킨 판단
+     근거: 마감의 목적이 당일 배정 인력 확정인데, 취소만 열어두면 마감 후
+     이탈로 같은 문제가 생긴다.
   ④ 노쇼 영구제한: students.clinic_banned(원천 — 사본 금지) → 신청·변경
      403. 취소는 허용(자원 반납 행위).
   ⑤ 중복: 같은 시험에 활성 신청 1건만.
@@ -19,7 +21,7 @@
 attendance_status·noshow_count·clinic_banned 를 건드리지 않는다.
 
 시간 의미론: 기준 시각은 각 진입 함수의 timezone.now() 1회로 고정하고
-당일·마감 판정은 Asia/Seoul 로컬(timezone.localdate/localtime) 기준
+마감 판정은 Asia/Seoul 로컬 날짜(timezone.localdate) 기준
 (2차 슬라이스 home 선례).
 """
 import datetime
@@ -32,8 +34,6 @@ from .models import ClinicEligibility, ClinicRequest, ClinicSlot
 
 # 미트 링크 활성화 선행 시간 — 시작 5분 전(PRD 3.2.4). curriculum.home 과 공유.
 CLINIC_LINK_LEAD = datetime.timedelta(minutes=5)
-# 당일 신청·변경 마감 시각(PRD 3.2.4 — 오전 8시, Asia/Seoul).
-SAME_DAY_CUTOFF = datetime.time(8, 0)
 # 정원 집계 대상 상태(ClinicSlot 모델 계약 — 대기+승인배정).
 ACTIVE_STATUSES = (ClinicRequest.Status.PENDING, ClinicRequest.Status.APPROVED)
 
@@ -67,12 +67,15 @@ def model_weekday(date):
 
 
 def _check_date_open(target_date, now):
-    """③ 당일 마감 + 지난 날짜 차단 — 신청·변경·취소 공통."""
+    """③ 전날 마감 — 오늘·지난 날짜 차단(신청·변경·취소 공통).
+
+    오늘은 시각을 보지 않는다 — 자정이든 밤이든 오늘 날짜면 닫혀 있다.
+    """
     today = timezone.localdate(now)
     if target_date < today:
         raise ClinicError("지난 날짜에는 신청·변경·취소할 수 없습니다.")
-    if target_date == today and timezone.localtime(now).time() >= SAME_DAY_CUTOFF:
-        raise ClinicError("당일 신청·변경·취소는 오전 8시까지만 가능합니다.")
+    if target_date == today:
+        raise ClinicError("오늘 클리닉은 신청·변경·취소할 수 없습니다.")
 
 
 def _ensure_can_book(student, exam):
@@ -137,7 +140,7 @@ def change_booking(request, slot, requested_date):
     if request.status not in ACTIVE_STATUSES:
         raise ClinicError("변경할 수 없는 상태입니다.")
     _ensure_can_book(request.student, request.exam)
-    _check_date_open(request.requested_date, now)  # 기존 날짜도 잠금(당일 이동 금지)
+    _check_date_open(request.requested_date, now)  # 기존 날짜도 잠금(오늘 것은 못 옮긴다)
     if model_weekday(requested_date) != slot.weekday:
         raise ClinicError("희망일이 슬롯 요일과 일치하지 않습니다.")
     _check_date_open(requested_date, now)
@@ -219,8 +222,8 @@ def availability(student, exam, date_from=None, date_to=None):
     제한이면 403 으로 **시간표 자체를 못 본다**.
 
     노출 판단(무엇을 빼고 무엇을 사유와 함께 보여줄지):
-    - **날짜 축에서 제거**: 지난 날짜 / 8시 마감이 지난 당일 / 그 요일에 활성
-      슬롯이 없는 날. 근거 — 학생이 취할 수 있는 행동이 없고, "지났다"는
+    - **날짜 축에서 제거**: 지난 날짜 / 오늘(전날 마감 — 시각 무관) / 그 요일에
+      활성 슬롯이 없는 날. 근거 — 학생이 취할 수 있는 행동이 없고, "지났다"는
       날짜 전체에 걸리는 사유라 시간마다 반복하면 달력이 사유 문구로 덮인다.
       폐지(is_active=false) 슬롯도 같은 이유로 존재 자체를 감춘다(신청 시
       404 존재 비노출과 같은 계약).
@@ -242,9 +245,7 @@ def availability(student, exam, date_from=None, date_to=None):
         raise ClinicError("조회 시작일이 종료일보다 늦습니다.")
     if (date_to - date_from).days + 1 > AVAILABILITY_MAX_DAYS:
         raise ClinicError(f"조회 구간은 최대 {AVAILABILITY_MAX_DAYS}일입니다.")
-    start = max(date_from, today)
-    if start == today and timezone.localtime(now).time() >= SAME_DAY_CUTOFF:
-        start += datetime.timedelta(days=1)
+    start = max(date_from, today + datetime.timedelta(days=1))  # 오늘은 항상 뺀다
     return {
         "exam_id": exam.exam_id,
         "range": {"from": start.isoformat(), "to": date_to.isoformat()},

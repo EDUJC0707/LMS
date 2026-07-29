@@ -135,11 +135,14 @@ class ClinicRequestTests(TestCase):
         self.assertIn("noshow_count", doc)
 
     def test_deadline_and_link_contract_documented(self):
-        # PRD 3.2.4: 당일 오전 8시 이후 신청·변경 불가, 미트 링크는 시작 5분
-        # 전부터 해당 학생에게만 노출·재사용 금지 — 앱 레이어 계약을 docstring 에.
+        # 2026-07-29 확정: 클리닉 날짜의 전날까지만 신청·변경·취소(당일 불가).
+        # 미트 링크는 시작 5분 전부터 해당 학생에게만 노출·재사용 금지 —
+        # 둘 다 앱 레이어 계약이라 docstring 에 남긴다.
         doc = ClinicRequest.__doc__
-        self.assertIn("8시", doc)
+        self.assertIn("전날", doc)
         self.assertIn("5분", doc)
+        # 옛 규칙(당일 오전 8시 마감)이 남아 있으면 안 된다
+        self.assertNotIn("8시", doc)
 
 
 class ClinicEligibilityTests(TestCase):

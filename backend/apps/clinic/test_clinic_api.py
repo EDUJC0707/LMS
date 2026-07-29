@@ -6,7 +6,7 @@
 - 정원 **1 고정**(2026-07-21 회의): 활성 신청(대기+승인배정)이 한 건만 있어도
   그 날짜·시간은 마감 400. 취소·미승인은 집계 제외.
   동시성은 select_for_update(경합 테스트 — 정원 1 이라 더 중요해졌다)
-- 당일 오전 8시 마감: 07:59/08:00 경계 — 신청·변경·취소 모두
+- 전날 마감: 오늘 날짜는 시각과 무관하게 신청·변경·취소 전부 차단, 내일부터 허용
 - 노쇼 영구제한: clinic_banned=true → 신청·변경 403 (취소는 허용)
 - 중복 활성 신청 400 / 본인 것만 수정·취소(타인 404)
 - 취소는 노쇼로 집계하지 않음(noshow_count·clinic_banned 불변)
@@ -39,13 +39,17 @@ TODAY = datetime.date(2026, 7, 22)
 THU = datetime.date(2026, 7, 23)
 NEXT_WED = datetime.date(2026, 7, 29)
 NEXT_THU = datetime.date(2026, 7, 30)
+LATER_WED = datetime.date(2026, 8, 5)
 PAST_WED = datetime.date(2026, 7, 15)
 
-NOW = timezone.make_aware(datetime.datetime(2026, 7, 22, 7, 0))  # 마감 전 아침
-NOW_0759 = timezone.make_aware(datetime.datetime(2026, 7, 22, 7, 59))
+NOW = timezone.make_aware(datetime.datetime(2026, 7, 22, 7, 0))
 NOW_0800 = timezone.make_aware(datetime.datetime(2026, 7, 22, 8, 0))
+NOW_2300 = timezone.make_aware(datetime.datetime(2026, 7, 22, 23, 0))
 NOW_1854 = timezone.make_aware(datetime.datetime(2026, 7, 22, 18, 54))
 NOW_1855 = timezone.make_aware(datetime.datetime(2026, 7, 22, 18, 55))
+
+# 오늘 하루 어느 시각이든 결과가 같아야 한다(옛 08:00 경계가 사라졌다는 증거).
+ALL_DAY = (NOW, NOW_0800, NOW_2300)
 
 
 def freeze_now(at=NOW):
@@ -260,15 +264,27 @@ class ClinicBookingCreateTests(ClinicFixtureMixin, TestCase):
         self.make_request_row(self.s_target2, self.slot_wed, NEXT_WED)
         self.assertEqual(self.book(self.slot_wed, NEXT_WED).status_code, 400)
         # 같은 슬롯의 다른 날짜는 영향 없다
-        self.assertEqual(self.book(self.slot_wed, TODAY).status_code, 201)
+        self.assertEqual(self.book(self.slot_wed, LATER_WED).status_code, 201)
 
-    def test_same_day_cutoff_boundary(self):
-        res = self.book(self.slot_wed, TODAY, at=NOW_0759)  # 07:59 — 허용
-        self.assertEqual(res.status_code, 201)
-        ClinicRequest.objects.all().delete()
-        res = self.book(self.slot_wed, TODAY, at=NOW_0800)  # 08:00 — 차단
-        self.assertEqual(res.status_code, 400)
+    def test_today_400_at_every_hour(self):
+        for at in ALL_DAY:
+            res = self.book(self.slot_wed, TODAY, at=at)
+            self.assertEqual(res.status_code, 400, at)
         self.assertFalse(ClinicRequest.objects.exists())
+
+    def test_tomorrow_201_even_late_at_night(self):
+        res = self.book(self.slot_thu, THU, at=NOW_2300)
+        self.assertEqual(res.status_code, 201)
+
+    def test_today_and_past_dates_say_which_one(self):
+        self.assertEqual(
+            self.book(self.slot_wed, TODAY, at=NOW_0800).json()["detail"],
+            "오늘 클리닉은 신청·변경·취소할 수 없습니다.",
+        )
+        self.assertEqual(
+            self.book(self.slot_wed, PAST_WED).json()["detail"],
+            "지난 날짜에는 신청·변경·취소할 수 없습니다.",
+        )
 
     def test_past_date_400(self):
         self.assertEqual(self.book(self.slot_wed, PAST_WED).status_code, 400)
@@ -386,20 +402,32 @@ class ClinicBookingChangeTests(ClinicFixtureMixin, TestCase):
         self.assertIsNone(self.req.assigned_staff)
         self.assertIsNone(self.req.meet_url)
 
-    def test_change_same_day_after_cutoff_400(self):
+    def test_change_away_from_today_400_at_every_hour(self):
         req = self.make_request_row(self.s_target2, self.slot_wed, TODAY)
         self.login(self.s_target2.user)
         # 7/29 은 setUp 의 s_target 신청이 잡고 있다(정원 1) — 빈 수요일로 옮긴다
-        res = self.patch_booking(req.clinic_id, {"requested_date": "2026-08-05"}, at=NOW_0800)
-        self.assertEqual(res.status_code, 400)  # 당일 클리닉은 8시 후 이동 불가
-        res = self.patch_booking(req.clinic_id, {"requested_date": "2026-08-05"}, at=NOW_0759)
-        self.assertEqual(res.status_code, 200)
+        for at in ALL_DAY:
+            res = self.patch_booking(
+                req.clinic_id, {"requested_date": LATER_WED.isoformat()}, at=at
+            )
+            self.assertEqual(res.status_code, 400, at)
+        req.refresh_from_db()
+        self.assertEqual(req.requested_date, TODAY)
 
-    def test_change_onto_today_after_cutoff_400(self):
+    def test_change_onto_today_400_at_every_hour(self):
+        for at in ALL_DAY:
+            res = self.patch_booking(
+                self.req.clinic_id, {"requested_date": TODAY.isoformat()}, at=at
+            )
+            self.assertEqual(res.status_code, 400, at)
+
+    def test_change_onto_tomorrow_200_even_late_at_night(self):
         res = self.patch_booking(
-            self.req.clinic_id, {"requested_date": TODAY.isoformat()}, at=NOW_0800
+            self.req.clinic_id,
+            {"slot_id": self.slot_thu.slot_id, "requested_date": THU.isoformat()},
+            at=NOW_2300,
         )
-        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.status_code, 200)
 
     def test_change_to_full_slot_400(self):
         self.make_request_row(self.s_target2, self.slot_thu, THU)
@@ -486,11 +514,19 @@ class ClinicBookingCancelTests(ClinicFixtureMixin, TestCase):
         other = self.make_request_row(self.s_target2, self.slot_thu, THU)
         self.assertEqual(self.cancel_booking(other.clinic_id).status_code, 404)
 
-    def test_cancel_same_day_boundary(self):
+    def test_cancel_today_400_at_every_hour(self):
         req = self.make_request_row(self.s_target2, self.slot_wed, TODAY)
         self.login(self.s_target2.user)
-        self.assertEqual(self.cancel_booking(req.clinic_id, at=NOW_0800).status_code, 400)
-        self.assertEqual(self.cancel_booking(req.clinic_id, at=NOW_0759).status_code, 200)
+        for at in ALL_DAY:
+            self.assertEqual(self.cancel_booking(req.clinic_id, at=at).status_code, 400, at)
+        req.refresh_from_db()
+        self.assertEqual(req.status, ClinicRequest.Status.PENDING)
+        self.assertIsNone(req.cancelled_at)
+
+    def test_cancel_tomorrow_200_even_late_at_night(self):
+        req = self.make_request_row(self.s_target2, self.slot_thu, THU)
+        self.login(self.s_target2.user)
+        self.assertEqual(self.cancel_booking(req.clinic_id, at=NOW_2300).status_code, 200)
 
     def test_banned_student_can_still_cancel(self):
         req = self.make_request_row(self.s_banned, self.slot_thu, THU)

@@ -7,8 +7,9 @@ Calendly 형 흐름(날짜 선택 → 그 날 가능한 시간 목록 → 하나
 
 검증 축:
 - 날짜 축: 요청 구간의 날짜마다 그 요일의 활성 슬롯 시간 목록
-- 노출 판단: 비활성 슬롯·지난 날짜·8시 지난 당일은 **응답에서 제외**,
-  마감은 사유와 함께 **표시**(PRD 3.2.4 "마감 표시" 요구)
+- 노출 판단: 비활성 슬롯·지난 날짜·오늘은 **응답에서 제외**(오늘은 시각과
+  무관하게 항상 빠진다 — 전날 마감), 마감은 사유와 함께 **표시**
+  (PRD 3.2.4 "마감 표시" 요구)
 - 정원 1: 활성 신청 1건이면 그 날짜·시간은 마감
 - 구간 상한: 기본 14일 / 최대 31일, 역구간·형식 오류 400
 - 자격(§4): 비대상·무판정·영구제한은 403 — 시간표 자체를 못 본다
@@ -36,8 +37,11 @@ THU = datetime.date(2026, 7, 23)
 NEXT_WED = datetime.date(2026, 7, 29)
 
 NOW = timezone.make_aware(datetime.datetime(2026, 7, 22, 7, 0))
-NOW_0759 = timezone.make_aware(datetime.datetime(2026, 7, 22, 7, 59))
 NOW_0800 = timezone.make_aware(datetime.datetime(2026, 7, 22, 8, 0))
+NOW_2300 = timezone.make_aware(datetime.datetime(2026, 7, 22, 23, 0))
+
+# 오늘 하루 어느 시각이든 결과가 같아야 한다(옛 08:00 경계가 사라졌다는 증거).
+ALL_DAY = (NOW, NOW_0800, NOW_2300)
 
 
 def freeze_now(at=NOW):
@@ -121,19 +125,17 @@ class ClinicAvailabilityTests(AvailabilityFixtureMixin, TestCase):
 
     # --- 날짜 축 ----------------------------------------------------------
 
-    def test_default_range_is_two_weeks_from_today(self):
+    def test_default_range_starts_tomorrow(self):
         body = self.fetch().json()
         self.assertEqual(body["exam_id"], self.exam.exam_id)
-        self.assertEqual(body["range"], {"from": "2026-07-22", "to": "2026-08-04"})
+        self.assertEqual(body["range"], {"from": "2026-07-23", "to": "2026-08-04"})
         dates = [d["date"] for d in body["days"]]
-        # 14일 구간(7/22~8/4)에 든 수·목만 — 금은 비활성, 나머지 요일은 슬롯 없음
-        self.assertEqual(
-            dates, ["2026-07-22", "2026-07-23", "2026-07-29", "2026-07-30"]
-        )
-        self.assertEqual(body["days"][0]["weekday"], 3)
+        # 내일부터 8/4 까지의 수·목만 — 금은 비활성, 나머지 요일은 슬롯 없음
+        self.assertEqual(dates, ["2026-07-23", "2026-07-29", "2026-07-30"])
+        self.assertEqual(body["days"][0]["weekday"], 4)
 
     def test_day_lists_active_times_of_that_weekday(self):
-        day = self.days_by_date()["2026-07-22"]
+        day = self.days_by_date()["2026-07-29"]
         self.assertEqual(
             day["times"],
             [
@@ -166,17 +168,22 @@ class ClinicAvailabilityTests(AvailabilityFixtureMixin, TestCase):
         self.assertNotIn("2026-07-25", dates)  # 토
         self.assertNotIn("2026-07-26", dates)  # 일
 
-    def test_past_dates_are_clamped_to_today(self):
+    def test_past_dates_are_clamped_to_tomorrow(self):
         body = self.fetch(**{"from": "2026-07-01", "to": "2026-07-23"}).json()
-        self.assertEqual(body["range"], {"from": "2026-07-22", "to": "2026-07-23"})
-        self.assertEqual([d["date"] for d in body["days"]], ["2026-07-22", "2026-07-23"])
+        self.assertEqual(body["range"], {"from": "2026-07-23", "to": "2026-07-23"})
+        self.assertEqual([d["date"] for d in body["days"]], ["2026-07-23"])
 
-    def test_today_dropped_after_same_day_cutoff(self):
-        before = self.days_by_date(at=NOW_0759)
-        self.assertIn("2026-07-22", before)
-        after = self.days_by_date(at=NOW_0800)
-        self.assertNotIn("2026-07-22", after)
-        self.assertIn("2026-07-23", after)
+    def test_today_is_never_offered(self):
+        for at in ALL_DAY:
+            body = self.fetch(at=at).json()
+            self.assertEqual(body["range"]["from"], "2026-07-23", at)
+            self.assertNotIn("2026-07-22", {d["date"] for d in body["days"]}, at)
+
+    def test_today_is_dropped_even_when_asked_for_explicitly(self):
+        for at in ALL_DAY:
+            body = self.fetch(at=at, **{"from": "2026-07-22", "to": "2026-07-23"}).json()
+            self.assertEqual(body["range"]["from"], "2026-07-23", at)
+            self.assertEqual([d["date"] for d in body["days"]], ["2026-07-23"], at)
 
     def test_fully_past_range_returns_no_days(self):
         body = self.fetch(**{"from": "2026-07-01", "to": "2026-07-10"}).json()
@@ -186,7 +193,8 @@ class ClinicAvailabilityTests(AvailabilityFixtureMixin, TestCase):
 
     def test_single_active_request_closes_the_time(self):
         self.make_request_row(self.s_other, self.wed_19, NEXT_WED)
-        times = {t["slot_id"]: t for t in self.days_by_date()["2026-07-29"]["times"]}
+        days = self.days_by_date(**{"to": "2026-08-06"})
+        times = {t["slot_id"]: t for t in days["2026-07-29"]["times"]}
         closed = times[self.wed_19.slot_id]
         self.assertFalse(closed["available"])
         self.assertEqual(closed["reason"], "마감")
@@ -194,9 +202,9 @@ class ClinicAvailabilityTests(AvailabilityFixtureMixin, TestCase):
         self.assertTrue(times[self.wed_20.slot_id]["available"])
         # 다른 날짜의 같은 슬롯도 영향 없다
         self.assertTrue(
-            {t["slot_id"]: t for t in self.days_by_date()["2026-07-22"]["times"]}[
-                self.wed_19.slot_id
-            ]["available"]
+            {t["slot_id"]: t for t in days["2026-08-05"]["times"]}[self.wed_19.slot_id][
+                "available"
+            ]
         )
 
     def test_approved_request_also_closes(self):
