@@ -85,41 +85,44 @@ def make_student(login_id, name):
 
 
 class ClinicWindowTests(SimpleTestCase):
-    """창구 끝 = **받을 수 있는 마지막 클리닉 날짜** — 시험일 다음 첫 화요일.
+    """창구 끝 = **다음 수업 전날** = 시험일 + 6일 (2026-07-30 대표 확정).
 
-    2026-07-30 확정. 신청 마감(클리닉 날짜의 전날)은 여기가 아니라
-    `_check_date_open` 이 정한다 — 화요일 클리닉이면 월요일이 마감이다.
-    이 둘을 "월요일까지"로 뭉쳐 읽어 하루 어긋났던 것을 바로잡았다.
+    수업은 반별 주 1회라 다음 수업은 같은 요일 7일 뒤고, 클리닉은 그 전에
+    끝나야 한다. **요일로 못 박지 않는다** — 반마다 수업 요일이 다르므로
+    고정 요일은 특정 반에서만 맞는다(월요일·화요일로 두 번 잡았다가 두 번
+    어긋났다). 신청 마감(클리닉 날짜의 전날)은 `_check_date_open` 소관이다.
     """
 
-    def test_wednesday_exam_closes_on_the_next_tuesday(self):
-        # 사용자 예시: 시험일 2026-07-29(수) → 마지막 클리닉 2026-08-04(화)
+    def test_wednesday_class_closes_on_tuesday(self):
+        # 대표 예시: 수요반 시험 7/29(수) → 마지막 클리닉 8/4(화)
         self.assertEqual(
             booking.booking_window_end(datetime.date(2026, 7, 29)),
             datetime.date(2026, 8, 4),
         )
 
-    def test_tuesday_exam_closes_seven_days_later(self):
-        # 시험일이 화요일이면 그날이 아니라 다음 화요일
+    def test_thursday_class_closes_on_wednesday(self):
+        # 대표 예시: 목요반 시험 7/30(목) → 마지막 클리닉 8/5(수)
         self.assertEqual(
-            booking.booking_window_end(datetime.date(2026, 8, 4)),
-            datetime.date(2026, 8, 11),
+            booking.booking_window_end(datetime.date(2026, 7, 30)),
+            datetime.date(2026, 8, 5),
         )
 
-    def test_saturday_exam_closes_three_days_later(self):
+    def test_saturday_class_closes_on_friday(self):
         self.assertEqual(
             booking.booking_window_end(datetime.date(2026, 8, 1)),
-            datetime.date(2026, 8, 4),
+            datetime.date(2026, 8, 7),
         )
 
-    def test_end_is_always_a_tuesday_within_a_week(self):
+    def test_end_is_always_the_day_before_the_next_class(self):
         start = datetime.date(2026, 7, 20)
         for offset in range(14):
             exam_date = start + datetime.timedelta(days=offset)
             end = booking.booking_window_end(exam_date)
-            # 모델 요일 축(0=일…6=토)에서 화요일 = 2 — 새 요일 축을 만들지 않는다
-            self.assertEqual(booking.model_weekday(end), 2, exam_date)
-            self.assertIn((end - exam_date).days, range(1, 8), exam_date)
+            # 다음 수업(같은 요일 7일 뒤)의 전날 — 요일이 아니라 간격이 기준
+            self.assertEqual(end, exam_date + datetime.timedelta(days=6), exam_date)
+            self.assertNotEqual(
+                booking.model_weekday(end), booking.model_weekday(exam_date), exam_date
+            )
 
 
 class ClinicFixtureMixin:

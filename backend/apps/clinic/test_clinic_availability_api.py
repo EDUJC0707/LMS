@@ -322,24 +322,28 @@ class ClinicAvailabilityTests(AvailabilityFixtureMixin, TestCase):
             )
 
 
-class SaturdayExamWindowTests(TestCase):
-    """토요일 시험 — 창구가 사흘로 좁아지는 경계(2026-07-30 정정 후 고정).
+class WindowNarrowsDayByDayTests(TestCase):
+    """창구는 시험일 + 6일로 고정이고, 날이 갈수록 남은 날짜만 줄어든다.
 
-    시험일 2026-08-01(토) → 창구 끝 2026-08-04(화). 당일 신청 불가와 겹쳐
-    잡을 수 있는 날짜가 며칠로 줄어든다. **규칙의 자연스러운 결과라
-    임의로 늘리지 않는다** — 여기서 그 좁은 창을 못박아 둔다.
+    2026-07-30 대표 확정("다음 수업 전날까지") 이후 **요일 경계는 사라졌다** —
+    어느 요일에 시험을 봐도 창구 길이가 같다. 여기서 보는 것은 창구가 닫히는
+    게 아니라 **앞쪽(당일 불가)이 밀어 올려 남은 날짜가 줄어드는** 모습이다.
+
+    토요일 시험 8/1 → 창구 끝 8/7(금). 슬롯은 일·월·화·수만 활성이라
+    목·금은 창구 안이어도 날짜로 뜨지 않는다.
     """
 
     SAT = timezone.make_aware(datetime.datetime(2026, 8, 1, 7, 0))  # 시험 당일
     SUN = timezone.make_aware(datetime.datetime(2026, 8, 2, 7, 0))
-    TUE = timezone.make_aware(datetime.datetime(2026, 8, 4, 7, 0))  # 창구 끝 당일
+    TUE = timezone.make_aware(datetime.datetime(2026, 8, 4, 7, 0))
+    LAST = timezone.make_aware(datetime.datetime(2026, 8, 7, 7, 0))  # 창구 끝 당일
 
     @classmethod
     def setUpTestData(cls):
         cls.exam = Exam.objects.create(
             name="8월 토요 모의고사", exam_date=datetime.date(2026, 8, 1)
         )
-        for weekday in (0, 1, 2, 3):  # 일·월·화·수 — 수(8/5)는 창구 밖이라 뜨면 안 된다
+        for weekday in (0, 1, 2, 3):  # 일·월·화·수 (목·금·토는 슬롯 없음)
             ClinicSlot.objects.create(
                 weekday=weekday,
                 start_time=datetime.time(19, 0),
@@ -357,14 +361,17 @@ class SaturdayExamWindowTests(TestCase):
     def setUp(self):
         self.client.force_login(self.student.user)
 
-    def test_on_exam_day_sunday_through_tuesday_remain(self):
+    def test_on_exam_day_the_whole_window_is_open(self):
+        # 창구 8/2~8/7 중 슬롯이 있는 날만
         self.assertEqual(
-            self.dates(self.SAT), ["2026-08-02", "2026-08-03", "2026-08-04"]
+            self.dates(self.SAT),
+            ["2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05"],
         )
 
-    def test_on_sunday_monday_and_tuesday_remain(self):
-        self.assertEqual(self.dates(self.SUN), ["2026-08-03", "2026-08-04"])
+    def test_the_front_edge_moves_up_each_day(self):
+        self.assertEqual(self.dates(self.SUN), ["2026-08-03", "2026-08-04", "2026-08-05"])
+        self.assertEqual(self.dates(self.TUE), ["2026-08-05"])
 
-    def test_on_the_window_end_tuesday_nothing_remains(self):
-        # 화요일 하루는 통째로 열려 있지만 그날 잡을 수 있는 **내일**이 없다
-        self.assertEqual(self.dates(self.TUE), [])
+    def test_on_the_window_end_nothing_remains(self):
+        # 창구 끝 당일에는 잡을 수 있는 **내일**이 창구 밖이다
+        self.assertEqual(self.dates(self.LAST), [])
