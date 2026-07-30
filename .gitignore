@@ -30,6 +30,10 @@ local/
 
 # Playwright MCP 캡처 산출물 (로컬 전용)
 .playwright-mcp/
+# 스크린샷에 디렉터리 없이 파일명만 주면 저장소 루트로 떨어진다.
+# 앞의 `/` 가 루트만 뜻하므로 assets/logo/*.png · docs/db/lms-erd.png 등
+# 추적 중인 12장은 그대로 남는다.
+/*.png
 
 # 랜딩 리허설 실험 산출물 (영상·프레임 — 로컬 전용)
 frontend/landing/rehearsal/
