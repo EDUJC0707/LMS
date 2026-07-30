@@ -289,7 +289,7 @@
   /* 컨택트 — 검정으로 되돌아온다. 셋 중 혼자 가운데 정렬이라 튀었다: 왼쪽으로 맞췄다.
      세로 180px 패딩에 h2 하나 + 버튼 하나뿐이라 미완성으로 읽혀서
      footer 와 한 덩어리로 묶었다(아래 여백을 걷고 구분선으로 잇는다). */
-  #contact{ background:#000; padding-bottom:clamp(48px,7vh,88px) }
+  #contact{ background:#000; padding-bottom:clamp(34px,4.5vh,56px) }
   #contact .sec-head{ margin-bottom:1.6rem }
   .ch{
     display:inline-block; padding:.85rem 1.8rem; border-radius:999px;
@@ -297,20 +297,24 @@
     border:0; cursor:pointer; font-family:inherit;
   }
   footer{
-    padding:clamp(28px,4vh,44px) var(--pad) clamp(48px,7vh,80px); background:#000;
+    padding:clamp(20px,2.6vh,30px) var(--pad) clamp(40px,5.5vh,64px); background:#000;
     color:var(--dim); font-size:.8rem; line-height:1.8;
   }
+  /* space-between 이 사업자 정보를 오른쪽 끝으로 밀어서 브랜드와 700px 떨어져
+     있었다 — 푸터가 아니라 관계없는 두 조각으로 읽혔고, `—` 들이 화면 맨 오른쪽에
+     매달렸다. 위아래로 쌓고 왼쪽에 맞춘다. */
   .foot{
     max-width:52rem; margin:0 auto;
-    padding-top:clamp(24px,3.5vh,36px); border-top:1px solid var(--line);
-    display:flex; gap:1.5rem 3rem; flex-wrap:wrap; justify-content:space-between;
+    padding-top:clamp(22px,3vh,30px); border-top:1px solid var(--line);
+    display:flex; flex-direction:column; gap:1.15rem;
   }
   .foot b{ color:var(--fg); font-weight:700; font-size:.86rem; letter-spacing:-.02em }
-  .foot dl{ display:grid; grid-template-columns:auto 1fr; gap:.25rem .9rem; margin:0 }
-  .foot dt{ opacity:.6 }
+  /* 라벨-값이 한 줄로 흐른다(국내 푸터 관행). 세로 dt/dd 격자는 값이 넷뿐이라
+     빈 칸이 더 눈에 띄었다. */
+  .foot dl{ display:flex; flex-wrap:wrap; gap:.3rem 1.5rem; margin:0; font-size:.78rem }
+  .foot dl div{ display:flex; gap:.45rem }
+  .foot dt{ opacity:.55 }
   .foot dd{ margin:0 }
-  /* 커리큘럼의 법적 고지가 여기로 내려왔다 — 근거와 고지는 성격이 다르다 */
-  .foot .fine{ flex-basis:100%; margin-top:.4rem; font-size:.76rem; opacity:.7; line-height:1.7 }
 
   /* ── 모바일 ──────────────────────────────────────────────── */
   @media (max-width:860px){
@@ -424,14 +428,11 @@
     <!-- TODO 사업자 정보 — 상호·대표·등록번호·통신판매업신고·주소·전화.
          교육 서비스는 전자상거래법상 표시 의무가 있다. 값이 오면 dd 를 채운다. -->
     <dl>
-      <dt>사업자등록번호</dt><dd>—</dd>
-      <dt>통신판매업신고</dt><dd>—</dd>
-      <dt>대표</dt><dd>—</dd>
-      <dt>주소</dt><dd>—</dd>
+      <div><dt>사업자등록번호</dt><dd>—</dd></div>
+      <div><dt>통신판매업신고</dt><dd>—</dd></div>
+      <div><dt>대표</dt><dd>—</dd></div>
+      <div><dt>주소</dt><dd>—</dd></div>
     </dl>
-    <p class="fine">
-      커리큘럼은 2028학년도 대비 기준입니다. 교육과정과 출제 방향이 확정되면 일부 바뀔 수 있습니다.
-    </p>
   </div>
 </footer>
 
