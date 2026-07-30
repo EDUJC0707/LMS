@@ -516,7 +516,7 @@ if (!ERRATA.length) {
     </table>`;
 } else {
   const sorted = [...ERRATA].sort((a, b) => b.updated.localeCompare(a.updated));
-  stamp.textContent = `최근 갱신 ${sorted[0].updated} · 교재 ${sorted.length}종`;
+  stamp.textContent = `최종 갱신 ${sorted[0].updated}`;
 
   // 14일 이내 수정이면 NEW — 사람이 붙이지 않는다
   const fresh = d => {
