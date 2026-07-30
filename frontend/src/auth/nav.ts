@@ -49,6 +49,7 @@ const ENTRIES: Entry[] = [
   { group: "학습", to: "/student", label: "홈", icon: "calendar", match: "exact", gate: { kind: "role", roles: ["학생"] } },
   { group: "학습", to: "/student/grades", label: "성적", icon: "chart", match: "prefix", gate: { kind: "enrolled" } },
   { group: "학습", to: "/student/clinic", label: "클리닉 신청", icon: "video", match: "prefix", gate: { kind: "enrolled" } },
+  { group: "학습", to: "/student/videos", label: "복습영상", icon: "video", match: "prefix", gate: { kind: "enrolled" } },
   { group: "학습", to: "/student/makeup", label: "동보 신청", icon: "play", match: "prefix", gate: { kind: "enrolled" } },
   { group: "학습", to: "/student/workbook", label: "워크북", icon: "notebook", match: "prefix", gate: { kind: "enrolled" } },
 

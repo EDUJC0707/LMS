@@ -27,6 +27,7 @@ import StudentGradeDetailPage from "../pages/student/StudentGradeDetailPage";
 import StudentClinicPage from "../pages/student/StudentClinicPage";
 import StudentMakeupPage from "../pages/student/StudentMakeupPage";
 import StudentWorkbookPage from "../pages/student/StudentWorkbookPage";
+import StudentVideoPage from "../pages/student/StudentVideoPage";
 
 import ParentHomePage from "../pages/parent/ParentHomePage";
 import ParentGradesPage from "../pages/parent/ParentGradesPage";
@@ -96,6 +97,7 @@ export const router = createBrowserRouter([
           { path: "grades", element: <StudentGradesPage /> },
           { path: "grades/:examId", element: <StudentGradeDetailPage /> },
           { path: "clinic", element: <StudentClinicPage /> },
+          { path: "videos", element: <StudentVideoPage /> },
           { path: "makeup", element: <StudentMakeupPage /> },
           { path: "workbook", element: <StudentWorkbookPage /> },
         ],

@@ -99,3 +99,46 @@ def build_playback(student, video_id, now):
         "watermark": build_watermark(student, timezone.localdate(now)),
         "expires_at": timezone.localtime(grant.expires_at).isoformat(),
     }
+
+
+def build_video_list(student, now):
+    """학생이 **지금 볼 수 있는** 영상 목록 — 재생 화면의 유일한 입구.
+
+    재생 API 는 `video_id` 를 받는데 그 번호를 학생에게 알려 주는 자리가
+    없었다(홈 마감 목록은 `grant_id`·주차만 싣는다). 목록이 없으면 재생 화면에
+    들어갈 방법 자체가 없다.
+
+    판정은 `build_playback` 과 **같은 두 게이트**(공개 영상 + 활성 권한)를 쓴다 —
+    목록과 재생이 다른 기준을 쓰면 "목록엔 있는데 누르면 404" 가 나온다.
+
+    만료가 가까운 것을 먼저 보인다(§3.2.0 마감 우선 배치). 같은 주차면 강 순서.
+    """
+    grants = {
+        grant.course_week_id: grant
+        for grant in VideoGrant.objects.active(at=now)
+        .filter(student=student)
+        .order_by("expires_at")  # 재지급이 겹치면 먼저 끝나는 쪽이 학생이 볼 마감
+    }
+    if not grants:
+        return []
+    videos = (
+        Video.objects.select_related("course_week__course")
+        .filter(status=Video.Status.PUBLISHED, course_week_id__in=grants)
+        .order_by("course_week__week_no", "sequence_no")
+    )
+    rows = [
+        {
+            "video_id": video.video_id,
+            "title": video.title,
+            "sequence_no": video.sequence_no,
+            "duration_seconds": video.duration_seconds,
+            "course_name": video.course_week.course.name,
+            "week_no": video.course_week.week_no,
+            "expires_at": timezone.localtime(
+                grants[video.course_week_id].expires_at
+            ).isoformat(),
+        }
+        for video in videos
+    ]
+    rows.sort(key=lambda row: (row["expires_at"], row["week_no"], row["sequence_no"]))
+    return rows

@@ -113,6 +113,22 @@ def _create_makeup_request(request, source, owner_filter):
     return Response({"makeup": _makeup_block(makeup)}, status=status.HTTP_201_CREATED)
 
 
+class StudentVideoListView(APIView):
+    """GET /api/student/videos — 지금 볼 수 있는 복습영상 목록.
+
+    재생 API 가 받는 video_id 를 학생에게 알려 주는 유일한 자리다.
+    판정은 재생과 같은 두 게이트를 쓴다(playback.build_video_list).
+    """
+
+    permission_classes = [IsStudent]
+
+    def get(self, request):
+        student = Student.objects.select_related("user").filter(user=request.user).first()
+        if student is None:
+            return Response({"videos": []})
+        return Response({"videos": playback.build_video_list(student, timezone.now())})
+
+
 class StudentVideoPlaybackView(APIView):
     """GET /api/student/videos/{video_id}/playback — 재생 정보 + 워터마크.
 

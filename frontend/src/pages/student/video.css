@@ -1,0 +1,96 @@
+/* 복습영상 재생 — 플레이어와 워터마크.
+ *
+ * 워터마크는 `mux-player` 의 자식(slot)이라 전체화면에서도 살아남는다.
+ * 바깥 래퍼에 얹으면 플레이어만 전체화면이 될 때 사라지고, 사라지면 그게
+ * 곧 우회 방법이다(StudentVideoPage.tsx 머리말 참조).
+ */
+
+.vd-stage {
+  background: var(--color-navy-900);
+}
+
+.vd-player {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+
+/* ═══ 워터마크 ═══════════════════════════════════════════════════════
+   `고2 · 김하늘 · 2026-07-30` — 서버가 완성해서 내린 문자열을 그대로 그린다.
+
+   자리를 옮기는 이유: 한 자리에 고정이면 그 부분만 잘라내(크롭) 워터마크 없는
+   영상을 만든다. 네 모서리를 도는 동안에는 어디를 잘라도 언젠가 걸린다.
+
+   진하기(0.32)는 **읽히되 시청을 방해하지 않는 선**으로 잡았다. 더 옅으면
+   화면이 밝은 구간에서 사라져 추적이 무의미해지고, 더 진하면 판서를 가린다.
+   대표가 보고 조절할 값이라 여기 한 곳에 둔다. */
+
+.vd-mark {
+  position: absolute;
+  inset: 0;
+  z-index: 1; /* 영상 위 — 없으면 비디오가 덮는다 */
+  pointer-events: none; /* 재생 조작을 가리면 안 된다 */
+}
+
+.vd-mark__text {
+  position: absolute;
+  padding: var(--space-2xs) var(--space-xs);
+  border-radius: var(--radius-sm);
+  background: rgb(0 0 0 / 0.28);
+  color: rgb(255 255 255 / 0.92);
+  font-size: var(--text-xs);
+  /* mux-player 가 슬롯 내용에 line-height: 0 을 건다 — 물려받으면 글자가
+     0 높이로 그려져 화면에서 사라진다(2026-07-30 실측). 여기서 되돌린다. */
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-wide);
+  white-space: nowrap;
+  opacity: 0.32;
+  animation: vd-mark-walk 48s steps(1, end) infinite;
+}
+
+/* 네 모서리를 12초씩 돈다. steps(1) 이라 자리만 바뀌고 미끄러지지 않는다 —
+   부드럽게 움직이면 시선을 끌어 시청을 방해한다.
+
+   **자리를 %로 잡는 이유**: px 로 가장자리에 붙이면 전체화면에서 레터박스(위아래
+   검은 띠) 위에 앉는다. 그러면 영상 프레임만 잘라내는 것으로 워터마크가 사라진다
+   (2026-07-30 실측 — 1280×800 전체화면에서 16:9 영상의 띠가 약 7%).
+   10% 안쪽이면 어떤 화면비에서도 영상 위에 얹히고, 잘라내기도 그만큼 어려워진다. */
+@keyframes vd-mark-walk {
+  0% {
+    top: 10%;
+    left: 6%;
+  }
+  25% {
+    top: 10%;
+    left: auto;
+    right: 6%;
+  }
+  50% {
+    top: auto;
+    bottom: 18%;
+    left: auto;
+    right: 6%;
+  }
+  75% {
+    top: auto;
+    bottom: 18%;
+    left: 6%;
+  }
+  100% {
+    top: 10%;
+    left: 6%;
+  }
+}
+
+/* 좁은 폭에서는 글자를 줄이고 여백을 좁힌다 — 넘치면 잘려서 못 읽는다. */
+@media (max-width: 30rem) {
+  .vd-mark__text {
+    font-size: var(--text-2xs);
+    padding: 0 var(--space-2xs);
+  }
+}
+
+.vd-alert {
+  padding: var(--space-lg);
+}
