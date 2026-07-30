@@ -141,9 +141,11 @@ class ClinicAvailabilityTests(AvailabilityFixtureMixin, TestCase):
     def test_default_range_is_tomorrow_through_window_end(self):
         body = self.fetch().json()
         self.assertEqual(body["exam_id"], self.exam.exam_id)
-        self.assertEqual(body["range"], {"from": "2026-07-23", "to": "2026-07-27"})
+        self.assertEqual(body["range"], {"from": "2026-07-23", "to": "2026-07-28"})
         dates = [d["date"] for d in body["days"]]
-        # 창구 안에서 활성 슬롯이 있는 날만 — 금은 폐지, 토·일은 슬롯 없음
+        # 창구 안에서 활성 슬롯이 있는 날만 — 금은 폐지, 토·일·화는 슬롯 없음.
+        # 창구 끝 7/28(화)이 range 에는 들어 있으나 그 요일 슬롯이 없어 날짜로는
+        # 안 뜬다 — 창구 끝 날짜가 실제로 뜨는 것은 SaturdayExamWindowTests 가 본다.
         self.assertEqual(dates, ["2026-07-23", "2026-07-27"])
         self.assertEqual(body["days"][0]["weekday"], 4)
 
@@ -204,16 +206,16 @@ class ClinicAvailabilityTests(AvailabilityFixtureMixin, TestCase):
 
     def test_far_range_is_clamped_to_the_window_end(self):
         body = self.fetch(**{"from": "2026-07-23", "to": "2026-12-31"}).json()
-        self.assertEqual(body["range"], {"from": "2026-07-23", "to": "2026-07-27"})
+        self.assertEqual(body["range"], {"from": "2026-07-23", "to": "2026-07-28"})
         dates = {d["date"] for d in body["days"]}
         # 활성 슬롯이 있는 요일이어도 창구 밖 날짜는 뜨지 않는다
-        self.assertNotIn("2026-07-29", dates)  # 수
+        self.assertNotIn("2026-07-29", dates)  # 수 — 창구 끝 다음날
         self.assertNotIn("2026-07-30", dates)  # 목
-        self.assertNotIn("2026-08-03", dates)  # 월
+        self.assertNotIn("2026-08-04", dates)  # 화 — 다음 주 같은 요일
 
     def test_from_only_ends_at_the_window_end(self):
         body = self.fetch(**{"from": "2026-07-25"}).json()
-        self.assertEqual(body["range"], {"from": "2026-07-25", "to": "2026-07-27"})
+        self.assertEqual(body["range"], {"from": "2026-07-25", "to": "2026-07-28"})
 
     def test_range_entirely_after_the_window_returns_no_days(self):
         res = self.fetch(**{"from": "2026-08-01", "to": "2026-08-31"})
@@ -321,23 +323,23 @@ class ClinicAvailabilityTests(AvailabilityFixtureMixin, TestCase):
 
 
 class SaturdayExamWindowTests(TestCase):
-    """토요일 시험 — 창구가 이틀로 좁아지는 경계(2026-07-29 사용자 지시로 고정).
+    """토요일 시험 — 창구가 사흘로 좁아지는 경계(2026-07-30 정정 후 고정).
 
-    시험일 2026-08-01(토) → 창구 끝 2026-08-03(월). 당일 신청 불가와 겹쳐
-    잡을 수 있는 날짜가 하루이틀로 줄어든다. **규칙의 자연스러운 결과라
+    시험일 2026-08-01(토) → 창구 끝 2026-08-04(화). 당일 신청 불가와 겹쳐
+    잡을 수 있는 날짜가 며칠로 줄어든다. **규칙의 자연스러운 결과라
     임의로 늘리지 않는다** — 여기서 그 좁은 창을 못박아 둔다.
     """
 
     SAT = timezone.make_aware(datetime.datetime(2026, 8, 1, 7, 0))  # 시험 당일
     SUN = timezone.make_aware(datetime.datetime(2026, 8, 2, 7, 0))
-    MON = timezone.make_aware(datetime.datetime(2026, 8, 3, 7, 0))  # 창구 끝 당일
+    TUE = timezone.make_aware(datetime.datetime(2026, 8, 4, 7, 0))  # 창구 끝 당일
 
     @classmethod
     def setUpTestData(cls):
         cls.exam = Exam.objects.create(
             name="8월 토요 모의고사", exam_date=datetime.date(2026, 8, 1)
         )
-        for weekday in (0, 1, 2):  # 일·월·화 — 화(8/4)는 창구 밖이라 뜨면 안 된다
+        for weekday in (0, 1, 2, 3):  # 일·월·화·수 — 수(8/5)는 창구 밖이라 뜨면 안 된다
             ClinicSlot.objects.create(
                 weekday=weekday,
                 start_time=datetime.time(19, 0),
@@ -355,12 +357,14 @@ class SaturdayExamWindowTests(TestCase):
     def setUp(self):
         self.client.force_login(self.student.user)
 
-    def test_on_exam_day_only_sunday_and_monday_remain(self):
-        self.assertEqual(self.dates(self.SAT), ["2026-08-02", "2026-08-03"])
+    def test_on_exam_day_sunday_through_tuesday_remain(self):
+        self.assertEqual(
+            self.dates(self.SAT), ["2026-08-02", "2026-08-03", "2026-08-04"]
+        )
 
-    def test_on_sunday_only_monday_remains(self):
-        self.assertEqual(self.dates(self.SUN), ["2026-08-03"])
+    def test_on_sunday_monday_and_tuesday_remain(self):
+        self.assertEqual(self.dates(self.SUN), ["2026-08-03", "2026-08-04"])
 
-    def test_on_the_window_end_monday_nothing_remains(self):
-        # 월요일 하루는 통째로 열려 있지만 그날 잡을 수 있는 **내일**이 없다
-        self.assertEqual(self.dates(self.MON), [])
+    def test_on_the_window_end_tuesday_nothing_remains(self):
+        # 화요일 하루는 통째로 열려 있지만 그날 잡을 수 있는 **내일**이 없다
+        self.assertEqual(self.dates(self.TUE), [])
