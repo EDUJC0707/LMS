@@ -1,5 +1,6 @@
-"""videos 뷰 — 동보 신청 API 4차 슬라이스 (PRD 3.2.3 예비 경로·§4).
+"""videos 뷰 — 복습영상 재생 + 동보 신청 API (PRD 3.1.3/3.1.4·3.2.3·§4).
 
+- GET  /api/student/videos/{video_id}/playback  재생 (IsStudent)
 - POST /api/student/makeup-request      학생 본인 결석의 동보 신청 (IsStudent)
 - POST /api/parent/makeup-request       자녀 결석의 동보 신청 (IsParent)
 - GET  /api/admin/makeup-requests       신청 목록 (영상지급관리)
@@ -16,6 +17,9 @@
 
 지급 체인은 apps.videos.makeup.complete_makeup 공용 서비스가 담당한다
 (관리자체크 경로와 단일 구현 — 3차 슬라이스 grant_makeup 과 공유).
+
+재생의 권한 판정·워터마크 조립은 apps.videos.playback 이 담당하고 여기서는
+None → 404 매핑만 한다(권한 원천·404 판단 근거는 그 모듈 docstring).
 """
 from django.db import transaction
 from django.utils import timezone
@@ -29,6 +33,7 @@ from apps.accounts.permissions import FeatureRequired, IsParent, IsStudent
 from apps.grades import attendance_admin
 from apps.grades.models import Attendance
 
+from . import playback
 from .makeup import complete_makeup
 from .models import MakeupGrant
 
@@ -106,6 +111,27 @@ def _create_makeup_request(request, source, owner_filter):
         requested_by=request.user,
     )
     return Response({"makeup": _makeup_block(makeup)}, status=status.HTTP_201_CREATED)
+
+
+class StudentVideoPlaybackView(APIView):
+    """GET /api/student/videos/{video_id}/playback — 재생 정보 + 워터마크.
+
+    자격 판정은 playback.build_playback 이 끝내고 여기서는 None → 404 만 한다
+    (권한 없음·만료·회수·비공개·없는 번호가 전부 같은 404 — 존재 비노출).
+    """
+
+    permission_classes = [IsStudent]
+
+    def get(self, request, video_id):
+        student = Student.objects.select_related("user").filter(user=request.user).first()
+        if student is None:
+            # 학생 role 인데 students 행이 없는 예외 상태 — 닫힘으로 방어
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        # 권한 활성 판정과 워터마크의 시청 날짜가 같은 한 시각을 쓰도록 여기서 1회 고정
+        payload = playback.build_playback(student, video_id, timezone.now())
+        if payload is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return Response(payload)
 
 
 class StudentMakeupRequestView(APIView):
