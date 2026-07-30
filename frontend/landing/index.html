@@ -371,25 +371,25 @@
   <div class="wrap">
     <div class="sec-head">
       <h2>커리큘럼</h2>
-      <p>2028 수능, 과학은 통합과학 하나입니다.<br>고1 내신에서 수능까지 한 줄로 잇습니다.</p>
+      <p>2028 수능부터 과학은 통합과학 하나입니다.</p>
       <span class="stamp">최종 갱신 26.07.28</span>
     </div>
 
     <div class="tracks" role="tablist">
-      <button class="track" role="tab" aria-selected="true" data-track="naesin">고1·고2 내신 통합과학</button>
-      <button class="track" role="tab" aria-selected="false" data-track="suneung">2028 수능 통합과학</button>
+      <button class="track" role="tab" aria-selected="true" data-track="naesin">고1·고2 내신</button>
+      <button class="track" role="tab" aria-selected="false" data-track="suneung">2028 수능</button>
     </div>
 
     <div class="steps" id="steps"></div>
 
     <div class="mock">
       <h3>실전 모의고사</h3>
-      <p>단계와 별도로, 시즌마다 실전 감각을 점검합니다.</p>
+      <p>시즌마다 새로 나옵니다.</p>
     </div>
 
     <p class="note">
       통합과학은 2028학년도가 첫 시행이라 수능 기출이 없습니다.
-      기출 분석 단계를 두지 않고, 개념과 문제풀이로 그 자리를 채웁니다.
+      기출 분석 단계를 두지 않고 개념과 문제풀이로 채웁니다.
     </p>
   </div>
 </section>
@@ -412,7 +412,7 @@
     <div class="sec-head">
       <h2>문의</h2>
     </div>
-    <button class="ch" data-chat="상담 문의">상담 문의하기</button>
+    <button class="ch" data-chat="상담 문의">채팅으로 문의하기</button>
   </div>
 </section>
 
@@ -431,7 +431,7 @@
       <dt>주소</dt><dd>—</dd>
     </dl>
     <p class="fine">
-      본 커리큘럼은 2028학년도 대비 기준이며, 교육과정·출제 방향 확정에 따라 일부 변경될 수 있습니다.
+      커리큘럼은 2028학년도 대비 기준입니다. 교육과정과 출제 방향이 확정되면 일부 바뀔 수 있습니다.
     </p>
   </div>
 </footer>
@@ -501,7 +501,7 @@ const body = document.getElementById('errata-body');
 const stamp = document.getElementById('errata-stamp');
 
 if (!ERRATA.length) {
-  body.innerHTML = `<p class="empty">현재 확인된 정정 사항이 없습니다.</p>`;
+  body.innerHTML = `<p class="empty">확인된 정정 사항이 없습니다.</p>`;
 } else {
   const sorted = [...ERRATA].sort((a, b) => b.updated.localeCompare(a.updated));
   const total = sorted.reduce((n, b) => n + b.items.length, 0);
@@ -522,7 +522,7 @@ if (!ERRATA.length) {
       <tbody>
         ${sorted.map((b, i) => `
           <tr data-open="${i}">
-            <td class="title-cell">${b.title} 정오표${fresh(b.updated) ? '<span class="new">NEW</span>' : ''}</td>
+            <td class="title-cell">${b.title}${fresh(b.updated) ? '<span class="new">NEW</span>' : ''}</td>
             <td class="hide-sm num">${b.target}</td>
             <td class="num">${b.items.length}건</td>
             <td class="hide-sm num">${b.created}</td>
