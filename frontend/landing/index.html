@@ -256,6 +256,10 @@
     color:var(--dim); padding:0 0 .8rem; border-bottom:1px solid var(--line);
   }
   .tbl td{ padding:1.05rem 0; border-bottom:1px solid var(--line); vertical-align:top }
+  .tbl th:nth-child(2){ width:8rem }
+  .tbl th:nth-child(3){ width:5.5rem }
+  .tbl th:nth-child(4){ width:8rem }
+  .tbl th:nth-child(5){ width:7rem }
   .tbl .num{ font-variant-numeric:tabular-nums; white-space:nowrap; color:var(--dim) }
   .tbl tr[data-open]{ cursor:pointer }
   .title-cell{ font-weight:600 }
@@ -277,7 +281,7 @@
     border:1px solid var(--line); border-radius:999px; padding:.45rem 1rem;
   }
   .dl:hover{ color:#fff; border-color:rgba(255,255,255,.35) }
-  .empty{ padding:1.2rem 0 0; color:var(--dim); font-size:.95rem }
+  .tbl td.empty{ padding:2.6rem 0; color:var(--dim); font-size:.92rem }
   /* 왼쪽 정렬. 오른쪽 끝에 혼자 떠 있으면 표가 비었을 때 갈 곳 없는 버튼이 된다 */
   .report{ margin-top:2rem; display:flex }
   .btn{
@@ -500,8 +504,19 @@ renderSteps('naesin');
 const body = document.getElementById('errata-body');
 const stamp = document.getElementById('errata-stamp');
 
+/* 열 이름은 비어 있을 때도 나온다 — 헤더가 없으면 "아직 없다" 와 "이 기능이
+   없다" 가 구분되지 않는다. 표 뼈대를 두고 몸통만 비운다. */
+const THEAD = `
+  <thead><tr>
+    <th>교재</th><th class="hide-sm">대상</th><th>정정</th>
+    <th class="hide-sm">최초 게시</th><th>최종 수정</th>
+  </tr></thead>`;
+
 if (!ERRATA.length) {
-  body.innerHTML = `<p class="empty">확인된 정정 사항이 없습니다.</p>`;
+  body.innerHTML = `
+    <table class="tbl">${THEAD}
+      <tbody><tr><td class="empty" colspan="5">확인된 정정 사항이 없습니다.</td></tr></tbody>
+    </table>`;
 } else {
   const sorted = [...ERRATA].sort((a, b) => b.updated.localeCompare(a.updated));
   const total = sorted.reduce((n, b) => n + b.items.length, 0);
@@ -514,11 +529,7 @@ if (!ERRATA.length) {
   };
 
   body.innerHTML = `
-    <table class="tbl">
-      <thead><tr>
-        <th>교재</th><th class="hide-sm">대상</th><th>정정</th>
-        <th class="hide-sm">최초 게시</th><th>최종 수정</th>
-      </tr></thead>
+    <table class="tbl">${THEAD}
       <tbody>
         ${sorted.map((b, i) => `
           <tr data-open="${i}">
