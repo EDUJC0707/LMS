@@ -256,31 +256,22 @@
     color:var(--dim); padding:0 0 .8rem; border-bottom:1px solid var(--line);
   }
   .tbl td{ padding:1.05rem 0; border-bottom:1px solid var(--line); vertical-align:top }
+  /* 교재만 늘어난다. 날짜는 tabular-nums 로 폭이 고정이고, 다운로드는 버튼 하나다 */
   .tbl th:nth-child(2){ width:8rem }
-  .tbl th:nth-child(3){ width:5.5rem }
-  .tbl th:nth-child(4){ width:8rem }
-  .tbl th:nth-child(5){ width:7rem }
+  .tbl th:nth-child(3){ width:7rem }
   .tbl .num{ font-variant-numeric:tabular-nums; white-space:nowrap; color:var(--dim) }
-  .tbl tr[data-open]{ cursor:pointer }
   .title-cell{ font-weight:600 }
   .new{
     display:inline-block; margin-left:.45rem; padding:.1rem .42rem; border-radius:4px;
     font-size:.66rem; font-weight:700; background:#E8EAEE; color:#1C1E23; vertical-align:.14em;
   }
-  .detail td{ padding:0; border-bottom:1px solid var(--line) }
-  .detail-in{ display:none; padding:0 0 1.4rem }
-  .detail.open .detail-in{ display:block }
-  .rows{ width:100%; border-collapse:collapse; font-size:.86rem }
-  .rows th{ font-size:.74rem; color:var(--dim); text-align:left; padding:.6rem .8rem; font-weight:600 }
-  .rows td{ padding:.6rem .8rem; border-top:1px solid var(--line) }
-  .rows tr td:first-child{ color:var(--dim); white-space:nowrap }
-  .was{ color:var(--dim); text-decoration:line-through }
-  .now{ color:#fff; font-weight:600 }
+  /* 확장자를 그대로 라벨로 쓴다 — 무엇이 내려오는지 파일이 스스로 말한다 */
   .dl{
-    display:inline-block; margin-top:1rem; font-size:.82rem; color:var(--dim);
-    border:1px solid var(--line); border-radius:999px; padding:.45rem 1rem;
+    display:inline-block; font-size:.74rem; font-weight:700; letter-spacing:.04em;
+    color:var(--dim); border:1px solid var(--line); border-radius:6px;
+    padding:.3rem .6rem; transition:color .18s, border-color .18s;
   }
-  .dl:hover{ color:#fff; border-color:rgba(255,255,255,.35) }
+  .dl:hover{ color:#fff; border-color:rgba(255,255,255,.4) }
   .tbl td.empty{ padding:2.6rem 0; color:var(--dim); font-size:.92rem }
   /* 왼쪽 정렬. 오른쪽 끝에 혼자 떠 있으면 표가 비었을 때 갈 곳 없는 버튼이 된다 */
   .report{ margin-top:2rem; display:flex }
@@ -330,9 +321,14 @@
     .teacher{ height:var(--teacher-h-sm, 40svh); right:var(--teacher-right-sm, -12%); bottom:var(--teacher-bottom-sm, 0%) }
     .steps::before{ display:none }
     .step{ grid-template-columns:1fr; gap:.55rem; padding-bottom:2rem }
+    /* 좁은 화면에서는 뒤 두 열이 고정폭을 그대로 붙들어 교재가 110px 만 받고
+       세 줄로 접혔다 — 내용 열이 가장 좁아지면 안 된다. 날짜는 `26.07.28` 이
+       들어가면 되고 버튼은 `XLSX` 가 들어가면 된다. */
+    .tbl th:nth-child(2){ width:5.4rem }
+    .tbl th:nth-child(3){ width:4.2rem }
     .scope{ padding-top:.3rem; line-height:1.8 }
     .step-no{ padding-left:1.4rem; font-size:1.3rem }
-    .tbl .hide-sm{ display:none }
+
   }
   /* prefers-reduced-motion 은 JS 가 처리한다 — 정적 1프레임만 그린다.
      CSS 로 배경을 끄면 히어로가 통째로 검게 남는다. */
@@ -504,23 +500,23 @@ renderSteps('naesin');
 const body = document.getElementById('errata-body');
 const stamp = document.getElementById('errata-stamp');
 
-/* 열 이름은 비어 있을 때도 나온다 — 헤더가 없으면 "아직 없다" 와 "이 기능이
+/* 열은 셋이다: 교재 · 날짜 · 다운로드(사용자 지시 2026-07-30).
+   정정 내역은 파일 안에 있으므로 화면에 표를 또 펼치지 않는다 — 같은 것을 두 곳에
+   두면 어느 쪽이 최신인지 알 수 없게 된다. 파일이 유일한 원본이다.
+
+   열 이름은 비어 있을 때도 나온다 — 헤더가 없으면 "아직 없다" 와 "이 기능이
    없다" 가 구분되지 않는다. 표 뼈대를 두고 몸통만 비운다. */
 const THEAD = `
-  <thead><tr>
-    <th>교재</th><th class="hide-sm">대상</th><th>정정</th>
-    <th class="hide-sm">최초 게시</th><th>최종 수정</th>
-  </tr></thead>`;
+  <thead><tr><th>교재</th><th>날짜</th><th>다운로드</th></tr></thead>`;
 
 if (!ERRATA.length) {
   body.innerHTML = `
     <table class="tbl">${THEAD}
-      <tbody><tr><td class="empty" colspan="5">확인된 정정 사항이 없습니다.</td></tr></tbody>
+      <tbody><tr><td class="empty" colspan="3">아직 정정 사항이 없습니다.</td></tr></tbody>
     </table>`;
 } else {
   const sorted = [...ERRATA].sort((a, b) => b.updated.localeCompare(a.updated));
-  const total = sorted.reduce((n, b) => n + b.items.length, 0);
-  stamp.textContent = `최근 갱신 ${sorted[0].updated} · 교재 ${sorted.length}종 · 정정 ${total}건`;
+  stamp.textContent = `최근 갱신 ${sorted[0].updated} · 교재 ${sorted.length}종`;
 
   // 14일 이내 수정이면 NEW — 사람이 붙이지 않는다
   const fresh = d => {
@@ -531,35 +527,18 @@ if (!ERRATA.length) {
   body.innerHTML = `
     <table class="tbl">${THEAD}
       <tbody>
-        ${sorted.map((b, i) => `
-          <tr data-open="${i}">
+        ${sorted.map(b => `
+          <tr>
             <td class="title-cell">${b.title}${fresh(b.updated) ? '<span class="new">NEW</span>' : ''}</td>
-            <td class="hide-sm num">${b.target}</td>
-            <td class="num">${b.items.length}건</td>
-            <td class="hide-sm num">${b.created}</td>
             <td class="num">${b.updated}</td>
-          </tr>
-          <tr class="detail" id="d${i}"><td colspan="5"><div class="detail-in">
-            <table class="rows">
-              <thead><tr><th>위치</th><th>쪽</th><th>수정 전</th><th>수정 후</th><th>반영</th></tr></thead>
-              <tbody>${b.items.map(it => `
-                <tr>
-                  <td>${it.where}</td><td class="num">${it.page}</td>
-                  <td class="was">${it.was}</td><td class="now">${it.now}</td>
-                  <td class="num">${it.on}</td>
-                </tr>`).join('')}
-              </tbody>
-            </table>
-            <a class="dl" href="#" download>엑셀 내려받기</a>
-          </div></td></tr>`).join('')}
+            <td>
+              <a class="dl" href="${b.file}" download>
+                ${(b.file.split('.').pop() || '').toUpperCase()}
+              </a>
+            </td>
+          </tr>`).join('')}
       </tbody>
     </table>`;
-
-  body.querySelectorAll('tr[data-open]').forEach(tr => {
-    tr.addEventListener('click', () => {
-      document.getElementById('d' + tr.dataset.open).classList.toggle('open');
-    });
-  });
 }
 
 /* 채널톡 */
