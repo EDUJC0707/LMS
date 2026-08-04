@@ -28,7 +28,8 @@ LMS 가 링크를 시작 5분 전에 그 학생에게만 내리는 것(booking.r
 
 **`artifactConfig`: 전사 ON · Gemini 요약 ON · 녹화 OFF** — PRD 8-5 확정
 (2026-07-17). 미트에는 오디오 전용 녹음이 없어서 전사와 AI 요약이 조교 감독
-자료를 대신한다(`ClinicEvaluation.recording_path`·`ai_summary` 가 받을 자리).
+자료를 대신한다(`ClinicEvaluation.transcript_ref`·`ai_summary` 가 받을 자리).
+전사와 요약은 **문서 한 개**에 함께 담긴다(실측: 둘의 document ID 가 같다).
 **스페이스를 만들 때 걸어 둔다** — 조교가 회의 중에 버튼을 누르는 것에 기대면
 안 눌린 회차가 반드시 나오고, 그 회차는 평가할 근거가 통째로 없다.
 

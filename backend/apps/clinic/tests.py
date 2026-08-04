@@ -263,8 +263,23 @@ class ClinicEvaluationTests(TestCase):
         # baseline: needs_review NN 기본 false(부적격 → 관리자 확인 흐름), 나머지 선택
         ev = ClinicEvaluation.objects.create(clinic=self.request)
         self.assertFalse(ev.needs_review)
-        self.assertIsNone(ev.recording_path)
+        self.assertIsNone(ev.transcript_ref)
+        self.assertIsNone(ev.transcript_url)
         self.assertIsNone(ev.overall_result)
+
+    def test_no_recording_column(self):
+        # 녹음은 영원히 안 생긴다 — 미트에 오디오 전용 녹음이 없고 녹화는 꺼 뒀다
+        # (PRD 8-5). 이름이 없는 것을 가리키고 있으면 다음 사람이 파일을 찾는다.
+        field_names = {f.name for f in ClinicEvaluation._meta.get_fields()}
+        self.assertNotIn("recording_path", field_names)
+
+    def test_no_vendor_specific_columns(self):
+        # 감독 자료도 화상 업체가 낳는다 — 이름은 값에만 산다(§4)
+        field_names = {f.name for f in ClinicEvaluation._meta.get_fields()}
+        self.assertFalse(
+            {"google_doc_id", "drive_file_id", "gemini_summary"} & field_names,
+            "업체 종속 컬럼 금지(화상 중립)",
+        )
 
     def test_item_unique_per_eval_and_criteria(self):
         # baseline: UNIQUE(eval_id, criteria_id)

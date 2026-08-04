@@ -334,9 +334,27 @@ class ClinicEvalCriteria(models.Model):
 class ClinicEvaluation(models.Model):
     """`clinic_evaluations` — 조교 수행 평가 (baseline, PRD 3.2.4).
 
-    클리닉 1건당 1개(1:1). 녹음(감독용, 녹화 아님) 근거로 AI 가 요약·항목
-    판단 → overall_result `부적격`이면 needs_review=true 로 관리자 검토 흐름.
-    recording_path 는 스토리지 경로만(큰 파일 DB 저장 금지).
+    클리닉 1건당 1개(1:1). 감독 자료 근거로 AI 가 요약·항목 판단 →
+    overall_result `부적격`이면 needs_review=true 로 관리자 검토 흐름.
+
+    **감독 자료는 녹음이 아니라 전사다**(PRD 8-5 확정, 2026-08-04 실측). 미트에
+    오디오 전용 녹음이 없고 녹화는 꺼 두므로(google_meet.SPACE_CONFIG) **녹음
+    파일은 영원히 생기지 않는다.** 대신 회의가 끝나면 업체가 전사와 AI 요약을
+    **문서 한 개**에 담아 주최자 저장소에 남긴다(구글은 전사와 smartNotes 가
+    같은 document ID 를 가리킨다 — 실측).
+
+    그래서 여기 남기는 것은 둘이다:
+    - `ai_summary`: 요약 **본문**. 평가 화면이 바로 읽어야 하는 값이라 본문으로 둔다.
+    - `transcript_ref`/`transcript_url`: 전사 문서의 중립 참조와 링크.
+      **원문을 우리 DB 로 끌어오지 않는다** — 학생 발화가 그대로 들어 있어
+      개인정보 부담이 크고(8-1), 큰 것은 저장소에 두고 DB엔 경로만이라는
+      원칙과도 같은 방향이다(key_considerations §6).
+      ClinicRequest 의 `conference_ref`/`conference_url` 과 같은 이유로 둘 다
+      든다 — ref 가 오래 가는 식별자이고, url 은 사람이 누르는 값이라 업체별
+      주소 조립이 화면·페이로드로 새어 나가지 않는다.
+
+    업체 이름은 여기 없다. 어느 업체가 만들었는지는 ClinicRequest 의
+    `conference_provider` 가 이미 들고 있다(§4 화상 추상화 경계).
     """
 
     class OverallResult(models.TextChoices):
@@ -351,8 +369,9 @@ class ClinicEvaluation(models.Model):
         related_name="evaluation",
         verbose_name="클리닉",
     )
-    recording_path = models.CharField("녹음 파일 경로", max_length=500, null=True, blank=True)  # noqa: DJ001
-    ai_summary = models.TextField("AI 녹음 요약", null=True, blank=True)  # noqa: DJ001
+    transcript_ref = models.CharField("전사 문서 참조 ID", max_length=200, null=True, blank=True)  # noqa: DJ001
+    transcript_url = models.CharField("전사 문서 링크", max_length=500, null=True, blank=True)  # noqa: DJ001
+    ai_summary = models.TextField("AI 요약", null=True, blank=True)  # noqa: DJ001
     overall_result = models.CharField(  # noqa: DJ001
         "종합 판정", max_length=10, choices=OverallResult.choices, null=True, blank=True
     )
