@@ -185,7 +185,7 @@ class GoogleMeetAdapter(ConferenceAdapter):
         if document is None:
             return None
         if file_as:
-            self._file_document(token, document, file_as)
+            self._file_meeting(token, document, file_as)
         return Supervision(
             transcript_ref=document,
             transcript_url=url,
@@ -228,26 +228,63 @@ class GoogleMeetAdapter(ConferenceAdapter):
         status, body = self._get(f"{DRIVE_FILES_ENDPOINT}/{document}/export?{query}", token)
         return body.decode(errors="replace") if status == 200 else ""
 
-    def _file_document(self, token, document, file_as):
-        """문서를 우리 폴더 구조로 옮기고 이름을 바꾼다.
+    #: 구글이 회의 산출물을 모아 두는 최상위 폴더. **절대 이름을 바꾸지 않는다** —
+    #: 이걸 건드리면 앞으로 만들어지는 모든 회의 산출물이 엉뚱한 데로 들어간다.
+    GOOGLE_ROOT_FOLDER = "Google Meet"
+
+    def _file_meeting(self, token, document, file_as):
+        """그 회의 폴더를 통째로 우리 구조로 옮기고 이름을 바꾼다.
+
+        **문서가 아니라 폴더를 옮기는 이유**: 구글은 회의마다 폴더를 만들고 그
+        안에 산출물을 넣는다. 문서만 꺼내면 빈 폴더가 회의 수만큼 쌓이고, 나중에
+        녹화나 출석 리포트를 켜면 그것들은 따라오지 않아 코드를 또 고쳐야 한다.
+        폴더째 옮기면 구글이 무엇을 더 넣든 같이 온다.
 
         **실패해도 수집은 계속된다.** 정리는 편의고 요약·링크가 본론이라,
-        폴더를 못 만들었다고 감독 자료를 통째로 버릴 이유가 없다.
+        폴더를 못 옮겼다고 감독 자료를 버릴 이유가 없다.
         """
-        *folders, name = file_as.split("/")
         try:
-            parent = None
-            for folder in folders:
-                parent = self._folder(token, folder, parent)
+            folder, current_parent = self._meeting_folder(token, document)
+            if folder is None:
+                return
+            *ancestors, name = file_as.split("/")
+            destination = None
+            for ancestor in ancestors:
+                destination = self._folder(token, ancestor, destination)
+            query = {"addParents": destination} if destination else {}
+            if current_parent:
+                query["removeParents"] = current_parent
             self._send(
                 "PATCH",
-                f"{DRIVE_FILES_ENDPOINT}/{document}?"
-                + urllib.parse.urlencode({"addParents": parent} if parent else {}),
+                f"{DRIVE_FILES_ENDPOINT}/{folder}?{urllib.parse.urlencode(query)}",
                 json.dumps({"name": name}).encode(),
                 {"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
             )
         except ConferenceError:
             return
+
+    def _meeting_folder(self, token, document):
+        """문서가 든 회의 폴더의 (id, 그 폴더의 부모). 옮기면 안 되는 자리면 (None, None).
+
+        문서가 회의 폴더가 아니라 `Google Meet` 바로 아래 놓여 있으면 손대지
+        않는다 — 그건 구글의 공용 폴더라 이름을 바꾸면 이후 회의가 전부 휩쓸린다.
+        """
+        status, body = self._get(f"{DRIVE_FILES_ENDPOINT}/{document}?fields=parents", token)
+        if status != 200:
+            return None, None
+        parents = self._json(body).get("parents") or []
+        if not parents:
+            return None, None
+        folder = parents[0]
+        query = urllib.parse.urlencode({"fields": "name,parents"})
+        status, body = self._get(f"{DRIVE_FILES_ENDPOINT}/{folder}?{query}", token)
+        if status != 200:
+            return None, None
+        info = self._json(body)
+        if info.get("name") == self.GOOGLE_ROOT_FOLDER:
+            return None, None
+        grandparents = info.get("parents") or []
+        return folder, (grandparents[0] if grandparents else None)
 
     def _folder(self, token, name, parent):
         """이름으로 폴더를 찾고 없으면 만든다 — 있는 폴더를 또 만들지 않는다."""
