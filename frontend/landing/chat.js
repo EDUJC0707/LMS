@@ -8,7 +8,9 @@
  * 버튼은 눌러도 아무 일이 없는 대신 콘솔에 이유를 남긴다 — 조용히 죽는 것보다 낫다.
  */
 
-const PLUGIN_KEY = window.__CHANNEL_TALK_KEY__ || '';
+/* trim 하는 이유: 이 값은 사람이 index.html 에 손으로 붙여 넣는다. 공백만 남거나
+   붙여넣기에 줄바꿈이 딸려 오면, 그대로 부팅해서 엉뚱한 키로 CDN 요청이 나간다. */
+const PLUGIN_KEY = (window.__CHANNEL_TALK_KEY__ || '').trim();
 
 function boot() {
   if (!PLUGIN_KEY) return false;
