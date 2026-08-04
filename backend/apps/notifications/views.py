@@ -1,6 +1,10 @@
-"""notifications 뷰 — 내 알림 내역 8차 슬라이스 (설계 도메인 8, PRD 3.1.2).
+"""notifications 뷰 — 알림 내역 조회 (설계 도메인 8, PRD 3.1.2).
 
-- GET /api/me/notifications — 로그인 사용자 알림 내역(최신순 페이지네이션)
+- GET /api/me/notifications    — 로그인 사용자 알림 내역(최신순 페이지네이션)
+- GET /api/admin/notifications — 관리자 발송내역(필터·페이징, 기능 키 `알림발송`)
+
+관리자 조회의 필터 해석·행 조립은 `notification_admin` 이 담당한다 —
+뷰는 게이트·오류 매핑만 한다(clinic 선례).
 
 **대상 3분기 매칭**: notifications 행은 student/parent/user 중 정확히 하나를
 가리킨다(모델 clean 계약). 조회도 같은 축 — 학생 role 은 자신의 students 행,
@@ -13,12 +17,22 @@ key_considerations §5). 사람 행 미연결(role 만 학생/학부모) 예외 
 다수라(발송 대기) 정렬 축으로 쓸 수 없고, PK 역순이 곧 최신순이다.
 """
 from django.utils import timezone
+from rest_framework import status as http_status
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.features import FeatureKey
 from apps.accounts.models import Parent, Student, User
-from apps.accounts.permissions import STAFF_ROLES, IsParent, IsStaffRole, IsStudent
+from apps.accounts.permissions import (
+    STAFF_ROLES,
+    FeatureRequired,
+    IsParent,
+    IsStaffRole,
+    IsStudent,
+)
 
+from . import notification_admin
 from .models import Notification
 
 
@@ -67,3 +81,27 @@ class MeNotificationsView(APIView):
             ),
             "created_at": timezone.localtime(notification.created_at).isoformat(),
         }
+
+
+class AdminNotificationsView(APIView):
+    """GET /api/admin/notifications — 발송내역 조회(PRD 3.1.2).
+
+    소비자 조회(MeNotificationsView)와 달리 **전 대상**을 본다. 그래서 게이트가
+    역할이 아니라 기능 키(`알림발송`)다 — 조교는 프리셋에 없고, 대표가 delta 로
+    열어야 보인다.
+
+    잘못된 필터 값은 400 이다(빈 목록 아님) — `notification_admin` docstring.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.NOTIFICATION_SEND)]
+
+    def get(self, request):
+        try:
+            queryset = notification_admin.build_queryset(request.query_params)
+        except notification_admin.NotificationQueryError as exc:
+            return Response({"detail": exc.message}, status=http_status.HTTP_400_BAD_REQUEST)
+        paginator = PageNumberPagination()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        return paginator.get_paginated_response(
+            [notification_admin.build_row(n) for n in page]
+        )
