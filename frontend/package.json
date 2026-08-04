@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@mux/mux-player-react": "^3.13.2",
+    "@mux/upchunk": "^3.5.0",
     "@tanstack/react-query": "^5.56.2",
     "axios": "^1.7.7",
     "react": "^18.3.1",

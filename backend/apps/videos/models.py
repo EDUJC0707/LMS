@@ -75,6 +75,18 @@ class Video(models.Model):
     external_ref = models.CharField(  # noqa: DJ001
         "재생 참조 ID", max_length=200, null=True, blank=True
     )
+    #: 업로드가 진행 중인 Mux Direct Upload 의 id.
+    #:
+    #: **행을 업로드 **시작** 시점에 만들기 위해 있다.** 파일은 브라우저에서 Mux 로
+    #: 직접 가는데(우리 서버를 안 지난다), 그 사이 브라우저가 닫히면 Mux 에는 자산이
+    #: 생겼는데 우리 DB 에는 아무 것도 없는 상태가 된다 — 돈은 나가고 추적은 안 되는
+    #: 유실이다. 그래서 시작할 때 행을 먼저 만들고 이 값으로 나중에 이어 붙인다.
+    #:
+    #: 자산이 준비되면 `external_ref` 가 채워지고 이 값은 남는다(감사 흔적).
+    #: 즉 **`upload_ref` 만 있고 `external_ref` 가 비면 "업로드/인코딩 중"** 이다.
+    upload_ref = models.CharField(  # noqa: DJ001
+        "업로드 참조 ID", max_length=200, null=True, blank=True
+    )
     duration_seconds = models.IntegerField("재생 길이(초)", null=True, blank=True)
     status = models.CharField(
         "상태", max_length=15, choices=Status.choices, default=Status.PREPARING
