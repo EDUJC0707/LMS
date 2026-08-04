@@ -4,6 +4,8 @@ import ReactDOM from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
 
 import { MeProvider } from "./auth/MeProvider";
+// 재생기 조작 문구를 한국어로 — import 만으로 등록된다(player/locale.ts)
+import "./player/locale";
 import { ToastProvider } from "./components/Toast";
 import { router } from "./routes";
 import "./index.css";

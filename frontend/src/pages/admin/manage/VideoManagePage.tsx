@@ -7,6 +7,7 @@
  *   POST  /api/admin/videos/{id}/publish   `공개` 전환
  *   POST  /api/admin/videos/{id}/archive   `아카이브` 전환
  *   GET   /api/admin/videos/course-weeks   주차 선택지
+ *   GET   /api/admin/videos/{id}/preview   미리보기(상태·권한 무시 — ./VideoPreview)
  *
  * **파일 업로드는 만들어 뒀지만 여기 연결하지 않았다**(2026-08-04 사용자 지시) —
  * `./VideoUploadField.tsx` 에 완성돼 있고 연결법도 그 머리말에 있다. 학원 회선에서
@@ -36,6 +37,7 @@ import {
   Table,
 } from "../../../components";
 import "./manage.css";
+import { VideoPreview } from "./VideoPreview";
 
 interface CourseWeekBlock {
   week_id: number;
@@ -126,6 +128,7 @@ export default function VideoManagePage() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [query, setQuery] = useState("");
+  const [preview, setPreview] = useState<VideoRow | null>(null);
 
   const rows = list.data ?? [];
   const weekRows = weeks.data ?? [];
@@ -288,9 +291,17 @@ export default function VideoManagePage() {
             {
               key: "actions",
               header: "",
-              width: "13rem",
+              width: "17rem",
               cell: (row) => (
                 <div className="pm-rowactions">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={row.uploading}
+                    onClick={() => setPreview(row)}
+                  >
+                    미리보기
+                  </Button>
                   <Button size="sm" variant="ghost" onClick={() => openEdit(row)}>
                     수정
                   </Button>
@@ -320,6 +331,14 @@ export default function VideoManagePage() {
           ]}
         />
       </Card>
+
+      {preview && (
+        <VideoPreview
+          videoId={preview.video_id}
+          title={preview.title}
+          onClose={() => setPreview(null)}
+        />
+      )}
 
       <Modal
         open={open}
