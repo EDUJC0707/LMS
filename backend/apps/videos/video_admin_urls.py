@@ -34,6 +34,11 @@ urlpatterns = [
         name="admin-video-publish",
     ),
     path(
+        "admin/videos/<int:video_id>/preview",
+        views.AdminVideoPreviewView.as_view(),
+        name="admin-video-preview",
+    ),
+    path(
         "admin/videos/<int:video_id>/sync",
         views.AdminVideoSyncView.as_view(),
         name="admin-video-sync",

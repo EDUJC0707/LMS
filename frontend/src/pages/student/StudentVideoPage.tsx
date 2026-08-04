@@ -21,6 +21,17 @@
  * 재생은 다른 자산이 되어 Mux 가 거부한다 — 실제로 그렇게 죽었다(2026-08-04).
  * 프런트는 서버가 준 `external_ref` 와 `tokens` 를 **그대로** 쓴다.
  *
+ * ## 워터마크가 지워지면 기록한다
+ *
+ * 오버레이는 개발자도구 한 줄로 지워진다(`.vd-mark` 를 remove). 서버측 굽기를
+ * 파는 업체가 우리 규모에 없어 **원리상 막을 수 없다**(2026-08-04 전수조사).
+ * 그래서 막는 대신 적는다 — 실수로 지울 수 있는 물건이 아니므로 기록 한 줄이
+ * 곧 의도의 증거다(WatermarkTamper 모델).
+ *
+ * 지워지면 **다시 붙이고** 신고한다. 다시 붙이는 것은 우연·가벼운 제거를 되돌리고,
+ * 신고는 작정한 쪽을 기록에 남긴다. **화면에는 아무 것도 알리지 않는다** —
+ * 알리면 신고 요청부터 막는 법을 배우게 된다.
+ *
  * ## 워터마크는 플레이어 **안쪽**이다
  *
  * 바깥 래퍼에 얹으면 전체화면에서 사라진다(플레이어 요소만 전체화면이 되므로).
@@ -29,7 +40,7 @@
  * 개발자도구로 남의 이름·다른 날짜로 바꿔치기할 수 있다(playback.py 계약).
  */
 import MuxPlayer from "@mux/mux-player-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { http, useApi, useApiAction } from "../../api";
 import {
@@ -83,12 +94,48 @@ function dayLabel(iso: string): string {
   return `${date.getMonth() + 1}월 ${date.getDate()}일`;
 }
 
+/**
+ * 워터마크가 사라지면 되살리고 한 번 신고한다.
+ *
+ * 세션당 1회만 보낸다 — 되살리기가 다시 관찰을 부르므로 상한이 없으면
+ * 무한 루프로 요청이 나간다.
+ */
+function useWatermarkGuard(
+  stageRef: React.RefObject<HTMLDivElement>,
+  playing: Playback | null,
+) {
+  const reported = useRef(false);
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !playing) return;
+    reported.current = false;
+    const observer = new MutationObserver(() => {
+      if (stage.querySelector(".vd-mark")) return;
+      const mark = document.createElement("div");
+      mark.className = "vd-mark";
+      const text = document.createElement("span");
+      text.className = "vd-mark__text";
+      text.textContent = playing.watermark;
+      mark.appendChild(text);
+      (stage.querySelector("mux-player") ?? stage).appendChild(mark);
+      if (!reported.current) {
+        reported.current = true;
+        void http.post(`/student/videos/${playing.video.video_id}/tamper`).catch(() => {});
+      }
+    });
+    observer.observe(stage, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [stageRef, playing]);
+}
+
 export default function StudentVideoPage() {
   const list = useApi(
     () => http.get<{ videos: VideoRow[] }>("/student/videos").then((r) => r.data.videos),
     [],
   );
   const [playing, setPlaying] = useState<Playback | null>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  useWatermarkGuard(stageRef, playing);
 
   // 재생 정보는 누르는 순간 받는다(파일 머리말 참조).
   const open = useApiAction(async (videoId: number) => {
@@ -114,7 +161,7 @@ export default function StudentVideoPage() {
           aside={`${playing.video.week_no}주차`}
           padding="none"
         >
-          <div className="vd-stage">
+          <div className="vd-stage" ref={stageRef}>
             <MuxPlayer
               className="vd-player"
               streamType="on-demand"

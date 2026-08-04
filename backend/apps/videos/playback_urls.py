@@ -16,6 +16,11 @@ urlpatterns = [
         name="student-video-list",
     ),
     path(
+        "student/videos/<int:video_id>/tamper",
+        views.StudentWatermarkTamperView.as_view(),
+        name="student-video-tamper",
+    ),
+    path(
         "student/videos/<int:video_id>/playback",
         views.StudentVideoPlaybackView.as_view(),
         name="student-video-playback",

@@ -341,3 +341,60 @@ class VideoGrant(models.Model):
 
     def __str__(self):
         return f"권한 학생{self.student_id} 영상{self.video_id}({self.source})"
+
+
+class WatermarkTamper(models.Model):
+    """`watermark_tampers` — 시청 중 워터마크가 제거된 기록 (2026-08-04 사용자 착안).
+
+    ## 왜 있나 — 못 막는 것을 기록으로 바꾼다
+
+    워터마크는 클라이언트 오버레이라 개발자도구 한 줄로 지워진다
+    (`document.querySelector('.vd-mark').remove()`). 서버측 굽기(burn-in)를 파는
+    업체가 우리 규모에 없어(2026-08-04 전수조사) **원리상 막을 수 없다.**
+
+    그래서 막는 대신 **적는다.** 워터마크는 "유출된 뒤에 누구였나" 를 답하고,
+    이 표는 **"유출하려 했다"** 를 답한다. 실수로 지울 수 있는 물건이 아니므로
+    행 하나가 곧 의도의 증거다.
+
+    ## 무엇을 못 잡나 (알고 쓰라고 적는다)
+
+    작정하면 이 보고 요청도 함께 막는다(개발자도구 네트워크 차단·JS 비활성화).
+    즉 **가볍게 지우는 학생은 잡히고 작정한 학생은 안 잡힌다.** 그래도 값이 있는
+    이유는 우리 위협이 보안 연구자가 아니라 **녹화본을 돌리는 학생**이기 때문이고,
+    "지우면 기록에 남는다" 는 사실 자체가 억제력이기 때문이다.
+
+    ## 왜 학생·영상을 함께 두나
+
+    누가 어떤 영상에서 시도했는지가 조치의 단위다. 시각은 서버가 찍는다 —
+    기기 시계를 믿으면 기록의 증거력이 사라진다(워터마크 날짜와 같은 이유).
+    """
+
+    tamper_id = models.BigAutoField(primary_key=True)
+    student = models.ForeignKey(
+        "accounts.Student",
+        on_delete=models.PROTECT,
+        db_column="student_id",
+        related_name="watermark_tampers",
+        verbose_name="학생",
+    )
+    video = models.ForeignKey(
+        Video,
+        on_delete=models.PROTECT,
+        db_column="video_id",
+        related_name="watermark_tampers",
+        verbose_name="영상",
+    )
+    #: 서버 시계로 찍는다 — 기기 시계를 믿으면 증거력이 없다.
+    occurred_at = models.DateTimeField("발생 시각", auto_now_add=True)
+
+    class Meta:
+        db_table = "watermark_tampers"
+        verbose_name = "워터마크 제거 시도"
+        verbose_name_plural = "워터마크 제거 시도"
+        indexes = [
+            # 학생별 조회(반복 시도자 확인)가 이 표를 쓰는 유일한 축이다.
+            models.Index(fields=["student", "-occurred_at"], name="idx_tamper_student"),
+        ]
+
+    def __str__(self):
+        return f"워터마크 제거 학생{self.student_id} 영상{self.video_id}"
