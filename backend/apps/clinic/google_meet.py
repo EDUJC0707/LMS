@@ -17,13 +17,23 @@
 1건당 토큰 요청 1건이 붙어도 비용이 없고, 캐시를 두면 프로세스마다 다른 만료를
 들고 도는 문제(gunicorn 워커 다중)를 공짜로 얻는다.
 
-## 왜 accessType 을 OPEN 으로 만드나
+## 스페이스에 거는 두 가지 — 입장 통제와 감독 자료
 
-스페이스를 만든 계정은 **회의에 들어가지 않는다**. 기본값(`ACCESS_TYPE_UNSPECIFIED`
-= 계정 관리자 설정 따름)이면 링크로 들어온 학생·조교가 입장 승인을 기다리는데,
-승인해 줄 사람이 회의에 없다 — 클리닉이 통째로 성립하지 않는다. 링크는 시작 5분
-전부터 그 학생에게만 내려가고(booking.request_block) 클리닉 1건마다 새 스페이스라
-(§4 링크 재사용 금지), 노출 범위는 이미 그쪽에서 좁혀져 있다.
+**`accessType: TRUSTED`** — 링크만 가진 사람은 못 들어오고 노크해야 한다.
+조교가 조직 계정으로 먼저 들어가 호스트가 되고 학생을 수락하는 것이 운영
+전제다(클리닉은 한 타임 1명뿐이라 계정 1개로 성립 — decisions.md §4).
+LMS 가 링크를 시작 5분 전에 그 학생에게만 내리는 것(booking.request_block)과
+합쳐 이중 통제가 된다(PRD 6-3 '입장 통제'). `OPEN` 이면 링크가 새는 순간
+아무나 1:1 과외 자리에 앉는다.
+
+**`artifactConfig`: 전사 ON · Gemini 요약 ON · 녹화 OFF** — PRD 8-5 확정
+(2026-07-17). 미트에는 오디오 전용 녹음이 없어서 전사와 AI 요약이 조교 감독
+자료를 대신한다(`ClinicEvaluation.recording_path`·`ai_summary` 가 받을 자리).
+**스페이스를 만들 때 걸어 둔다** — 조교가 회의 중에 버튼을 누르는 것에 기대면
+안 눌린 회차가 반드시 나오고, 그 회차는 평가할 근거가 통째로 없다.
+
+전사는 회의 종료 후 **30일만** API 로 조회된다(`conferenceRecords.transcripts`).
+수집 배치는 아직 없다 — 그때까지는 주최자 드라이브에 남는 문서가 원본이다.
 
 ## HTTP 는 표준 라이브러리로 한다
 
@@ -51,8 +61,19 @@ AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 #: OAuth2 토큰 교환(갱신 토큰 → 액세스 토큰, 인가 코드 → 갱신 토큰).
 TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 
-#: 스페이스 생성. 본문은 비어도 되지만 우리는 accessType 을 실어 보낸다(위 머리말).
+#: 스페이스 생성. 본문은 비어도 되지만 우리는 설정을 실어 보낸다(위 머리말).
 SPACES_ENDPOINT = "https://meet.googleapis.com/v2/spaces"
+
+#: 새 스페이스에 거는 설정 — 왜 이 값들인지는 머리말 참조. 바꾸려면 PRD 6-3·8-5
+#: 를 먼저 보고 바꿔라(둘 다 여기로 착지하는 결정이다).
+SPACE_CONFIG = {
+    "accessType": "TRUSTED",
+    "artifactConfig": {
+        "recordingConfig": {"autoRecordingGeneration": "OFF"},
+        "transcriptionConfig": {"autoTranscriptionGeneration": "ON"},
+        "smartNotesConfig": {"autoSmartNotesGeneration": "ON"},
+    },
+}
 
 #: 스페이스 생성에 필요한 유일한 스코프. 동의 화면과 여기가 같은 값을 써야 한다.
 SCOPE = "https://www.googleapis.com/auth/meetings.space.created"
@@ -88,7 +109,7 @@ class GoogleMeetAdapter(ConferenceAdapter):
         access_token = self._access_token()
         status, body = self._post(
             SPACES_ENDPOINT,
-            json.dumps({"config": {"accessType": "OPEN"}}).encode(),
+            json.dumps({"config": SPACE_CONFIG}).encode(),
             {
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json",

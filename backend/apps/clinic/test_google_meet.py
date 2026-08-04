@@ -93,13 +93,26 @@ class CreateSpaceTests(SimpleTestCase):
         self.assertEqual(space_call["url"], SPACES_ENDPOINT)
         self.assertEqual(space_call["headers"]["Authorization"], "Bearer ya29.token")
 
-    def test_space_is_open_so_nobody_waits_for_a_host(self):
-        # 스페이스를 만든 계정은 회의에 들어가지 않는다 — 기본값(관리자 설정
-        # 따름)이면 학생·조교가 입장 승인을 기다리다 끝난다.
+    def test_students_have_to_knock(self):
+        # PRD 6-3 '입장 통제' — 링크만 가진 사람은 못 들어온다. 조교가 조직
+        # 계정으로 먼저 들어가 호스트가 되고 학생을 수락한다(조사 문서 §3·§4).
+        # OPEN 이면 링크가 새는 순간 아무나 클리닉에 앉아 있게 된다.
         transport = FakeTransport(TOKEN_OK, SPACE_OK)
         GoogleMeetAdapter(transport=transport).create_space()
         body = json.loads(transport.calls[1]["body"].decode())
-        self.assertEqual(body["config"]["accessType"], "OPEN")
+        self.assertEqual(body["config"]["accessType"], "TRUSTED")
+
+    def test_transcript_and_summary_are_on_recording_is_off(self):
+        # PRD 8-5 확정(2026-07-17): 오디오 전용 녹음이 미트에 없어서 **전사 +
+        # Gemini 요약**으로 감독 목적을 달성한다. 녹화는 하지 않는다.
+        # 회의별 강제 지점이 여기(artifactConfig)라 스페이스를 만들 때 건다 —
+        # 조교가 매번 버튼을 누르는 것에 기대면 안 눌린 회차가 반드시 나온다.
+        transport = FakeTransport(TOKEN_OK, SPACE_OK)
+        GoogleMeetAdapter(transport=transport).create_space()
+        artifacts = json.loads(transport.calls[1]["body"].decode())["config"]["artifactConfig"]
+        self.assertEqual(artifacts["transcriptionConfig"]["autoTranscriptionGeneration"], "ON")
+        self.assertEqual(artifacts["smartNotesConfig"]["autoSmartNotesGeneration"], "ON")
+        self.assertEqual(artifacts["recordingConfig"]["autoRecordingGeneration"], "OFF")
 
     def test_each_call_makes_a_new_space(self):
         # 클리닉 1건 = 새 스페이스 1개(링크 재사용 금지 — §4)
