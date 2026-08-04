@@ -36,6 +36,7 @@ Asia/Seoul** 로 찍는다. 클라이언트가 자기 프로필·기기 시계�
 """
 from django.utils import timezone
 
+from . import mux
 from .models import Video, VideoGrant
 
 # 워터마크 조각 구분자 — `고2 · 김하늘 · 2026-07-30`
@@ -93,10 +94,21 @@ def build_playback(student, video_id, now):
             # 해석한다(Provider 중립 계약, Video 모델 docstring)
             "provider": video.provider,
             "external_ref": video.external_ref,
+            # 서명 정책 영상은 토큰 없이는 403 이다. 발급은 서버 몫 —
+            # 개인키가 프런트로 나가면 누구나 자기 토큰을 찍을 수 있다.
+            "tokens": (
+                mux.playback_tokens(video.external_ref, now)
+                if video.provider == Video.Provider.MUX
+                else {}
+            ),
             "course_name": week.course.name if week else None,
             "week_no": week.week_no if week else None,
         },
         "watermark": build_watermark(student, timezone.localdate(now)),
+        # Mux Data 의 시청자 축 — 유출 시 "누가 재생했나"를 되짚는다.
+        # 이름이 아니라 **내부 번호**를 쓴다: 업체 분석 화면에 실명을 흘리지 않고
+        # 우리 DB 로만 사람을 되짚는다(Mux 권고 — viewer_user_id 에 PII 금지).
+        "viewer_id": str(student.student_id),
         "expires_at": timezone.localtime(grant.expires_at).isoformat(),
     }
 

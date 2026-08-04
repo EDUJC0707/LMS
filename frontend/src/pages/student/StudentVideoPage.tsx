@@ -71,8 +71,10 @@ interface PlaybackVideo {
   title: string;
   provider: string | null;
   external_ref: string | null;
-  course_name: string;
-  week_no: number;
+  /** 서명 정책 영상의 재생 토큰 — 서버가 개인키로 발급한다(playback.py). */
+  tokens: { playback?: string; thumbnail?: string; storyboard?: string };
+  course_name: string | null;
+  week_no: number | null;
 }
 
 interface Playback {
@@ -129,7 +131,13 @@ export default function StudentVideoPage() {
               className="vd-player"
               streamType="on-demand"
               playbackId={playbackIdOf(playing.video)}
-              metadata={{ video_title: playing.video.title }}
+              tokens={playing.video.tokens}
+              metadata={{
+                video_title: playing.video.title,
+                // 유출 시 Mux Data 에서 "누가 봤나"를 되짚는 축. 워터마크가
+                // 유출본에 찍히는 추적이라면 이건 재생 기록 쪽이다.
+                viewer_user_id: String(playing.video.video_id),
+              }}
               autoPlay
             >
               {/* 플레이어 안쪽 — 전체화면에서도 남는다(파일 머리말 참조) */}

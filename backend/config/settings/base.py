@@ -146,6 +146,14 @@ CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=["http://localho
 # DSN 자체는 prod.py 에서만 읽는다 — 로컬·테스트에서 Sentry 는 켜지지 않는다.
 SENTRY_DEBUG_TOKEN = env("SENTRY_DEBUG_TOKEN", default="")
 
+# ── Mux 서명 재생 (apps.videos.mux) ──────────────────────────────────
+# Playback ID 정책이 `signed` 면 서버가 RS256 JWT 를 서명해야 재생된다.
+# 비어 있으면 서명하지 않는다 — 로컬·시드는 데모/공개 영상으로 돌기 때문
+# (없다고 죽이면 키 없는 개발 환경에서 재생 화면 자체가 못 뜬다).
+# 개인키는 Mux 가 base64 로 주며 **시크릿이다** — .env 로만 넣고 커밋 금지.
+MUX_SIGNING_KEY_ID = env("MUX_SIGNING_KEY_ID", default="")
+MUX_SIGNING_PRIVATE_KEY = env("MUX_SIGNING_PRIVATE_KEY", default="")
+
 # --- 오브젝트 스토리지 (Tigris/S3, django-storages) ----------------------
 # 버킷명이 있으면 S3(Tigris) 사용, 없으면 로컬 파일시스템(MEDIA_ROOT).
 AWS_ACCESS_KEY_ID = env("AWS_ACCESS_KEY_ID", default="")
