@@ -202,14 +202,16 @@ class ConsentFlowTests(SimpleTestCase):
         self.assertEqual(params["response_type"], "code")
 
     def test_scopes_are_the_two_we_need_and_no_more(self):
-        # 스페이스 생성 + 감독 문서 **본문** 읽기.
-        # `drive.meet.readonly` 로는 파일 존재·이름까지만 보이고 본문은 404 다
-        # (2026-08-04 실측) — 구글에 "미트가 만든 문서의 본문만" 은 없다.
+        # 스페이스 생성 + 감독 문서 읽기·정리.
+        # 좁은 권한을 두 번 시도했다가 두 번 다 막혔다(2026-08-04 실측):
+        # `drive.meet.readonly` 는 파일 존재까지만 보이고 본문이 404 였고,
+        # 파일을 우리 폴더 구조로 옮기는 것은 **쓰기**라 읽기 권한으로 안 된다.
+        # 구글에 "미트가 만든 파일만 읽고 쓰기" 는 없다.
         self.assertEqual(
             list(SCOPES),
             [
                 "https://www.googleapis.com/auth/meetings.space.created",
-                "https://www.googleapis.com/auth/drive.readonly",
+                "https://www.googleapis.com/auth/drive",
             ],
         )
 
