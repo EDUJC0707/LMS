@@ -118,7 +118,7 @@ export interface ClinicRequestRow {
   requested_time: string;
   status: ClinicStatus;
   assigned_staff: { user_id: number; name: string } | null;
-  meet_url: string | null;
+  conference_url: string | null;
   attendance_status: "출석" | "결석" | null;
 }
 

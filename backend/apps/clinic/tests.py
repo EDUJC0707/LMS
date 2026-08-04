@@ -117,7 +117,7 @@ class ClinicRequestTests(TestCase):
         self.assertIsNone(req.slot)
         self.assertIsNone(req.exam)
         self.assertIsNone(req.cancelled_at)
-        self.assertIsNone(req.meet_url)
+        self.assertIsNone(req.conference_url)
         self.assertIsNone(req.assigned_staff)
 
     def test_attendance_status_value_set(self):
@@ -146,6 +146,45 @@ class ClinicRequestTests(TestCase):
         self.assertIn("5분", doc)
         # 옛 규칙(당일 오전 8시 마감)이 남아 있으면 안 된다
         self.assertNotIn("8시", doc)
+
+
+class ConferenceNeutralityTests(TestCase):
+    """화상 추상화 경계 — 업체 종속 컬럼 금지(key_considerations §4).
+
+    notifications 의 `test_no_vendor_specific_columns` 와 같은 계약을 화상 축에
+    건다. 업체가 바뀌면 `conference_provider` 값과 어댑터만 바뀌고 스키마는
+    움직이지 않아야 한다.
+    """
+
+    def test_no_vendor_specific_columns(self):
+        field_names = {f.name for f in ClinicRequest._meta.get_fields()}
+        self.assertFalse(
+            {"meet_url", "google_meet_space_id", "hangout_link", "zoom_meeting_id"}
+            & field_names,
+            "업체 종속 컬럼 금지(화상 중립)",
+        )
+
+    def test_neutral_conference_columns_exist(self):
+        # provider 값 + 중립 참조 ID + 참가 URL — videos.Video 선례와 같은 3분할
+        field_names = {f.name for f in ClinicRequest._meta.get_fields()}
+        self.assertLessEqual(
+            {"conference_provider", "conference_ref", "conference_url"}, field_names
+        )
+
+    def test_provider_value_set_names_the_vendor(self):
+        # 업체 이름은 **값**에만 산다(videos.Provider 선례 — mux/vdocipher)
+        self.assertEqual(set(ClinicRequest.ConferenceProvider.values), {"google_meet"})
+
+    def test_conference_columns_are_optional(self):
+        # 연동 전·수동 입력 경로 모두 비어 있을 수 있다
+        req = ClinicRequest.objects.create(
+            student=make_student("3_9999"),
+            requested_date=datetime.date(2026, 7, 27),
+            requested_time=datetime.time(19, 0),
+        )
+        self.assertIsNone(req.conference_provider)
+        self.assertIsNone(req.conference_ref)
+        self.assertIsNone(req.conference_url)
 
 
 class ClinicEligibilityTests(TestCase):

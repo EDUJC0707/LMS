@@ -141,7 +141,8 @@ function QueueRow({
   onEval: () => void;
 }) {
   const [staffId, setStaffId] = useState(String(myUserId || ""));
-  const [meetUrl, setMeetUrl] = useState("https://meet.google.com/bare-demo");
+  // 비워 두면 서버가 화상 스페이스를 만든다(backend clinic_admin.assign).
+  const [conferenceUrl, setConferenceUrl] = useState("");
   return (
     <tr>
       <td>{row.clinic_id}</td>
@@ -170,10 +171,10 @@ function QueueRow({
       <td>{row.status}</td>
       <td>
         {row.assigned_staff ? row.assigned_staff.name : "-"}
-        {row.meet_url && (
+        {row.conference_url && (
           <div className="muted">
-            <a href={row.meet_url} target="_blank" rel="noreferrer">
-              미트 링크
+            <a href={row.conference_url} target="_blank" rel="noreferrer">
+              화상 링크
             </a>
           </div>
         )}
@@ -189,9 +190,9 @@ function QueueRow({
             style={{ width: 90 }}
           />
           <input
-            placeholder="meet_url"
-            value={meetUrl}
-            onChange={(e) => setMeetUrl(e.target.value)}
+            placeholder="conference_url (비우면 자동 생성)"
+            value={conferenceUrl}
+            onChange={(e) => setConferenceUrl(e.target.value)}
             style={{ width: 200 }}
           />
           <button
@@ -200,7 +201,7 @@ function QueueRow({
                 () =>
                   api.post(`/admin/clinic/requests/${row.clinic_id}/assign`, {
                     assigned_staff_id: Number(staffId),
-                    meet_url: meetUrl,
+                    ...(conferenceUrl.trim() ? { conference_url: conferenceUrl.trim() } : {}),
                   }),
                 () => `#${row.clinic_id} 승인+배정 완료`,
               )

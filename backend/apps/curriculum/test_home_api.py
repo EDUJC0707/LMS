@@ -412,7 +412,7 @@ class StudentHomeDeadlineTests(HomeFixtureMixin, TestCase):
         self.assertEqual(item["date"], "2026-07-22")
         self.assertEqual(item["start_time"], "17:00")
         self.assertEqual(item["d_day"], 0)
-        self.assertNotIn("meet_url", item)  # 링크 자체는 시작 5분 전 규칙 — 미포함
+        self.assertNotIn("conference_url", item)  # 링크 자체는 시작 5분 전 규칙 — 미포함
 
     def test_clinic_link_active_from_five_minutes_before(self):
         ClinicRequest.objects.create(

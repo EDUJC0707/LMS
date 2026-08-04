@@ -3,7 +3,7 @@
 검증 축:
 - 기능 게이트(클리닉배정): 조교 프리셋 포함 — 조교·관리자 허용, 학생 403
 - 대기열 조회: status·date 필터, 학생 노쇼·제한 상태 동봉
-- 승인+배정: 대기→승인배정(assigned_staff·meet_url 수동 입력), 재배정 허용,
+- 승인+배정: 대기→승인배정(assigned_staff·conference_url 수동 입력), 재배정 허용,
   비직원 배정 400 / 미승인: 대기→미승인
 - 출석/결석 처리: 결석 = noshow_count 증가, **2회 도달 시 clinic_banned=true**,
   이중 처리 400(노쇼 이중 집계 방지), 학부모 알림 행 기록(발송은 알림톡 대기)
@@ -13,12 +13,13 @@
 import datetime
 import json
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from apps.accounts.models import Parent, ParentStudent, Student, User
 from apps.grades.models import Exam
 from apps.notifications.models import Notification
 
+from .conferencing import TemporaryConferenceError
 from .models import (
     ClinicEvalCriteria,
     ClinicEvaluation,
@@ -26,6 +27,7 @@ from .models import (
     ClinicRequest,
     ClinicSlot,
 )
+from .test_conference_assign import ADAPTER_PATH, RecordingAdapter
 
 PASSWORD = "pw-Secret-77!"
 REQUESTS_URL = "/api/admin/clinic/requests"
@@ -135,42 +137,50 @@ class ClinicAssignTests(ClinicAdminFixtureMixin, TestCase):
 
     def setUp(self):
         self.login()
+        RecordingAdapter.calls = 0
+        RecordingAdapter.raises = None
 
     def test_assigns_pending_request(self):
         req = self.make_request()
         res = self.post_json(
             f"{REQUESTS_URL}/{req.clinic_id}/assign",
-            {"assigned_staff_id": self.assistant.user_id, "meet_url": "https://meet.google.com/x"},
+            {"assigned_staff_id": self.assistant.user_id, "conference_url": "https://meet.google.com/x"},
         )
         self.assertEqual(res.status_code, 200)
         req.refresh_from_db()
         self.assertEqual(req.status, ClinicRequest.Status.APPROVED)
         self.assertEqual(req.assigned_staff, self.assistant)
-        self.assertEqual(req.meet_url, "https://meet.google.com/x")
+        self.assertEqual(req.conference_url, "https://meet.google.com/x")
 
     def test_reassign_approved_request_allowed(self):
         req = self.make_request(
             status=ClinicRequest.Status.APPROVED,
             assigned_staff=self.assistant,
-            meet_url="https://meet.google.com/old",
+            conference_url="https://meet.google.com/old",
         )
         res = self.post_json(
             f"{REQUESTS_URL}/{req.clinic_id}/assign",
-            {"assigned_staff_id": self.admin.user_id, "meet_url": "https://meet.google.com/new"},
+            {"assigned_staff_id": self.admin.user_id, "conference_url": "https://meet.google.com/new"},
         )
         self.assertEqual(res.status_code, 200)
         req.refresh_from_db()
         self.assertEqual(req.assigned_staff, self.admin)
 
-    def test_assign_requires_staff_and_meet_url(self):
+    def test_assign_requires_staff(self):
         req = self.make_request()
         self.assertEqual(
             self.post_json(
                 f"{REQUESTS_URL}/{req.clinic_id}/assign",
-                {"assigned_staff_id": self.student_user.user_id, "meet_url": "https://m"},
+                {"assigned_staff_id": self.student_user.user_id, "conference_url": "https://m"},
             ).status_code,
             400,
         )
+
+    @override_settings(CLINIC_CONFERENCE_BACKEND="")
+    def test_assign_without_url_or_provider_is_rejected(self):
+        # 링크 없는 승인은 학생에게 빈 안내가 된다. 화상 연동이 없으면
+        # 관리자가 직접 넣는 수밖에 없고, 그것도 없으면 배정은 성립하지 않는다.
+        req = self.make_request()
         self.assertEqual(
             self.post_json(
                 f"{REQUESTS_URL}/{req.clinic_id}/assign",
@@ -179,18 +189,41 @@ class ClinicAssignTests(ClinicAdminFixtureMixin, TestCase):
             400,
         )
 
+    @override_settings(CLINIC_CONFERENCE_BACKEND=ADAPTER_PATH)
+    def test_assign_without_url_creates_a_space(self):
+        # 화상 연동이 켜지면 관리자는 링크를 더 이상 손으로 만들지 않는다
+        req = self.make_request()
+        res = self.post_json(
+            f"{REQUESTS_URL}/{req.clinic_id}/assign",
+            {"assigned_staff_id": self.assistant.user_id},
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["conference_url"], "https://meet.google.com/s-1")
+        req.refresh_from_db()
+        self.assertEqual(req.conference_ref, "spaces/S1")
+
+    @override_settings(CLINIC_CONFERENCE_BACKEND=ADAPTER_PATH)
+    def test_temporary_provider_failure_is_503(self):
+        RecordingAdapter.raises = TemporaryConferenceError("구글에 닿지 못했습니다")
+        req = self.make_request()
+        res = self.post_json(
+            f"{REQUESTS_URL}/{req.clinic_id}/assign",
+            {"assigned_staff_id": self.assistant.user_id},
+        )
+        self.assertEqual(res.status_code, 503)
+
     def test_assign_cancelled_request_rejected(self):
         req = self.make_request(status=ClinicRequest.Status.CANCELLED)
         res = self.post_json(
             f"{REQUESTS_URL}/{req.clinic_id}/assign",
-            {"assigned_staff_id": self.assistant.user_id, "meet_url": "https://m"},
+            {"assigned_staff_id": self.assistant.user_id, "conference_url": "https://m"},
         )
         self.assertEqual(res.status_code, 400)
 
     def test_assign_unknown_request_404(self):
         res = self.post_json(
             f"{REQUESTS_URL}/999999/assign",
-            {"assigned_staff_id": self.assistant.user_id, "meet_url": "https://m"},
+            {"assigned_staff_id": self.assistant.user_id, "conference_url": "https://m"},
         )
         self.assertEqual(res.status_code, 404)
 
@@ -215,7 +248,7 @@ class ClinicAttendanceTests(ClinicAdminFixtureMixin, TestCase):
         return self.make_request(
             status=ClinicRequest.Status.APPROVED,
             assigned_staff=self.assistant,
-            meet_url="https://meet.google.com/x",
+            conference_url="https://meet.google.com/x",
             student=student,
         )
 
@@ -321,7 +354,7 @@ class ClinicEvaluationTests(ClinicAdminFixtureMixin, TestCase):
         self.req = self.make_request(
             status=ClinicRequest.Status.APPROVED,
             assigned_staff=self.assistant,
-            meet_url="https://meet.google.com/x",
+            conference_url="https://meet.google.com/x",
         )
 
     def test_lists_active_criteria_in_order(self):

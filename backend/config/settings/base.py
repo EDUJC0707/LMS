@@ -154,3 +154,16 @@ if AWS_STORAGE_BUCKET_NAME:
         "default": {"BACKEND": "storages.backends.s3.S3Storage"},
         "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
     }
+
+# --- 화상(클리닉) — key_considerations §4 추상화 경계 --------------------
+# 업체 교체는 이 경로 한 줄이다(apps.clinic.conferencing 계약).
+CLINIC_CONFERENCE_BACKEND = env(
+    "CLINIC_CONFERENCE_BACKEND", default="apps.clinic.google_meet.GoogleMeetAdapter"
+)
+# 구글 미트는 **사용자 인증만** 받는다(서비스 계정은 워크스페이스 도메인 위임
+# 한정) — 계정 1개로 한 번 동의받은 갱신 토큰을 서버가 들고 쓴다.
+# 발급: `manage.py meet_authorize`. 셋 중 하나라도 비면 스페이스 생성은
+# 막히고 배정은 관리자 수동 입력으로만 성립한다(닫힘이 안전 기본값 — §5).
+GOOGLE_MEET_CLIENT_ID = env("GOOGLE_MEET_CLIENT_ID", default="")
+GOOGLE_MEET_CLIENT_SECRET = env("GOOGLE_MEET_CLIENT_SECRET", default="")
+GOOGLE_MEET_REFRESH_TOKEN = env("GOOGLE_MEET_REFRESH_TOKEN", default="")

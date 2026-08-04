@@ -3,7 +3,7 @@
  *
  * API
  *   GET  /api/admin/clinic/requests?status=&date=
- *   POST /api/admin/clinic/requests/{id}/assign      {assigned_staff_id, meet_url}
+ *   POST /api/admin/clinic/requests/{id}/assign      {assigned_staff_id, conference_url?}
  *   POST /api/admin/clinic/requests/{id}/reject
  *   POST /api/admin/clinic/requests/{id}/attendance  {status: "출석"|"결석"}
  *   POST /api/admin/clinic/requests/{id}/evaluation  {items[], overall_result?}
@@ -268,14 +268,20 @@ function RequestPanel({
       ? String(request.assigned_staff.user_id)
       : String(assignable[0]?.user_id ?? ""),
   );
-  const [meetUrl, setMeetUrl] = useState(request.meet_url ?? "");
+  // 빈 칸으로 시작한다 — 서버가 화상 스페이스를 만들기 때문이다. 기존 링크를
+  // 채워 두면 재배정할 때마다 그 값이 "직접 입력"으로 되돌아가 서버가 만든
+  // 스페이스 참조가 지워진다(backend clinic_admin.assign 순서 1·2).
+  const [conferenceUrl, setConferenceUrl] = useState("");
 
   // 모든 액션은 성공 시 true 를 돌려준다 — useApiAction 은 실패에만
   // undefined 를 주므로 void 액션은 성공/실패를 구분할 수 없다.
   const assign = useApiAction(async () => {
+    const typed = conferenceUrl.trim();
     await http.post(`/admin/clinic/requests/${request.clinic_id}/assign`, {
       assigned_staff_id: Number(staffId),
-      meet_url: meetUrl.trim(),
+      // 적었을 때만 보낸다. 안 보내면 서버가 새 스페이스를 뚫고,
+      // 이미 링크가 있으면 그대로 둔다.
+      ...(typed ? { conference_url: typed } : {}),
     });
     return true;
   });
@@ -296,7 +302,7 @@ function RequestPanel({
   const canReject = request.status === "대기";
   const canMarkAttendance = request.status === "승인배정" && request.attendance_status === null;
   const canEvaluate = request.status === "승인배정";
-  const meetReady = meetUrl.trim().length > 0 && staffId !== "";
+  const assignReady = staffId !== "";
 
   return (
     <Card
@@ -323,12 +329,12 @@ function RequestPanel({
           </dd>
           <dt>담당 조교</dt>
           <dd>{request.assigned_staff?.name ?? "아직 없음"}</dd>
-          {request.meet_url && (
+          {request.conference_url && (
             <>
               <dt>화상 링크</dt>
               <dd>
-                <a href={request.meet_url} target="_blank" rel="noreferrer">
-                  {request.meet_url}
+                <a href={request.conference_url} target="_blank" rel="noreferrer">
+                  {request.conference_url}
                 </a>
               </dd>
             </>
@@ -373,12 +379,12 @@ function RequestPanel({
                 </Select>
               )}
             </Field>
-            <Field label="화상 수업 링크" required>
+            <Field label="화상 링크 직접 입력">
               {(props) => (
                 <Input
                   {...props}
-                  value={meetUrl}
-                  onChange={(e) => setMeetUrl(e.target.value)}
+                  value={conferenceUrl}
+                  onChange={(e) => setConferenceUrl(e.target.value)}
                   placeholder="https://meet.google.com/abc-defg-hij"
                   inputMode="url"
                 />
@@ -387,7 +393,7 @@ function RequestPanel({
             <div className="ui-row">
               <Button
                 variant="primary"
-                disabled={!meetReady}
+                disabled={!assignReady}
                 loading={assign.pending}
                 onClick={async () => {
                   if (await assign.run()) await onDone();

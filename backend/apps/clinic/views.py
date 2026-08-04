@@ -283,21 +283,21 @@ class AdminClinicAssignView(APIView):
             return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
         body = request.data if isinstance(request.data, dict) else {}
         staff_id = body.get("assigned_staff_id")
-        meet_url = body.get("meet_url")
+        conference_url = body.get("conference_url")
         if not _is_int(staff_id):
             return Response(
                 {"detail": "assigned_staff_id가 필요합니다."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        # meet_url 은 수동 입력 필수 — 링크 없는 승인은 학생에게 빈 안내가 된다
-        # (Meet API 연동 후순위, clinic_admin 모듈 docstring).
-        if not (isinstance(meet_url, str) and meet_url.strip()):
-            return Response(
-                {"detail": "meet_url이 필요합니다."}, status=status.HTTP_400_BAD_REQUEST
-            )
+        # conference_url 은 **선택**이다 — 없으면 서버가 화상 스페이스를 새로
+        # 만든다(clinic_admin.assign 의 순서 1·2·3). 들어오면 그것이 이긴다:
+        # 연동이 끊긴 날에도 관리자가 링크를 넣어 배정할 수 있어야 한다(§5).
+        # 링크 없는 승인 자체는 여전히 성립하지 않는다 — 만들지도 못하고 받지도
+        # 못하면 assign 이 400 으로 막는다.
+        manual_url = conference_url.strip() if isinstance(conference_url, str) else ""
         staff_user = User.objects.filter(pk=staff_id).first()
         try:
-            clinic_admin.assign(clinic_request, staff_user, meet_url.strip())
+            clinic_admin.assign(clinic_request, staff_user, manual_url or None)
         except booking.ClinicError as error:
             return Response({"detail": error.message}, status=error.http_status)
         return Response(clinic_admin.queue_row(clinic_request))

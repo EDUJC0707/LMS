@@ -101,9 +101,20 @@ class ClinicRequest(models.Model):
       날짜의 전날이라 날짜마다 움직인다(화요일 클리닉이면 월요일이 마감).
       창구의 시작은 권한 부여 시점이고, 그 전에는 자격 게이트가 막는다.
       창구 끝은 신청·변경에만 걸고 **취소에는 걸지 않는다**(자원 반납).
-    - **링크 노출**: meet_url 은 시작 5분 전부터 해당 학생 계정에만 노출.
-      클리닉 1건 = 새 구글 미트 스페이스 1개(링크 재사용 금지 —
+    - **링크 노출**: conference_url 은 시작 5분 전부터 해당 학생 계정에만 노출.
+      클리닉 1건 = 새 화상 스페이스 1개(링크 재사용 금지 —
       key_considerations §4).
+    - **화상 Provider 중립 계약(key_considerations §4, videos.Video 선례)**:
+      스페이스 생성·참가 규칙은 앱 레이어의 화상 Provider(`conferencing.py`)가
+      담당하고, DB 는 provider 값과 중립 참조(conference_ref)·참가 URL만
+      저장한다 — 업체 종속 컬럼 금지. 업체 교체 = 값집합에 값 추가 +
+      어댑터 교체(스키마 불변).
+      `conference_ref` 가 **오래 가는 식별자**다: 참가 URL 안의 미팅 코드는
+      마지막 사용 후 1년쯤 지나면 스페이스에서 떨어져 나가 다른 스페이스에
+      재배정될 수 있다(구글 문서). URL 은 학생이 누를 것, ref 는 우리가
+      나중에도 그 스페이스를 가리킬 것이라 둘 다 남긴다.
+      셋 다 NULL 일 수 있다 — 관리자가 링크를 직접 붙여넣는 수동 우회 경로
+      에서는 provider·ref 가 없다(수업 당일 현장 대응 불가 전제 — §5).
     - **노쇼**: attendance_status `결석`(시작 10분 이상 미출석, 결석 처리
       버튼) = 노쇼 1회. 누적·영구제한의 원천은 accounts.Student 의
       noshow_count/clinic_banned(사본 금지) — 결석 처리 시 앱 레이어가
@@ -123,6 +134,11 @@ class ClinicRequest(models.Model):
         UNMARKED = "미처리", "미처리"
         PRESENT = "출석", "출석"
         ABSENT = "결석", "결석"  # = 노쇼
+
+    class ConferenceProvider(models.TextChoices):
+        """화상 업체 — 이름이 사는 유일한 자리(컬럼명이 아니라 **값**)."""
+
+        GOOGLE_MEET = "google_meet", "Google Meet"
 
     clinic_id = models.BigAutoField(primary_key=True)
     student = models.ForeignKey(
@@ -146,7 +162,15 @@ class ClinicRequest(models.Model):
         related_name="assigned_clinic_requests",
         verbose_name="배정 조교",
     )
-    meet_url = models.CharField("구글 미트 링크", max_length=500, null=True, blank=True)  # noqa: DJ001
+    conference_provider = models.CharField(  # noqa: DJ001
+        "화상 제공자",
+        max_length=20,
+        choices=ConferenceProvider.choices,
+        null=True,
+        blank=True,
+    )
+    conference_ref = models.CharField("화상 참조 ID", max_length=200, null=True, blank=True)  # noqa: DJ001
+    conference_url = models.CharField("화상 참가 링크", max_length=500, null=True, blank=True)  # noqa: DJ001
     attendance_status = models.CharField(  # noqa: DJ001
         "클리닉 출결",
         max_length=10,

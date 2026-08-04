@@ -12,7 +12,7 @@
 - 노쇼 영구제한: clinic_banned=true → 신청·변경 403 (취소는 허용)
 - 중복 활성 신청 400 / 본인 것만 수정·취소(타인 404)
 - 취소는 노쇼로 집계하지 않음(noshow_count·clinic_banned 불변) + **창구와 무관**
-- 링크: 시작 5분 전부터만 meet_url 노출(link_active)
+- 링크: 시작 5분 전부터만 conference_url 노출(link_active)
 
 시간 의미론: apps.clinic.booking.timezone.now 를 patch 해 고정(Asia/Seoul —
 attendance_admin 테스트 선례).
@@ -256,7 +256,7 @@ class ClinicHomeTests(ClinicFixtureMixin, TestCase):
         req = self.make_request_row(
             self.s_target, self.slot_wed, TODAY,
             status=ClinicRequest.Status.APPROVED,
-            meet_url="https://meet.google.com/abc-defg-hij",
+            conference_url="https://meet.google.com/abc-defg-hij",
         )
         self.login(self.s_target.user)
         before = self.get_clinic(at=NOW_1854).json()["my_requests"]
@@ -267,10 +267,10 @@ class ClinicHomeTests(ClinicFixtureMixin, TestCase):
         self.assertEqual(row["requested_date"], "2026-07-22")
         self.assertEqual(row["requested_time"], "19:00")
         self.assertFalse(row["link_active"])
-        self.assertIsNone(row["meet_url"])  # 시작 5분 전까지 URL 미노출
+        self.assertIsNone(row["conference_url"])  # 시작 5분 전까지 URL 미노출
         after = self.get_clinic(at=NOW_1855).json()["my_requests"][0]
         self.assertTrue(after["link_active"])
-        self.assertEqual(after["meet_url"], "https://meet.google.com/abc-defg-hij")
+        self.assertEqual(after["conference_url"], "https://meet.google.com/abc-defg-hij")
 
     def test_pending_request_has_no_link(self):
         self.make_request_row(self.s_target, self.slot_wed, TODAY)
@@ -278,7 +278,7 @@ class ClinicHomeTests(ClinicFixtureMixin, TestCase):
         row = self.get_clinic(at=NOW_1855).json()["my_requests"][0]
         self.assertEqual(row["status"], "대기")
         self.assertFalse(row["link_active"])
-        self.assertIsNone(row["meet_url"])
+        self.assertIsNone(row["conference_url"])
 
     def test_exam_id_required_and_validated(self):
         self.login(self.s_target.user)
@@ -499,8 +499,8 @@ class ClinicBookingChangeTests(ClinicFixtureMixin, TestCase):
         staff = make_user("cl-staff", User.Role.ASSISTANT, name="조교")
         self.req.status = ClinicRequest.Status.APPROVED
         self.req.assigned_staff = staff
-        self.req.meet_url = "https://meet.google.com/xyz"
-        self.req.save(update_fields=["status", "assigned_staff", "meet_url"])
+        self.req.conference_url = "https://meet.google.com/xyz"
+        self.req.save(update_fields=["status", "assigned_staff", "conference_url"])
         res = self.patch_booking(
             self.req.clinic_id,
             {"slot_id": self.slot_thu.slot_id, "requested_date": THU.isoformat()},
@@ -513,7 +513,7 @@ class ClinicBookingChangeTests(ClinicFixtureMixin, TestCase):
         # 시간 변경은 재승인 대상 — 배정·링크 회수(링크 재사용 금지)
         self.assertEqual(self.req.status, ClinicRequest.Status.PENDING)
         self.assertIsNone(self.req.assigned_staff)
-        self.assertIsNone(self.req.meet_url)
+        self.assertIsNone(self.req.conference_url)
 
     def test_change_away_from_today_400_at_every_hour(self):
         req = self.make_request_row(self.s_target2, self.slot_wed, TODAY)

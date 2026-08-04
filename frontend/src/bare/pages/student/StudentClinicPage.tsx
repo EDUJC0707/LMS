@@ -172,8 +172,8 @@ export default function StudentClinicPage() {
                   <td>{row.requested_time}</td>
                   <td>{row.status}</td>
                   <td>
-                    {row.meet_url ? (
-                      <a href={row.meet_url} target="_blank" rel="noreferrer">
+                    {row.conference_url ? (
+                      <a href={row.conference_url} target="_blank" rel="noreferrer">
                         입장
                       </a>
                     ) : row.status === "승인배정" ? (
