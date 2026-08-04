@@ -6,6 +6,8 @@
 - POST       /api/admin/videos/{id}/publish     `공개` 전환(조건 강제)
 - POST       /api/admin/videos/{id}/archive     `아카이브` 전환
 - GET        /api/admin/videos/course-weeks     등록 폼 주차 선택지
+- POST       /api/admin/videos/uploads          업로드 자리 발급(파일은 서버를 안 지남)
+- POST       /api/admin/videos/{id}/sync        업로드·인코딩 완료 확인
 - POST /api/student/makeup-request      학생 본인 결석의 동보 신청 (IsStudent)
 - POST /api/parent/makeup-request       자녀 결석의 동보 신청 (IsParent)
 - GET  /api/admin/makeup-requests       신청 목록 (영상지급관리)
@@ -342,6 +344,9 @@ class AdminVideoListView(APIView):
                     {"detail": "course_week_id가 올바르지 않습니다."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+        # 웹훅 대신 — 목록을 열 때 처리 중인 것만 Mux 에 물어본다
+        # (video_admin.sync_pending 주석). 없으면 쿼리 0건이라 공짜다.
+        video_admin.sync_pending()
         rows = [
             video_admin.video_row(video)
             for video in video_admin.list_videos(status_filter, week_id)
@@ -411,6 +416,48 @@ class AdminVideoArchiveView(APIView):
         video, error = video_admin.archive(video)
         if error:
             return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"video": video_admin.video_row(video)})
+
+
+class AdminVideoUploadView(APIView):
+    """POST /api/admin/videos/uploads — 업로드 자리 발급.
+
+    파일은 **브라우저에서 Mux 로 직접** 간다(mux.create_direct_upload 주석).
+    여기서는 자리만 만들고 행을 먼저 만들어 유실을 막는다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.VIDEO_GRANT_ADMIN)]
+
+    def post(self, request):
+        fields, error = video_admin.parse_input(request.data)
+        if error:
+            return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
+        # 브라우저가 PUT 할 출처 — 아무 데서나 우리 자리로 올리지 못하게 한다.
+        origin = request.headers.get("Origin") or request.build_absolute_uri("/").rstrip("/")
+        result, error = video_admin.start_upload(fields, origin)
+        if error:
+            return Response({"detail": error}, status=status.HTTP_502_BAD_GATEWAY)
+        video, upload_url = result
+        return Response(
+            {"video": video_admin.video_row(video), "upload_url": upload_url},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class AdminVideoSyncView(APIView):
+    """POST /api/admin/videos/{video_id}/sync — 처리 끝났는지 확인하고 반영."""
+
+    permission_classes = [FeatureRequired(FeatureKey.VIDEO_GRANT_ADMIN)]
+
+    def post(self, request, video_id):
+        video = video_admin.load_video(video_id)
+        if video is None:
+            return Response(
+                {"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND
+            )
+        video, error = video_admin.sync_upload(video)
+        if error:
+            return Response({"detail": error}, status=status.HTTP_502_BAD_GATEWAY)
         return Response({"video": video_admin.video_row(video)})
 
 

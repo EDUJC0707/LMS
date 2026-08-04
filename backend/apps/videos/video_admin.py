@@ -24,6 +24,7 @@ from django.utils import timezone
 
 from apps.curriculum.models import CourseWeek
 
+from . import mux
 from .models import Video
 
 #: 값 없음을 뜻하는 입력(빈 문자열)을 NULL 로 접는 대상 — 폼이 빈 칸을 "" 로 보낸다.
@@ -72,6 +73,8 @@ def video_row(video):
         "status": video.status,
         "created_at": _iso(video.created_at),
         "course_week": course_week_block(video.course_week),
+        # 업로드/인코딩이 안 끝난 행 — 화면이 상태를 구분해 그린다(모델 계약).
+        "uploading": bool(video.upload_ref and not video.external_ref),
     }
 
 
@@ -270,3 +273,66 @@ def archive(video):
     video.status = Video.Status.ARCHIVED
     video.save(update_fields=["status"])
     return load_video(video.pk), None
+
+
+
+def start_upload(fields, cors_origin):
+    """(video, error) — 업로드 자리를 만들고 행을 **먼저** 만든다.
+
+    행을 시작 시점에 만드는 이유는 모델 `upload_ref` docstring 에 있다 —
+    파일이 브라우저에서 Mux 로 직접 가므로, 중간에 브라우저가 닫히면 Mux 에는
+    자산이 생겼는데 우리 DB 는 비는 유실이 난다.
+
+    업로드 URL 은 응답에만 싣고 저장하지 않는다 — 만료되는 일회용 값이라
+    보관하면 "왜 이 URL 은 안 되지" 가 된다. 재시도는 새 업로드다.
+    """
+    # 업로드 경로에서 `provider`·`external_ref` 는 **사용자 입력이 아니다.**
+    # 우리가 Mux 로 올리는 중이므로 provider 는 mux 로 정해져 있고, 참조 ID 는
+    # 인코딩이 끝나야 생긴다. 폼이 보내와도 버린다 — 안 버리면 create() 가
+    # 같은 키를 두 번 받아 500 이 난다(2026-08-04 실측).
+    fields = {k: v for k, v in fields.items() if k not in ("provider", "external_ref")}
+    try:
+        upload_id, url = mux.create_direct_upload(cors_origin)
+    except mux.MuxApiError as error:
+        return None, str(error)
+    video = Video.objects.create(
+        provider=Video.Provider.MUX, upload_ref=upload_id, **fields
+    )
+    return (load_video(video.pk), url), None
+
+
+def sync_upload(video):
+    """(video, error) — 처리가 끝났으면 `external_ref` 를 채운다.
+
+    끝나지 않았으면 아무 것도 바꾸지 않고 그대로 돌려준다(에러 아님).
+    """
+    if not video.upload_ref or video.external_ref:
+        return video, None
+    try:
+        resolved = mux.resolve_upload(video.upload_ref)
+    except mux.MuxApiError as error:
+        return None, str(error)
+    if resolved is None:
+        return video, None
+    playback_id, duration = resolved
+    video.external_ref = playback_id
+    if duration and not video.duration_seconds:
+        video.duration_seconds = duration
+    video.save(update_fields=["external_ref", "duration_seconds"])
+    return load_video(video.pk), None
+
+
+def sync_pending(queryset=None):
+    """처리 중인 행을 한 번에 훑는다 — 관리 목록이 열릴 때 부른다.
+
+    웹훅 대신이다(mux.resolve_upload 주석 참조). 실패한 건은 조용히 건너뛴다 —
+    한 건의 Mux 오류로 목록 전체가 못 뜨면 안 된다.
+    """
+    pending = (queryset if queryset is not None else Video.objects.all()).filter(
+        upload_ref__isnull=False, external_ref__isnull=True
+    )
+    for video in pending:
+        try:
+            sync_upload(video)
+        except Exception:  # noqa: BLE001 — 목록 조회가 우선이다
+            continue

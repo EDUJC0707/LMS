@@ -8,11 +8,11 @@
  *   POST  /api/admin/videos/{id}/archive   `아카이브` 전환
  *   GET   /api/admin/videos/course-weeks   주차 선택지
  *
- * ## 등록은 한 주차에 여러 번 반복된다
+ * **파일 업로드는 만들어 뒀지만 여기 연결하지 않았다**(2026-08-04 사용자 지시) —
+ * `./VideoUploadField.tsx` 에 완성돼 있고 연결법도 그 머리말에 있다. 학원 회선에서
+ * 3~4GB 전송이 견딜 만한지 재본 뒤에 붙인다. 그 전까지는 `manage.py mux_upload`.
  *
- * 주차마다 2~3강이라 같은 주차·같은 호스팅을 연달아 입력한다. 그래서 저장 후
- * 모달을 닫지 않는 [저장하고 계속] 을 둔다 — 주차·호스팅은 그대로 두고 제목·차시·
- * 재생 ID만 비운다. 차시는 그 주차의 최대 차시 + 1 로 채운다.
+ * 차시는 그 주차의 최대 차시 + 1 로 채워 손으로 세지 않게 한다.
  *
  * ## `공개` 는 서버가 조건을 강제한다
  *
@@ -54,10 +54,14 @@ interface VideoRow {
   status: string;
   created_at: string | null;
   course_week: CourseWeekBlock | null;
+  /** 업로드·인코딩이 안 끝난 행 — 자산이 아직 없다(video_admin.video_row). */
+  uploading: boolean;
 }
 
 /** 폼 상태 — 비어 있는 칸은 빈 문자열이고 서버가 NULL 로 접는다. */
 interface FormState {
+  /** 수정 중이면 그 영상 id. 등록이면 null — 이것도 클로저로 읽으면 안 된다. */
+  video_id: number | null;
   title: string;
   course_week_id: string;
   sequence_no: string;
@@ -67,6 +71,7 @@ interface FormState {
 }
 
 const EMPTY_FORM: FormState = {
+  video_id: null,
   title: "",
   course_week_id: "",
   sequence_no: "",
@@ -144,10 +149,13 @@ export default function VideoManagePage() {
     return String((used.length ? Math.max(...used) : 0) + 1);
   };
 
-  const save = useApiAction(async (keepOpen: boolean) => {
-    const payload = toPayload(form);
-    if (editing) {
-      await http.patch(`/admin/videos/${editing.video_id}`, payload);
+  // `useApiAction` 은 첫 렌더의 클로저를 붙든다(action 을 의존성에서 뺐다 —
+  // useApi.ts:109). 그래서 폼 값을 **인자로 넘긴다.** 클로저로 읽으면 등록이
+  // 항상 빈 폼으로 나간다(2026-08-04 실측, 2026-07-29 클리닉에서도 같은 함정).
+  const save = useApiAction(async (current: FormState, keepOpen: boolean) => {
+    const payload = toPayload(current);
+    if (current.video_id) {
+      await http.patch(`/admin/videos/${current.video_id}`, payload);
     } else {
       await http.post("/admin/videos", payload);
     }
@@ -183,6 +191,7 @@ export default function VideoManagePage() {
   const openEdit = (video: VideoRow) => {
     setEditing(video);
     setForm({
+      video_id: video.video_id,
       title: video.title,
       course_week_id: String(video.course_week?.week_id ?? ""),
       sequence_no: String(video.sequence_no ?? ""),
@@ -256,7 +265,8 @@ export default function VideoManagePage() {
               header: "재생 ID",
               width: "12rem",
               sortValue: (row) => row.external_ref ?? "",
-              cell: (row) => row.external_ref ?? "—",
+              cell: (row) =>
+                row.uploading ? "올라가는 중…" : (row.external_ref ?? "—"),
             },
             {
               key: "runtime",
@@ -320,16 +330,7 @@ export default function VideoManagePage() {
             <Button variant="ghost" onClick={() => setOpen(false)}>
               닫기
             </Button>
-            {!editing && (
-              <Button
-                variant="secondary"
-                loading={save.pending}
-                onClick={() => void save.run(true)}
-              >
-                저장하고 계속
-              </Button>
-            )}
-            <Button loading={save.pending} onClick={() => void save.run(false)}>
+            <Button loading={save.pending} onClick={() => void save.run(form, false)}>
               저장
             </Button>
           </>

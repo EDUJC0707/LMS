@@ -8,7 +8,9 @@
  * 버튼은 눌러도 아무 일이 없는 대신 콘솔에 이유를 남긴다 — 조용히 죽는 것보다 낫다.
  */
 
-const PLUGIN_KEY = window.__CHANNEL_TALK_KEY__ || '';
+/* trim 하는 이유: 이 값은 사람이 index.html 에 손으로 붙여 넣는다. 공백만 남거나
+   붙여넣기에 줄바꿈이 딸려 오면, 그대로 부팅해서 엉뚱한 키로 CDN 요청이 나간다. */
+const PLUGIN_KEY = (window.__CHANNEL_TALK_KEY__ || '').trim();
 
 function boot() {
   if (!PLUGIN_KEY) return false;
@@ -33,13 +35,24 @@ const ready = boot();
 
 /**
  * 문의창을 연다.
- * @param {string} [context] 어디서 눌렀는지 — 상담 맥락을 미리 채워준다
+ *
+ * 맥락을 넘기는 길이 둘인데 하는 일이 다르다 —
+ * `setPage` 는 상담이 생길 때 붙는 페이지 값이라 **상담원 화면에** 남고,
+ * 입력창을 실제로 채우는 것은 `openChat` 의 셋째 인자다(SPEC §7-3 의 "프리필").
+ * 그래서 둘 다 부른다. `chatId` 를 비우면 새 상담이 열린다.
+ *
+ * @param {string} [context] 어디서 눌렀는지 — `data-chat` 값이 그대로 온다
  */
 export function openChat(context) {
   if (!ready || !window.ChannelIO) {
     console.info('[chat] 채널톡 키가 없어 위젯을 띄우지 않았다. context:', context);
     return;
   }
-  if (context) window.ChannelIO('setPage', location.pathname + '#' + context);
-  window.ChannelIO('showMessenger');
+  /* 채울 말이 없으면 새 상담을 강제로 열지 않는다 — 진행 중이던 상담이 갈린다. */
+  if (!context) {
+    window.ChannelIO('showMessenger');
+    return;
+  }
+  window.ChannelIO('setPage', location.pathname + '#' + context);
+  window.ChannelIO('openChat', undefined, context);
 }
