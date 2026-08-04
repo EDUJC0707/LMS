@@ -121,16 +121,11 @@
 - [ ] `infra/Dockerfile`에 `ENV UV_NO_DEV=1`(부팅 13초 지연), uv 이미지 태그 고정
 - [ ] CI `FLY_API_TOKEN` 시크릿(현재 미설정이라 자동배포 실행 자체가 안 됨)
 - [ ] Fly `edujc-lms` 헬스체크 critical 상태 원인 확인
-- [ ] **Sentry — sentry.io 가입해서 DSN 받아오기.** 사람만 할 수 있는 건 이것 하나다.
-  절차·검증은 `infra/DEPLOY.md` **8장**에 다 적어 뒀다(가입 → 플랫폼 Django → Client Keys
-  에서 DSN 복사 → `fly secrets set SENTRY_DSN="<DSN>" -a edujc-lms` → `/sentry-debug` 로
-  실제 500 한 건 내서 대시보드에 뜨는 것까지 확인 → 확인용 토큰 회수).
-  `fly ext sentry create`는 **불가**(7/28 확인 — Fly 경유 신규 통합 중단).
-  **동기**: `fly logs`가 ~30분만 남아 "어제 왜 500났지"를 사후 추적 못 함(7/28 qbank 500 조사에서 실제로 막힘)
-  - 코드는 2026-08-04 에 마무리했다: `config/observability.py` 로 분리 + 개인정보 차단
-    (요청 본문·쿼리 값·스택 지역변수 — `send_default_pii=False` 만으로는 안 막힌다),
-    DSN 오타에 부팅 안 죽게, 계약은 `config/tests.py` 14건이 지킨다.
-    **`config/` 테스트는 `manage.py test apps` 에 안 잡힌다 — `test apps config` 로 돌릴 것**
+- [ ] **Sentry `release` 주입** — 지금은 "어느 배포에서 난 에러냐"를 구분할 수 없다.
+  SDK 가 git 으로 추론하는데 이미지에 `.git` 이 없어 실패한다(로컬에서만 SHA 가 붙는 것 확인).
+  빌드 인자로 SHA 를 넣어 `SENTRY_RELEASE` 로 넘기면 된다 — Dockerfile 을 건드리므로
+  위 `UV_NO_DEV`·whitenoise 항목과 **한 번에** 처리한다.
+  (Sentry 자체는 2026-08-04 가동 완료 — `progress.md` · 절차는 `infra/DEPLOY.md` 8장)
 - [ ] **Celery 워커 + Redis 기동 — 아직 아님**(2026-07-22 결정, 보류 유지). `@shared_task` 0건이라 할 일이 없고 워커는 auto_stop 대상이 아니라 24시간 돌며 월 ~$3.3. **해제 트리거 = 첫 `@shared_task` 작성 시점**(알림톡 발송 또는 영상 처리). 복구 3단계와 경위는 `infra/DEPLOY.md` 6장
 
 ## 외부 대기 (오는 대로 붙임 — 자리는 다 파여 있음)

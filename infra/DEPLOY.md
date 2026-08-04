@@ -225,7 +225,13 @@ lsof -nP -iTCP:15432 -sTCP:LISTEN     # 아무것도 안 나오면 프록시가 
 
 ---
 
-## 8. Sentry — 에러 추적 (남은 것은 DSN 하나)
+## 8. Sentry — 에러 추적 ✅ 가동 중 (2026-08-04)
+
+> **이미 붙어 있다.** 조직 EDUJC · US 리전 · Developer(무료) · 프로젝트 `edujc-lms`.
+> `SENTRY_DSN` 은 `fly secrets` 에 들어 있고, 실제 500 한 건으로 수집을 확인했다
+> (이슈 `EDUJC-LMS-1` — `RuntimeError: Sentry 수집 확인용 예외`). 확인 후
+> `SENTRY_DEBUG_TOKEN` 은 회수했고 `/sentry-debug` 는 다시 404 다.
+> 아래는 **다시 세팅할 일이 생겼을 때**(DSN 교체·재발급·다른 앱에 붙일 때) 그대로 따라갈 절차다.
 
 **왜 붙였나**: `fly logs` 는 약 30분치만 남는다. "어제 왜 500 났지"를 사후에 추적할
 수단이 없어 2026-07-28 qbank 500 조사에서 실제로 막혔다.
