@@ -6,18 +6,19 @@
 - 승인+배정: 대기→승인배정(assigned_staff·meet_url 수동 입력), 재배정 허용,
   비직원 배정 400 / 미승인: 대기→미승인
 - 출석/결석 처리: 결석 = noshow_count 증가, **2회 도달 시 clinic_banned=true**,
-  이중 처리 400(노쇼 이중 집계 방지), 학부모 알림 행 기록(발송은 알림톡 대기)
+  이중 처리 400(노쇼 이중 집계 방지), 학부모 알림(커밋 뒤 발송)
 - unban: **대표 전용**(관리자·조교 403), noshow_count 는 유지
 - 평가: 항목별 기록(3표 — criteria/evaluation/item), upsert, 게이트
 """
 import datetime
 import json
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from apps.accounts.models import Parent, ParentStudent, Student, User
 from apps.grades.models import Exam
 from apps.notifications.models import Notification
+from config.celery import app as celery_app
 
 from .models import (
     ClinicEvalCriteria,
@@ -32,6 +33,7 @@ REQUESTS_URL = "/api/admin/clinic/requests"
 CRITERIA_URL = "/api/admin/clinic/eval-criteria"
 
 WED = datetime.date(2026, 7, 22)
+FAKE_CHANNEL = "apps.notifications.channels.FakeChannelAdapter"
 
 
 def make_user(login_id, role, name="사용자", **extra):
@@ -234,7 +236,23 @@ class ClinicAttendanceTests(ClinicAdminFixtureMixin, TestCase):
         self.assertEqual(self.student.noshow_count, 0)
         notif = Notification.objects.get(type=Notification.Type.CLINIC_ATTENDANCE)
         self.assertEqual(notif.parent, self.parent)
-        self.assertEqual(notif.status, Notification.Status.PENDING)  # 발송은 알림톡 대기
+        self.assertEqual(notif.status, Notification.Status.PENDING)  # 발송은 커밋 뒤
+
+    @override_settings(NOTIFICATION_CHANNEL_BACKENDS={"카카오알림톡": FAKE_CHANNEL})
+    def test_attendance_notification_is_dispatched_on_commit(self):
+        # 행만 남기고 끝나면 재발송 배치가 집을 때까지(유예 30분 + 배치 주기)
+        # 나가지 않는다. 출결 처리는 커밋과 함께 발송이 걸려야 한다.
+        eager = celery_app.conf.task_always_eager
+        celery_app.conf.task_always_eager = True
+        self.addCleanup(setattr, celery_app.conf, "task_always_eager", eager)
+        req = self.approved()
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(self.mark(req, "출석").status_code, 200)
+
+        notif = Notification.objects.get(type=Notification.Type.CLINIC_ATTENDANCE)
+        self.assertEqual(notif.status, Notification.Status.SUCCESS)
+        self.assertIsNotNone(notif.sent_at)
 
     def test_absent_increments_noshow_and_bans_at_two(self):
         first = self.approved()
@@ -249,7 +267,7 @@ class ClinicAttendanceTests(ClinicAdminFixtureMixin, TestCase):
         self.student.refresh_from_db()
         self.assertEqual(self.student.noshow_count, 2)
         self.assertTrue(self.student.clinic_banned)
-        # 노쇼 경고는 학생·학부모 양쪽(PRD 3.2.4) — 행만 기록, 발송은 대기.
+        # 노쇼 경고는 학생·학부모 양쪽(PRD 3.2.4). 발송은 커밋 뒤라 여기선 대기다.
         warnings = Notification.objects.filter(type=Notification.Type.NOSHOW_WARNING)
         self.assertEqual(
             {(w.student_id, w.parent_id) for w in warnings.filter(ref_id=first.clinic_id)},

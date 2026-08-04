@@ -16,8 +16,9 @@
      해제 후 재노쇼 시 즉시 재제한되는 것이 의도된 동작이다.
 
 알림(출석/결석 → 학부모, 노쇼 경고 → 학생·학부모 — PRD 3.2.4)은
-notifications 행(status `대기`)으로 **기록만** 한다 — 알림톡 채널 연동 대기
-(key_considerations §4), 연동 시 발송 배치가 `대기` 행을 집어간다.
+`notifications.sending.queue` 로 건다 — 행을 남기고 **커밋 뒤** 발송 태스크가
+걸린다(2026-08-04 발송 파이프라인 도입 전까지는 행 기록만 하고 배치를 기다렸다).
+채널 구현체가 없거나 실패하면 사유가 행에 남고 재발송 배치가 다시 집는다.
 """
 from django.db import transaction
 from django.db.models import F
@@ -26,6 +27,7 @@ from django.utils import timezone
 from apps.accounts.models import ParentStudent
 from apps.accounts.permissions import STAFF_ROLES
 from apps.notifications.models import Notification
+from apps.notifications.sending import queue as queue_notification
 
 from .booking import ClinicError
 from .models import (
@@ -160,8 +162,8 @@ def mark_attendance(request, value, actor):
 
 
 def _pending_notification(type_, title, request, student=None, parent=None):
-    """알림 행 기록 — 발송은 알림톡 연동 대기(모듈 docstring). 대상 3분기 준수."""
-    Notification.objects.create(
+    """알림을 건다 — 행은 지금, 발송은 커밋 뒤(모듈 docstring). 대상 3분기 준수."""
+    queue_notification(
         student=student,
         parent=parent,
         channel=Notification.Channel.KAKAO,
@@ -169,7 +171,6 @@ def _pending_notification(type_, title, request, student=None, parent=None):
         title=title,
         ref_type="clinic",
         ref_id=request.clinic_id,
-        status=Notification.Status.PENDING,
     )
 
 

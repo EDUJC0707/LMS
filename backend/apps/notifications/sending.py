@@ -43,6 +43,55 @@ _TERMINAL = {Notification.Status.SUCCESS, Notification.Status.CONFIRMED}
 _ERROR_MSG_MAX = Notification._meta.get_field("error_msg").max_length
 
 
+def queue(
+    *,
+    type,
+    channel,
+    student=None,
+    parent=None,
+    user=None,
+    title=None,
+    body=None,
+    ref_type=None,
+    ref_id=None,
+):
+    """알림 행을 남기고 발송을 예약한다 — **이벤트 지점이 부르는 단 하나의 문.**
+
+    행 생성과 발송 예약을 갈라 두면 곧 어긋난다: 행만 만들고 태스크를 안 거는
+    자리가 생기면 그 알림은 재발송 배치가 집어갈 때까지(최대 유예 30분 + 배치
+    주기) 나가지 않는다. 배치는 **그물이지 통로가 아니다.**
+
+    **커밋 뒤에 건다**(`transaction.on_commit`). 알림 행은 거의 항상 다른 업무
+    (출결 스탬프, 상담 종결)와 같은 트랜잭션에서 만들어진다 —
+    - 커밋 전에 걸면 워커가 아직 보이지 않는 행을 집어 `DoesNotExist` 로 죽고,
+    - 롤백된 뒤에 나가면 **일어나지도 않은 일의 알림**이 학부모에게 간다.
+    트랜잭션 밖에서 부르면 on_commit 은 즉시 실행되므로 호출측은 신경 쓸 것이 없다.
+
+    `full_clean` 을 거치는 이유: `objects.create` 는 clean 을 부르지 않아서 대상
+    3분기(셋 중 하나)나 채널 오타가 그대로 행이 된다. 그런 행은 발송 시점에야
+    조용히 실패한다 — 만드는 자리에서 막는다.
+    """
+    notification = Notification(
+        student=student,
+        parent=parent,
+        user=user,
+        channel=channel,
+        type=type,
+        title=title,
+        body=body,
+        ref_type=ref_type,
+        ref_id=ref_id,
+        status=Notification.Status.PENDING,
+    )
+    notification.full_clean()
+    notification.save()
+    # tasks 가 이 모듈의 deliver 를 쓰므로 여기서 위로 import 하면 순환이 된다.
+    from .tasks import send_notification
+
+    transaction.on_commit(lambda: send_notification.delay(notification.notif_id))
+    return notification
+
+
 def build_message(notification):
     """알림 행 → 중립 발송 요청. 연락처를 못 찾으면 `PermanentChannelError`.
 
