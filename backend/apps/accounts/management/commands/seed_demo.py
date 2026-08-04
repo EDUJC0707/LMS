@@ -64,7 +64,7 @@ from apps.grades.models import (
 )
 from apps.notifications.models import Notification
 from apps.payments.models import Order, Payment, Product
-from apps.videos.models import MakeupGrant, Video, VideoGrant
+from apps.videos.models import MakeupGrant, Video, VideoGrant, WatermarkTamper
 
 PASSWORD = "test1234"  # 데모 전용 공통 비밀번호(모듈 docstring)
 
@@ -137,7 +137,7 @@ class Command(BaseCommand):
             ClinicEvaluationItem, ClinicEvaluation, ClinicRequest,
             ClinicEligibility, ClinicEvalCriteria, ClinicSlot,
             Payment, Order, Product,
-            VideoGrant, MakeupGrant, Video,
+            WatermarkTamper, VideoGrant, MakeupGrant, Video,
             AbsenceCounseling, ParentCounselRequest, PostComment, Post,
             WorkbookSubmission, WeaknessCheckPdf, QuestionSimilarMap, QuestionBankItem,
             SheetAnswer, AnswerSheet, Score, Assignment, Attendance,
@@ -366,7 +366,12 @@ class Command(BaseCommand):
         """주차별 복습영상 2~3개 — 공개된 주차는 `공개`, 미래 주차는 `준비중`."""
         videos = []
         for week in weeks:
-            count = 3 if week.week_no <= 2 else 2
+            # 주차당 1편이면 충분하다. 재생·권한·만료는 영상 한 편으로 다
+            # 검증되고, 여러 편은 목록을 길게 만들 뿐이다 — 게다가 시드 영상은
+            # 전부 같은 자산으로 대체돼 재생되므로(resolve_ref) 늘려도 보이는
+            # 것이 달라지지 않는다. 2주차만 2편으로 둔다: "한 주차에 여러 편"
+            # 이라는 축(차시 정렬·다음 차시 계산)을 잃지 않기 위해서다.
+            count = 2 if week.week_no == 2 else 1
             released = week.start_date <= today
             for seq in range(1, count + 1):
                 # `seed-` 접두는 실제 Mux 참조가 아니라는 표시다. 서버가 이 접두를
