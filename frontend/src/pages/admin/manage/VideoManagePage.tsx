@@ -8,10 +8,9 @@
  *   POST  /api/admin/videos/{id}/archive   `아카이브` 전환
  *   GET   /api/admin/videos/course-weeks   주차 선택지
  *
- * **업로드 UI 는 아직 만들지 않는다**(2026-08-04 사용자 지시). 서버에는 자리가
- * 준비돼 있고(`POST /api/admin/videos/uploads` — 브라우저에서 Mux 로 직접 전송),
- * 실제로 쓸지는 **학원 회선에서 3~4GB 전송이 견딜 만한지** 재본 뒤에 정한다.
- * 그 전까지 업로드 경로는 `manage.py mux_upload` 커맨드다.
+ * **파일 업로드는 만들어 뒀지만 여기 연결하지 않았다**(2026-08-04 사용자 지시) —
+ * `./VideoUploadField.tsx` 에 완성돼 있고 연결법도 그 머리말에 있다. 학원 회선에서
+ * 3~4GB 전송이 견딜 만한지 재본 뒤에 붙인다. 그 전까지는 `manage.py mux_upload`.
  *
  * 차시는 그 주차의 최대 차시 + 1 로 채워 손으로 세지 않게 한다.
  *
