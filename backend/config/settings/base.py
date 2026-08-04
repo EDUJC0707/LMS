@@ -100,6 +100,36 @@ CELERY_BROKER_URL = env("CELERY_BROKER_URL", default=REDIS_URL)
 CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_TIMEZONE = "Asia/Seoul"
 CELERY_TASK_TRACK_STARTED = True
+# 실패·정체 알림 재발송(apps.notifications.tasks). beat 프로세스는 아직 안 뜬다 —
+# 워커와 함께 켜는 시점은 infra/DEPLOY.md 6장 참조.
+CELERY_BEAT_SCHEDULE = {
+    "retry-failed-notifications": {
+        "task": "notifications.retry_failed_notifications",
+        "schedule": 60 * 60,
+    },
+}
+
+# --- 알림 채널 (PRD 6-8 채널 추상화 — apps/notifications/channels.py) --------
+# 채널 값 → 어댑터 dotted path. **기본값은 비어 있다(닫힘)**: 아무것도 안 물린
+# 환경에서 발송은 실패하고 사유가 남는다. Fake 를 기본으로 두면 운영에서 알림이
+# 조용히 증발하고 발송내역에는 성공만 쌓인다. dev/prod 가 각자 물린다.
+NOTIFICATION_CHANNEL_BACKENDS = {}
+# 알림 유형 → 승인된 카카오 알림톡 템플릿 코드. **비어 있다 — 8-17 대기**
+# (발송 시점 목록이 확정돼야 템플릿 승인이 시작된다). 승인분이 나오면 여기에
+# `"성적": "TPL_…"` 를 추가하는 것이 연동의 전부다.
+NOTIFICATION_KAKAO_TEMPLATE_CODES = {}
+NOTIFICATION_MAX_RETRIES = env.int("NOTIFICATION_MAX_RETRIES", default=5)
+# 재발송 배치 선정창 — 새 행(재시도 중)과 지난 행(보내도 의미 없음)을 뺀다.
+NOTIFICATION_RETRY_GRACE_MINUTES = env.int("NOTIFICATION_RETRY_GRACE_MINUTES", default=30)
+NOTIFICATION_RETRY_MAX_AGE_HOURS = env.int("NOTIFICATION_RETRY_MAX_AGE_HOURS", default=24)
+NOTIFICATION_RETRY_BATCH_SIZE = env.int("NOTIFICATION_RETRY_BATCH_SIZE", default=200)
+
+# 솔라피 자격증명 — **아직 없다**(계정 미개설). 업체 이름이 나오는 것은 이 층까지고
+# DB 스키마에는 새지 않는다(apps/notifications/models.py 채널 추상화 계약).
+SOLAPI_API_KEY = env("SOLAPI_API_KEY", default="")
+SOLAPI_API_SECRET = env("SOLAPI_API_SECRET", default="")
+SOLAPI_SENDER_PHONE = env("SOLAPI_SENDER_PHONE", default="")  # 사전 등록된 발신번호
+SOLAPI_KAKAO_PFID = env("SOLAPI_KAKAO_PFID", default="")  # 카카오 비즈니스 채널 ID
 
 # --- 비밀번호 검증 -------------------------------------------------------
 AUTH_PASSWORD_VALIDATORS = [
@@ -145,6 +175,14 @@ CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=["http://localho
 # 수집 확인용 /sentry-debug 의 열쇠. 비어 있으면 그 경로는 404 다(기본값 = 닫힘).
 # DSN 자체는 prod.py 에서만 읽는다 — 로컬·테스트에서 Sentry 는 켜지지 않는다.
 SENTRY_DEBUG_TOKEN = env("SENTRY_DEBUG_TOKEN", default="")
+
+# ── Mux 서명 재생 (apps.videos.mux) ──────────────────────────────────
+# Playback ID 정책이 `signed` 면 서버가 RS256 JWT 를 서명해야 재생된다.
+# 비어 있으면 서명하지 않는다 — 로컬·시드는 데모/공개 영상으로 돌기 때문
+# (없다고 죽이면 키 없는 개발 환경에서 재생 화면 자체가 못 뜬다).
+# 개인키는 Mux 가 base64 로 주며 **시크릿이다** — .env 로만 넣고 커밋 금지.
+MUX_SIGNING_KEY_ID = env("MUX_SIGNING_KEY_ID", default="")
+MUX_SIGNING_PRIVATE_KEY = env("MUX_SIGNING_PRIVATE_KEY", default="")
 
 # --- 오브젝트 스토리지 (Tigris/S3, django-storages) ----------------------
 # 버킷명이 있으면 S3(Tigris) 사용, 없으면 로컬 파일시스템(MEDIA_ROOT).

@@ -12,3 +12,12 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1", "0.
 
 # 이메일은 콘솔로 출력(실발송 없음).
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+# 알림도 기계 밖으로 나가지 않는다 — 보관만 하는 Fake 어댑터
+# (apps/notifications/channels.py). 운영은 prod.py 가 솔라피를 물린다.
+_FAKE_CHANNEL = "apps.notifications.channels.FakeChannelAdapter"
+NOTIFICATION_CHANNEL_BACKENDS = {
+    "카카오알림톡": _FAKE_CHANNEL,
+    "문자": _FAKE_CHANNEL,
+    "앱푸시": _FAKE_CHANNEL,
+}
