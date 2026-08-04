@@ -49,6 +49,17 @@ from apps.clinic.google_meet import build_consent_url, exchange_code
 
 DEFAULT_PORT = 8765
 
+#: 코드 수신 서버가 붙는 주소. **이름(`localhost`)이 아니라 숫자로 쓴다** —
+#: 맥에서 `localhost` 는 ::1 로도 풀리는데 서버는 IPv4 에만 붙어 있어서,
+#: 브라우저가 ::1 을 먼저 잡으면 승인을 끝낸 직후 "연결할 수 없음"이 뜨고
+#: 인가 코드가 그대로 날아간다. 구글은 루프백을 숫자로 받는 것을 허용한다.
+LOOPBACK_HOST = "127.0.0.1"
+
+
+def redirect_uri_for(port):
+    """동의 화면에 넘길 리디렉션 주소. 구글 콘솔에 적을 값과 같아야 한다."""
+    return f"http://{LOOPBACK_HOST}:{port}/"
+
 
 class _CodeReceiver(http.server.BaseHTTPRequestHandler):
     """리디렉션 한 건만 받고 끝. 받은 코드는 서버 객체에 얹는다."""
@@ -89,7 +100,7 @@ class Command(BaseCommand):
             raise CommandError("GOOGLE_MEET_CLIENT_SECRET 가 없습니다.")
 
         port = options["port"]
-        redirect_uri = f"http://localhost:{port}/"
+        redirect_uri = redirect_uri_for(port)
         code = self._await_code(port, redirect_uri, client_id)
         try:
             refresh_token = exchange_code(client_id, client_secret, code, redirect_uri)
@@ -101,7 +112,7 @@ class Command(BaseCommand):
 
     def _await_code(self, port, redirect_uri, client_id):
         try:
-            server = http.server.HTTPServer(("127.0.0.1", port), _CodeReceiver)
+            server = http.server.HTTPServer((LOOPBACK_HOST, port), _CodeReceiver)
         except OSError as error:
             raise CommandError(f"{port} 포트를 열지 못했습니다: {error}") from error
         server.auth_code = None

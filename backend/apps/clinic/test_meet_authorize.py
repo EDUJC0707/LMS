@@ -9,6 +9,16 @@ from io import StringIO
 from django.core.management import CommandError, call_command
 from django.test import SimpleTestCase, override_settings
 
+from apps.clinic.management.commands.meet_authorize import redirect_uri_for
+
+
+class RedirectUriTests(SimpleTestCase):
+    def test_uses_the_loopback_address_not_the_name(self):
+        # `localhost` 는 맥에서 ::1 로도 풀리는데 코드 수신 서버는 IPv4 에만
+        # 붙는다 — 브라우저가 ::1 로 먼저 가면 "연결할 수 없음"이 뜨고,
+        # 그때는 동의를 이미 끝낸 뒤라 코드가 통째로 날아간다.
+        self.assertEqual(redirect_uri_for(8765), "http://127.0.0.1:8765/")
+
 
 class MeetAuthorizeGuardTests(SimpleTestCase):
     @override_settings(GOOGLE_MEET_CLIENT_ID="", GOOGLE_MEET_CLIENT_SECRET="")
