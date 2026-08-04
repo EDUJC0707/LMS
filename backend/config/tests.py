@@ -53,6 +53,12 @@ class SentryInitTests(SimpleTestCase):
         self.assertEqual(options["max_request_body_size"], "never")
         self.assertFalse(options["include_local_variables"])
 
+    def test_release_is_tagged_on_events(self):
+        # 이게 없으면 "어제 500 났는데 그게 어느 배포냐"에 답할 수 없다.
+        init_sentry(FAKE_DSN, release="9f1c2ab")
+        self.assertEqual(sentry_sdk.get_client().options["release"], "9f1c2ab")
+
+
 
 class ProdSettingsSentryTests(SimpleTestCase):
     """운영 설정이 실제로 Sentry 를 켜는가 — prod.py 에서 호출이 빠지면 조용히 안 켜진다."""
@@ -77,6 +83,7 @@ class ProdSettingsSentryTests(SimpleTestCase):
     def test_no_dsn_env_leaves_sentry_off(self):
         self.load_prod_settings(SENTRY_DSN="")
         self.assertFalse(sentry_sdk.get_client().is_active())
+
 
 
 class SentryScrubTests(SimpleTestCase):

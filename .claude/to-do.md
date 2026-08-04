@@ -137,11 +137,9 @@
   `CLAUDE.md` §2 의 "push 는 사용자 지시가 있을 때만"이 문자 그대로인 이유다.
   브랜치 push 는 안전하다(워크플로가 `main` 만 본다)
 - [ ] Fly `edujc-lms` 헬스체크 critical 상태 원인 확인
-- [ ] **Sentry `release` 주입** — 지금은 "어느 배포에서 난 에러냐"를 구분할 수 없다.
-  SDK 가 git 으로 추론하는데 이미지에 `.git` 이 없어 실패한다(로컬에서만 SHA 가 붙는 것 확인).
-  빌드 인자로 SHA 를 넣어 `SENTRY_RELEASE` 로 넘기면 된다 — Dockerfile 을 건드리므로
-  위 `UV_NO_DEV`·whitenoise 항목과 **한 번에** 처리한다.
-  (Sentry 자체는 2026-08-04 가동 완료 — `progress.md` · 절차는 `infra/DEPLOY.md` 8장)
+- [x] ~~Sentry `release` 주입~~ → **2026-08-04 완료.** `Dockerfile` 의 `ARG GIT_SHA` →
+  `ENV SENTRY_RELEASE`, CI 와 `make deploy` 가 넘긴다. **`fly deploy` 를 손으로 직접
+  치면 태그가 사라지므로 `make deploy` 를 쓸 것.** 다음 배포부터 붙는다
 - [ ] **Celery 워커 + Redis 기동 — 아직 아님**(2026-07-22 결정, 보류 유지). `@shared_task` 0건이라 할 일이 없고 워커는 auto_stop 대상이 아니라 24시간 돌며 월 ~$3.3. **해제 트리거 = 첫 `@shared_task` 작성 시점**(알림톡 발송 또는 영상 처리). 복구 3단계와 경위는 `infra/DEPLOY.md` 6장
 
 ## 외부 대기 (오는 대로 붙임 — 자리는 다 파여 있음)

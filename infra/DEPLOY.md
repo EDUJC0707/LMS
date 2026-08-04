@@ -334,9 +334,11 @@ SDK 기본 스크러버는 `password`·`token` 류만 잡는다(이름·전화�
 - **Celery 도 이미 잡힌다.** 활성 통합에 `celery`·`redis`·`boto3` 가 자동으로 들어간다
   (`prod.py` 는 Django 만 명시하지만 SDK 가 설치된 패키지를 감지해 붙인다). 워커를 띄우는
   날(6장) 알림 발송 태스크 실패는 별도 작업 없이 수집된다
-- **`release` 는 컨테이너에서 안 잡힌다.** SDK 가 git 으로 추론하는데 이미지에 `.git` 이 없다.
-  로컬에서만 SHA 가 붙는다 — "어느 배포에서 난 에러냐"를 구분하려면 빌드 때
-  `SENTRY_RELEASE` 를 넣어야 한다. 지금은 안 넣었다(배포 전 일괄 항목으로 남긴다)
+- **`release` 는 빌드가 넣는다**(2026-08-04 처리). 이미지에 `.git` 이 없어 SDK 가 스스로
+  추론할 수단이 없다 → `Dockerfile` 의 `ARG GIT_SHA` → `ENV SENTRY_RELEASE`.
+  넘기는 쪽은 두 군데뿐이다: CI(`--build-arg GIT_SHA=${{ github.sha }}`)와 `make deploy`.
+  **`fly deploy` 를 손으로 직접 치면 태그가 조용히 사라진다** — 그래서 `make deploy` 가 있다.
+  로컬 도커 빌드로 실측: 인자를 넘기면 `options['release']` 가 그 값, 안 넘기면 `None`
 
 ---
 
