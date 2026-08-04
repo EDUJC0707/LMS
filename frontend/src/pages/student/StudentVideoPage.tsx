@@ -14,6 +14,13 @@
  * 덤으로 권한 검사도 재생 시점에 걸린다 — 목록만 열어 두고 몇 시간 뒤 재생하는
  * 경우에도 7일 만료가 제대로 잡힌다.
  *
+ * ## 자동재생하지 않는다
+ *
+ * 목록의 [열기] 는 **여는 것**이고 재생은 학생이 플레이어에서 시작한다.
+ * 두 가지 이유다 — ① 잘못 누른 사람에게도 재생이 시작되면 그게 그대로 요금이다
+ * (Mux 는 "본 시간" 이 아니라 **"내려간 시간"** 으로 과금한다) ② 목록 버튼이
+ * `재생` 인데 실제 재생은 다음 화면에서 일어나면 이름과 동작이 어긋난다.
+ *
  * ## 재생 참조는 서버가 정한다
  *
  * 시드 데이터는 재생될 수 없는 가짜 참조(`seed-*`)를 갖는데, 그 대체를 **서버가**
@@ -137,11 +144,25 @@ export default function StudentVideoPage() {
   const stageRef = useRef<HTMLDivElement>(null);
   useWatermarkGuard(stageRef, playing);
 
+  /**
+   * 지금 열고 있는 행 — 버튼의 로딩 표시가 **그 행에만** 걸리게 한다.
+   *
+   * `useApiAction` 의 `pending` 은 페이지에 하나뿐인 불리언이라 어느 행을 눌렀는지
+   * 모른다. 그대로 `loading` 에 물리면 한 행을 눌러도 **모든 행이 함께 돌고**,
+   * Button 이 `disabled={loading}` 이라 나머지 행이 잠긴다(2026-08-04 실측).
+   */
+  const [openingId, setOpeningId] = useState<number | null>(null);
+
   // 재생 정보는 누르는 순간 받는다(파일 머리말 참조).
   const open = useApiAction(async (videoId: number) => {
-    const res = await http.get<Playback>(`/student/videos/${videoId}/playback`);
-    setPlaying(res.data);
-    return true;
+    setOpeningId(videoId);
+    try {
+      const res = await http.get<Playback>(`/student/videos/${videoId}/playback`);
+      setPlaying(res.data);
+      return true;
+    } finally {
+      setOpeningId(null);
+    }
   });
 
   if (list.initialLoading) return <Loading label="복습영상을 불러오는 중…" />;
@@ -173,7 +194,6 @@ export default function StudentVideoPage() {
                 // 유출본에 찍히는 추적이라면 이건 재생 기록 쪽이다.
                 viewer_user_id: playing.viewer_id,
               }}
-              autoPlay
             >
               {/* 플레이어 안쪽 — 전체화면에서도 남는다(파일 머리말 참조) */}
               <div className="vd-mark">
@@ -238,10 +258,10 @@ export default function StudentVideoPage() {
               <Button
                 size="sm"
                 variant="primary"
-                loading={open.pending}
+                loading={openingId === row.video_id}
                 onClick={() => void open.run(row.video_id)}
               >
-                재생
+                열기
               </Button>
             ),
           },

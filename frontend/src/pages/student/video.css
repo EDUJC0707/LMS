@@ -36,8 +36,8 @@
 
 .vd-mark__text {
   position: absolute;
-  top: 6%;
-  left: 5%;
+  top: 5%;
+  left: 3%;
   padding: var(--space-2xs) var(--space-sm);
   border-radius: var(--radius-sm);
   background: rgb(0 0 0 / 0.34);

@@ -178,10 +178,24 @@ export default function VideoManagePage() {
     return true;
   });
 
+  /**
+   * 지금 전환 중인 (행, 동작) — 로딩 표시가 **누른 버튼에만** 걸리게 한다.
+   *
+   * `useApiAction` 의 `pending` 은 하나뿐이라 어느 행·어느 버튼인지 모른다.
+   * 그대로 물리면 한 행의 [공개] 를 눌러도 **모든 행의 공개·보관이 함께 돌고**
+   * 잠긴다(Button 이 disabled={loading}). 한 행에 버튼이 둘이라 동작까지 함께 잡는다.
+   */
+  const [busy, setBusy] = useState<{ id: number; verb: string } | null>(null);
+
   const transition = useApiAction(async (video: VideoRow, verb: "publish" | "archive") => {
-    await http.post(`/admin/videos/${video.video_id}/${verb}`);
-    await list.reload();
-    return true;
+    setBusy({ id: video.video_id, verb });
+    try {
+      await http.post(`/admin/videos/${video.video_id}/${verb}`);
+      await list.reload();
+      return true;
+    } finally {
+      setBusy(null);
+    }
   });
 
   const openCreate = () => {
@@ -309,7 +323,7 @@ export default function VideoManagePage() {
                     <Button
                       size="sm"
                       variant="primary"
-                      loading={transition.pending}
+                      loading={busy?.id === row.video_id && busy.verb === "publish"}
                       onClick={() => void transition.run(row, "publish")}
                     >
                       공개
@@ -319,7 +333,7 @@ export default function VideoManagePage() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      loading={transition.pending}
+                      loading={busy?.id === row.video_id && busy.verb === "archive"}
                       onClick={() => void transition.run(row, "archive")}
                     >
                       보관
