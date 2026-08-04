@@ -47,13 +47,32 @@ const DEMO_PLAYBACK_ID = "qxb01i6T202018GFS02vp9RIe01icTcDCjVzQpmaB00CUisJ4";
 /** 시드가 넣는 가짜 참조의 접두 — 실제 Mux 값이 아니라는 표시(seed_demo.py). */
 const SEED_REF_PREFIX = "seed-";
 
+/** 데모로 떨어지는가 — 참조가 없거나 시드용 가짜 값일 때. */
+function isDemo(video: PlaybackVideo): boolean {
+  return (
+    video.provider !== "mux" ||
+    !video.external_ref ||
+    video.external_ref.startsWith(SEED_REF_PREFIX)
+  );
+}
+
 function playbackIdOf(video: PlaybackVideo): string {
-  if (video.provider !== "mux" || !video.external_ref) return DEMO_PLAYBACK_ID;
   // 시드 데이터는 재생될 수 없는 값이라 데모로 떨어뜨린다. 실제 참조는 그대로 쓴다 —
   // 여기서 관대하게 폴백하면 **잘못 적은 참조도 데모가 재생돼** 오류가 묻힌다.
-  return video.external_ref.startsWith(SEED_REF_PREFIX)
-    ? DEMO_PLAYBACK_ID
-    : video.external_ref;
+  return isDemo(video) ? DEMO_PLAYBACK_ID : video.external_ref!;
+}
+
+/**
+ * 데모로 떨어질 때는 토큰을 **빼야 한다.**
+ *
+ * 서버는 `external_ref`(예: `seed-1-1`)로 서명하는데 재생기는 그 값일 때 데모
+ * 영상을 튼다. 서명 대상과 재생 대상이 어긋난 토큰을 넘기면 Mux 가
+ * "playback-token formatted with incorrect information" 으로 거부한다
+ * (2026-08-04 실측 — 시드 영상이 전부 이걸로 죽었다).
+ * 데모 자산은 공개라 토큰이 필요 없다.
+ */
+function tokensOf(playing: Playback): Playback["video"]["tokens"] {
+  return isDemo(playing.video) ? {} : playing.video.tokens;
 }
 
 interface VideoRow {
@@ -133,7 +152,7 @@ export default function StudentVideoPage() {
               className="vd-player"
               streamType="on-demand"
               playbackId={playbackIdOf(playing.video)}
-              tokens={playing.video.tokens}
+              tokens={tokensOf(playing)}
               metadata={{
                 video_title: playing.video.title,
                 // 유출 시 Mux Data 에서 "누가 봤나"를 되짚는 축. 워터마크가
