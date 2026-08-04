@@ -154,6 +154,12 @@ SENTRY_DEBUG_TOKEN = env("SENTRY_DEBUG_TOKEN", default="")
 MUX_SIGNING_KEY_ID = env("MUX_SIGNING_KEY_ID", default="")
 MUX_SIGNING_PRIVATE_KEY = env("MUX_SIGNING_PRIVATE_KEY", default="")
 
+# Mux REST API 자격증명 — **서명 키와 다른 것이다.**
+# 서명 키(위)는 재생 토큰용이고, 이건 업로드·자산 관리용이다
+# (대시보드 Settings → Access Tokens). 업로드 커맨드만 쓴다.
+MUX_TOKEN_ID = env("MUX_TOKEN_ID", default="")
+MUX_TOKEN_SECRET = env("MUX_TOKEN_SECRET", default="")
+
 # --- 오브젝트 스토리지 (Tigris/S3, django-storages) ----------------------
 # 버킷명이 있으면 S3(Tigris) 사용, 없으면 로컬 파일시스템(MEDIA_ROOT).
 AWS_ACCESS_KEY_ID = env("AWS_ACCESS_KEY_ID", default="")
