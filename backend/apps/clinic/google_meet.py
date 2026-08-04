@@ -85,8 +85,17 @@ SPACE_CONFIG = {
     },
 }
 
-#: 스페이스 생성에 필요한 유일한 스코프. 동의 화면과 여기가 같은 값을 써야 한다.
-SCOPE = "https://www.googleapis.com/auth/meetings.space.created"
+#: 동의받는 권한 전부. 하나라도 빠지면 그 기능이 조용히 403 이 되므로 여기가
+#: 유일한 목록이고 동의 화면도 이 값을 그대로 쓴다.
+#:
+#: `drive.meet.readonly` 는 **미트가 만든 파일만** 보는 권한이다. 감독 자료(전사·
+#: 요약 문서)를 읽으려면 필요한데, 드라이브 전체를 보는 `drive.readonly` 는 받지
+#: 않는다 — 그 계정 드라이브에 클리닉과 무관한 것이 들어와도 우리가 볼 이유가
+#: 없다(닫힘이 안전 기본값 — key_considerations §5).
+SCOPES = (
+    "https://www.googleapis.com/auth/meetings.space.created",
+    "https://www.googleapis.com/auth/drive.meet.readonly",
+)
 
 #: 관리자가 배정 버튼을 누른 채 기다리는 시간 — 동기 호출이라 짧게 잡는다.
 TIMEOUT_SECONDS = 10
@@ -218,7 +227,7 @@ def build_consent_url(client_id, redirect_uri):
             "client_id": client_id,
             "redirect_uri": redirect_uri,
             "response_type": "code",
-            "scope": SCOPE,
+            "scope": " ".join(SCOPES),
             "access_type": "offline",
             "prompt": "consent",
         }

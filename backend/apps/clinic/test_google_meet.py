@@ -12,7 +12,7 @@ from django.test import SimpleTestCase, override_settings
 from .conferencing import PermanentConferenceError, TemporaryConferenceError
 from .google_meet import (
     AUTH_ENDPOINT,
-    SCOPE,
+    SCOPES,
     SPACES_ENDPOINT,
     TOKEN_ENDPOINT,
     GoogleMeetAdapter,
@@ -193,13 +193,24 @@ class ConsentFlowTests(SimpleTestCase):
             k: v[0] for k, v in parse_qs(parts.query).items()
         }
 
-    def test_consent_url_asks_for_the_space_scope(self):
+    def test_consent_url_asks_for_every_scope_we_use(self):
         base, params = self.query(build_consent_url("cid", "http://localhost:8765/"))
         self.assertEqual(base, AUTH_ENDPOINT)
-        self.assertEqual(params["scope"], SCOPE)
+        self.assertEqual(params["scope"], " ".join(SCOPES))
         self.assertEqual(params["client_id"], "cid")
         self.assertEqual(params["redirect_uri"], "http://localhost:8765/")
         self.assertEqual(params["response_type"], "code")
+
+    def test_scopes_are_the_two_we_need_and_no_more(self):
+        # 스페이스 생성 + 미트가 만든 문서 읽기. 드라이브 전체 읽기 권한
+        # (`drive.readonly`)를 받지 않는다 — 감독 자료 말고는 볼 이유가 없다(§5).
+        self.assertEqual(
+            list(SCOPES),
+            [
+                "https://www.googleapis.com/auth/meetings.space.created",
+                "https://www.googleapis.com/auth/drive.meet.readonly",
+            ],
+        )
 
     def test_consent_url_forces_a_refresh_token(self):
         # access_type=offline 없이는 갱신 토큰이 아예 안 오고, prompt=consent

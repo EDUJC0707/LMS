@@ -22,7 +22,8 @@ Meet REST API 는 **사용자 인증만** 받는다(google_meet.py 머리말). �
 ## 쓰는 순서
 
 1. Google Cloud 콘솔에서 프로젝트를 만들고 **Google Meet API 를 사용 설정**한다.
-2. OAuth 동의 화면을 만든다. 스코프는 `meetings.space.created` 하나다.
+2. OAuth 동의 화면을 만든다. 스코프는 `google_meet.SCOPES` 가 유일한 목록이다
+   (스페이스 생성 + 미트가 만든 문서 읽기).
 
    ⚠ **여기서 한 번 틀리면 일주일마다 조용히 끊긴다.** 게시 상태가
    `테스트` 인 외부 앱의 갱신 토큰은 **7일 뒤 만료**된다 — 배정이 갑자기
