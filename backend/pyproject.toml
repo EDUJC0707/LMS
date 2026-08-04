@@ -14,6 +14,11 @@ dependencies = [
     "django-storages[s3]>=1.14",
     "gunicorn>=23.0",
     "sentry-sdk>=2.14",
+    # OMR 인식 — 스캔본에서 마킹을 읽는다(PRD 3.1.1).
+    # headless 를 쓰는 이유: 기본 opencv-python 은 GUI(highgui) 의존을 끌고 오는데
+    # 서버에는 창이 없다. 우리가 쓰는 건 사영변환·윤곽·모폴로지뿐이다.
+    "opencv-python-headless>=4.10",
+    "numpy>=1.26",
 ]
 
 # 개발 전용 의존성 (uv sync --no-dev 로 운영 이미지에서는 제외)
