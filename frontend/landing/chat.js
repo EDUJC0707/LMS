@@ -12,6 +12,16 @@
    붙여넣기에 줄바꿈이 딸려 오면, 그대로 부팅해서 엉뚱한 키로 CDN 요청이 나간다. */
 const PLUGIN_KEY = (window.__CHANNEL_TALK_KEY__ || '').trim();
 
+/* 부팅이 실패했는지. 위 주석의 "조용히 죽지 않는다" 는 이 값 없이는 못 지킨다 —
+   부트 스텁이 window.ChannelIO 를 먼저 세우기 때문에, CDN 이 막혀도 스텁은 남아
+   호출이 큐에만 쌓이고 버튼은 무반응이 된다. 실패를 따로 기억해야 알 수 있다. */
+let failed = false;
+
+function fail(why, detail) {
+  failed = true;
+  console.info('[chat] ' + why, detail ?? '');
+}
+
 function boot() {
   if (!PLUGIN_KEY) return false;
   /* 공식 부트 스크립트 (channel.io) */
@@ -25,9 +35,15 @@ function boot() {
     const s = document.createElement('script');
     s.async = true;
     s.src = 'https://cdn.channel.io/plugin/ch-plugin-web.js';
+    s.onerror = () => fail('채널톡 스크립트를 받지 못했다.');
     document.head.appendChild(s);
   })();
-  window.ChannelIO('boot', { pluginKey: PLUGIN_KEY });
+  /* language 를 안 넘기면 채널톡은 navigator.language 를 따른다(번들 getLanguage 실측).
+     이 페이지는 lang="ko" 에 카피가 전부 한국어인데, 영어로 맞춰 둔 아이패드에서는
+     그 위에 영어 메신저가 뜬다 — 학생·학부모 1순위 기기가 아이패드다(PRD §4). */
+  window.ChannelIO('boot', { pluginKey: PLUGIN_KEY, language: 'ko' }, err => {
+    if (err) fail('채널톡 부팅에 실패했다.', err);
+  });
   return true;
 }
 
@@ -44,8 +60,12 @@ const ready = boot();
  * @param {string} [context] 어디서 눌렀는지 — `data-chat` 값이 그대로 온다
  */
 export function openChat(context) {
-  if (!ready || !window.ChannelIO) {
+  if (!ready) {
     console.info('[chat] 채널톡 키가 없어 위젯을 띄우지 않았다. context:', context);
+    return;
+  }
+  if (failed || !window.ChannelIO) {
+    console.info('[chat] 채널톡이 떠 있지 않아 문의창을 열지 못했다. context:', context);
     return;
   }
   /* 채울 말이 없으면 새 상담을 강제로 열지 않는다 — 진행 중이던 상담이 갈린다. */
