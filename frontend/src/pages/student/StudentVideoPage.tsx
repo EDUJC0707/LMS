@@ -61,8 +61,8 @@ interface VideoRow {
   title: string;
   sequence_no: number;
   duration_seconds: number | null;
-  course_name: string;
-  week_no: number;
+  course_name: string | null;
+  week_no: number | null;
   expires_at: string;
 }
 
@@ -80,6 +80,8 @@ interface PlaybackVideo {
 interface Playback {
   video: PlaybackVideo;
   watermark: string;
+  /** Mux Data 시청자 축 — 실명이 아니라 학생 내부 번호다(playback.py). */
+  viewer_id: string;
   expires_at: string;
 }
 
@@ -136,7 +138,7 @@ export default function StudentVideoPage() {
                 video_title: playing.video.title,
                 // 유출 시 Mux Data 에서 "누가 봤나"를 되짚는 축. 워터마크가
                 // 유출본에 찍히는 추적이라면 이건 재생 기록 쪽이다.
-                viewer_user_id: String(playing.video.video_id),
+                viewer_user_id: playing.viewer_id,
               }}
               autoPlay
             >
@@ -169,8 +171,9 @@ export default function StudentVideoPage() {
             header: "주차",
             numeric: true,
             width: "4.5rem",
-            sortValue: (row) => row.week_no,
-            cell: (row) => `${row.week_no}주차`,
+            // 주차 없는 특강은 뒤로 — 빈 값이 위로 오면 목록 첫 화면이 어수선해진다
+            sortValue: (row) => row.week_no ?? 9999,
+            cell: (row) => (row.week_no === null ? "—" : `${row.week_no}주차`),
           },
           {
             key: "title",
