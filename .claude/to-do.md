@@ -121,7 +121,16 @@
 - [ ] `infra/Dockerfile`에 `ENV UV_NO_DEV=1`(부팅 13초 지연), uv 이미지 태그 고정
 - [ ] CI `FLY_API_TOKEN` 시크릿(현재 미설정이라 자동배포 실행 자체가 안 됨)
 - [ ] Fly `edujc-lms` 헬스체크 critical 상태 원인 확인
-- [ ] **Sentry 붙이기 — 사용자 가입만 남음**(2026-07-28 보류). 코드는 이미 완료: `prod.py`에 `sentry_sdk.init()`(DSN 있으면 활성화, `send_default_pii=False`) + `sentry-sdk>=2.14` 의존성. **남은 건 DSN 하나.** `fly ext sentry create`는 **불가**(7/28 실행 확인: "Sentry is no longer accepting new Fly.io integrations" — Team 1년 무료 딜 소멸) → **sentry.io 직접 가입**(Developer 무료: 에러 5천건/월·1명, LMS 규모엔 충분) → 플랫폼 Django → DSN 복사 → `fly secrets set SENTRY_DSN="<DSN>" -a edujc-lms` → 실제 에러 1건으로 수집 검증. **동기**: `fly logs`가 ~30분만 남아 "어제 왜 500났지"를 사후 추적 못 함(7/28 qbank 500 조사에서 실제로 막힘)
+- [ ] **Sentry — sentry.io 가입해서 DSN 받아오기.** 사람만 할 수 있는 건 이것 하나다.
+  절차·검증은 `infra/DEPLOY.md` **8장**에 다 적어 뒀다(가입 → 플랫폼 Django → Client Keys
+  에서 DSN 복사 → `fly secrets set SENTRY_DSN="<DSN>" -a edujc-lms` → `/sentry-debug` 로
+  실제 500 한 건 내서 대시보드에 뜨는 것까지 확인 → 확인용 토큰 회수).
+  `fly ext sentry create`는 **불가**(7/28 확인 — Fly 경유 신규 통합 중단).
+  **동기**: `fly logs`가 ~30분만 남아 "어제 왜 500났지"를 사후 추적 못 함(7/28 qbank 500 조사에서 실제로 막힘)
+  - 코드는 2026-08-04 에 마무리했다: `config/observability.py` 로 분리 + 개인정보 차단
+    (요청 본문·쿼리 값·스택 지역변수 — `send_default_pii=False` 만으로는 안 막힌다),
+    DSN 오타에 부팅 안 죽게, 계약은 `config/tests.py` 14건이 지킨다.
+    **`config/` 테스트는 `manage.py test apps` 에 안 잡힌다 — `test apps config` 로 돌릴 것**
 - [ ] **Celery 워커 + Redis 기동 — 아직 아님**(2026-07-22 결정, 보류 유지). `@shared_task` 0건이라 할 일이 없고 워커는 auto_stop 대상이 아니라 24시간 돌며 월 ~$3.3. **해제 트리거 = 첫 `@shared_task` 작성 시점**(알림톡 발송 또는 영상 처리). 복구 3단계와 경위는 `infra/DEPLOY.md` 6장
 
 ## 외부 대기 (오는 대로 붙임 — 자리는 다 파여 있음)
