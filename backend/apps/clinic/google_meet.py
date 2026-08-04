@@ -219,6 +219,39 @@ class GoogleMeetAdapter(ConferenceAdapter):
         return PermanentConferenceError(message)
 
 
+# --- 감독 문서에서 요약만 잘라내기 ----------------------------------------
+
+#: 전사가 시작되는 자리. 구글이 요약과 전사를 **문서 하나**에 담기 때문에
+#: 여기서 잘라야 학생 발화가 우리 DB 로 넘어오지 않는다(2026-08-04 실측).
+#: 한국어 제목(`스크립트`)이 아니라 **이모지**로 찾는 이유 — 계정 언어가 바뀌면
+#: 제목은 `Transcript` 가 되지만 이모지는 그대로다.
+TRANSCRIPT_MARKER = "📖"
+
+#: 요약 끝에 붙는 구글 안내문. 감독 기록에 설문조사 안내가 남을 이유가 없다.
+#: 문구가 바뀌면 걸러지지 않을 뿐 **자르는 위치와는 무관하다** — 여기서 틀려도
+#: 전사가 새지는 않는다.
+_BOILERPLATE_HINTS = ("Gemini가 작성한 회의록이 정확한지", "설문조사", "도움말을 알아보세요")
+
+
+def split_summary(document_text):
+    """감독 문서 본문 → **요약 부분만**. 잘라낼 자리가 없으면 None.
+
+    표식을 못 찾으면 통째로 돌려주지 않고 None 이다. 통째로 넣는 쪽이 편하지만
+    그 순간 전사 원문(학생 발화)이 DB 에 들어간다 — 형식이 바뀌었을 때 조용히
+    개인정보를 쌓느니 요약이 비어 있는 편이 낫다(닫힘이 안전 기본값 — §5).
+    """
+    if not document_text or TRANSCRIPT_MARKER not in document_text:
+        return None
+    notes = document_text.split(TRANSCRIPT_MARKER, 1)[0]
+    kept = [
+        line
+        for line in notes.splitlines()
+        if not any(hint in line for hint in _BOILERPLATE_HINTS)
+    ]
+    summary = "\n".join(kept).strip().lstrip("﻿").strip()
+    return summary or None
+
+
 # --- 1회성 동의(갱신 토큰 발급) -------------------------------------------
 # 여기부터는 운영 중에 돌지 않는다. `manage.py meet_authorize` 가 한 번 부르고,
 # 그 결과(갱신 토큰)를 사람이 시크릿에 넣으면 끝이다. 그래도 이 파일에 두는
