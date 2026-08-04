@@ -2,7 +2,7 @@
 
 설계 근거: docs/db/lms-db-design-2026-07-15.md 도메인 4([전면 개정 2026-07-22]),
 PRD 3.1.3(DRM 전환)·3.1.4(출석 자동지급·7일 만료·부여/만료 이력)·3.2.3(동보)·
-PRD §4 상태 기반 노출(권한 지급된 주차만).
+PRD §4 상태 기반 노출(권한 지급된 영상만 — 지급 단위 개정 2026-08-04).
 Provider 중립(payments.Payment 선례)·`active()` 게이팅(curriculum.released() 선례).
 """
 import datetime
@@ -32,12 +32,22 @@ def make_attendance(student, status="출석"):
     return Attendance.objects.create(session=session, student=student, status=status)
 
 
-def make_grant(student, week, **kwargs):
+def make_video(week=None, sequence_no=1):
+    # 지급 대상은 `공개` 영상뿐이다(VideoGrant 지급 시점 계약)
+    return Video.objects.create(
+        course_week=week,
+        title=f"{sequence_no}강",
+        status=Video.Status.PUBLISHED,
+        sequence_no=sequence_no,
+    )
+
+
+def make_grant(student, video, **kwargs):
     now = timezone.now()
     kwargs.setdefault("source", VideoGrant.Source.ATTENDANCE_AUTO)
     kwargs.setdefault("granted_at", now)
     kwargs.setdefault("expires_at", now + datetime.timedelta(days=7))
-    return VideoGrant.objects.create(student=student, course_week=week, **kwargs)
+    return VideoGrant.objects.create(student=student, video=video, **kwargs)
 
 
 class VideoTests(TestCase):
@@ -88,7 +98,7 @@ class VideoGrantActiveTests(TestCase):
 
     def setUp(self):
         self.student = make_student()
-        self.week = make_week()
+        self.video = make_video(make_week())
         # 기준 시각 고정 — 경계를 결정적으로 검증
         self.at = timezone.make_aware(datetime.datetime(2026, 7, 22, 10, 0))
 
@@ -97,7 +107,7 @@ class VideoGrantActiveTests(TestCase):
 
     def test_unexpired_unrevoked_grant_is_active(self):
         grant = make_grant(
-            self.student, self.week,
+            self.student, self.video,
             granted_at=self.at - datetime.timedelta(days=1),
             expires_at=self.at + datetime.timedelta(days=6),
         )
@@ -105,7 +115,7 @@ class VideoGrantActiveTests(TestCase):
 
     def test_expired_grant_is_inactive(self):
         grant = make_grant(
-            self.student, self.week,
+            self.student, self.video,
             granted_at=self.at - datetime.timedelta(days=8),
             expires_at=self.at - datetime.timedelta(days=1),
         )
@@ -114,13 +124,13 @@ class VideoGrantActiveTests(TestCase):
     def test_expiry_boundary_is_inactive(self):
         # expires_at == 기준 시각 → 만료(expires_at > at 만 활성. 만료 시각 도달
         # 즉시 시청 페이지 소멸 — PRD 3.1.4 ⑥)
-        grant = make_grant(self.student, self.week, expires_at=self.at)
+        grant = make_grant(self.student, self.video, expires_at=self.at)
         self.assertNotIn(grant.grant_id, self._active_ids())
 
     def test_revoked_grant_is_inactive(self):
         # 수동 회수(PRD 3.1.4 예외 처리) — 만료 전이라도 비활성
         grant = make_grant(
-            self.student, self.week,
+            self.student, self.video,
             expires_at=self.at + datetime.timedelta(days=6),
             revoked_at=self.at - datetime.timedelta(hours=1),
         )
@@ -129,7 +139,7 @@ class VideoGrantActiveTests(TestCase):
     def test_active_defaults_to_now(self):
         now = timezone.now()
         make_grant(
-            self.student, self.week,
+            self.student, self.video,
             granted_at=now, expires_at=now + datetime.timedelta(days=7),
         )
         self.assertEqual(VideoGrant.objects.active().count(), 1)
@@ -143,6 +153,9 @@ class VideoGrantTests(TestCase):
     def setUp(self):
         self.student = make_student()
         self.week = make_week()
+        # 한 주차에 영상 2개 — 지급 단위가 영상이라 권한도 영상마다 갈린다
+        self.video = make_video(self.week, sequence_no=1)
+        self.other_video = make_video(self.week, sequence_no=2)
 
     def test_table_and_pk_column_follow_design(self):
         self.assertEqual(VideoGrant._meta.db_table, "video_grants")
@@ -156,36 +169,65 @@ class VideoGrantTests(TestCase):
 
     def test_sync_status_null_before_integration(self):
         # DRM 연동 전 NULL 운영(연동 후순위 — PRD 3.1.3)
-        grant = make_grant(self.student, self.week)
+        grant = make_grant(self.student, self.video)
         self.assertIsNone(grant.sync_status)
         self.assertIsNone(grant.synced_at)
         self.assertEqual(
             set(VideoGrant.SyncStatus.values), {"대기", "부여반영", "회수반영", "실패"}
         )
 
+    def test_grant_unit_is_video_not_course_week(self):
+        # 지급 단위 개정(2026-08-04): 권한은 영상 1개에 걸린다. 권한이 course_week
+        # 를 들고 있으면 영상과 같은 칸을 공유해, 영상의 주차를 고치는 순간 그 주차
+        # 권한이 통째로 끊겼다(실측 51건). 두 축을 다시 붙이지 않는다.
+        field_names = {f.name for f in VideoGrant._meta.get_fields()}
+        self.assertNotIn("course_week", field_names)
+        self.assertFalse(VideoGrant._meta.get_field("video").null)
+
     def test_attendance_partial_unique(self):
-        # 부분 UQ: 출석 1건당 자동지급 1건(중복 자동생성 차단)
+        # 부분 UQ(attendance, video): 출석 1건 + 영상 1개당 자동지급 1건
         attendance = make_attendance(self.student)
-        make_grant(self.student, self.week, attendance=attendance)
+        make_grant(self.student, self.video, attendance=attendance)
         with self.assertRaises(IntegrityError):
-            make_grant(self.student, self.week, attendance=attendance)
+            make_grant(self.student, self.video, attendance=attendance)
+
+    def test_same_attendance_grants_each_video(self):
+        # 한 출석이 그 주 영상 수만큼 행을 낳는다 — attendance 단독 UQ 였다면
+        # 두 번째 영상에서 막혔다(2026-08-04 UQ 개정의 요지)
+        attendance = make_attendance(self.student)
+        videos = [self.video, self.other_video]
+        for video in videos:
+            make_grant(self.student, video, attendance=attendance)
+        self.assertEqual(
+            VideoGrant.objects.filter(attendance=attendance).count(), len(videos)
+        )
 
     def test_null_attendance_not_constrained(self):
         # 수동·신청 지급(attendance NULL)은 다건 허용 — 부분 UQ 조건 밖
-        make_grant(self.student, self.week, source=VideoGrant.Source.MANUAL)
-        make_grant(self.student, self.week, source=VideoGrant.Source.MANUAL)
+        make_grant(self.student, self.video, source=VideoGrant.Source.MANUAL)
+        make_grant(self.student, self.video, source=VideoGrant.Source.MANUAL)
         self.assertEqual(VideoGrant.objects.count(), 2)
 
     def test_makeup_partial_unique(self):
-        # 부분 UQ: 동보 1건당 지급 1건
+        # 부분 UQ(makeup, video): 동보 1건 + 영상 1개당 지급 1건
         makeup = MakeupGrant.objects.create(
             student=self.student, source=MakeupGrant.Source.ADMIN_CHECK
         )
-        make_grant(self.student, self.week, source=VideoGrant.Source.MAKEUP, makeup=makeup)
+        make_grant(self.student, self.video, source=VideoGrant.Source.MAKEUP, makeup=makeup)
         with self.assertRaises(IntegrityError):
             make_grant(
-                self.student, self.week, source=VideoGrant.Source.MAKEUP, makeup=makeup
+                self.student, self.video, source=VideoGrant.Source.MAKEUP, makeup=makeup
             )
+
+    def test_same_makeup_grants_each_video(self):
+        # 동보도 출석생과 같은 그 주 영상 전부를 연다(PRD 3.2.3) — 영상마다 1행
+        makeup = MakeupGrant.objects.create(
+            student=self.student, source=MakeupGrant.Source.ADMIN_CHECK
+        )
+        videos = [self.video, self.other_video]
+        for video in videos:
+            make_grant(self.student, video, source=VideoGrant.Source.MAKEUP, makeup=makeup)
+        self.assertEqual(VideoGrant.objects.filter(makeup=makeup).count(), len(videos))
 
     def test_student_expiry_index_exists(self):
         # 만료 배치·학생별 활성 권한 조회 축(설계 [전면 개정 2026-07-22])

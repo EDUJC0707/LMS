@@ -69,6 +69,7 @@ const ENTRIES: Entry[] = [
   { group: "관리", to: "/admin/exams", label: "시험·성적", icon: "exam", match: "prefix", gate: { kind: "feature", feature: "성적처리" } },
   { group: "관리", to: "/admin/clinic", label: "클리닉 배정", icon: "video", match: "prefix", gate: { kind: "feature", feature: "클리닉배정" } },
   { group: "관리", to: "/admin/workbook", label: "워크북 업로드", icon: "upload", match: "prefix", gate: { kind: "feature", feature: "워크북업로드" } },
+  { group: "관리", to: "/admin/videos", label: "복습영상", icon: "video", match: "prefix", gate: { kind: "feature", feature: "영상지급관리" } },
   { group: "관리", to: "/admin/accounts", label: "계정 발급", icon: "key", match: "prefix", gate: { kind: "feature", feature: "계정관리" } },
   // 권한 매트릭스는 기능 키가 아니라 **역할 게이트**다(관리자가 delta 로
   // 권한부여 키를 받아도 열리지 않는다 — 백엔드 IsCEO 와 동일 규칙).

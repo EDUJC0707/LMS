@@ -34,6 +34,8 @@ api_urlpatterns = [
     path("", include("apps.videos.makeup_urls")),
     # 복습영상 재생(/api/student/videos/{id}/playback) — 역할 경로 직결(PRD 3.1.3)
     path("", include("apps.videos.playback_urls")),
+    # 복습영상 등록·관리(/api/admin/videos*) — 역할 경로 직결(PRD 3.1.3)
+    path("", include("apps.videos.video_admin_urls")),
     # 클리닉 신청(/api/student/clinic*) — 역할 경로 직결(PRD 3.2.4)
     path("", include("apps.clinic.consumer_urls")),
     # 관리자 운영(/api/admin/staff*·/api/admin/accounts*) — 8차(PRD §4·3.1.5)

@@ -369,6 +369,11 @@ class Command(BaseCommand):
             count = 3 if week.week_no <= 2 else 2
             released = week.start_date <= today
             for seq in range(1, count + 1):
+                # 공개 영상에는 재생 참조를 채운다 — 비워 두면 "공개인데 볼 수
+                # 없는" 상태가 되고, 재생 화면이 데모 영상으로 조용히 떨어져
+                # 무엇이 잘못됐는지 화면에서 드러나지 않는다.
+                # `seed-` 접두는 실제 Mux 참조가 아니라는 표시이며, 재생기가
+                # 이 접두를 보고 데모로 떨어진다(StudentVideoPage.playbackIdOf).
                 videos.append(
                     Video.objects.create(
                         course_week=week,
@@ -376,6 +381,10 @@ class Command(BaseCommand):
                         sequence_no=seq,
                         duration_seconds=1500 + seq * 300,
                         status=Video.Status.PUBLISHED if released else Video.Status.PREPARING,
+                        provider=Video.Provider.MUX if released else None,
+                        external_ref=(
+                            f"seed-{week.week_no}-{seq}" if released else None
+                        ),
                     )
                 )
         return videos

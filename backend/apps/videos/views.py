@@ -1,6 +1,11 @@
 """videos 뷰 — 복습영상 재생 + 동보 신청 API (PRD 3.1.3/3.1.4·3.2.3·§4).
 
 - GET  /api/student/videos/{video_id}/playback  재생 (IsStudent)
+- GET/POST   /api/admin/videos                  영상 목록·등록 (영상지급관리)
+- PATCH      /api/admin/videos/{id}             메타·자산 수정
+- POST       /api/admin/videos/{id}/publish     `공개` 전환(조건 강제)
+- POST       /api/admin/videos/{id}/archive     `아카이브` 전환
+- GET        /api/admin/videos/course-weeks     등록 폼 주차 선택지
 - POST /api/student/makeup-request      학생 본인 결석의 동보 신청 (IsStudent)
 - POST /api/parent/makeup-request       자녀 결석의 동보 신청 (IsParent)
 - GET  /api/admin/makeup-requests       신청 목록 (영상지급관리)
@@ -33,9 +38,9 @@ from apps.accounts.permissions import FeatureRequired, IsParent, IsStudent
 from apps.grades import attendance_admin
 from apps.grades.models import Attendance
 
-from . import playback
+from . import playback, video_admin
 from .makeup import complete_makeup
-from .models import MakeupGrant
+from .models import MakeupGrant, Video
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
 # 거절만 재신청 허용 — 신청/승인/지급완료는 살아있는 신청으로 본다(중복 400).
@@ -262,7 +267,7 @@ class AdminMakeupApproveView(APIView):
             )
         now = timezone.now()
         with transaction.atomic():
-            grant = complete_makeup(makeup, request.user, now)
+            grants = complete_makeup(makeup, request.user, now)
             # 승인도 출결 SSOT 를 `결석(동보)` 로 올린다(2026-07-29 입구 단일화 —
             # attendance_admin 모듈 docstring). 지급은 났는데 출결은 `결석` 이면
             # 담임이 그 결석을 상담 대기열에서 다시 만나고, 출결만 보고는 이
@@ -271,14 +276,19 @@ class AdminMakeupApproveView(APIView):
         return Response(
             {
                 "makeup": _makeup_block(makeup),
-                "video_grant": {
-                    "grant_id": grant.grant_id,
-                    "student_id": grant.student_id,
-                    "course_week_id": grant.course_week_id,
-                    "source": grant.source,
-                    "granted_at": _iso(grant.granted_at),
-                    "expires_at": _iso(grant.expires_at),
-                },
+                # 지급 단위가 영상이라 행이 여러 개다(2026-08-04). 응답은 만든
+                # 행 전부를 싣는다 — 하나만 실으면 "몇 개 지급됐나"가 사라진다.
+                "video_grants": [
+                    {
+                        "grant_id": g.grant_id,
+                        "student_id": g.student_id,
+                        "video_id": g.video_id,
+                        "source": g.source,
+                        "granted_at": _iso(g.granted_at),
+                        "expires_at": _iso(g.expires_at),
+                    }
+                    for g in grants
+                ],
             }
         )
 
@@ -303,3 +313,111 @@ class AdminMakeupRejectView(APIView):
         makeup.status = MakeupGrant.Status.REJECTED
         makeup.save(update_fields=["status"])
         return Response({"makeup": _makeup_block(makeup)})
+
+
+# ── 복습영상 등록·관리 ────────────────────────────────────────────────
+# 판정·조립은 video_admin 이 끝내고 여기서는 게이트·입력 형태·상태코드 매핑만
+# 한다(모듈 docstring 에 관리 경로 계약이 있다).
+
+
+class AdminVideoListView(APIView):
+    """GET/POST /api/admin/videos — 관리 목록과 등록."""
+
+    permission_classes = [FeatureRequired(FeatureKey.VIDEO_GRANT_ADMIN)]
+
+    def get(self, request):
+        status_filter = request.query_params.get("status") or None
+        if status_filter and status_filter not in Video.Status.values:
+            return Response(
+                {"detail": "status 값이 올바르지 않습니다(준비중/공개/아카이브)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        week_raw = request.query_params.get("course_week_id") or None
+        week_id = None
+        if week_raw is not None:
+            try:
+                week_id = int(week_raw)
+            except (TypeError, ValueError):
+                return Response(
+                    {"detail": "course_week_id가 올바르지 않습니다."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        rows = [
+            video_admin.video_row(video)
+            for video in video_admin.list_videos(status_filter, week_id)
+        ]
+        return Response({"videos": rows})
+
+    def post(self, request):
+        fields, error = video_admin.parse_input(request.data)
+        if error:
+            return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
+        video, error = video_admin.create_video(fields)
+        if error:
+            return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"video": video_admin.video_row(video)}, status=status.HTTP_201_CREATED
+        )
+
+
+class AdminVideoDetailView(APIView):
+    """PATCH /api/admin/videos/{video_id} — 부분 수정."""
+
+    permission_classes = [FeatureRequired(FeatureKey.VIDEO_GRANT_ADMIN)]
+
+    def patch(self, request, video_id):
+        video = video_admin.load_video(video_id)
+        if video is None:
+            return Response(
+                {"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND
+            )
+        fields, error = video_admin.parse_input(request.data, partial=True)
+        if error:
+            return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
+        video, error = video_admin.update_video(video, fields)
+        if error:
+            return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"video": video_admin.video_row(video)})
+
+
+class AdminVideoPublishView(APIView):
+    """POST /api/admin/videos/{video_id}/publish — `공개` 전환."""
+
+    permission_classes = [FeatureRequired(FeatureKey.VIDEO_GRANT_ADMIN)]
+
+    def post(self, request, video_id):
+        video = video_admin.load_video(video_id)
+        if video is None:
+            return Response(
+                {"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND
+            )
+        video, error = video_admin.publish(video)
+        if error:
+            return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"video": video_admin.video_row(video)})
+
+
+class AdminVideoArchiveView(APIView):
+    """POST /api/admin/videos/{video_id}/archive — `아카이브` 전환."""
+
+    permission_classes = [FeatureRequired(FeatureKey.VIDEO_GRANT_ADMIN)]
+
+    def post(self, request, video_id):
+        video = video_admin.load_video(video_id)
+        if video is None:
+            return Response(
+                {"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND
+            )
+        video, error = video_admin.archive(video)
+        if error:
+            return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"video": video_admin.video_row(video)})
+
+
+class AdminVideoCourseWeekListView(APIView):
+    """GET /api/admin/videos/course-weeks — 등록 폼의 주차 선택지."""
+
+    permission_classes = [FeatureRequired(FeatureKey.VIDEO_GRANT_ADMIN)]
+
+    def get(self, request):
+        return Response({"course_weeks": video_admin.course_week_rows()})

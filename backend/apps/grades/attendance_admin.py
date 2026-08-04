@@ -95,7 +95,7 @@ from apps.curriculum.models import CourseEnrollment
 
 # GRANT_DURATION(시청 기간 기본 7일)은 동보 지급 체인과 공유하는 단일 기본값 —
 # videos.makeup 이 원천이다(4차 슬라이스 공용 서비스 추출).
-from apps.videos.makeup import GRANT_DURATION, complete_makeup
+from apps.videos.makeup import GRANT_DURATION, complete_makeup, published_videos_of
 from apps.videos.models import MakeupGrant, VideoGrant
 
 from .models import Attendance, ClassSession
@@ -342,41 +342,57 @@ def _sync_video_grants(session, attendances, actor, now, triggers):
     한 결석에 출결 근거·동보 근거 지급이 겹치면 같은 주차 권한이 2행이 된다.
     기존 지급 1쿼리 로드 후 상태별 생성/재활성/revoke(모듈 docstring 정책).
     """
+    videos = published_videos_of(session.course_week)
     grant_map = {
-        g.attendance_id: g
+        (g.attendance_id, g.video_id): g
         for g in VideoGrant.objects.filter(attendance_id__in=[a.id for a in attendances])
     }
+    created = []
     for att in attendances:
-        grant = grant_map.get(att.id)
         if att.status in _REVIEW_VIDEO_STATUSES:
-            if grant is None:
-                VideoGrant.objects.create(
-                    student_id=att.student_id,
-                    course_week=session.course_week,
-                    source=VideoGrant.Source.ATTENDANCE_AUTO,
-                    attendance=att,
-                    granted_by=actor,
-                    granted_at=now,
-                    expires_at=now + GRANT_DURATION,
-                )
-                triggers["video_grants_created"] += 1
-            elif grant.revoked_at is not None:
-                grant.revoked_at = None
-                grant.granted_at = now
-                grant.expires_at = now + GRANT_DURATION
-                grant.granted_by = actor
-                grant.save(
-                    update_fields=["revoked_at", "granted_at", "expires_at", "granted_by"]
-                )
-                triggers["video_grants_reactivated"] += 1
-        elif (
-            grant is not None
-            and grant.source == VideoGrant.Source.ATTENDANCE_AUTO
-            and grant.revoked_at is None
-        ):
-            grant.revoked_at = now
-            grant.save(update_fields=["revoked_at"])
-            triggers["video_grants_revoked"] += 1
+            for video in videos:
+                grant = grant_map.get((att.id, video.video_id))
+                if grant is None:
+                    created.append(
+                        VideoGrant(
+                            student_id=att.student_id,
+                            video=video,
+                            source=VideoGrant.Source.ATTENDANCE_AUTO,
+                            attendance=att,
+                            granted_by=actor,
+                            granted_at=now,
+                            expires_at=now + GRANT_DURATION,
+                        )
+                    )
+                    triggers["video_grants_created"] += 1
+                elif grant.revoked_at is not None:
+                    grant.revoked_at = None
+                    grant.granted_at = now
+                    grant.expires_at = now + GRANT_DURATION
+                    grant.granted_by = actor
+                    grant.save(
+                        update_fields=[
+                            "revoked_at",
+                            "granted_at",
+                            "expires_at",
+                            "granted_by",
+                        ]
+                    )
+                    triggers["video_grants_reactivated"] += 1
+        else:
+            # 출석 계열이 아니게 되면 이 출석 근거의 자동지급을 **전부** 회수한다.
+            # 영상 단위가 된 뒤로 한 출석이 여러 행을 낳으므로 하나만 끄면 남는다.
+            for (att_id, _video_id), grant in grant_map.items():
+                if (
+                    att_id == att.id
+                    and grant.source == VideoGrant.Source.ATTENDANCE_AUTO
+                    and grant.revoked_at is None
+                ):
+                    grant.revoked_at = now
+                    grant.save(update_fields=["revoked_at"])
+                    triggers["video_grants_revoked"] += 1
+    if created:
+        VideoGrant.objects.bulk_create(created)
 
 
 def _sync_makeup_grants(attendances, actor, now, triggers):
@@ -400,14 +416,15 @@ def _sync_makeup_grants(attendances, actor, now, triggers):
         current = makeup_by_att.get(makeup.attendance_id)
         if current is None or current.status != MakeupGrant.Status.GRANTED:
             makeup_by_att[makeup.attendance_id] = makeup
+    # 동보 1건이 **영상 수만큼** VideoGrant 를 낳는다(2026-08-04 지급 단위 개정).
+    # makeup_id 를 단일 키로 잡으면 행 하나만 남고 나머지가 버려져, 정정 시
+    # 한 영상만 회수되고 **남은 영상은 학생에게 열린 채로 남는다.**
     grant_by_makeup = {}
     if makeup_by_att:
-        grant_by_makeup = {
-            g.makeup_id: g
-            for g in VideoGrant.objects.filter(
-                makeup_id__in=[m.makeup_id for m in makeup_by_att.values()]
-            )
-        }
+        for g in VideoGrant.objects.filter(
+            makeup_id__in=[m.makeup_id for m in makeup_by_att.values()]
+        ):
+            grant_by_makeup.setdefault(g.makeup_id, []).append(g)
     for att in attendances:
         makeup = makeup_by_att.get(att.id)
         if att.status == Attendance.Status.ABSENT_MAKEUP:
@@ -419,12 +436,17 @@ def _sync_makeup_grants(attendances, actor, now, triggers):
                     requested_by=actor,
                 )
             if makeup.status != MakeupGrant.Status.GRANTED:
-                complete_makeup(makeup, actor, now)
+                # 카운터는 **행 수**다 — empty_triggers 계약이 "학생이 체감하는
+                # 단위(권한)와 같아야 한다"고 못박는다. 1 을 더하면 영상 3개를
+                # 지급하고도 응답이 1 이라 화면이 거짓을 말한다.
                 triggers["makeups_granted"] += 1
-                triggers["video_grants_created"] += 1
+                triggers["video_grants_created"] += len(
+                    complete_makeup(makeup, actor, now)
+                )
                 continue
-            grant = grant_by_makeup.get(makeup.makeup_id)
-            if grant is not None and grant.revoked_at is not None:
+            for grant in grant_by_makeup.get(makeup.makeup_id, []):
+                if grant.revoked_at is None:
+                    continue
                 grant.revoked_at = None
                 grant.granted_at = now
                 grant.expires_at = now + GRANT_DURATION
@@ -436,11 +458,12 @@ def _sync_makeup_grants(attendances, actor, now, triggers):
             continue
         if makeup is None or makeup.status != MakeupGrant.Status.GRANTED:
             continue
-        grant = grant_by_makeup.get(makeup.makeup_id)
-        if grant is not None and grant.revoked_at is None:
-            grant.revoked_at = now
-            grant.save(update_fields=["revoked_at"])
-            triggers["video_grants_revoked"] += 1
+        # 정정 시에도 그 동보의 지급을 **전부** 회수한다(위 주석 참조).
+        for grant in grant_by_makeup.get(makeup.makeup_id, []):
+            if grant.revoked_at is None:
+                grant.revoked_at = now
+                grant.save(update_fields=["revoked_at"])
+                triggers["video_grants_revoked"] += 1
 
 
 def _sync_counseling_queue(attendances, triggers):
@@ -512,8 +535,8 @@ def grant_makeup(attendance, actor):
                 source=MakeupGrant.Source.ADMIN_CHECK,
                 requested_by=actor,
             )
-        grant = complete_makeup(makeup, actor, now)
-    return makeup, grant
+        grants = complete_makeup(makeup, actor, now)
+    return makeup, grants
 
 
 def promote_to_makeup_absence(attendance, actor, now):

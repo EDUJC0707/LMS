@@ -19,7 +19,7 @@ from apps.accounts.models import Parent, ParentStudent, Student, User
 from apps.clinic.models import ClinicRequest
 from apps.grades.models import Attendance, ClassSession
 from apps.payments.models import Order, Product
-from apps.videos.models import MakeupGrant, VideoGrant
+from apps.videos.models import MakeupGrant, Video, VideoGrant
 
 from .models import Course, CourseEnrollment, CourseWeek, WeekDayPlan
 
@@ -48,11 +48,22 @@ def make_student(login_id, name="김서연", status=Student.EnrollmentStatus.REG
     )
 
 
+def make_video(week, sequence_no=1, status=Video.Status.PUBLISHED):
+    """그 주차의 복습영상 1개 — 지급 단위가 영상이라 권한을 걸려면 실체가 필요하다."""
+    return Video.objects.create(
+        course_week=week,
+        title=f"{week.week_no}주차 복습영상 {sequence_no}",
+        status=status,
+        sequence_no=sequence_no,
+    )
+
+
 class HomeFixtureMixin:
     """로직엔제 10주 커리큘럼 축소판(1~5주차) — mock 데이터와 같은 그림.
 
     - 1~4주차: 시작일 경과(공개), 5주차: 미래 시작일(잠김)
     - 수업 요일: 수(3) — 회차 7/8(2주차)·7/22(4주차)
+    - 복습영상: 2·3주차에 `공개` 영상 1개씩 — 권한이 영상 1개당 1행이라 지급 대상
     - 출결: 7/8 출석, 7/15 결석(별도 회차), 7/18 결석(현보)(별도 회차)
       — 7/18 은 2026-07-29 값집합 개편 전 `지각` 자리. 현보로 바꾼 이유는 캘린더가
       네 값을 **그대로** 내려보내는지와, 결석 계열이라도 **현보는 동보 신청
@@ -83,6 +94,9 @@ class HomeFixtureMixin:
                 end_date=start + datetime.timedelta(days=6),
                 offline_notice=f"{no}주차 공지",
             )
+        # 마감 목록(영상만료)이 걸릴 대상 — 권한은 영상 1개당 1행이라(2026-08-04)
+        # 주차만으로는 권한을 만들 수 없다. 2·3주차만 두면 충분하다.
+        cls.videos = {no: make_video(cls.weeks[no]) for no in (2, 3)}
         WeekDayPlan.objects.create(
             week=cls.weeks[4], day_no=1, title="산과 염기 개념 강의 복습", content="p.36"
         )
@@ -328,7 +342,7 @@ class StudentHomeCalendarTests(HomeFixtureMixin, TestCase):
         self.login_student()
         VideoGrant.objects.create(
             student=self.student,
-            course_week=self.weeks[3],
+            video=self.videos[3],
             source=VideoGrant.Source.ATTENDANCE_AUTO,
             attendance=self.att_present,
             granted_at=NOW - datetime.timedelta(days=6),
@@ -369,7 +383,8 @@ class StudentHomeDeadlineTests(HomeFixtureMixin, TestCase):
         return self.get_home().json()["deadlines"]
 
     def test_no_eligible_items_yields_empty_list(self):
-        # 클리닉 배정·활성 영상·미결제 주문이 전무 → 항목 자체 미포함
+        # 클리닉 배정·활성 영상 권한·미결제 주문이 전무 → 항목 자체 미포함
+        # (영상은 픽스처에 있다 — 마감을 만드는 것은 영상이 아니라 권한이다)
         self.assertEqual(self._deadlines(), [])
 
     def test_clinic_only_approved_upcoming_included(self):
@@ -417,7 +432,7 @@ class StudentHomeDeadlineTests(HomeFixtureMixin, TestCase):
         # 내일 자정(7/23 00:00) 만료 → 아직 활성, D-1(서울 날짜 기준)
         VideoGrant.objects.create(
             student=self.student,
-            course_week=self.weeks[3],
+            video=self.videos[3],
             source=VideoGrant.Source.ATTENDANCE_AUTO,
             attendance=self.att_present,
             granted_at=NOW - datetime.timedelta(days=6),
@@ -427,6 +442,7 @@ class StudentHomeDeadlineTests(HomeFixtureMixin, TestCase):
         self.assertEqual(len(items), 1)
         item = items[0]
         self.assertEqual(item["kind"], "영상만료")
+        # 주차는 권한이 아니라 **영상**에서 온다(권한은 영상 1개를 가리킬 뿐)
         self.assertEqual(item["week_no"], 3)
         self.assertEqual(item["due_date"], "2026-07-23")
         self.assertEqual(item["d_day"], 1)
@@ -434,24 +450,69 @@ class StudentHomeDeadlineTests(HomeFixtureMixin, TestCase):
     def test_video_expiring_today_is_dday_zero(self):
         VideoGrant.objects.create(
             student=self.student,
-            course_week=self.weeks[3],
+            video=self.videos[3],
             source=VideoGrant.Source.ATTENDANCE_AUTO,
             granted_at=NOW - datetime.timedelta(days=6),
             expires_at=timezone.make_aware(datetime.datetime(2026, 7, 22, 23, 0)),
         )
         self.assertEqual(self._deadlines()[0]["d_day"], 0)
 
+    def test_one_row_per_week_however_many_videos(self):
+        """영상이 여러 개여도 영상만료는 **주차당 한 줄**이다(2026-08-04 지급 단위 개정).
+
+        권한 행은 영상마다 생기지만 학생이 묻는 것은 "언제까지 볼 수 있나" 하나다.
+        영상 수만큼 같은 날짜를 반복하면 마감 목록이 아니라 영상 목록이 된다.
+        """
+        expires_at = timezone.make_aware(datetime.datetime(2026, 7, 23, 12, 0))
+        videos = [self.videos[3], make_video(self.weeks[3], 2), make_video(self.weeks[3], 3)]
+        for video in videos:
+            VideoGrant.objects.create(
+                student=self.student,
+                video=video,
+                source=VideoGrant.Source.ATTENDANCE_AUTO,
+                granted_at=NOW - datetime.timedelta(days=6),
+                expires_at=expires_at,
+            )
+        self.assertEqual(
+            VideoGrant.objects.filter(student=self.student).count(), len(videos)
+        )
+        items = self._deadlines()
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["kind"], "영상만료")
+        self.assertEqual(items[0]["week_no"], 3)
+        self.assertEqual(items[0]["due_date"], "2026-07-23")
+
+    def test_same_week_different_expiry_stays_separate_rows(self):
+        """묶는 축은 주차가 아니라 (주차, 만료) 다 — 기한이 갈리면 별개 마감이다."""
+        VideoGrant.objects.create(
+            student=self.student,
+            video=self.videos[3],
+            source=VideoGrant.Source.ATTENDANCE_AUTO,
+            granted_at=NOW - datetime.timedelta(days=6),
+            expires_at=timezone.make_aware(datetime.datetime(2026, 7, 23, 12, 0)),
+        )
+        VideoGrant.objects.create(  # 같은 주차 다른 영상을 나중에 수동 지급
+            student=self.student,
+            video=make_video(self.weeks[3], 2),
+            source=VideoGrant.Source.MANUAL,
+            granted_at=NOW,
+            expires_at=timezone.make_aware(datetime.datetime(2026, 7, 29, 12, 0)),
+        )
+        items = self._deadlines()
+        self.assertEqual([i["due_date"] for i in items], ["2026-07-23", "2026-07-29"])
+        self.assertEqual({i["week_no"] for i in items}, {3})
+
     def test_expired_and_revoked_grants_not_included(self):
         VideoGrant.objects.create(  # 이미 만료(expires_at == now 포함 안 함)
             student=self.student,
-            course_week=self.weeks[2],
+            video=self.videos[2],
             source=VideoGrant.Source.ATTENDANCE_AUTO,
             granted_at=NOW - datetime.timedelta(days=7),
             expires_at=NOW,
         )
         VideoGrant.objects.create(  # 회수됨
             student=self.student,
-            course_week=self.weeks[3],
+            video=self.videos[3],
             source=VideoGrant.Source.MANUAL,
             granted_at=NOW - datetime.timedelta(days=1),
             expires_at=NOW + datetime.timedelta(days=6),
@@ -487,7 +548,7 @@ class StudentHomeDeadlineTests(HomeFixtureMixin, TestCase):
         )
         VideoGrant.objects.create(
             student=self.student,
-            course_week=self.weeks[3],
+            video=self.videos[3],
             source=VideoGrant.Source.ATTENDANCE_AUTO,
             granted_at=NOW - datetime.timedelta(days=6),
             expires_at=timezone.make_aware(datetime.datetime(2026, 7, 23, 12, 0)),
@@ -648,7 +709,7 @@ class ParentHomeTests(HomeFixtureMixin, TestCase):
     def test_query_count_fixed(self):
         VideoGrant.objects.create(
             student=self.student,
-            course_week=self.weeks[3],
+            video=self.videos[3],
             source=VideoGrant.Source.ATTENDANCE_AUTO,
             granted_at=NOW - datetime.timedelta(days=6),
             expires_at=NOW + datetime.timedelta(days=1),

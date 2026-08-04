@@ -280,10 +280,22 @@ def _deadlines(student, orders, today, now):
     grants = (
         VideoGrant.objects.active(at=now)
         .filter(student=student)
-        .select_related("course_week__course")
+        .select_related("video__course_week__course")
         .order_by("expires_at")
     )
+    # 지급 단위가 영상이 된 뒤로 한 주차에 행이 여러 개다(2026-08-04). 마감 목록은
+    # "언제까지 볼 수 있나"를 묻는 자리라 **주차·만료 단위로 묶어** 한 줄만 낸다 —
+    # 영상마다 한 줄씩 내면 같은 날짜가 3번 반복되고, 개수를 덧붙이면 §8 이 금지한
+    # 집계가 된다. 만료가 다르면(수동 재지급 등) 다른 줄이 맞다.
+    seen_buckets = set()
     for grant in grants:
+        week = grant.video.course_week
+        if week is None:
+            continue  # 주차 없는 특강 — 마감이 주차에 걸리지 않는다
+        bucket = (week.week_id, grant.expires_at)
+        if bucket in seen_buckets:
+            continue
+        seen_buckets.add(bucket)
         due = timezone.localdate(grant.expires_at)
         items.append(
             {
@@ -291,8 +303,8 @@ def _deadlines(student, orders, today, now):
                 "due_date": due.isoformat(),
                 "d_day": (due - today).days,
                 "grant_id": grant.grant_id,
-                "course_name": grant.course_week.course.name,
-                "week_no": grant.course_week.week_no,
+                "course_name": week.course.name,
+                "week_no": week.week_no,
                 "expires_at": timezone.localtime(grant.expires_at).isoformat(),
             }
         )

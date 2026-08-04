@@ -6,7 +6,8 @@
   비결석 400. 자격 없으면 API 자체가 4xx
 - 중복: 같은 결석에 신청/승인/지급완료 존재 시 400, 거절만 재신청 허용
 - 승인 체인: 지급완료 전환 + VideoGrant(동보) 생성 — 3차 슬라이스
-  grant_makeup 과 같은 공용 서비스(apps.videos.makeup) 경유
+  grant_makeup 과 같은 공용 서비스(apps.videos.makeup) 경유.
+  지급 단위는 **영상 1개**라 그 주차 `공개` 영상마다 1행이다(2026-08-04)
 - 시간: 승인 시각은 apps.videos.views.timezone.now 를 patch 해 고정
   (Asia/Seoul — attendance_admin 테스트 선례)
 """
@@ -23,7 +24,7 @@ from apps.boards.models import AbsenceCounseling
 from apps.curriculum.models import Course, CourseWeek
 from apps.grades.models import Attendance, ClassSession
 
-from .models import MakeupGrant, VideoGrant
+from .models import MakeupGrant, Video, VideoGrant
 
 PASSWORD = "pw-Secret-77!"
 STUDENT_URL = "/api/student/makeup-request"
@@ -61,7 +62,7 @@ def make_parent(login_id, name, *children):
 
 
 class MakeupFixtureMixin:
-    """결석 s1(주차 매핑 O/X)·s2(타 가족) + 학부모 2명 + 직원 3역할."""
+    """결석 s1(주차 매핑 O/X)·s2(타 가족) + 학부모 2명 + 직원 3역할 + 1주차 영상."""
 
     @classmethod
     def setUpTestData(cls):
@@ -85,6 +86,22 @@ class MakeupFixtureMixin:
         cls.session_noweek = ClassSession.objects.create(
             session_date=datetime.date(2026, 7, 29), session_no=3
         )
+
+        # 지급 대상은 그 주차의 `공개` 영상들이다 — 1주차만 영상을 깐다.
+        # 2주차는 영상 없음(공개 영상이 0개인 주차의 승인 경로용).
+        cls.w1_video1 = Video.objects.create(
+            course_week=cls.week1, title="1주차 1강",
+            status=Video.Status.PUBLISHED, sequence_no=1,
+        )
+        cls.w1_video2 = Video.objects.create(
+            course_week=cls.week1, title="1주차 2강",
+            status=Video.Status.PUBLISHED, sequence_no=2,
+        )
+        cls.w1_video_preparing = Video.objects.create(
+            course_week=cls.week1, title="1주차 3강(준비중)",
+            status=Video.Status.PREPARING, sequence_no=3,
+        )
+        cls.week1_videos = [cls.w1_video1, cls.w1_video2]  # sequence_no 순 = 지급 순
 
         cls.s1 = make_student("stu-1", "김서연")
         cls.s2 = make_student("stu-2", "이준호")
@@ -323,17 +340,55 @@ class AdminMakeupApproveRejectTests(MakeupFixtureMixin, TestCase):
         self.makeup.refresh_from_db()
         self.assertEqual(self.makeup.status, MakeupGrant.Status.GRANTED)
         self.assertEqual(self.makeup.granted_at, NOW)
-        grant = VideoGrant.objects.get(makeup=self.makeup)
-        self.assertEqual(grant.student_id, self.s1.student_id)
-        self.assertEqual(grant.course_week_id, self.week1.week_id)
-        self.assertEqual(grant.source, VideoGrant.Source.MAKEUP)
-        self.assertEqual(grant.granted_by_id, self.admin.user_id)
-        self.assertEqual(grant.granted_at, NOW)
-        self.assertEqual(grant.expires_at, NOW + GRANT_DURATION)
+        grants = list(VideoGrant.objects.filter(makeup=self.makeup).order_by("grant_id"))
+        # 지급 단위가 영상 1개다 — 결석 회차 주차의 `공개` 영상마다 1행(2026-08-04)
+        self.assertEqual(len(grants), len(self.week1_videos))
+        self.assertEqual(
+            [g.video_id for g in grants], [v.video_id for v in self.week1_videos]
+        )
+        for grant in grants:
+            self.assertEqual(grant.student_id, self.s1.student_id)
+            self.assertEqual(grant.source, VideoGrant.Source.MAKEUP)
+            self.assertEqual(grant.granted_by_id, self.admin.user_id)
+            self.assertEqual(grant.granted_at, NOW)
+            self.assertEqual(grant.expires_at, NOW + GRANT_DURATION)
         body = res.json()
         self.assertEqual(body["makeup"]["status"], "지급완료")
-        self.assertEqual(body["video_grant"]["grant_id"], grant.grant_id)
-        self.assertEqual(body["video_grant"]["course_week_id"], self.week1.week_id)
+        self.assertEqual(
+            [row["grant_id"] for row in body["video_grants"]], [g.grant_id for g in grants]
+        )
+        self.assertEqual(
+            [row["video_id"] for row in body["video_grants"]],
+            [v.video_id for v in self.week1_videos],
+        )
+
+    def test_approve_skips_unpublished_video(self):
+        """`공개` 가 아닌 영상에는 권한이 생기지 않는다 — 지급 시점 계약(VideoGrant).
+
+        아직 못 볼 영상에 권한을 미리 깔면 만료만 조용히 흘러간다.
+        """
+        self.approve(self.makeup.makeup_id)
+        granted_video_ids = set(
+            VideoGrant.objects.filter(makeup=self.makeup).values_list("video_id", flat=True)
+        )
+        self.assertNotIn(self.w1_video_preparing.video_id, granted_video_ids)
+
+    def test_approve_without_published_video_still_completes(self):
+        """공개 영상이 0개인 주차 — 권한은 0건이어도 신청은 `지급완료` 로 끝난다.
+
+        지급 처리가 끝난 것과 볼 영상이 아직 없는 것은 별개 사실이라 뭉치지 않는다.
+        """
+        attendance = Attendance.objects.create(  # 2주차 = 영상 없는 주차
+            session=self.session_w2, student=self.s2, status=Attendance.Status.ABSENT
+        )
+        makeup = self.make_request_row(attendance)
+        res = self.approve(makeup.makeup_id)
+        self.assertEqual(res.status_code, 200)
+        makeup.refresh_from_db()
+        self.assertEqual(makeup.status, MakeupGrant.Status.GRANTED)
+        self.assertEqual(makeup.granted_at, NOW)
+        self.assertFalse(VideoGrant.objects.filter(makeup=makeup).exists())
+        self.assertEqual(res.json()["video_grants"], [])
 
     def test_approve_promotes_attendance_to_makeup_absence(self):
         """승인도 출결을 `결석(동보)` 로 올린다 — 입구 셋의 끝 상태 단일화.
@@ -363,7 +418,10 @@ class AdminMakeupApproveRejectTests(MakeupFixtureMixin, TestCase):
         self.approve(self.makeup.makeup_id)
         res = self.approve(self.makeup.makeup_id)
         self.assertEqual(res.status_code, 400)
-        self.assertEqual(VideoGrant.objects.filter(makeup=self.makeup).count(), 1)
+        # 재승인이 튕겼으므로 첫 승인분(영상마다 1행)만 남는다
+        self.assertEqual(
+            VideoGrant.objects.filter(makeup=self.makeup).count(), len(self.week1_videos)
+        )
 
     def test_approve_rejected_400(self):
         self.makeup.status = MakeupGrant.Status.REJECTED

@@ -202,7 +202,7 @@ class MakeupCheckView(APIView):
                 {"detail": "이미 동보가 지급된 결석입니다."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        makeup, grant = attendance_admin.grant_makeup(attendance, request.user)
+        makeup, grants = attendance_admin.grant_makeup(attendance, request.user)
         return Response(
             {
                 "makeup": {
@@ -213,14 +213,19 @@ class MakeupCheckView(APIView):
                     "status": makeup.status,
                     "granted_at": timezone_iso(makeup.granted_at),
                 },
-                "video_grant": {
-                    "grant_id": grant.grant_id,
-                    "student_id": grant.student_id,
-                    "course_week_id": grant.course_week_id,
-                    "source": grant.source,
-                    "granted_at": timezone_iso(grant.granted_at),
-                    "expires_at": timezone_iso(grant.expires_at),
-                },
+                # 지급 단위가 영상이라 행이 여러 개다(2026-08-04). 응답은 만든
+                # 행 전부를 싣는다 — 하나만 실으면 "몇 개 지급됐나"가 사라진다.
+                "video_grants": [
+                    {
+                        "grant_id": g.grant_id,
+                        "student_id": g.student_id,
+                        "video_id": g.video_id,
+                        "source": g.source,
+                        "granted_at": timezone_iso(g.granted_at),
+                        "expires_at": timezone_iso(g.expires_at),
+                    }
+                    for g in grants
+                ],
             },
             status=status.HTTP_201_CREATED,
         )

@@ -47,6 +47,7 @@ import ClinicManagePage from "../pages/admin/manage/ClinicManagePage";
 import ExamsPage from "../pages/admin/manage/ExamsPage";
 import ExamDetailPage from "../pages/admin/manage/ExamDetailPage";
 import WorkbookManagePage from "../pages/admin/manage/WorkbookManagePage";
+import VideoManagePage from "../pages/admin/manage/VideoManagePage";
 
 import BoardListPage from "../pages/common/BoardListPage";
 import BoardPostPage from "../pages/common/BoardPostPage";
@@ -164,6 +165,10 @@ export const router = createBrowserRouter([
           {
             element: <RequireFeature feature="워크북업로드" />,
             children: [{ path: "workbook", element: <WorkbookManagePage /> }],
+          },
+          {
+            element: <RequireFeature feature="영상지급관리" />,
+            children: [{ path: "videos", element: <VideoManagePage /> }],
           },
         ],
       },

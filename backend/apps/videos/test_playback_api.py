@@ -4,7 +4,9 @@ GET /api/student/videos/{video_id}/playback
 
 검증 축:
 - 권한 원천: `VideoGrant.objects.active()` 단 하나(모델 docstring의 "소비자용 API
-  유일 진입" 계약). 만료·회수·타인 권한·다른 주차 권한은 전부 못 본다
+  유일 진입" 계약). 만료·회수·타인 권한·다른 영상 권한은 전부 못 본다
+- 지급 단위는 **영상 1개**(2026-08-04 개정) — 권한은 영상에 붙어 있으므로
+  관리자가 영상의 주차를 옮겨도 이미 지급된 권한은 끊기지 않는다
 - 존재 비노출(§4): 권한 밖 video_id 는 상태와 무관하게 404 — 403 으로 갈리면
   "그 번호의 영상은 있다"가 새어 나간다(clinic·grades 성적표 선례와 동일)
 - 이중 게이트: `공개` 상태 + 권한. 준비중·아카이브는 권한이 있어도 404
@@ -94,11 +96,12 @@ class PlaybackFixtureMixin:
         Parent.objects.create(user=cls.parent_user, name="김학부", phone="010-0000-0001")
         cls.owner = make_user("owner-1", User.Role.OWNER, name="대표")
 
-    def grant(self, student, week, **kwargs):
+    def grant(self, student, video, **kwargs):
+        """영상 1개당 권한 1행 — 지급 단위가 주차에서 영상으로 바뀌었다(2026-08-04)."""
         kwargs.setdefault("source", VideoGrant.Source.ATTENDANCE_AUTO)
         kwargs.setdefault("granted_at", NOW)
         kwargs.setdefault("expires_at", NOW + GRANT_DURATION)
-        return VideoGrant.objects.create(student=student, course_week=week, **kwargs)
+        return VideoGrant.objects.create(student=student, video=video, **kwargs)
 
     def play(self, video, at=NOW):
         with freeze_now(at):
@@ -114,7 +117,7 @@ class PlaybackAccessTests(PlaybackFixtureMixin, TestCase):
     """권한 강제 — 권한 없는 학생은 video_id 를 알아도 못 본다."""
 
     def test_granted_student_can_play(self):
-        self.grant(self.s1, self.week1)
+        self.grant(self.s1, self.video)
         self.client.force_login(self.s1.user)
         response = self.play(self.video)
         self.assertEqual(response.status_code, 200)
@@ -129,7 +132,7 @@ class PlaybackAccessTests(PlaybackFixtureMixin, TestCase):
 
     def test_expires_at_comes_from_the_grant(self):
         # 재생 화면이 "언제 사라지는가"를 아는 유일한 근거(PRD 3.1.4 ⑥ 7일 만료)
-        self.grant(self.s1, self.week1)
+        self.grant(self.s1, self.video)
         self.client.force_login(self.s1.user)
         response = self.play(self.video)
         self.assertEqual(
@@ -142,72 +145,84 @@ class PlaybackAccessTests(PlaybackFixtureMixin, TestCase):
         self.assert_not_found(self.play(self.video))
 
     def test_expired_grant_is_not_found(self):
-        self.grant(self.s1, self.week1, expires_at=NOW - datetime.timedelta(seconds=1))
+        self.grant(self.s1, self.video, expires_at=NOW - datetime.timedelta(seconds=1))
         self.client.force_login(self.s1.user)
         self.assert_not_found(self.play(self.video))
 
     def test_expiry_boundary_is_closed(self):
         # active() 계약: expires_at == 기준 시각은 이미 만료다(경계 미포함)
-        self.grant(self.s1, self.week1, expires_at=NOW)
+        self.grant(self.s1, self.video, expires_at=NOW)
         self.client.force_login(self.s1.user)
         self.assert_not_found(self.play(self.video))
 
     def test_revoked_grant_is_not_found(self):
-        self.grant(self.s1, self.week1, revoked_at=NOW - datetime.timedelta(days=1))
+        self.grant(self.s1, self.video, revoked_at=NOW - datetime.timedelta(days=1))
         self.client.force_login(self.s1.user)
         self.assert_not_found(self.play(self.video))
 
     def test_other_students_grant_does_not_unlock(self):
-        self.grant(self.s2, self.week1)
+        self.grant(self.s2, self.video)
         self.client.force_login(self.s1.user)
         self.assert_not_found(self.play(self.video))
 
-    def test_grant_for_another_week_does_not_unlock(self):
-        # 지급 단위는 주차 — 2주차 권한으로 1주차 영상을 열 수 없다
-        self.grant(self.s1, self.week2)
+    def test_grant_for_another_video_does_not_unlock(self):
+        # 지급 단위는 영상 1개 — 2주차 1강 권한으로 1주차 1강을 열 수 없다
+        self.grant(self.s1, self.video_w2)
         self.client.force_login(self.s1.user)
         self.assert_not_found(self.play(self.video))
+
+    def test_grant_survives_the_video_moving_to_another_week(self):
+        # 지급 단위를 영상으로 바꾼 이유(2026-08-04): 권한은 영상에 붙어 있으므로
+        # 관리자가 콘텐츠 분류(주차)를 고쳐도 이미 지급된 권한은 끊기지 않는다
+        self.grant(self.s1, self.video)
+        self.video.course_week = self.week2
+        self.video.save(update_fields=["course_week"])
+        self.client.force_login(self.s1.user)
+        response = self.play(self.video)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["video"]["week_no"], 2)
 
     def test_preparing_video_is_not_found(self):
-        # 이중 게이트: 권한이 있어도 `공개` 가 아니면 없는 것이다
-        self.grant(self.s1, self.week1)
+        # 이중 게이트: 그 영상에 권한이 있어도 `공개` 가 아니면 없는 것이다
+        self.grant(self.s1, self.video_preparing)
         self.client.force_login(self.s1.user)
         self.assert_not_found(self.play(self.video_preparing))
 
     def test_archived_video_is_not_found(self):
-        self.grant(self.s1, self.week1)
+        self.grant(self.s1, self.video_archived)
         self.client.force_login(self.s1.user)
         self.assert_not_found(self.play(self.video_archived))
 
     def test_week_less_video_is_not_found(self):
-        # 주차 무관 특강은 지급 단위(주차)가 없어 권한이 성립하지 않는다
-        self.grant(self.s1, self.week1)
+        # 주차 무관 특강은 자동지급(그 주차의 공개 영상) 대상이 아니다 —
+        # 권한이 없으니 다른 영상 권한을 들고 있어도 404
+        self.grant(self.s1, self.video)
         self.client.force_login(self.s1.user)
         self.assert_not_found(self.play(self.video_special))
 
     def test_unknown_video_id_is_not_found(self):
-        self.grant(self.s1, self.week1)
+        self.grant(self.s1, self.video)
         self.client.force_login(self.s1.user)
         self.assert_not_found(self.play(99999))
 
     def test_makeup_grant_source_also_plays(self):
         # 권한 원천은 VideoGrant 하나 — 동보 승인이 만든 권한도 같은 경로로 열린다
-        self.grant(self.s1, self.week1, source=VideoGrant.Source.MAKEUP)
+        self.grant(self.s1, self.video, source=VideoGrant.Source.MAKEUP)
         self.client.force_login(self.s1.user)
         self.assertEqual(self.play(self.video).status_code, 200)
 
     def test_parent_cannot_play(self):
-        self.grant(self.s1, self.week1)
+        self.grant(self.s1, self.video)
         self.client.force_login(self.parent_user)
         self.assertEqual(self.play(self.video).status_code, 403)
 
     def test_staff_cannot_play_through_student_route(self):
-        self.grant(self.s1, self.week1)
+        self.grant(self.s1, self.video)
         self.client.force_login(self.owner)
         self.assertEqual(self.play(self.video).status_code, 403)
 
     def test_anonymous_cannot_play(self):
-        self.grant(self.s1, self.week1)
+        self.grant(self.s1, self.video)
         self.assertEqual(self.play(self.video).status_code, 403)
 
     def test_student_role_without_student_row_is_not_found(self):
@@ -220,8 +235,8 @@ class PlaybackWatermarkTests(PlaybackFixtureMixin, TestCase):
     """워터마크는 서버가 만든다 — 학년 · 이름 · 시청 날짜(Asia/Seoul)."""
 
     def setUp(self):
-        self.grant(self.s1, self.week1)
-        self.grant(self.s_no_grade, self.week1)
+        self.grant(self.s1, self.video)
+        self.grant(self.s_no_grade, self.video)
 
     def test_watermark_is_grade_name_and_watched_date(self):
         self.client.force_login(self.s1.user)

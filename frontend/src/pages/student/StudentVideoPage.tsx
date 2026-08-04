@@ -44,10 +44,16 @@ import "./video.css";
  */
 const DEMO_PLAYBACK_ID = "qxb01i6T202018GFS02vp9RIe01icTcDCjVzQpmaB00CUisJ4";
 
+/** 시드가 넣는 가짜 참조의 접두 — 실제 Mux 값이 아니라는 표시(seed_demo.py). */
+const SEED_REF_PREFIX = "seed-";
+
 function playbackIdOf(video: PlaybackVideo): string {
-  return video.provider === "mux" && video.external_ref
-    ? video.external_ref
-    : DEMO_PLAYBACK_ID;
+  if (video.provider !== "mux" || !video.external_ref) return DEMO_PLAYBACK_ID;
+  // 시드 데이터는 재생될 수 없는 값이라 데모로 떨어뜨린다. 실제 참조는 그대로 쓴다 —
+  // 여기서 관대하게 폴백하면 **잘못 적은 참조도 데모가 재생돼** 오류가 묻힌다.
+  return video.external_ref.startsWith(SEED_REF_PREFIX)
+    ? DEMO_PLAYBACK_ID
+    : video.external_ref;
 }
 
 interface VideoRow {

@@ -3,7 +3,7 @@
 정렬 테이블(docs/db/lms-db-design-2026-07-15.md 도메인 4 개정판,
 PRD 3.1.3/3.1.4/3.2.2~3.2.3, key_considerations §4):
   - videos        복습영상 마스터 — 호스팅 Provider 중립(mux/vdocipher, 업체 미정)
-  - video_grants  시청 권한 지급·만료·회수 이력(지급 단위 = 주차)
+  - video_grants  시청 권한 지급·만료·회수 이력(지급 단위 = 영상)
   - makeup_grants 동보(동영상 보강) 신청·승인 기록 — 무과금(8-8 확정)
 
 **DRM 전환 경위(PRD 3.1.3, 2026-07-21 확정)**: YouTube + RPA 봇 방식 폐기(유튜브
@@ -27,13 +27,16 @@ class Video(models.Model):
 
     **Provider 중립 계약(key_considerations §4, payments.Payment 선례)**: 재생·권한
     로직은 앱 레이어의 호스팅 Provider 인터페이스가 담당하고, DB 는 provider 값과
-    중립 외부 참조(external_ref: Mux asset id / VdoCipher video id)만 저장한다 —
+    중립 외부 참조(external_ref)만 저장한다 —
     업체 종속 컬럼 금지. 업체 확정·교체 시 값집합에 값을 추가하고 구현체만 교체
     (스키마 불변). 업체 미정 + 연동 후순위(PRD 3.1.3)라 provider·external_ref 는
     NULL 로 시작한다(메타 선등록 → 연동 시 채움).
 
     - course_week: 강의/차시 분류 축(PRD 3.1.3)이자 지급 단위(주차)의 대상 —
       NULL 이면 주차 무관 특강. 주차 삭제 시 영상 자산은 유지(SET_NULL).
+      **지급 단위는 아니다** — 권한은 영상을 직접 가리키므로(VideoGrant 계약)
+      이 값을 바꿔도 이미 지급된 권한은 끊기지 않는다. 다만 출결 자동지급의
+      대상을 고르는 축이라, 비어 있으면 자동지급이 성립하지 않는다.
     - status: 소비자 노출은 `공개` 상태 + 권한(video_grants) 이중 게이트.
       기본 `준비중`(닫힘이 안전 기본값 — key_considerations §5). 시즌 종료 후
       전량 보관은 `아카이브`(삭제 없음 — 8-16).
@@ -63,8 +66,14 @@ class Video(models.Model):
     provider = models.CharField(  # noqa: DJ001
         "호스팅 제공자", max_length=20, choices=Provider.choices, null=True, blank=True
     )
+    #: **재생기에 그대로 넘어가는 값이다.** Mux 는 자산 하나에 asset id 와
+    #: playback id 가 따로 있는데, 재생 화면이 이 값을 `playbackId` 로 쓰므로
+    #: (frontend StudentVideoPage `playbackIdOf`) 여기 들어가야 하는 것은
+    #: **playback id** 다. asset id 를 넣으면 재생이 조용히 실패한다.
+    #: (2026-08-04 교정 — 구 docstring 이 "Mux asset id" 라고 잘못 적고 있었다.
+    #:  CLAUDE.md §6: 뒤집힌 사실을 문서에 남기지 않는다.)
     external_ref = models.CharField(  # noqa: DJ001
-        "외부 영상 참조 ID", max_length=200, null=True, blank=True
+        "재생 참조 ID", max_length=200, null=True, blank=True
     )
     duration_seconds = models.IntegerField("재생 길이(초)", null=True, blank=True)
     status = models.CharField(
@@ -186,8 +195,22 @@ class VideoGrant(models.Model):
     """`video_grants` — 시청 권한 지급·만료·회수 이력 (도메인 4 개정판, PRD 3.1.4).
 
     부여·만료 이력 관리(PRD 3.1.4: 학생별 부여일·만료 예정일·회수 여부 기록·추적)
-    의 단일 표. 지급 단위는 **주차**(course_week) — "그 주 복습영상" 묶음이며,
-    개별 영상 나열은 주차·상태(`공개`)로 조회한다(영상별 행 복제 없음).
+    의 단일 표.
+
+    **지급 단위는 영상 1개다** (2026-08-04 사용자 확정 — 구 "주차 묶음" 개정).
+    한 학생이 그 주 영상 3개를 볼 수 있으면 **행이 3개** 생긴다.
+
+    왜 바꿨나: 구 설계는 권한을 `course_week` 에 걸고 재생 판정이 영상의
+    course_week 와 맞춰봤다. 그러면 **영상과 권한이 같은 칸을 공유**해서,
+    관리자가 영상의 주차를 고치는 순간 그 주차 권한을 든 학생 전원이 못 보게
+    됐다(2026-08-04 실측: 영상 1건의 주차를 옮기면 활성 권한 51건이 끊김).
+    영상의 주차는 **콘텐츠 분류**이고 권한은 **학생이 무엇을 볼 수 있는가** 라
+    둘은 별개 축이다. 이제 영상을 다른 주차로 옮겨도 권한은 그대로 붙어 있다.
+
+    **지급 시점 계약**: 지급은 **출결 확정 시점 한 번**만 일어나고, 그때
+    `공개` 상태인 그 회차 주차의 영상들에만 권한이 생긴다(2026-08-04 확정).
+    따라서 **영상은 출결 입력 전에 `공개` 여야 한다** — 나중에 공개한 영상은
+    그 주 출석자에게 자동으로 열리지 않는다(수동 지급으로만 메운다).
 
     지급 경로(source):
     - `출석자동`: 출결 SSOT 의 `출석` 확정 트리거(PRD 3.1.4 ① — 신청·승인 없음).
@@ -226,12 +249,12 @@ class VideoGrant(models.Model):
         related_name="video_grants",
         verbose_name="학생",
     )
-    course_week = models.ForeignKey(
-        "curriculum.CourseWeek",
+    video = models.ForeignKey(
+        Video,
         on_delete=models.PROTECT,
-        db_column="course_week_id",
+        db_column="video_id",
         related_name="video_grants",
-        verbose_name="지급 주차",
+        verbose_name="지급 영상",
     )
     source = models.CharField("지급 경로", max_length=15, choices=Source.choices)
     attendance = models.ForeignKey(
@@ -281,17 +304,19 @@ class VideoGrant(models.Model):
         verbose_name = "영상 권한"
         verbose_name_plural = "영상 권한"
         constraints = [
-            # 출석 1건당 자동지급 1건(중복 자동생성 차단) — NULL 은 제약 밖
+            # 출석 1건 + 영상 1개당 자동지급 1행(중복 자동생성 차단).
+            # 지급 단위가 영상이 된 뒤로 한 출석이 여러 행을 낳으므로
+            # attendance 단독 UQ 는 성립하지 않는다(2026-08-04 개정).
             models.UniqueConstraint(
-                fields=["attendance"],
+                fields=["attendance", "video"],
                 condition=models.Q(attendance__isnull=False),
-                name="uq_video_grants_attendance",
+                name="uq_video_grants_attendance_video",
             ),
-            # 동보 1건당 지급 1건 — MakeupGrant 지급 체인 계약의 DB 백스톱
+            # 동보 1건 + 영상 1개당 지급 1행 — MakeupGrant 지급 체인 계약의 DB 백스톱
             models.UniqueConstraint(
-                fields=["makeup"],
+                fields=["makeup", "video"],
                 condition=models.Q(makeup__isnull=False),
-                name="uq_video_grants_makeup",
+                name="uq_video_grants_makeup_video",
             ),
         ]
         indexes = [
@@ -303,4 +328,4 @@ class VideoGrant(models.Model):
         ]
 
     def __str__(self):
-        return f"권한 학생{self.student_id} 주차{self.course_week_id}({self.source})"
+        return f"권한 학생{self.student_id} 영상{self.video_id}({self.source})"

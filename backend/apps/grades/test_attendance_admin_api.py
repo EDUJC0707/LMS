@@ -5,11 +5,18 @@
 - 회차 목록/상세: 강좌·주차·날짜, 명단(수강생 + **퇴원생도 남김**), 출결 값, 집계
 - SSOT 쓰기: 부분/전체 upsert, 정정 시 updated_at 앱 레이어 갱신(auto_now 아님)
 - 파생 트리거(동기·같은 트랜잭션) — 값집합 4종(2026-07-29 개편) 기준:
-  ① 출석·결석(현보) → VideoGrant(출석자동, 그 회차 주차, +7일) / 정정 시 revoke·재활성
+  ① 출석·결석(현보) → VideoGrant(출석자동, 그 회차 주차의 `공개` 영상마다, +7일)
+     / 정정 시 revoke·재활성
   ② 결석 → AbsenceCounseling 대기열 / 결석 아님으로 정정 시 미통화 대기 행만 정리
   ③ 결석(동보) → MakeupGrant(지급완료) + VideoGrant(동보) / 정정 시 revoke·재활성
 - 동보 체인: 관리자 체크 = 출결을 `결석(동보)` 로 올리는 것과 같다(입구 단일화)
 - 쿼리 효율: assertNumQueries 고정(N+1 회귀 방지)
+
+**지급 단위는 영상 1개다**(2026-08-04 개정 — 구 "주차 묶음"). 한 출결이 그 회차
+주차의 `공개` 영상 수만큼 권한 행을 낳으므로, 권한 개수를 세는 단언은
+`len(self.w2_videos)` 처럼 픽스처의 공개 영상 수를 근거로 쓴다(숫자를 직접 박지
+않는다). 회수·재활성도 그 근거의 **전 행**에 걸려야 한다 — 한 행만 끄면 학생에게
+나머지 영상이 그대로 열려 있다.
 
 기준 시각은 `apps.grades.attendance_admin.timezone.now` 를 patch 해 고정한다
 (2차 슬라이스 home 선례 — Asia/Seoul 의미론).
@@ -25,7 +32,7 @@ from apps.accounts.features import FeatureKey
 from apps.accounts.models import StaffFeatureGrant, Student, User
 from apps.boards.models import AbsenceCounseling
 from apps.curriculum.models import Course, CourseEnrollment, CourseWeek
-from apps.videos.models import MakeupGrant, VideoGrant
+from apps.videos.models import MakeupGrant, Video, VideoGrant
 
 from .models import Attendance, ClassSession
 
@@ -56,7 +63,13 @@ def make_student(login_id, name, status=Student.EnrollmentStatus.REGISTERED):
 
 
 class AttendanceAdminFixtureMixin:
-    """로직엔제 강좌 축소판 — 수강생 3 + 퇴원 1 + 타강좌 1, 회차 2개(주차 매핑)."""
+    """로직엔제 강좌 축소판 — 수강생 3 + 퇴원 1 + 타강좌 1, 회차 2개(주차 매핑).
+
+    2주차에는 `공개` 영상 2개 + `준비중` 1개를 둔다 — 지급 단위가 영상이 된 뒤로
+    "권한 몇 행이 나야 하는가"의 근거가 이 목록이고, 준비중 영상이 섞여 있어야
+    "`공개` 인 것에만 권한이 난다"는 지급 시점 계약이 실제로 검증된다.
+    1주차 영상 1개는 지급이 **그 회차 주차** 영상에만 나는지를 가른다.
+    """
 
     @classmethod
     def setUpTestData(cls):
@@ -83,6 +96,33 @@ class AttendanceAdminFixtureMixin:
             session_date=datetime.date(2026, 7, 29), session_no=3
         )
 
+        cls.w2_videos = [
+            Video.objects.create(
+                course_week=cls.week2,
+                title="2주차 1강",
+                status=Video.Status.PUBLISHED,
+                sequence_no=1,
+            ),
+            Video.objects.create(
+                course_week=cls.week2,
+                title="2주차 2강",
+                status=Video.Status.PUBLISHED,
+                sequence_no=2,
+            ),
+        ]
+        cls.w2_preparing = Video.objects.create(
+            course_week=cls.week2,
+            title="2주차 3강",
+            status=Video.Status.PREPARING,
+            sequence_no=3,
+        )
+        cls.w1_video = Video.objects.create(
+            course_week=cls.week1,
+            title="1주차 1강",
+            status=Video.Status.PUBLISHED,
+            sequence_no=1,
+        )
+
         cls.s1 = make_student("stu-1", "김서연")
         cls.s2 = make_student("stu-2", "이준호")
         cls.s3 = make_student("stu-3", "박민지")
@@ -96,6 +136,10 @@ class AttendanceAdminFixtureMixin:
 
     def login(self, user):
         self.client.force_login(user)
+
+    def w2_video_ids(self):
+        """2주차 지급 대상 영상 id — `published_videos_of` 와 같은 정렬(차시 순)."""
+        return [v.video_id for v in self.w2_videos]
 
     def detail_url(self, session_id):
         return f"{SESSIONS_URL}/{session_id}"
@@ -458,14 +502,28 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
             self.session_w2.session_id, [{"student_id": self.s1.student_id, "status": "출석"}]
         )
         att = Attendance.objects.get(session=self.session_w2, student=self.s1)
-        grant = VideoGrant.objects.get(attendance=att)
-        self.assertEqual(grant.source, VideoGrant.Source.ATTENDANCE_AUTO)
-        self.assertEqual(grant.student_id, self.s1.student_id)
-        self.assertEqual(grant.course_week_id, self.week2.week_id)
-        self.assertEqual(grant.granted_at, NOW)
-        self.assertEqual(grant.expires_at, NOW + GRANT_DURATION)
-        self.assertEqual(grant.granted_by, self.admin)
-        self.assertIsNone(grant.revoked_at)
+        grants = VideoGrant.objects.filter(attendance=att).order_by("video__sequence_no")
+        # 지급 단위 = 영상 1개 — 그 회차 주차의 `공개` 영상마다 1행
+        self.assertEqual([g.video_id for g in grants], self.w2_video_ids())
+        for grant in grants:
+            self.assertEqual(grant.source, VideoGrant.Source.ATTENDANCE_AUTO)
+            self.assertEqual(grant.student_id, self.s1.student_id)
+            self.assertEqual(grant.granted_at, NOW)
+            self.assertEqual(grant.expires_at, NOW + GRANT_DURATION)
+            self.assertEqual(grant.granted_by, self.admin)
+            self.assertIsNone(grant.revoked_at)
+
+    def test_grant_covers_only_published_videos_of_that_week(self):
+        """지급은 출결 확정 시점에 `공개` 인 그 회차 주차 영상에만 난다(지급 시점 계약).
+
+        준비중 영상에 권한을 미리 깔면 학생이 아직 못 볼 영상의 만료가 조용히
+        흘러간다 — 늦게 공개한 영상은 수동 지급으로 메운다(VideoGrant 모델 계약).
+        """
+        self.put_attendance(
+            self.session_w2.session_id, [{"student_id": self.s1.student_id, "status": "출석"}]
+        )
+        self.assertFalse(VideoGrant.objects.filter(video=self.w2_preparing).exists())
+        self.assertFalse(VideoGrant.objects.filter(video=self.w1_video).exists())
 
     def test_present_resubmit_does_not_duplicate_grant(self):
         entries = [{"student_id": self.s1.student_id, "status": "출석"}]
@@ -475,9 +533,9 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
         )
         att = Attendance.objects.get(session=self.session_w2, student=self.s1)
         grants = VideoGrant.objects.filter(attendance=att)
-        self.assertEqual(grants.count(), 1)
+        self.assertEqual(grants.count(), len(self.w2_videos))  # 영상당 1행 — 늘지 않는다
         # 재저장이 만료를 연장하지 않는다(최초 지급 유지)
-        self.assertEqual(grants[0].expires_at, NOW + GRANT_DURATION)
+        self.assertEqual({g.expires_at for g in grants}, {NOW + GRANT_DURATION})
 
     def test_onsite_makeup_absence_grants_review_video_without_counseling(self):
         """`결석(현보)` = 다른 회차에서 그 주 수업을 **실제로 들은** 결석.
@@ -492,10 +550,11 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
             [{"student_id": self.s1.student_id, "status": "결석(현보)"}],
         )
         att = Attendance.objects.get(session=self.session_w2, student=self.s1)
-        grant = VideoGrant.objects.get(attendance=att)
-        self.assertEqual(grant.source, VideoGrant.Source.ATTENDANCE_AUTO)
-        self.assertEqual(grant.course_week_id, self.week2.week_id)
-        self.assertEqual(grant.expires_at, NOW + GRANT_DURATION)
+        grants = VideoGrant.objects.filter(attendance=att).order_by("video__sequence_no")
+        self.assertEqual([g.video_id for g in grants], self.w2_video_ids())
+        for grant in grants:
+            self.assertEqual(grant.source, VideoGrant.Source.ATTENDANCE_AUTO)
+            self.assertEqual(grant.expires_at, NOW + GRANT_DURATION)
         self.assertEqual(AbsenceCounseling.objects.count(), 0)
         self.assertEqual(MakeupGrant.objects.count(), 0)
 
@@ -510,10 +569,12 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
         self.assertEqual(makeup.source, MakeupGrant.Source.ADMIN_CHECK)
         self.assertEqual(makeup.status, MakeupGrant.Status.GRANTED)
         self.assertEqual(makeup.granted_at, NOW)
-        grant = VideoGrant.objects.get(makeup=makeup)
-        self.assertEqual(grant.source, VideoGrant.Source.MAKEUP)
-        self.assertEqual(grant.course_week_id, self.week2.week_id)
-        self.assertEqual(grant.expires_at, NOW + GRANT_DURATION)
+        grants = VideoGrant.objects.filter(makeup=makeup).order_by("video__sequence_no")
+        # 출석생과 동일한 그 주 복습영상 권한(PRD 3.2.3) — 공개 영상마다 1행
+        self.assertEqual([g.video_id for g in grants], self.w2_video_ids())
+        for grant in grants:
+            self.assertEqual(grant.source, VideoGrant.Source.MAKEUP)
+            self.assertEqual(grant.expires_at, NOW + GRANT_DURATION)
         # 보강 방법이 확정된 결석이므로 상담 대기열에 올리지 않는다
         self.assertEqual(AbsenceCounseling.objects.count(), 0)
         # 출석 근거 지급은 없다 — 동보는 makeup 근거로만 매달린다
@@ -527,10 +588,9 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
         )
         att = Attendance.objects.get(session=self.session_w2, student=self.s1)
         self.assertEqual(MakeupGrant.objects.filter(attendance=att).count(), 1)
-        self.assertEqual(VideoGrant.objects.filter(makeup__attendance=att).count(), 1)
-        self.assertEqual(
-            VideoGrant.objects.get(makeup__attendance=att).expires_at, NOW + GRANT_DURATION
-        )
+        grants = VideoGrant.objects.filter(makeup__attendance=att)
+        self.assertEqual(grants.count(), len(self.w2_videos))  # 영상당 1행 — 늘지 않는다
+        self.assertEqual({g.expires_at for g in grants}, {NOW + GRANT_DURATION})
 
     def test_makeup_absence_absorbs_pending_student_request(self):
         """학생이 이미 신청해 둔 결석을 담임이 `결석(동보)` 로 찍으면 그 신청이 승인된다.
@@ -559,7 +619,9 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
         pending.refresh_from_db()
         self.assertEqual(pending.status, MakeupGrant.Status.GRANTED)
         self.assertEqual(pending.source, MakeupGrant.Source.STUDENT_REQUEST)  # 이력 보존
-        self.assertEqual(VideoGrant.objects.get(makeup=pending).granted_at, later)
+        grants = VideoGrant.objects.filter(makeup=pending)
+        self.assertEqual(grants.count(), len(self.w2_videos))
+        self.assertEqual({g.granted_at for g in grants}, {later})
 
     def test_absent_to_makeup_absence_removes_untouched_counseling(self):
         self.put_attendance(
@@ -586,11 +648,17 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
             at=later,
         )
         att = Attendance.objects.get(session=self.session_w2, student=self.s1)
-        makeup_grant = VideoGrant.objects.get(makeup__attendance=att)
-        self.assertEqual(makeup_grant.revoked_at, later)
-        self.assertNotIn(makeup_grant, VideoGrant.objects.active(at=later))
-        # 출석 자동지급은 새로 난다
-        self.assertEqual(VideoGrant.objects.filter(attendance=att).count(), 1)
+        makeup_grants = VideoGrant.objects.filter(makeup__attendance=att)
+        # 동보 지급은 **전부** 회수된다 — 영상 단위가 된 뒤로 한 동보가 여러 행을 낳으므로
+        # 하나만 끄면 학생에게 나머지 영상이 그대로 열려 있다
+        self.assertEqual(makeup_grants.count(), len(self.w2_videos))
+        for grant in makeup_grants:
+            self.assertEqual(grant.revoked_at, later)
+            self.assertNotIn(grant, VideoGrant.objects.active(at=later))
+        # 출석 자동지급은 새로 난다 — 영상당 1행
+        self.assertEqual(
+            VideoGrant.objects.filter(attendance=att).count(), len(self.w2_videos)
+        )
 
     def test_makeup_absence_reentry_reactivates_revoked_grant(self):
         self.put_attendance(
@@ -610,11 +678,16 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
         )
         att = Attendance.objects.get(session=self.session_w2, student=self.s1)
         grants = VideoGrant.objects.filter(makeup__attendance=att)
-        self.assertEqual(grants.count(), 1)  # 부분 UQ — 동보 1건당 지급 1행(재활성)
-        self.assertIsNone(grants[0].revoked_at)
-        self.assertEqual(grants[0].expires_at, t2 + GRANT_DURATION)
-        # 출석으로 났던 자동지급은 회수된다
-        self.assertEqual(VideoGrant.objects.get(attendance=att).revoked_at, t2)
+        # 부분 UQ(makeup, video) — 동보 1건 × 영상 1개당 지급 1행(재활성, 행 복제 없음)
+        self.assertEqual(grants.count(), len(self.w2_videos))
+        for grant in grants:
+            self.assertIsNone(grant.revoked_at)
+            self.assertEqual(grant.expires_at, t2 + GRANT_DURATION)
+        # 출석으로 났던 자동지급은 **전부** 회수된다
+        auto_grants = VideoGrant.objects.filter(attendance=att)
+        self.assertEqual(auto_grants.count(), len(self.w2_videos))
+        for grant in auto_grants:
+            self.assertEqual(grant.revoked_at, t2)
 
     def test_present_to_absent_revokes_auto_grant(self):
         self.put_attendance(
@@ -627,9 +700,12 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
             at=later,
         )
         att = Attendance.objects.get(session=self.session_w2, student=self.s1)
-        grant = VideoGrant.objects.get(attendance=att)
-        self.assertEqual(grant.revoked_at, later)
-        self.assertNotIn(grant, VideoGrant.objects.active(at=later))
+        grants = VideoGrant.objects.filter(attendance=att)
+        # 그 출결의 자동지급을 **전부** 회수한다(영상당 1행이므로 하나만 끄면 남는다)
+        self.assertEqual(grants.count(), len(self.w2_videos))
+        for grant in grants:
+            self.assertEqual(grant.revoked_at, later)
+            self.assertNotIn(grant, VideoGrant.objects.active(at=later))
 
     def test_absent_back_to_present_reactivates_grant(self):
         self.put_attendance(
@@ -649,11 +725,12 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
         )
         att = Attendance.objects.get(session=self.session_w2, student=self.s1)
         grants = VideoGrant.objects.filter(attendance=att)
-        self.assertEqual(grants.count(), 1)  # 부분 UQ — 출석 1건당 1행(재활성, 행 복제 없음)
-        grant = grants[0]
-        self.assertIsNone(grant.revoked_at)
-        self.assertEqual(grant.granted_at, t2)
-        self.assertEqual(grant.expires_at, t2 + GRANT_DURATION)
+        # 부분 UQ(attendance, video) — 출석 1건 × 영상 1개당 1행(재활성, 행 복제 없음)
+        self.assertEqual(grants.count(), len(self.w2_videos))
+        for grant in grants:
+            self.assertIsNone(grant.revoked_at)
+            self.assertEqual(grant.granted_at, t2)
+            self.assertEqual(grant.expires_at, t2 + GRANT_DURATION)
 
     # --- 트리거 ② 결석 → 상담 대기열 -------------------------------------
 
@@ -687,8 +764,10 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
         )
         att = Attendance.objects.get(session=self.session_w2, student=self.s2)
         self.assertEqual(AbsenceCounseling.objects.filter(attendance=att).count(), 0)
-        # 정정 후 출석이므로 자동지급은 생성된다
-        self.assertEqual(VideoGrant.objects.filter(attendance=att).count(), 1)
+        # 정정 후 출석이므로 자동지급은 생성된다 — 영상당 1행
+        self.assertEqual(
+            VideoGrant.objects.filter(attendance=att).count(), len(self.w2_videos)
+        )
 
     def test_absent_to_present_keeps_touched_counseling_row(self):
         self.put_attendance(
@@ -720,7 +799,8 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
         self.assertEqual(
             res.json()["triggers"],
             {
-                "video_grants_created": 1,
+                # 출석 1명 × 그 회차 주차의 공개 영상 수(권한 = 학생이 체감하는 단위)
+                "video_grants_created": len(self.w2_videos),
                 "video_grants_revoked": 0,
                 "video_grants_reactivated": 0,
                 "counselings_created": 1,
@@ -740,8 +820,8 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
         self.assertEqual(
             res.json()["triggers"],
             {
-                # 동보 1건(makeup 근거) + 현보 1건(출결 근거)
-                "video_grants_created": 2,
+                # 동보 1명(makeup 근거) + 현보 1명(출결 근거) — 각각 영상당 1행
+                "video_grants_created": 2 * len(self.w2_videos),
                 "video_grants_revoked": 0,
                 "video_grants_reactivated": 0,
                 "counselings_created": 0,
@@ -757,7 +837,10 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
             {"student_id": self.s3.student_id, "status": "결석(현보)"},
         ]
         # 세션인증 2 + 기능키 1 + 회차 1 + 명단 1 + SAVEPOINT/RELEASE 2
-        # + 기존출결 1 + INSERT 3 + 지급조회/생성 2(출석·현보 묶음 INSERT 아님 → 3)
+        # + 기존출결 1 + INSERT 3
+        # + 트리거① 3: 주차 공개영상 조회 1 + 기존지급 조회 1 + 지급 bulk INSERT 1
+        #   (지급 단위가 영상이 된 뒤 영상 조회 1쿼리가 늘고, 대신 건별 INSERT 가
+        #    bulk 1쿼리로 묶여 총합은 그대로다 — 학생·영상 수가 늘어도 고정)
         # + 동보조회 1(지급건 없음 → 2번째 쿼리 생략) + 대기열조회/생성 2
         with freeze_now(), self.assertNumQueries(17):
             self.client.put(
@@ -817,15 +900,21 @@ class MakeupCheckTests(AttendanceAdminFixtureMixin, TestCase):
         self.assertEqual(makeup.status, MakeupGrant.Status.GRANTED)
         self.assertEqual(makeup.granted_at, NOW)
         self.assertEqual(makeup.requested_by, self.admin)
-        grant = VideoGrant.objects.get(makeup=makeup)
-        self.assertEqual(grant.source, VideoGrant.Source.MAKEUP)
-        self.assertEqual(grant.student_id, self.s2.student_id)
-        self.assertEqual(grant.course_week_id, self.week2.week_id)
-        self.assertEqual(grant.granted_at, NOW)
-        self.assertEqual(grant.expires_at, NOW + GRANT_DURATION)
+        grants = list(
+            VideoGrant.objects.filter(makeup=makeup).order_by("video__sequence_no")
+        )
+        self.assertEqual([g.video_id for g in grants], self.w2_video_ids())
+        for grant in grants:
+            self.assertEqual(grant.source, VideoGrant.Source.MAKEUP)
+            self.assertEqual(grant.student_id, self.s2.student_id)
+            self.assertEqual(grant.granted_at, NOW)
+            self.assertEqual(grant.expires_at, NOW + GRANT_DURATION)
         body = res.json()
         self.assertEqual(body["makeup"]["makeup_id"], makeup.makeup_id)
-        self.assertEqual(body["video_grant"]["grant_id"], grant.grant_id)
+        # 응답은 만든 행 **전부**를 싣는다 — 하나만 실으면 몇 개 지급됐는지가 사라진다
+        self.assertEqual(
+            [g["grant_id"] for g in body["video_grants"]], [g.grant_id for g in grants]
+        )
 
     def test_makeup_on_non_absent_attendance_is_400(self):
         res = self.post_makeup(self._body(att=self.present_att, student=self.s1))
@@ -851,7 +940,10 @@ class MakeupCheckTests(AttendanceAdminFixtureMixin, TestCase):
         res = self.post_makeup(self._body(), at=NOW + datetime.timedelta(hours=1))
         self.assertEqual(res.status_code, 400)
         self.assertEqual(MakeupGrant.objects.filter(attendance=self.absent_att).count(), 1)
-        self.assertEqual(VideoGrant.objects.filter(makeup__attendance=self.absent_att).count(), 1)
+        self.assertEqual(
+            VideoGrant.objects.filter(makeup__attendance=self.absent_att).count(),
+            len(self.w2_videos),
+        )
 
     def test_makeup_on_session_without_week_is_400(self):
         att = Attendance.objects.create(

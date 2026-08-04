@@ -11,9 +11,15 @@ revoke 하는 쪽이다(makeup.complete_makeup 이 `지급완료` 전이에서 V
 통째로 무시된다. 그래서 진입은 `VideoGrant.objects.active()` 단 하나다
 (VideoGrant 모델 docstring 의 "소비자용 API 유일 진입" 계약).
 
-**이중 게이트**: `Video.status == 공개` + 활성 권한. 지급 단위는 주차라
-영상의 `course_week` 와 권한의 `course_week` 가 같아야 한다. 주차 없는 특강은
-지급 단위가 없어 권한이 성립하지 않는다(= 못 본다).
+**이중 게이트**: `Video.status == 공개` + 그 **영상에 대한** 활성 권한.
+지급 단위가 영상이라(2026-08-04 개정) 판정은 `권한.video == 영상` 직접 조인이다 —
+구 설계처럼 주차를 맞춰 보지 않는다. 그래서 관리자가 영상의 주차를 옮겨도 이미
+지급된 권한은 끊기지 않는다.
+
+주차 없는 특강도 **권한만 있으면 볼 수 있다**(수동 지급 경로). 출결 자동지급은
+주차를 축으로 대상을 고르므로 특강에 자동으로 나지 않을 뿐이다 — "지급이 안 난다"와
+"보면 안 된다"는 다른 말이라 재생을 막지 않는다. 주차에서 오는 표시값
+(강좌명·주차번호)은 그때 비어 나간다.
 
 **차단은 404**: 권한 밖 video_id 는 영상이 있든 없든, 준비중이든 아카이브든
 똑같이 "찾을 수 없습니다" 다. 403 으로 갈리면 "그 번호의 영상은 존재한다"가
@@ -63,25 +69,19 @@ def build_playback(student, video_id, now):
     - student: 로그인 세션에서 해석된 본인(호출측이 user 를 select_related).
     - now: 기준 시각. 권한 활성 판정과 시청 날짜가 **같은 한 시각**을 쓴다.
     """
-    video = (
-        Video.objects.select_related("course_week__course")
-        .filter(
-            pk=video_id,
-            status=Video.Status.PUBLISHED,
-            course_week__isnull=False,
-        )
-        .first()
-    )
-    if video is None:
-        return None
     grant = (
         VideoGrant.objects.active(at=now)
-        .filter(student=student, course_week=video.course_week)
+        .select_related("video__course_week__course")
+        .filter(student=student, video_id=video_id, video__status=Video.Status.PUBLISHED)
         .order_by("-expires_at")  # 재지급이 겹치면 늦게 끝나는 권한이 기준
         .first()
     )
     if grant is None:
         return None
+    video = grant.video
+    # 주차 없는 특강 — 권한이 영상을 직접 가리키므로 재생은 성립한다.
+    # 표시값만 비운다(build_video_list 와 같은 판단 — 두 경로가 갈리면
+    # "목록엔 있는데 누르면 500" 이 난다).
     week = video.course_week
     return {
         "video": {
@@ -93,8 +93,8 @@ def build_playback(student, video_id, now):
             # 해석한다(Provider 중립 계약, Video 모델 docstring)
             "provider": video.provider,
             "external_ref": video.external_ref,
-            "course_name": week.course.name,
-            "week_no": week.week_no,
+            "course_name": week.course.name if week else None,
+            "week_no": week.week_no if week else None,
         },
         "watermark": build_watermark(student, timezone.localdate(now)),
         "expires_at": timezone.localtime(grant.expires_at).isoformat(),
@@ -113,32 +113,38 @@ def build_video_list(student, now):
 
     만료가 가까운 것을 먼저 보인다(§3.2.0 마감 우선 배치). 같은 주차면 강 순서.
     """
-    grants = {
-        grant.course_week_id: grant
-        for grant in VideoGrant.objects.active(at=now)
-        .filter(student=student)
+    grants = (
+        VideoGrant.objects.active(at=now)
+        .select_related("video__course_week__course")
+        .filter(student=student, video__status=Video.Status.PUBLISHED)
         .order_by("expires_at")  # 재지급이 겹치면 먼저 끝나는 쪽이 학생이 볼 마감
-    }
-    if not grants:
-        return []
-    videos = (
-        Video.objects.select_related("course_week__course")
-        .filter(status=Video.Status.PUBLISHED, course_week_id__in=grants)
-        .order_by("course_week__week_no", "sequence_no")
     )
+    # 같은 영상에 권한이 여러 건이면(출석자동 + 수동 재지급 등) 늦게 끝나는 쪽이
+    # 학생이 실제로 볼 수 있는 마감이다 — 영상당 한 줄만 남긴다.
+    latest = {}
+    for grant in grants:
+        current = latest.get(grant.video_id)
+        if current is None or grant.expires_at > current.expires_at:
+            latest[grant.video_id] = grant
     rows = [
         {
-            "video_id": video.video_id,
-            "title": video.title,
-            "sequence_no": video.sequence_no,
-            "duration_seconds": video.duration_seconds,
-            "course_name": video.course_week.course.name,
-            "week_no": video.course_week.week_no,
-            "expires_at": timezone.localtime(
-                grants[video.course_week_id].expires_at
-            ).isoformat(),
+            "video_id": grant.video.video_id,
+            "title": grant.video.title,
+            "sequence_no": grant.video.sequence_no,
+            "duration_seconds": grant.video.duration_seconds,
+            "course_name": (
+                grant.video.course_week.course.name if grant.video.course_week else None
+            ),
+            "week_no": grant.video.course_week.week_no if grant.video.course_week else None,
+            "expires_at": timezone.localtime(grant.expires_at).isoformat(),
         }
-        for video in videos
+        for grant in latest.values()
     ]
-    rows.sort(key=lambda row: (row["expires_at"], row["week_no"], row["sequence_no"]))
+    rows.sort(
+        key=lambda row: (
+            row["expires_at"],
+            row["week_no"] if row["week_no"] is not None else 0,
+            row["sequence_no"] if row["sequence_no"] is not None else 0,
+        )
+    )
     return rows
