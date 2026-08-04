@@ -131,7 +131,11 @@
 
 - [ ] prod `SECRET_KEY` fail-fast(기본값 제거), whitenoise + collectstatic(현재 /static/ 404)
 - [ ] `infra/Dockerfile`에 `ENV UV_NO_DEV=1`(부팅 13초 지연), uv 이미지 태그 고정
-- [ ] CI `FLY_API_TOKEN` 시크릿(현재 미설정이라 자동배포 실행 자체가 안 됨)
+- [x] ~~CI `FLY_API_TOKEN` 시크릿(현재 미설정이라 자동배포 실행 자체가 안 됨)~~ →
+  **틀린 정보였다**(2026-08-04 확인). 시크릿은 **2026-07-29 부터 등록돼 있고 CI 는 계속 성공하고 있다.**
+  즉 **`main` 에 push 하면 그 순간 실서비스에 배포된다** — 최근 실행 전부 success.
+  `CLAUDE.md` §2 의 "push 는 사용자 지시가 있을 때만"이 문자 그대로인 이유다.
+  브랜치 push 는 안전하다(워크플로가 `main` 만 본다)
 - [ ] Fly `edujc-lms` 헬스체크 critical 상태 원인 확인
 - [ ] **Sentry `release` 주입** — 지금은 "어느 배포에서 난 에러냐"를 구분할 수 없다.
   SDK 가 git 으로 추론하는데 이미지에 `.git` 이 없어 실패한다(로컬에서만 SHA 가 붙는 것 확인).
