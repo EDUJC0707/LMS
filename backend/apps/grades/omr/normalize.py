@@ -40,6 +40,9 @@ MARK_MIN_FILL = 0.70
 #: 글자는 마커와 모양으로는 안 갈리고 **자리로만** 갈린다.
 BAND = 0.14
 SIDE_BAND = 0.20
+#: 카드 위쪽 마커가 아래쪽보다 이만큼은 커야 방향을 가렸다고 본다.
+#: 실측 비는 1.7배(648 대 378)이므로 1.25 는 넉넉한 하한이다.
+MARK_AREA_RATIO = 1.25
 
 
 #: 카드 정규좌표의 기준 사각형 — (0,0) 좌상 마커, (1,1) 우하 마커.
@@ -67,19 +70,33 @@ class CardFrame:
 
 
 def locate_card(image):
-    """스캔에서 카드 자리를 찾는다. 마커를 못 찾으면 None(호출부가 보류로 돌린다)."""
-    corners = find_corner_marks(image)
-    if corners is None:
+    """스캔에서 카드 자리를 찾는다. 못 찾거나 방향을 못 가리면 None(보류).
+
+    돌려주는 프레임의 정규좌표는 **카드 자신의** 방향이다 — 카드는 세로 페이지에
+    누워 들어오지만 (0,0) 은 언제나 카드의 좌상단이다. 눕는 방향을 코드에 박지
+    않는 이유는 급지가 뒤집힌 날 전부 조용히 어긋나기 때문이다.
+    """
+    found = _corner_marks_with_area(image)
+    if found is None:
         return None
-    return CardFrame(corners)
+    oriented = _roll_to_card_top_left(*found)
+    if oriented is None:
+        return None
+    return CardFrame(oriented)
 
 
 def find_corner_marks(image):
-    """네 모서리 마커 중심을 **좌상·우상·우하·좌하** 순으로. 4개가 아니면 None.
+    """네 모서리 마커 중심을 **스캔 기준** 좌상·우상·우하·좌하 순으로. 못 찾으면 None.
 
-    시계방향으로 돌려주는 이유는 cv2.getPerspectiveTransform 이 그 순서를 받기
-    때문이다 — 호출부마다 다시 정렬하면 한 곳만 틀려도 조용히 뒤집힌다.
+    여기까지가 검출이고 카드가 어느 쪽으로 누웠는지는 모른다 — 그 해석은
+    locate_card 의 몫이다.
     """
+    found = _corner_marks_with_area(image)
+    return None if found is None else found[0]
+
+
+def _corner_marks_with_area(image):
+    """(중심 4x2, 면적 4) 또는 None — 검출의 공통 부분."""
     candidates = _mark_candidates(image)
     if len(candidates) < 4:
         return None
@@ -106,7 +123,7 @@ def _mark_candidates(image):
             continue
         if SIDE_BAND * width < cx < (1 - SIDE_BAND) * width:
             continue
-        found.append((cx, cy))
+        found.append((cx, cy, float(area)))
     return found
 
 
@@ -126,6 +143,28 @@ def _nearest_to_page_corners(points, shape):
         min(points, key=lambda p: (p[0] - tx) ** 2 + (p[1] - ty) ** 2)
         for tx, ty in targets
     ]
-    if len({(round(x, 3), round(y, 3)) for x, y in chosen}) != 4:
+    if len({(round(p[0], 3), round(p[1], 3)) for p in chosen}) != 4:
         return None
-    return np.array(chosen, dtype=np.float64)
+    picked = np.array(chosen, dtype=np.float64)
+    return picked[:, :2], picked[:, 2]
+
+
+def _roll_to_card_top_left(corners, areas):
+    """스캔 순서(4x2)를 **카드 자신의** 좌상·우상·우하·좌하 순으로 돌린다.
+
+    카드 위쪽 변의 마커가 아래쪽보다 길다(실측: 면적 648 대 378, 1.7배). 시계방향
+    순서에서 **큰 마커 둘이 이웃한 자리**가 곧 카드의 위쪽 변이고, 그 변을 시계방향
+    으로 지나는 첫 점이 카드의 좌상단이다.
+
+    큰 쪽과 작은 쪽이 충분히 안 벌어지면 None — 억지로 방향을 정하느니 보류로
+    보낸다. 여기서 한 칸 틀리면 성명란을 답란으로 읽는다.
+    """
+    order = np.argsort(areas)
+    if areas[order[2]] < MARK_AREA_RATIO * areas[order[1]]:
+        return None
+    is_long = np.zeros(4, dtype=bool)
+    is_long[order[2:]] = True
+    for index in range(4):
+        if is_long[index] and is_long[(index + 1) % 4]:
+            return np.roll(corners, -index, axis=0)
+    return None

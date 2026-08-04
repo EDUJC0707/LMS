@@ -24,6 +24,10 @@ MARKS = (
     ((115.0, 2225.0), (21, 18)),  # 좌하
 )
 CORNERS = np.array([c for c, _ in MARKS], dtype=np.float64)
+#: 카드 정규좌표 순서(카드 좌상·우상·우하·좌하) → 스캔 모서리 순서(MARKS) 대응.
+#: 카드는 세로 페이지에 **90° 시계방향으로 누워** 들어오므로 카드의 좌상단은
+#: 스캔의 우상단이다. 긴 마커(폭 36)가 붙은 변이 카드의 위쪽 변이다.
+CARD_TO_SCAN = [1, 2, 3, 0]
 
 
 #: 상·하단 띠 **가운데**에 놓인 마커 크기의 검은 덩어리 — 실물에서는 헤더 제목
@@ -90,14 +94,24 @@ def test_picks_the_marks_nearest_the_page_corners_when_a_fifth_blob_is_inside_th
     np.testing.assert_allclose(corners, CORNERS, atol=1.5)
 
 
-def test_maps_card_corners_back_onto_a_skewed_scan():
-    """카드 정규좌표 (0,0)~(1,1) 은 마커 네 점이다 — 기울어도 그 자리를 짚어야 한다.
+def test_orients_the_frame_to_the_cards_own_top_left():
+    """정규좌표 (0,0) 은 스캔의 좌상단이 아니라 **카드의** 좌상단이다.
 
-    -3.55° 는 실측 65장의 최대 기울기다(측정치를 그대로 상한으로 쓴다).
+    카드가 눕는 방향을 코드에 박으면 급지가 뒤집힌 날 전부 조용히 어긋난다.
+    긴 마커가 붙은 변이 카드의 위쪽이라는 사실로 매번 판별한다.
     """
+    frame = normalize.locate_card(synth_scan())
+
+    assert frame is not None
+    mapped = [frame.to_source(u, v) for u, v in ((0, 0), (1, 0), (1, 1), (0, 1))]
+    np.testing.assert_allclose(mapped, CORNERS[CARD_TO_SCAN], atol=1.5)
+
+
+def test_maps_card_corners_back_onto_a_skewed_scan():
+    """기울어도 카드 네 귀퉁이를 짚는다. -3.55° 는 실측 65장의 최대 기울기다."""
     angle = -3.55
     frame = normalize.locate_card(synth_scan(angle=angle))
 
     assert frame is not None
     mapped = [frame.to_source(u, v) for u, v in ((0, 0), (1, 0), (1, 1), (0, 1))]
-    np.testing.assert_allclose(mapped, expected_corners(angle=angle), atol=2)
+    np.testing.assert_allclose(mapped, expected_corners(angle=angle)[CARD_TO_SCAN], atol=2)
