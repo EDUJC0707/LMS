@@ -107,13 +107,13 @@ TIMEOUT_SECONDS = 10
 _RETRYABLE_STATUSES = frozenset({408, 429})
 
 
-def urllib_transport(url, body, headers, timeout):
+def urllib_transport(method, url, body, headers, timeout):
     """기본 전송 — (status, body bytes). 4xx·5xx 도 예외가 아니라 값으로 돌린다.
 
     해석은 어댑터의 일이라(`conferencing.py` 계약) 전송은 상태 코드를 그대로
     넘기고 판단하지 않는다.
     """
-    request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    request = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return response.status, response.read()
@@ -189,8 +189,15 @@ class GoogleMeetAdapter(ConferenceAdapter):
     # -- 공통 --------------------------------------------------------------
 
     def _post(self, url, body, headers):
+        return self._send("POST", url, body, headers)
+
+    def _get(self, url, token):
+        """토큰만 붙는 조회. 감독 자료 수집이 전부 이 경로를 쓴다."""
+        return self._send("GET", url, None, {"Authorization": f"Bearer {token}"})
+
+    def _send(self, method, url, body, headers):
         try:
-            return self.transport(url, body, headers, TIMEOUT_SECONDS)
+            return self.transport(method, url, body, headers, TIMEOUT_SECONDS)
         except (urllib.error.URLError, TimeoutError, OSError) as error:
             raise TemporaryConferenceError(f"구글에 닿지 못했습니다: {error}") from error
 
@@ -242,6 +249,7 @@ def exchange_code(client_id, client_secret, code, redirect_uri, transport=None):
     post = transport or urllib_transport
     try:
         status, body = post(
+            "POST",
             TOKEN_ENDPOINT,
             urllib.parse.urlencode(
                 {

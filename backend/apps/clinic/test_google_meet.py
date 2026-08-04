@@ -46,8 +46,10 @@ class FakeTransport:
         self.responses = list(responses)
         self.calls = []
 
-    def __call__(self, url, body, headers, timeout):
-        self.calls.append({"url": url, "body": body, "headers": headers, "timeout": timeout})
+    def __call__(self, method, url, body, headers, timeout):
+        self.calls.append(
+            {"method": method, "url": url, "body": body, "headers": headers, "timeout": timeout}
+        )
         item = self.responses.pop(0)
         if isinstance(item, Exception):
             raise item
