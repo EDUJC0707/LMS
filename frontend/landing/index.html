@@ -147,23 +147,21 @@
      하단 페이드 마스크를 걷어냈다 — 부분 투명도 투명이고, 인물이 흐려지면
      배경 모티프와 같은 층으로 읽힌다. 뒤로 모티프가 지나가지도 않는다. */
   .teacher{
-    /* 2026-07-28 확정: 오른쪽에서 5% · 바닥 0%.
-       **높이 값은 사진마다 다르다**(2026-08-04). 확정된 것은 "화면에서 이만큼 커
-       보인다" 이지 svh 숫자가 아니다. 사진의 프레이밍이 바뀌면 같은 svh 가 다른
-       얼굴 크기를 뜻한다 — 숫자를 사진에 맞춰 다시 잡는다.
+    /* 확정: 80svh · 상한 820px · 오른쪽 5% · 바닥 0%
+       (2026-07-28 확정 → 08-04 사진을 갈아 끼우고 재확인).
 
-         02-검정티-턱손.webp  731x1000 · 머리 폭이 프레임의 39.5%  → 80svh / 820px
-         teacher.png         1036x1640 · 39.1%, 프레임이 더 좁다  → 94svh / 960px
+       사진을 바꿀 때 **높이 숫자가 아니라 화면에서 보이는 크기를 맞춘다.** 새 사진은
+       프레임이 좁아(머리폭이 프레임의 39.1%, 예전은 39.5%) 같은 높이에서 머리가
+       예전의 85.5% 로 작아진다. 예전과 똑같이 맞추면 94svh 가 나오는데 실제로 보니
+       커서, 80 을 그대로 쓰기로 했다 — 맞춰야 할 기준선이 아니라 출발점이었다.
 
-       디버그 슬라이더가 step 1 이라 93.6 을 못 쥔다. 94 로 맞췄고 머리 폭 차이는
-       0.4% 다. 이 값은 debug.js 의 TEACHER0 에도 복제돼 있다 — 함께 고쳐야 패널을
-       여는 순간 화면이 튀지 않는다.
+       **투명 여백은 반드시 잘라내고 넣는다.** 원본처럼 인물이 프레임의 65% 만
+       차지하면 80svh 가 빈 공간까지 재서 인물이 52svh 로 나온다.
 
-       프레임이 좁아 같은 높이에서 머리가 예전의 85.5% 로 작아졌다. 1.170 배로
-       올려 맞췄다. 상한(820→960)도 같은 배수여야 큰 화면에서 어긋나지 않는다.
-       바꾸면 pack-layout.py 도 다시 돌려야 한다 — 강사 왼쪽 경계가 모티프 금지선이다. */
+       이 값은 debug.js 의 TEACHER0 에도 복제돼 있다 — 함께 고쳐야 패널을 여는 순간
+       화면이 튀지 않는다. */
     position:absolute; right:var(--teacher-right, 5%); bottom:var(--teacher-bottom, 0%); z-index:1;
-    height:min(var(--teacher-h, 94svh), 960px); width:auto;
+    height:min(var(--teacher-h, 80svh), 820px); width:auto;
     object-fit:contain; object-position:bottom right;
     pointer-events:none; user-select:none;
     opacity:1;
@@ -331,7 +329,7 @@
     .navL nav{ display:none }
     .hero{ grid-template-columns:1fr; align-content:center; padding-bottom:32svh }
     .copy{ max-width:none }
-    .teacher{ height:var(--teacher-h-sm, 47svh); right:var(--teacher-right-sm, -12%); bottom:var(--teacher-bottom-sm, 0%) }
+    .teacher{ height:var(--teacher-h-sm, 40svh); right:var(--teacher-right-sm, -12%); bottom:var(--teacher-bottom-sm, 0%) }
     .steps::before{ display:none }
     .step{ grid-template-columns:1fr; gap:.55rem; padding-bottom:2rem }
     /* 좁은 화면에서는 뒤 두 열이 고정폭을 그대로 붙들어 교재가 110px 만 받고
