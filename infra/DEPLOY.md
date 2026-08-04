@@ -302,6 +302,22 @@ SDK 기본 스크러버는 `password`·`token` 류만 잡는다(이름·전화�
 > 되짚어야 할 때(예: 요청 본문이 꼭 필요한 버그) 는 `config/observability.py` 한 곳만 고치면 되고,
 > 고치는 순간 `config/tests.py` 가 빨개진다 — 실수로 열리지는 않는다는 뜻이다.
 
+**추정이 아니라 실측이다**(2026-08-04). 가짜 수집 서버로 DSN 을 돌리고 prod 설정 + 진짜 WSGI
+(운영과 같은 `config.wsgi.application`)로 500 을 낸 뒤, 나가는 엔벨로프를 그대로 열어 봤다.
+학생 이름·휴대폰·비밀번호를 쿼리와 본문에 둘 다 실어 보냈고 결과는 —
+
+```
+남은 것:  RuntimeError | Sentry 수집 확인용 예외
+          url=…/sentry-debug · method=POST · transaction=/sentry-debug
+          마지막 프레임 config/urls.py:36 sentry_debug
+막힌 것:  query_string='token=[Filtered]&q=[Filtered]&page=[Filtered]'
+          data=None · user=None · cookies=None · 지역변수 실린 프레임 없음
+          headers = Host/User-Agent/Content-Type 등 무해한 것만
+페이로드 원문에서 이름·전화번호·비밀번호 검색 → 0건
+```
+
+즉 **어느 엔드포인트에서 몇 번째 줄이 터졌는지는 남고, 누구의 무엇이었는지는 안 남는다.**
+
 성능 추적은 `traces_sample_rate=0.1`(요청 10건 중 1건)로 켜져 있다. 에러 한도와 별개 항목이라
 한도를 태우면 이 값을 0 으로 내린다.
 
