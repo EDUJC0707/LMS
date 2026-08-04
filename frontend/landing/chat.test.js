@@ -80,13 +80,24 @@ test('키가 없을 때 문의 버튼은 콘솔 에러 없이 아무 일도 하�
   assert.deepEqual(chat.appended, []);
 });
 
-test('키가 있으면 문의 버튼이 누른 자리를 실어 메신저를 연다', async () => {
+test('누른 자리를 입력창에 미리 채운 새 상담을 연다', async () => {
   const chat = await loadChat('pk-abc123');
 
   chat.openChat('정오표 제보');
 
+  // setPage 는 상담이 생길 때 붙는 페이지 값이고, 입력창을 채우는 건 openChat 이다.
+  // 둘은 하는 일이 다르므로 둘 다 부른다. chatId 를 비우면 새 상담이 열린다.
   assert.deepEqual(chat.calls().slice(1), [
     ['setPage', '/랜딩#정오표 제보'],
-    ['showMessenger'],
+    ['openChat', undefined, '정오표 제보'],
   ]);
+});
+
+test('누른 자리를 모르면 메신저만 연다', async () => {
+  const chat = await loadChat('pk-abc123');
+
+  chat.openChat();
+
+  // 채울 말이 없는데 새 상담을 강제로 열면 진행 중이던 상담이 갈린다.
+  assert.deepEqual(chat.calls().slice(1), [['showMessenger']]);
 });
