@@ -68,7 +68,7 @@ class Video(models.Model):
     )
     #: **재생기에 그대로 넘어가는 값이다.** Mux 는 자산 하나에 asset id 와
     #: playback id 가 따로 있는데, 재생 화면이 이 값을 `playbackId` 로 쓰므로
-    #: (frontend StudentVideoPage `playbackIdOf`) 여기 들어가야 하는 것은
+    #: (videos.playback.resolve_ref 를 거쳐 프런트로) 여기 들어가야 하는 것은
     #: **playback id** 다. asset id 를 넣으면 재생이 조용히 실패한다.
     #: (2026-08-04 교정 — 구 docstring 이 "Mux asset id" 라고 잘못 적고 있었다.
     #:  CLAUDE.md §6: 뒤집힌 사실을 문서에 남기지 않는다.)
