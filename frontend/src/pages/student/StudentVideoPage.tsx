@@ -14,6 +14,13 @@
  * 덤으로 권한 검사도 재생 시점에 걸린다 — 목록만 열어 두고 몇 시간 뒤 재생하는
  * 경우에도 7일 만료가 제대로 잡힌다.
  *
+ * ## 재생 참조는 서버가 정한다
+ *
+ * 시드 데이터는 재생될 수 없는 가짜 참조(`seed-*`)를 갖는데, 그 대체를 **서버가**
+ * 한다(playback.resolve_ref). 여기서 갈아치우면 서명은 원래 값 앞으로 나가고
+ * 재생은 다른 자산이 되어 Mux 가 거부한다 — 실제로 그렇게 죽었다(2026-08-04).
+ * 프런트는 서버가 준 `external_ref` 와 `tokens` 를 **그대로** 쓴다.
+ *
  * ## 워터마크는 플레이어 **안쪽**이다
  *
  * 바깥 래퍼에 얹으면 전체화면에서 사라진다(플레이어 요소만 전체화면이 되므로).
@@ -34,46 +41,6 @@ import {
   Table,
 } from "../../components";
 import "./video.css";
-
-/**
- * 실계정 전환 지점 — 여기만 갈아 끼우면 된다.
- *
- * Mux 계정이 아직 없다(결제를 런칭 직전으로 미룸 — docs/decisions.md §3).
- * 서버가 내리는 `provider`·`external_ref` 가 채워지면 그 값을 쓰고, 비어 있는
- * 동안은 Mux 공개 데모 재생 ID 로 화면을 확인한다.
- */
-const DEMO_PLAYBACK_ID = "qxb01i6T202018GFS02vp9RIe01icTcDCjVzQpmaB00CUisJ4";
-
-/** 시드가 넣는 가짜 참조의 접두 — 실제 Mux 값이 아니라는 표시(seed_demo.py). */
-const SEED_REF_PREFIX = "seed-";
-
-/** 데모로 떨어지는가 — 참조가 없거나 시드용 가짜 값일 때. */
-function isDemo(video: PlaybackVideo): boolean {
-  return (
-    video.provider !== "mux" ||
-    !video.external_ref ||
-    video.external_ref.startsWith(SEED_REF_PREFIX)
-  );
-}
-
-function playbackIdOf(video: PlaybackVideo): string {
-  // 시드 데이터는 재생될 수 없는 값이라 데모로 떨어뜨린다. 실제 참조는 그대로 쓴다 —
-  // 여기서 관대하게 폴백하면 **잘못 적은 참조도 데모가 재생돼** 오류가 묻힌다.
-  return isDemo(video) ? DEMO_PLAYBACK_ID : video.external_ref!;
-}
-
-/**
- * 데모로 떨어질 때는 토큰을 **빼야 한다.**
- *
- * 서버는 `external_ref`(예: `seed-1-1`)로 서명하는데 재생기는 그 값일 때 데모
- * 영상을 튼다. 서명 대상과 재생 대상이 어긋난 토큰을 넘기면 Mux 가
- * "playback-token formatted with incorrect information" 으로 거부한다
- * (2026-08-04 실측 — 시드 영상이 전부 이걸로 죽었다).
- * 데모 자산은 공개라 토큰이 필요 없다.
- */
-function tokensOf(playing: Playback): Playback["video"]["tokens"] {
-  return isDemo(playing.video) ? {} : playing.video.tokens;
-}
 
 interface VideoRow {
   video_id: number;
@@ -151,8 +118,8 @@ export default function StudentVideoPage() {
             <MuxPlayer
               className="vd-player"
               streamType="on-demand"
-              playbackId={playbackIdOf(playing.video)}
-              tokens={tokensOf(playing)}
+              playbackId={playing.video.external_ref ?? ""}
+              tokens={playing.video.tokens}
               metadata={{
                 video_title: playing.video.title,
                 // 유출 시 Mux Data 에서 "누가 봤나"를 되짚는 축. 워터마크가

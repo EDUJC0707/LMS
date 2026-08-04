@@ -160,6 +160,13 @@ MUX_SIGNING_PRIVATE_KEY = env("MUX_SIGNING_PRIVATE_KEY", default="")
 MUX_TOKEN_ID = env("MUX_TOKEN_ID", default="")
 MUX_TOKEN_SECRET = env("MUX_TOKEN_SECRET", default="")
 
+# 시드 영상이 대신 재생할 실제 자산의 Playback ID(개발 편의).
+# 시드는 `seed-*` 라는 가짜 참조를 넣는데 그건 재생될 수 없다. 이 값이 있으면
+# 서버가 **대체와 서명을 같은 자리에서** 처리한다 — 프런트가 따로 갈아치우면
+# "서명은 seed-1-1 앞으로, 재생은 다른 자산" 이 되어 Mux 가 거부한다(2026-08-04 실측).
+# 비어 있으면 대체하지 않는다(운영에는 시드 데이터가 없다).
+MUX_DEMO_PLAYBACK_ID = env("MUX_DEMO_PLAYBACK_ID", default="")
+
 # --- 오브젝트 스토리지 (Tigris/S3, django-storages) ----------------------
 # 버킷명이 있으면 S3(Tigris) 사용, 없으면 로컬 파일시스템(MEDIA_ROOT).
 AWS_ACCESS_KEY_ID = env("AWS_ACCESS_KEY_ID", default="")
