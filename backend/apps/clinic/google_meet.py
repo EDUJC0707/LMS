@@ -88,13 +88,15 @@ SPACE_CONFIG = {
 #: 동의받는 권한 전부. 하나라도 빠지면 그 기능이 조용히 403 이 되므로 여기가
 #: 유일한 목록이고 동의 화면도 이 값을 그대로 쓴다.
 #:
-#: `drive.meet.readonly` 는 **미트가 만든 파일만** 보는 권한이다. 감독 자료(전사·
-#: 요약 문서)를 읽으려면 필요한데, 드라이브 전체를 보는 `drive.readonly` 는 받지
-#: 않는다 — 그 계정 드라이브에 클리닉과 무관한 것이 들어와도 우리가 볼 이유가
-#: 없다(닫힘이 안전 기본값 — key_considerations §5).
+#: **`drive.readonly` 는 넓다** — 그 계정 드라이브 전부를 읽는다. 좁은
+#: `drive.meet.readonly` 를 먼저 시도했지만 **파일 존재·이름까지만 보이고 본문은
+#: 404** 였다(2026-08-04 실측). 구글에 "미트가 만든 문서의 본문만" 이라는 권한은
+#: 없어서, 감독 문서를 읽으려면 이것뿐이다(2026-08-04 사용자 결정).
+#: 그래서 이 계정 드라이브에는 **클리닉 감독 자료 말고 다른 것을 두지 않는 것**이
+#: 실질적인 방어선이다 — 권한으로는 더 좁힐 수 없다.
 SCOPES = (
     "https://www.googleapis.com/auth/meetings.space.created",
-    "https://www.googleapis.com/auth/drive.meet.readonly",
+    "https://www.googleapis.com/auth/drive.readonly",
 )
 
 #: 관리자가 배정 버튼을 누른 채 기다리는 시간 — 동기 호출이라 짧게 잡는다.
