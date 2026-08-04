@@ -141,6 +141,11 @@ CORS_ALLOW_CREDENTIALS = True
 # Vite(5173) → Django 세션 인증 쓰기 요청이 CSRF 403으로 막히는 것 실측 → 신뢰 오리진 등록.
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=["http://localhost:5173"])
 
+# --- 관측(Sentry) -------------------------------------------------------
+# 수집 확인용 /sentry-debug 의 열쇠. 비어 있으면 그 경로는 404 다(기본값 = 닫힘).
+# DSN 자체는 prod.py 에서만 읽는다 — 로컬·테스트에서 Sentry 는 켜지지 않는다.
+SENTRY_DEBUG_TOKEN = env("SENTRY_DEBUG_TOKEN", default="")
+
 # --- 오브젝트 스토리지 (Tigris/S3, django-storages) ----------------------
 # 버킷명이 있으면 S3(Tigris) 사용, 없으면 로컬 파일시스템(MEDIA_ROOT).
 AWS_ACCESS_KEY_ID = env("AWS_ACCESS_KEY_ID", default="")

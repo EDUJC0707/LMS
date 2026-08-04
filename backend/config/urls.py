@@ -1,19 +1,39 @@
 """루트 URL 설정.
 
 - /healthz         헬스체크(로드밸런서/배포 점검용 경량 엔드포인트)
+- /sentry-debug    Sentry 수집 확인용(토큰 필요, 없으면 404)
 - /admin/          Django 관리자
 - /api/<도메인>/   도메인별 DRF 라우터(각 앱 urls.py 에서 마운트)
 - /api-auth/       DRF 브라우저블 API 로그인
 """
+import secrets
+
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
 from django.urls import include, path
 
 
 def healthz(_request):
     return JsonResponse({"status": "ok"})
+
+
+def sentry_debug(request):
+    """일부러 500 을 낸다 — Sentry 가 실제 웹 요청 경로에서 수집하는지 확인용.
+
+    `SENTRY_DEBUG_TOKEN` 이 비어 있거나 토큰이 틀리면 404 다. 상시 열린 500
+    엔드포인트를 두지 않으려는 것 — 기본값은 닫힘이고, 확인이 끝나면 시크릿을
+    지워 다시 닫는다(infra/DEPLOY.md 8장).
+    """
+    token = settings.SENTRY_DEBUG_TOKEN
+    # compare_digest 는 str 끼리는 ASCII 만 받는다 — 한글 토큰이 오면 터진다. bytes 로 비교.
+    if not token or not secrets.compare_digest(
+        request.GET.get("token", "").encode(), token.encode()
+    ):
+        raise Http404
+
+    raise RuntimeError("Sentry 수집 확인용 예외")
 
 
 # /api/ 하위 도메인 라우터. 각 앱의 urls.py 는 DefaultRouter placeholder.
@@ -58,6 +78,7 @@ api_urlpatterns = [
 
 urlpatterns = [
     path("healthz", healthz),
+    path("sentry-debug", sentry_debug),
     path("admin/", admin.site.urls),
     path("api/", include(api_urlpatterns)),
     path("api-auth/", include("rest_framework.urls")),
