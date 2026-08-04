@@ -18,9 +18,14 @@
 """
 import datetime
 
+from django.db import transaction
 from django.utils import timezone
 
 from .models import Notification
+from .sending import queue
+
+#: 이미 끝난 상태 — 재발송은 이 행을 덮지 않고 새 행을 만든다(resend 참조).
+_TERMINAL = {Notification.Status.SUCCESS, Notification.Status.CONFIRMED}
 
 
 class NotificationQueryError(Exception):
@@ -70,6 +75,49 @@ def build_queryset(params):
     # -notif_id 로 정렬한다(MeNotificationsView 와 같은 축) — sent_at 은 미발송
     # 행에서 NULL 이라 최신순이 성립하지 않는다.
     return queryset.order_by("-notif_id")
+
+
+def resend(notif_id):
+    """개인별 (재)발송(PRD 3.1.2). 실제로 다시 띄운 행을 돌려준다.
+
+    **끝난 행은 다시 쓰지 않는다.**
+
+    - `성공`·`전달확인` → **새 행**. 그 발송이 실제로 나갔다는 것은 확정된 사실이라
+      덮으면 이력이 사라진다("행 = 발송내역 조회 단위" — 모델 docstring). 관리자가
+      다시 보내는 것은 새 발송 사건이므로 자기 시각과 결과를 가진 행이 맞다.
+    - `대기`·`실패` → **같은 행**. 아직 끝나지 않은 시도라 재발송 배치가 다루는 것과
+      같은 축이고, 같은 행을 쓰기 때문에 배치 창 안에서 눌러도 **이중 발송이 나지
+      않는다**(deliver 가 행을 잠그고 상태를 다시 본다). 새 행을 만들면 배치가 원본을,
+      이 호출이 사본을 보내 학부모에게 두 통이 간다.
+
+    행이 없으면 `Notification.DoesNotExist` — 뷰가 404 로 옮긴다.
+    """
+    original = Notification.objects.select_related("student__user", "parent", "user").get(
+        pk=notif_id
+    )
+    if original.status in _TERMINAL:
+        return queue(
+            student=original.student,
+            parent=original.parent,
+            user=original.user,
+            channel=original.channel,
+            type=original.type,
+            title=original.title,
+            body=original.body,
+            ref_type=original.ref_type,
+            ref_id=original.ref_id,
+        )
+    # 다시 띄웠다는 것을 행에도 남긴다. 발송은 비동기라 응답 시점에 결과를 알 수
+    # 없는데, `실패` 를 그대로 두면 관리자는 자기가 누른 것이 먹었는지 알 수 없다.
+    # 지난 사유도 지운다 — 이번 시도의 사유가 아니다(deliver 가 다시 채운다).
+    original.status = Notification.Status.PENDING
+    original.error_msg = None
+    original.save(update_fields=["status", "error_msg"])
+    # queue 와 같은 이유로 커밋 뒤에 건다(sending docstring).
+    from .tasks import send_notification
+
+    transaction.on_commit(lambda: send_notification.delay(original.notif_id))
+    return original
 
 
 def build_row(notification):

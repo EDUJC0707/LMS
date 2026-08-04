@@ -15,4 +15,9 @@ urlpatterns = [
         views.AdminNotificationsView.as_view(),
         name="admin-notifications",
     ),
+    path(
+        "admin/notifications/<int:notif_id>/resend",
+        views.AdminNotificationResendView.as_view(),
+        name="admin-notification-resend",
+    ),
 ]

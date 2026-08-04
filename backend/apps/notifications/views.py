@@ -1,7 +1,8 @@
 """notifications 뷰 — 알림 내역 조회 (설계 도메인 8, PRD 3.1.2).
 
-- GET /api/me/notifications    — 로그인 사용자 알림 내역(최신순 페이지네이션)
-- GET /api/admin/notifications — 관리자 발송내역(필터·페이징, 기능 키 `알림발송`)
+- GET  /api/me/notifications                   — 로그인 사용자 알림 내역(최신순 페이지네이션)
+- GET  /api/admin/notifications                — 관리자 발송내역(필터·페이징, 기능 키 `알림발송`)
+- POST /api/admin/notifications/{id}/resend    — 개인별 (재)발송(같은 기능 키)
 
 관리자 조회의 필터 해석·행 조립은 `notification_admin` 이 담당한다 —
 뷰는 게이트·오류 매핑만 한다(clinic 선례).
@@ -105,3 +106,22 @@ class AdminNotificationsView(APIView):
         return paginator.get_paginated_response(
             [notification_admin.build_row(n) for n in page]
         )
+
+
+class AdminNotificationResendView(APIView):
+    """POST /api/admin/notifications/{id}/resend — 개인별 (재)발송(PRD 3.1.2).
+
+    끝난 행이냐 아니냐에 따라 새 행/같은 행이 갈린다 —
+    판단은 `notification_admin.resend` 가 한다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.NOTIFICATION_SEND)]
+
+    def post(self, request, notif_id):
+        try:
+            notification = notification_admin.resend(notif_id)
+        except Notification.DoesNotExist:
+            return Response(
+                {"detail": "찾을 수 없습니다."}, status=http_status.HTTP_404_NOT_FOUND
+            )
+        return Response(notification_admin.build_row(notification))
