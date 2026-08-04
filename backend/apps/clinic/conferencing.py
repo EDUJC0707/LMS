@@ -52,12 +52,43 @@ class Conference:
     url: str
 
 
+@dataclass(frozen=True)
+class Supervision:
+    """끝난 회의가 남긴 조교 감독 자료 — `ClinicEvaluation` 이 받을 값.
+
+    - transcript_ref/transcript_url: 감독 문서(업체 저장소에 남는 원본)
+    - summary: 요약 **본문**. 업체가 요약을 안 주거나 잘라낼 자리를 못 찾으면
+      None 이고, 그래도 링크는 남긴다 — 사람이 열어 보면 되기 때문이다.
+
+    **전사 원문은 여기 없다.** 학생 발화를 우리 DB 로 들이지 않는 것이 계약이고
+    (PRD 8-1), 그 판단이 어댑터 안에서 이미 끝나 있어야 한다.
+    """
+
+    transcript_ref: str
+    transcript_url: str
+    summary: str | None
+
+
 class ConferenceAdapter(ABC):
-    """화상 스페이스를 실제로 만드는 구현체."""
+    """화상 스페이스를 실제로 만들고, 끝난 뒤 감독 자료를 거둬 오는 구현체."""
 
     @abstractmethod
     def create_space(self) -> Conference:
         """새 스페이스 1개. 실패하면 Temporary/PermanentConferenceError 를 던진다."""
+
+    @abstractmethod
+    def fetch_supervision(self, ref: str, *, file_as: str | None = None) -> "Supervision | None":
+        """끝난 회의의 감독 자료. **아직 없으면 None**(실패가 아니다).
+
+        None 이 나오는 경우가 여럿이고 전부 정상이다 — 아무도 안 들어왔거나,
+        회의가 방금 끝나 자료가 아직 안 만들어졌거나, 전사가 애초에 돌지
+        않았거나(호스트가 웹이 아닌 기기로 들어온 경우). 호출측은 그냥 다음
+        차례에 다시 물어본다.
+
+        `file_as` 는 **정리해 두고 싶은 논리 경로**다(`clinic/2026-08/…`).
+        저장소가 폴더를 모르는 업체면 무시해도 된다 — 계약은 "가능하면 여기
+        두라"이지 "반드시 옮겨라"가 아니다.
+        """
 
 
 def get_adapter() -> ConferenceAdapter:

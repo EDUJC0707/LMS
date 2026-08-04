@@ -61,9 +61,16 @@ from django.conf import settings
 from .conferencing import (
     Conference,
     ConferenceAdapter,
+    ConferenceError,
     PermanentConferenceError,
+    Supervision,
     TemporaryConferenceError,
 )
+
+
+def _bare(resource_name):
+    """`conferenceRecords/abc` → `abc`. 구글이 이름에 컬렉션을 붙여 준다."""
+    return resource_name.rsplit("/", 1)[-1]
 
 #: OAuth2 동의 화면 — 사람이 브라우저에서 한 번 들르는 곳(`meet_authorize`).
 AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -99,6 +106,13 @@ SCOPES = (
     "https://www.googleapis.com/auth/meetings.space.created",
     "https://www.googleapis.com/auth/drive",
 )
+
+#: 끝난 회의 조회. 스페이스 하나에 회의가 여러 번 열릴 수 있다(모두 나갔다가
+#: 다시 들어오면 새 기록이 생긴다) — 그래서 목록이고, 우리는 **가장 긴 것**을 쓴다.
+CONFERENCE_RECORDS_ENDPOINT = "https://meet.googleapis.com/v2/conferenceRecords"
+
+#: 드라이브 — 문서 본문 내려받기와 정리(이동·개명).
+DRIVE_FILES_ENDPOINT = "https://www.googleapis.com/drive/v3/files"
 
 #: 관리자가 배정 버튼을 누른 채 기다리는 시간 — 동기 호출이라 짧게 잡는다.
 TIMEOUT_SECONDS = 10
@@ -153,6 +167,113 @@ class GoogleMeetAdapter(ConferenceAdapter):
             ref=ref,
             url=url,
         )
+
+    # -- 감독 자료 수집 ----------------------------------------------------
+
+    def fetch_supervision(self, ref, *, file_as=None):
+        """끝난 회의의 요약·문서 링크. 아직 없으면 None(`conferencing` 계약).
+
+        스페이스 하나에 회의 기록이 여러 개일 수 있다 — 모두 나갔다가 다시
+        들어오면 새 기록이 열린다. **가장 오래 이어진 것**을 그 클리닉으로 본다:
+        조교 인터넷이 끊겨 3초짜리 기록이 하나 생겼다고 그것이 수업일 수는 없다.
+        """
+        token = self._access_token()
+        record = self._longest_record(token, ref)
+        if record is None:
+            return None
+        document, url = self._artifact_document(token, record)
+        if document is None:
+            return None
+        if file_as:
+            self._file_document(token, document, file_as)
+        return Supervision(
+            transcript_ref=document,
+            transcript_url=url,
+            summary=split_summary(self._export_text(token, document)),
+        )
+
+    def _longest_record(self, token, space_ref):
+        """그 스페이스의 **끝난** 회의 기록 중 가장 긴 것. 없으면 None."""
+        query = urllib.parse.urlencode({"filter": f'space.name="{space_ref}"'})
+        status, body = self._get(f"{CONFERENCE_RECORDS_ENDPOINT}?{query}", token)
+        if status != 200:
+            raise self._translate(status, body, "회의 기록을 읽지 못했습니다")
+        records = [r for r in self._json(body).get("conferenceRecords", []) if r.get("endTime")]
+        if not records:
+            return None  # 아무도 안 들어왔거나 아직 회의 중이다
+        return max(records, key=lambda r: (r["endTime"], r.get("startTime", "")))
+
+    def _artifact_document(self, token, record):
+        """감독 문서의 (id, 링크). 전사와 요약이 같은 문서를 가리킨다(실측).
+
+        요약(smartNotes)을 먼저 본다 — 우리가 쓰는 것이 요약이라서다. 요약이
+        없으면 전사 쪽 문서라도 잡는다(둘 다 없으면 아직 안 만들어진 것).
+        """
+        for kind in ("smartNotes", "transcripts"):
+            status, body = self._get(f"{CONFERENCE_RECORDS_ENDPOINT}/{_bare(record['name'])}"
+                                     f"/{kind}", token)
+            if status != 200:
+                continue
+            for item in self._json(body).get(kind, []):
+                destination = item.get("docsDestination") or {}
+                if destination.get("document"):
+                    return destination["document"], destination.get("exportUri") or (
+                        f"https://docs.google.com/document/d/{destination['document']}/edit"
+                    )
+        return None, None
+
+    def _export_text(self, token, document):
+        """문서를 평문으로 내려받는다. 못 읽으면 빈 문자열 — 링크는 남는다."""
+        query = urllib.parse.urlencode({"mimeType": "text/plain"})
+        status, body = self._get(f"{DRIVE_FILES_ENDPOINT}/{document}/export?{query}", token)
+        return body.decode(errors="replace") if status == 200 else ""
+
+    def _file_document(self, token, document, file_as):
+        """문서를 우리 폴더 구조로 옮기고 이름을 바꾼다.
+
+        **실패해도 수집은 계속된다.** 정리는 편의고 요약·링크가 본론이라,
+        폴더를 못 만들었다고 감독 자료를 통째로 버릴 이유가 없다.
+        """
+        *folders, name = file_as.split("/")
+        try:
+            parent = None
+            for folder in folders:
+                parent = self._folder(token, folder, parent)
+            self._send(
+                "PATCH",
+                f"{DRIVE_FILES_ENDPOINT}/{document}?"
+                + urllib.parse.urlencode({"addParents": parent} if parent else {}),
+                json.dumps({"name": name}).encode(),
+                {"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            )
+        except ConferenceError:
+            return
+
+    def _folder(self, token, name, parent):
+        """이름으로 폴더를 찾고 없으면 만든다 — 있는 폴더를 또 만들지 않는다."""
+        clauses = [
+            f"name = '{name}'",
+            "mimeType = 'application/vnd.google-apps.folder'",
+            "trashed = false",
+            f"'{parent}' in parents" if parent else "'root' in parents",
+        ]
+        query = urllib.parse.urlencode({"q": " and ".join(clauses), "fields": "files(id)"})
+        status, body = self._get(f"{DRIVE_FILES_ENDPOINT}?{query}", token)
+        if status == 200:
+            found = self._json(body).get("files", [])
+            if found:
+                return found[0]["id"]
+        payload = {"name": name, "mimeType": "application/vnd.google-apps.folder"}
+        if parent:
+            payload["parents"] = [parent]
+        status, body = self._post(
+            DRIVE_FILES_ENDPOINT,
+            json.dumps(payload).encode(),
+            {"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        )
+        if status != 200:
+            raise self._translate(status, body, "폴더를 만들지 못했습니다")
+        return self._json(body)["id"]
 
     # -- OAuth -------------------------------------------------------------
 

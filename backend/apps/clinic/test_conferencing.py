@@ -19,6 +19,9 @@ class StubAdapter(ConferenceAdapter):
     def create_space(self):
         return Conference(provider="google_meet", ref="spaces/STUB", url="https://x/stub")
 
+    def fetch_supervision(self, ref, *, file_as=None):
+        return None
+
 
 class GetAdapterTests(SimpleTestCase):
     @override_settings(CLINIC_CONFERENCE_BACKEND="")

@@ -43,6 +43,9 @@ class RecordingAdapter(ConferenceAdapter):
             url=f"https://meet.google.com/s-{RecordingAdapter.calls}",
         )
 
+    def fetch_supervision(self, ref, *, file_as=None):
+        return None
+
 
 ADAPTER_PATH = "apps.clinic.test_conference_assign.RecordingAdapter"
 
