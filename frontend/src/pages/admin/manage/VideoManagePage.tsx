@@ -7,15 +7,11 @@
  *   POST  /api/admin/videos/{id}/publish   `공개` 전환
  *   POST  /api/admin/videos/{id}/archive   `아카이브` 전환
  *   GET   /api/admin/videos/course-weeks   주차 선택지
- *   POST  /api/admin/videos/uploads        업로드 자리 발급
- *   POST  /api/admin/videos/{id}/sync      인코딩 완료 확인
  *
- * ## 두 갈래 — 「올리기」 가 주 경로다
- *
- * **올리기**: 파일을 고르면 브라우저가 Mux 로 **직접** 올린다(우리 서버를 안 지난다).
- * 등급·해상도·정책은 서버가 못박아 사람이 고를 자리가 없다 — 그 셋을 손으로 고르다
- * 두 번 헛돌았다(2026-08-04).
- * **저장**: 재생 ID 를 이미 아는 예외 경로와 기존 행 수정용이다.
+ * **업로드 UI 는 아직 만들지 않는다**(2026-08-04 사용자 지시). 서버에는 자리가
+ * 준비돼 있고(`POST /api/admin/videos/uploads` — 브라우저에서 Mux 로 직접 전송),
+ * 실제로 쓸지는 **학원 회선에서 3~4GB 전송이 견딜 만한지** 재본 뒤에 정한다.
+ * 그 전까지 업로드 경로는 `manage.py mux_upload` 커맨드다.
  *
  * 차시는 그 주차의 최대 차시 + 1 로 채워 손으로 세지 않게 한다.
  *
@@ -24,8 +20,7 @@
  * 주차와 재생 자산이 없으면 400 이다. 화면이 미리 막지 않고 서버 문구를 그대로
  * 보여준다 — 조건을 두 곳에 적으면 한쪽만 바뀐다(판정은 video_admin.publish_blocker).
  */
-import * as UpChunk from "@mux/upchunk";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { http, useApi, useApiAction } from "../../../api";
 import {
@@ -132,9 +127,6 @@ export default function VideoManagePage() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [query, setQuery] = useState("");
-  /** 업로드 진행률 0~100. null 이면 업로드 중이 아니다. */
-  const [progress, setProgress] = useState<number | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const rows = list.data ?? [];
   const weekRows = weeks.data ?? [];
@@ -187,37 +179,6 @@ export default function VideoManagePage() {
   const transition = useApiAction(async (video: VideoRow, verb: "publish" | "archive") => {
     await http.post(`/admin/videos/${video.video_id}/${verb}`);
     await list.reload();
-    return true;
-  });
-
-  /**
-   * 파일을 Mux 로 **직접** 올린다 — 우리 서버는 자리만 발급한다.
-   *
-   * 3~4GB 원본이 우리 서버를 지나면 대역폭·타임아웃·디스크가 전부 문제가 되는데,
-   * 브라우저가 Mux 로 바로 올리면 그 셋이 사라진다. UpChunk 가 조각내서 올리고
-   * 끊기면 이어서 재개한다.
-   */
-  const upload = useApiAction(async (current: FormState, file: File) => {
-    // 업로드 경로에서는 자산 정보를 보내지 않는다 — 서버가 정한다(video_admin).
-    const { provider: _p, external_ref: _r, ...meta } = toPayload(current);
-    const res = await http.post<{ video: VideoRow; upload_url: string }>(
-      "/admin/videos/uploads",
-      meta,
-    );
-    const { video, upload_url } = res.data;
-    setProgress(0);
-    await new Promise<void>((resolve, reject) => {
-      const chunked = UpChunk.createUpload({ endpoint: upload_url, file });
-      chunked.on("progress", (e) => setProgress(Math.round(e.detail)));
-      chunked.on("error", (e) => reject(new Error(e.detail.message)));
-      chunked.on("success", () => resolve());
-    });
-    setProgress(null);
-    setOpen(false);
-    await list.reload();
-    // 인코딩은 전송 뒤에도 몇 분 더 걸린다. 목록이 열릴 때 서버가 확인하므로
-    // 여기서 기다리지 않는다 — 조교를 붙잡아 둘 이유가 없다.
-    void http.post(`/admin/videos/${video.video_id}/sync`).catch(() => {});
     return true;
   });
 
@@ -370,22 +331,7 @@ export default function VideoManagePage() {
             <Button variant="ghost" onClick={() => setOpen(false)}>
               닫기
             </Button>
-            {!editing && (
-              <Button
-                loading={upload.pending}
-                onClick={() => {
-                  const file = fileRef.current?.files?.[0];
-                  if (file) void upload.run(form, file);
-                }}
-              >
-                올리기
-              </Button>
-            )}
-            <Button
-              variant={editing ? "primary" : "ghost"}
-              loading={save.pending}
-              onClick={() => void save.run(form, false)}
-            >
+            <Button loading={save.pending} onClick={() => void save.run(form, false)}>
               저장
             </Button>
           </>
@@ -393,9 +339,6 @@ export default function VideoManagePage() {
       >
         <div className="ui-stack ui-stack--md">
           {save.error && <ErrorState description={save.error} onRetry={save.clearError} />}
-          {upload.error && (
-            <ErrorState description={upload.error} onRetry={upload.clearError} />
-          )}
 
           <Field label="주차">
             {(props) => (
@@ -456,26 +399,6 @@ export default function VideoManagePage() {
               />
             )}
           </Field>
-
-          {!editing && (
-            <Field label="영상 파일">
-              {(props) => (
-                <Input
-                  {...props}
-                  ref={fileRef}
-                  type="file"
-                  accept="video/*"
-                  disabled={progress !== null}
-                />
-              )}
-            </Field>
-          )}
-
-          {progress !== null && (
-            <progress className="pm-progress" value={progress} max={100}>
-              {progress}%
-            </progress>
-          )}
 
           <Field label="재생 길이(초)">
             {(props) => (
