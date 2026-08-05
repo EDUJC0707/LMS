@@ -60,6 +60,8 @@ api_urlpatterns = [
     path("", include("apps.clinic.consumer_urls")),
     # 교재 결제 조회(/api/student/payments · /api/parent/payments) — PRD 3.2.5
     path("", include("apps.payments.consumer_urls")),
+    # 관리자 결제·배부 상태(/api/admin/payments) — PRD 3.1.5
+    path("", include("apps.payments.admin_urls")),
     # 관리자 운영(/api/admin/staff*·/api/admin/accounts*) — 8차(PRD §4·3.1.5)
     path("", include("apps.accounts.admin_urls")),
     # 클리닉 관리자(/api/admin/clinic/*) — 8차(PRD 3.2.4)

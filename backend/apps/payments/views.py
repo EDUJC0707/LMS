@@ -2,6 +2,7 @@
 
 - GET /api/student/payments              내 교재 주문·결제 상태 (IsStudent)
 - GET /api/parent/payments[?student_id=] 자녀 결제 상태 (IsParent, 읽기 전용)
+- GET /api/admin/payments                학생별 결제·배부 상태 (기능 키 `결제확인`)
 
 **소유 판정이 이 파일의 일 전부다.** 목록 조립은 `consumer.build_order_list`
 가 하고, 여기서는 "이 요청자가 어느 학생을 볼 수 있는가"만 정한다. 그 판정이
@@ -9,13 +10,15 @@
 관리 쪽이 다 서 있는데 소비를 막는 코드가 없었다).
 """
 from rest_framework import status
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.features import FeatureKey
 from apps.accounts.models import Parent, ParentStudent, Student
-from apps.accounts.permissions import IsParent, IsStudent
+from apps.accounts.permissions import FeatureRequired, IsParent, IsStudent
 
-from . import consumer
+from . import consumer, payment_admin
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
 
@@ -84,3 +87,24 @@ class ParentPaymentListView(APIView):
         if error is not None:
             return error
         return Response(consumer.build_order_list(student))
+
+
+class AdminPaymentListView(APIView):
+    """GET /api/admin/payments — 학생별 교재 구매·결제·배부 상태(PRD 3.1.5).
+
+    게이트는 기능 키 `결제확인` 이다. 조교 프리셋에는 없으므로 기본 차단이고,
+    대표가 delta 로만 연다(key_considerations §2).
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.PAYMENT_CHECK)]
+
+    def get(self, request):
+        try:
+            queryset = payment_admin.build_queryset(request.query_params)
+        except payment_admin.PaymentQueryError as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_400_BAD_REQUEST)
+        paginator = PageNumberPagination()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        return paginator.get_paginated_response(
+            [payment_admin.build_row(order) for order in page]
+        )
