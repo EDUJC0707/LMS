@@ -147,7 +147,7 @@ def _target(notification):
         return {
             "kind": "학생",
             "id": notification.student_id,
-            "name": name or student.unique_id,
+            "name": name or student.matching_key,
         }
     if notification.parent_id:
         parent = notification.parent

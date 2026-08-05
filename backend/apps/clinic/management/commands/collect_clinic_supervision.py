@@ -28,7 +28,7 @@ class Command(BaseCommand):
         if options["dry_run"]:
             for request in supervision.pending(now):
                 self.stdout.write(
-                    f"#{request.clinic_id} {request.student.unique_id} "
+                    f"#{request.clinic_id} {request.student.matching_key} "
                     f"{request.requested_date} {request.requested_time:%H:%M} "
                     f"→ {supervision.artifact_path(request)}"
                 )

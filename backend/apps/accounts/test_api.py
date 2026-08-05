@@ -341,7 +341,7 @@ class MeCommonTests(MeTestBase):
 
     def test_common_fields_and_no_phone(self):
         user = make_user("me-stu0", User.Role.STUDENT, name="김학생", phone="010-1111-2222")
-        Student.objects.create(user=user, unique_id="2-1111")
+        Student.objects.create(user=user, matching_key="2-1111")
         data = self.me_as(user).json()
         self.assertEqual(data["user_id"], user.user_id)
         self.assertEqual(data["name"], "김학생")
@@ -356,7 +356,7 @@ class MeStudentTests(MeTestBase):
         user = make_user("me-stu1", User.Role.STUDENT, name="김등록")
         student = Student.objects.create(
             user=user,
-            unique_id="2-1234",
+            matching_key="2-1234",
             grade="고2",
             current_class="일요 3반",
             enrollment_status=Student.EnrollmentStatus.REGISTERED,
@@ -378,7 +378,7 @@ class MeStudentTests(MeTestBase):
     def test_pre_registered_student_exposed_for_bare_render(self):
         # 미등록(예비등록) — 프런트는 이 값으로 bare 렌더(교재 구매만) 판단
         user = make_user("me-stu2", User.Role.STUDENT)
-        Student.objects.create(user=user, unique_id="2-2222")
+        Student.objects.create(user=user, matching_key="2-2222")
         data = self.me_as(user).json()
         self.assertEqual(data["student"]["enrollment_status"], "예비등록")
 
@@ -396,11 +396,11 @@ class MeParentTests(MeTestBase):
         child1_user = make_user("me-kid1", User.Role.STUDENT, name="김첫째")
         child1 = Student.objects.create(
             user=child1_user,
-            unique_id="1-1111",
+            matching_key="1-1111",
             grade="고1",
             enrollment_status=Student.EnrollmentStatus.REGISTERED,
         )
-        child2 = Student.objects.create(unique_id="3-3333", grade="고3")  # 계정 미발급 자녀
+        child2 = Student.objects.create(matching_key="3-3333", grade="고3")  # 계정 미발급 자녀
         ParentStudent.objects.create(parent=parent, student=child1, relation="모")
         ParentStudent.objects.create(parent=parent, student=child2, relation="모")
         data = self.me_as(user).json()
@@ -428,9 +428,9 @@ class MeParentTests(MeTestBase):
         # 예비등록 자녀만 둔 학부모 — 프런트가 성적·워크북 메뉴를 접을 근거
         user = make_user("me-par3", User.Role.PARENT, name="박예비")
         parent = Parent.objects.create(user=user, phone="010-7777-6666")
-        pre = Student.objects.create(unique_id="1-9999", grade="고1")
+        pre = Student.objects.create(matching_key="1-9999", grade="고1")
         withdrawn = Student.objects.create(
-            unique_id="1-8888",
+            matching_key="1-8888",
             grade="고1",
             enrollment_status=Student.EnrollmentStatus.WITHDRAWN,
         )

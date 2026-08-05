@@ -5,7 +5,7 @@
 - 업로드: 실제 파일 IO(임시 MEDIA_ROOT) — 스토리지 저장·DB엔 경로만(§6),
   OCR 3컬럼(recognized_*·match_status)은 업로드 시 전부 NULL(=매핑 대기),
   파일 검증(이미지 확장자·크기 상한·빈 파일·전량 검증 원자성)
-- 매칭 수용 API: student_id 직접 지정(수동확정) / recognized_unique_id 기입 시
+- 매칭 수용 API: student_id 직접 지정(수동확정) / recognized_matching_key 기입 시
   원번+이름 대조(원번은 단독 UQ 아님 — 이름과 함께 매칭키): 성공=자동매칭,
   실패(이름 불일치·미존재·동일 원번+이름 중복)=불일치
 - 관리자 목록: session_id·매핑 상태 필터(대기=NULL 포함), 미매핑 건 카운트
@@ -29,8 +29,8 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 
 from apps.accounts.features import FeatureKey
+from apps.accounts.matching_key import build_matching_key
 from apps.accounts.models import Parent, ParentStudent, StaffFeatureGrant, User
-from apps.accounts.unique_id import build_unique_id
 
 from .models import Assignment, ClassSession, WorkbookSubmission
 from .test_grade_report_api import make_student, make_user
@@ -58,27 +58,27 @@ class WorkbookFixtureMixin:
 
     @classmethod
     def setUpTestData(cls):
-        # 학생: unique_id 는 단독 UQ 아님(accounts 설계) — 이름과 함께 매칭키
+        # 학생: matching_key 는 단독 UQ 아님(accounts 설계) — 이름과 함께 매칭키
         cls.student_a = make_student("stu-wb-a", "김서연")
-        cls.student_a.unique_id = "10001"
-        cls.student_a.save(update_fields=["unique_id"])
+        cls.student_a.matching_key = "10001"
+        cls.student_a.save(update_fields=["matching_key"])
         cls.student_b = make_student("stu-wb-b", "이민준")
-        cls.student_b.unique_id = "10002"
-        cls.student_b.save(update_fields=["unique_id"])
+        cls.student_b.matching_key = "10002"
+        cls.student_b.save(update_fields=["matching_key"])
         # 동일 원번 20001 + 다른 이름 — 이름 대조로 판별되는 케이스
         cls.student_shared1 = make_student("stu-wb-s1", "박하나")
-        cls.student_shared1.unique_id = "20001"
-        cls.student_shared1.save(update_fields=["unique_id"])
+        cls.student_shared1.matching_key = "20001"
+        cls.student_shared1.save(update_fields=["matching_key"])
         cls.student_shared2 = make_student("stu-wb-s2", "박두리")
-        cls.student_shared2.unique_id = "20001"
-        cls.student_shared2.save(update_fields=["unique_id"])
+        cls.student_shared2.matching_key = "20001"
+        cls.student_shared2.save(update_fields=["matching_key"])
         # 동일 원번 30001 + 동명 — 대조로도 판별 불가(불일치) 케이스
         cls.student_dup1 = make_student("stu-wb-d1", "최중복")
-        cls.student_dup1.unique_id = "30001"
-        cls.student_dup1.save(update_fields=["unique_id"])
+        cls.student_dup1.matching_key = "30001"
+        cls.student_dup1.save(update_fields=["matching_key"])
         cls.student_dup2 = make_student("stu-wb-d2", "최중복")
-        cls.student_dup2.unique_id = "30001"
-        cls.student_dup2.save(update_fields=["unique_id"])
+        cls.student_dup2.matching_key = "30001"
+        cls.student_dup2.save(update_fields=["matching_key"])
 
         # 학부모: A 자녀 보유 / other 는 B 자녀 보유(소유 밖 404 검증 축)
         cls.parent_user = make_user("par-wb", User.Role.PARENT, name="김학부모")
@@ -179,7 +179,7 @@ class WorkbookUploadTests(WorkbookFixtureMixin, TestCase):
         # 잠정 매핑 + OCR 3컬럼 NULL(=매핑 대기)
         self.assertEqual(submission.student_id, self.student_a.pk)
         self.assertEqual(submission.session_id, self.session1.pk)
-        self.assertIsNone(submission.recognized_unique_id)
+        self.assertIsNone(submission.recognized_matching_key)
         self.assertIsNone(submission.recognized_name)
         self.assertIsNone(submission.match_status)
         self.assertEqual(submission.uploaded_by_id, self.assistant.pk)
@@ -250,7 +250,7 @@ class WorkbookAdminListTests(WorkbookFixtureMixin, TestCase):
             self.student_a,
             self.session1,
             match_status=MS.AUTO_MATCHED,
-            recognized_unique_id="10001",
+            recognized_matching_key="10001",
             recognized_name="김서연",
         )
         self.manual = self.make_submission(
@@ -276,7 +276,8 @@ class WorkbookAdminListTests(WorkbookFixtureMixin, TestCase):
             {
                 "student_id": self.student_a.pk,
                 "name": "김서연",
-                "unique_id": "10001",
+                "login_id": self.student_a.user.login_id,
+                "matching_key": "10001",
             },
         )
         self.assertEqual(
@@ -288,7 +289,7 @@ class WorkbookAdminListTests(WorkbookFixtureMixin, TestCase):
             },
         )
         self.assertEqual(row["image_url"], default_storage.url(self.auto.image_path))
-        self.assertEqual(row["recognized_unique_id"], "10001")
+        self.assertEqual(row["recognized_matching_key"], "10001")
         self.assertEqual(row["recognized_name"], "김서연")
         self.assertEqual(row["match_status"], "자동매칭")
         pending_row = rows[self.pending.pk]
@@ -345,19 +346,19 @@ class WorkbookMatchTests(WorkbookFixtureMixin, TestCase):
         self.assertEqual(self.submission.match_status, MS.MANUAL_CONFIRMED)
         self.assertEqual(res.json()["submission"]["match_status"], "수동확정")
 
-    def test_auto_match_by_unique_id_and_name(self):
+    def test_auto_match_by_matching_key_and_name(self):
         res = self.patch_match(
             self.submission.pk,
-            {"recognized_unique_id": "10002", "recognized_name": "이민준"},
+            {"recognized_matching_key": "10002", "recognized_name": "이민준"},
         )
         self.assertEqual(res.status_code, 200)
         self.submission.refresh_from_db()
         self.assertEqual(self.submission.student_id, self.student_b.pk)
         self.assertEqual(self.submission.match_status, MS.AUTO_MATCHED)
-        self.assertEqual(self.submission.recognized_unique_id, "10002")
+        self.assertEqual(self.submission.recognized_matching_key, "10002")
         self.assertEqual(self.submission.recognized_name, "이민준")
 
-    def test_auto_match_accepts_full_length_unique_id(self):
+    def test_auto_match_accepts_full_length_matching_key(self):
         """인식 컬럼은 **원번이 가질 수 있는 길이**를 다 담아야 한다(2026-07-29 개정).
 
         원번이 `{이름}{뒷4}` 가 되면서 이름 길이만큼 길어졌다. 지면에 들어오는
@@ -366,35 +367,35 @@ class WorkbookMatchTests(WorkbookFixtureMixin, TestCase):
         """
         long_name = "무하마드알리"  # 6자 → 원번 10자
         student = make_student("stu-wb-long", long_name)
-        student.unique_id = build_unique_id(long_name, "01012344821")
-        student.save(update_fields=["unique_id"])
-        self.assertGreater(len(student.unique_id), 5)
+        student.matching_key = build_matching_key(long_name, "01012344821")
+        student.save(update_fields=["matching_key"])
+        self.assertGreater(len(student.matching_key), 5)
 
         res = self.patch_match(
             self.submission.pk,
-            {"recognized_unique_id": student.unique_id, "recognized_name": long_name},
+            {"recognized_matching_key": student.matching_key, "recognized_name": long_name},
         )
         self.assertEqual(res.status_code, 200)
         self.submission.refresh_from_db()
         self.assertEqual(self.submission.student_id, student.pk)
         self.assertEqual(self.submission.match_status, MS.AUTO_MATCHED)
-        self.assertEqual(self.submission.recognized_unique_id, student.unique_id)
+        self.assertEqual(self.submission.recognized_matching_key, student.matching_key)
 
     def test_auto_match_strips_whitespace(self):
         res = self.patch_match(
             self.submission.pk,
-            {"recognized_unique_id": " 10002 ", "recognized_name": " 이민준 "},
+            {"recognized_matching_key": " 10002 ", "recognized_name": " 이민준 "},
         )
         self.assertEqual(res.status_code, 200)
         self.submission.refresh_from_db()
         self.assertEqual(self.submission.match_status, MS.AUTO_MATCHED)
-        self.assertEqual(self.submission.recognized_unique_id, "10002")
+        self.assertEqual(self.submission.recognized_matching_key, "10002")
 
-    def test_auto_match_shared_unique_id_resolved_by_name(self):
+    def test_auto_match_shared_matching_key_resolved_by_name(self):
         """원번은 단독 UQ 아님 — 동일 원번 2명도 이름 대조로 판별(설계 원칙)."""
         res = self.patch_match(
             self.submission.pk,
-            {"recognized_unique_id": "20001", "recognized_name": "박두리"},
+            {"recognized_matching_key": "20001", "recognized_name": "박두리"},
         )
         self.assertEqual(res.status_code, 200)
         self.submission.refresh_from_db()
@@ -404,19 +405,20 @@ class WorkbookMatchTests(WorkbookFixtureMixin, TestCase):
     def test_auto_match_name_mismatch(self):
         res = self.patch_match(
             self.submission.pk,
-            {"recognized_unique_id": "10002", "recognized_name": "김서연"},
+            {"recognized_matching_key": "10002", "recognized_name": "김서연"},
         )
         self.assertEqual(res.status_code, 200)
         self.submission.refresh_from_db()
         self.assertEqual(self.submission.match_status, MS.MISMATCH)
         self.assertEqual(self.submission.student_id, self.student_a.pk)  # 잠정 매핑 유지
-        self.assertEqual(self.submission.recognized_unique_id, "10002")  # 인식값은 보존(보정 근거)
+        # 인식값은 결과와 무관하게 보존한다(보정 화면의 대조 근거)
+        self.assertEqual(self.submission.recognized_matching_key, "10002")
         self.assertEqual(self.submission.recognized_name, "김서연")
 
-    def test_auto_match_unknown_unique_id(self):
+    def test_auto_match_unknown_matching_key(self):
         res = self.patch_match(
             self.submission.pk,
-            {"recognized_unique_id": "99999", "recognized_name": "김서연"},
+            {"recognized_matching_key": "99999", "recognized_name": "김서연"},
         )
         self.assertEqual(res.status_code, 200)
         self.submission.refresh_from_db()
@@ -426,27 +428,27 @@ class WorkbookMatchTests(WorkbookFixtureMixin, TestCase):
         """동일 원번+동명 2명 — 대조로 판별 불가 → 불일치(수동확정으로만 보정)."""
         res = self.patch_match(
             self.submission.pk,
-            {"recognized_unique_id": "30001", "recognized_name": "최중복"},
+            {"recognized_matching_key": "30001", "recognized_name": "최중복"},
         )
         self.assertEqual(res.status_code, 200)
         self.submission.refresh_from_db()
         self.assertEqual(self.submission.match_status, MS.MISMATCH)
 
-    def test_duplicate_unique_id_falls_to_the_admin(self):
+    def test_duplicate_matching_key_falls_to_the_admin(self):
         """원번이 겹치면 **관리자가 고른다** — 2026-07-29 확정의 실제 경로.
 
         동명이인 + 같은 뒷4자리는 원번이 같다(접미사로 해소하지 않는다). 지면에
         적힌 값만으로는 둘을 못 가르므로 자동매칭이 서지 않고, 관리자가 학생을
         지목해 수동확정한다.
         """
-        shared = build_unique_id("최중복", "01011110001")
+        shared = build_matching_key("최중복", "01011110001")
         for student in (self.student_dup1, self.student_dup2):
-            student.unique_id = shared
-            student.save(update_fields=["unique_id"])
+            student.matching_key = shared
+            student.save(update_fields=["matching_key"])
 
         recognized = self.patch_match(
             self.submission.pk,
-            {"recognized_unique_id": shared, "recognized_name": "최중복"},
+            {"recognized_matching_key": shared, "recognized_name": "최중복"},
         )
         self.assertEqual(recognized.status_code, 200)
         self.submission.refresh_from_db()
@@ -462,18 +464,18 @@ class WorkbookMatchTests(WorkbookFixtureMixin, TestCase):
 
     def test_auto_match_without_name_mismatch(self):
         """이름 없이 원번 단독으론 확정하지 않는다 — 이름과 함께 매칭키."""
-        res = self.patch_match(self.submission.pk, {"recognized_unique_id": "10002"})
+        res = self.patch_match(self.submission.pk, {"recognized_matching_key": "10002"})
         self.assertEqual(res.status_code, 200)
         self.submission.refresh_from_db()
         self.assertEqual(self.submission.match_status, MS.MISMATCH)
-        self.assertEqual(self.submission.recognized_unique_id, "10002")
+        self.assertEqual(self.submission.recognized_matching_key, "10002")
 
     def test_requires_exactly_one_mode(self):
-        both = {"student_id": self.student_b.pk, "recognized_unique_id": "10002"}
+        both = {"student_id": self.student_b.pk, "recognized_matching_key": "10002"}
         self.assertEqual(self.patch_match(self.submission.pk, both).status_code, 400)
         self.assertEqual(self.patch_match(self.submission.pk, {}).status_code, 400)
         self.assertEqual(
-            self.patch_match(self.submission.pk, {"recognized_unique_id": "  "}).status_code,
+            self.patch_match(self.submission.pk, {"recognized_matching_key": "  "}).status_code,
             400,
         )
         self.assertEqual(
@@ -587,7 +589,7 @@ class StudentWorkbookViewTests(WorkbookFixtureMixin, TestCase):
         self.assertIsNone(rows[self.manual.pk]["assignment_done"])  # 기록 없음 = null
         self.assertIn("uploaded_at", row)
         # 학생 페이로드에는 인식·매핑 내부 정보를 내리지 않는다
-        self.assertNotIn("recognized_unique_id", row)
+        self.assertNotIn("recognized_matching_key", row)
         self.assertNotIn("match_status", row)
 
     def test_role_gate(self):

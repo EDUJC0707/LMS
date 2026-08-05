@@ -69,7 +69,7 @@ export default function MakeupAdminPage() {
               <tr key={row.makeup_id}>
                 <td>{row.makeup_id}</td>
                 <td>
-                  {row.student.name} (원번 {row.student.unique_id})
+                  {row.student.name} (원번 {row.student.matching_key})
                 </td>
                 <td>
                   {row.session_date} — {row.course_name} {row.week_no}주차

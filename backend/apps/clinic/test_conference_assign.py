@@ -56,7 +56,7 @@ class ConferenceAssignTests(TestCase):
         cls.staff = User.objects.create_user(
             login_id="cf-ast", password="pw-Secret-77!", name="조교", role=User.Role.ASSISTANT
         )
-        cls.student = Student.objects.create(unique_id="3_7777")
+        cls.student = Student.objects.create(matching_key="3_7777")
         cls.exam = Exam.objects.create(name="7월 모의고사", exam_date=WED)
         cls.slot = ClinicSlot.objects.create(
             weekday=3, start_time=datetime.time(19, 0), end_time=datetime.time(20, 0)

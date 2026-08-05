@@ -44,7 +44,7 @@ export default function CounselingPage() {
               <tr key={card.counsel_id}>
                 <td>{card.counsel_id}</td>
                 <td>
-                  {card.student.name} (원번 {card.student.unique_id})
+                  {card.student.name} (원번 {card.student.matching_key})
                 </td>
                 <td>{card.absence_date ?? "-"}</td>
                 <td>{card.target}</td>

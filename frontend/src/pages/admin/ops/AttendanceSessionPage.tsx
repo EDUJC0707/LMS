@@ -236,10 +236,10 @@ export default function AttendanceSessionPage() {
     {
       // 원번은 2026-07-29 개정으로 이름이 섞인 값이 됐다(`김하늘0001`) — 숫자 열이
       // 아니므로 numeric(모노·우측정렬)을 걸지 않고, 6rem 고정폭도 뗐다(줄바꿈됐다).
-      key: "unique_id",
+      key: "login_id",
       header: "원번",
-      sortValue: (r) => r.unique_id,
-      cell: (r) => r.unique_id,
+      sortValue: (r) => r.login_id ?? "",
+      cell: (r) => r.login_id ?? "—",
     },
     {
       key: "name",
@@ -274,7 +274,7 @@ export default function AttendanceSessionPage() {
         ) : (
           <StatusPicker
             name={`att-${r.student_id}`}
-            label={`${r.name ?? r.unique_id} 출결`}
+            label={`${r.name ?? r.login_id} 출결`}
             value={draft[r.student_id]?.status ?? ""}
             onChange={(status) => setRow(r.student_id, { status })}
           />
@@ -298,7 +298,7 @@ export default function AttendanceSessionPage() {
                       setRow(r.student_id, { examTaken: event.target.checked })
                     }
                     label={
-                      <span className="sr-only">{r.name ?? r.unique_id} 현장 시험 제출</span>
+                      <span className="sr-only">{r.name ?? r.login_id} 현장 시험 제출</span>
                     }
                   />
                 </span>

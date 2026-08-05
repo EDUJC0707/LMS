@@ -17,8 +17,10 @@ export interface DirectoryStudent {
   student_id: number;
   /** null = 계정 미발급 학생 */
   name: string | null;
-  /** 원번. 미입력이면 빈 문자열 */
-  unique_id: string;
+  /** 원번(유일). 화면에 보이는 번호. 계정 미발급이면 null */
+  login_id: string | null;
+  /** 지면 대조 전용 키. 중복될 수 있어 사람을 특정하지 못한다 */
+  matching_key: string;
   grade: string;
   current_class: string | null;
   enrollment_status: string;

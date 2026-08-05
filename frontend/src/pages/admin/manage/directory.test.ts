@@ -45,7 +45,8 @@ test("예비등록 명부에 출석부의 출결을 붙인다", () => {
       {
         student_id: 59,
         name: "장예준",
-        unique_id: "장예준0029",
+        login_id: "장예준0029",
+        matching_key: "장예준0029",
         grade: "고2",
         current_class: "수요반",
         enrollment_status: "예비등록",
@@ -53,7 +54,8 @@ test("예비등록 명부에 출석부의 출결을 붙인다", () => {
       {
         student_id: 60,
         name: "임다인",
-        unique_id: "임다인0030",
+        login_id: "임다인0030",
+        matching_key: "임다인0030",
         grade: "고2",
         current_class: "토요반",
         enrollment_status: "예비등록",
@@ -63,7 +65,8 @@ test("예비등록 명부에 출석부의 출결을 붙인다", () => {
       {
         student_id: 59,
         name: "장예준",
-        unique_id: "장예준0029",
+        login_id: "장예준0029",
+        matching_key: "장예준0029",
         current_class: "수요반",
         enrollment_status: "예비등록",
         attendance: { status: "출석", exam_taken: false, marked_at: null, updated_at: null },
@@ -82,7 +85,8 @@ test("출석부를 못 읽으면 명부만으로 목록을 만든다", () => {
       {
         student_id: 59,
         name: null,
-        unique_id: "",
+        login_id: null,
+        matching_key: "",
         grade: "",
         current_class: null,
         enrollment_status: "예비등록",
@@ -95,7 +99,8 @@ test("출석부를 못 읽으면 명부만으로 목록을 만든다", () => {
     {
       student_id: 59,
       name: null,
-      unique_id: "",
+      login_id: null,
+      matching_key: "",
       grade: "",
       current_class: null,
       enrollment_status: "예비등록",

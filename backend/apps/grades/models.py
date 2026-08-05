@@ -313,12 +313,12 @@ class AnswerSheet(models.Model):
         verbose_name="학생",
     )
     scan_image_path = models.CharField("스캔 파일 경로", max_length=500)
-    recognized_unique_id = models.CharField(  # noqa: DJ001
-        # 폭은 students.unique_id 와 같이 간다(30) — 지면에 들어오는 값이 곧 원번이고
+    recognized_matching_key = models.CharField(  # noqa: DJ001
+        # 폭은 students.matching_key 와 같이 간다(30) — 지면에 들어오는 값이 곧 원번이고
         # (2026-07-29 재개정) 원번이 `{이름}{뒷4}` 라 옛 5자리 전제로는 못 담는다.
-        # 학년이 빠져 최대치는 24로 줄었지만 폭은 줄이지 않는다 — students.unique_id
+        # 학년이 빠져 최대치는 24로 줄었지만 폭은 줄이지 않는다 — students.matching_key
         # 와 어긋나면 저장할 수 있는 원번과 인식할 수 있는 원번이 갈린다.
-        "인식된 원번", max_length=30, null=True, blank=True
+        "인식된 대조키", max_length=30, null=True, blank=True
     )
     recognized_name = models.CharField("인식된 이름", max_length=50, null=True, blank=True)  # noqa: DJ001
     match_status = models.CharField("대조 상태", max_length=20, choices=MatchStatus.choices)
@@ -329,6 +329,15 @@ class AnswerSheet(models.Model):
         db_table = "answer_sheets"
         verbose_name = "OMR 답안지"
         verbose_name_plural = "OMR 답안지"
+        constraints = [
+            # 스캔에는 일련번호가 없다 — 답안지의 정체성은 (시험, 스캔 파일)이다.
+            # 재업로드·재판독이 같은 파일로 돌아오면 같은 행으로 수렴한다
+            # (omr_store 멱등 계약 — 경로는 페이지 바이트의 내용 주소로 발급).
+            models.UniqueConstraint(
+                fields=["exam", "scan_image_path"],
+                name="uq_answer_sheets_exam_scan",
+            ),
+        ]
 
     def __str__(self):
         return f"답안지 {self.sheet_id}({self.match_status})"
@@ -648,7 +657,7 @@ class WorkbookSubmission(models.Model):
     워크북 마지막 페이지 사진(수기 코멘트는 OCR 대상 아님 — 사진 그대로 노출)
     + 수행도 ABC 도장. 학부모 리포트의 "과제 수행=사진 링크"로 연결(PRD 3.1.1).
     - student 매핑은 **원번 기입칸 OCR 자동 매핑**(8-9 결정 2026-07-21): 지면에
-      인쇄된 원번 기입칸(조교가 기입)을 OCR 인식 → recognized_unique_id 로 학생
+      인쇄된 원번 기입칸(조교가 기입)을 OCR 인식 → recognized_matching_key 로 학생
       자동 매칭(`자동매칭`), 인식 실패(`인식실패`)·매칭 실패(`불일치`) 시 관리자
       수동 지정(`수동확정`)으로 보정. answer_sheets 대조 패턴 재사용.
     - match_status NULL = OCR 파이프라인 밖(조교 수동 지정 업로드 병행 운영).
@@ -688,12 +697,12 @@ class WorkbookSubmission(models.Model):
     performance_grade = models.CharField(  # noqa: DJ001
         "수행도", max_length=1, choices=PerformanceGrade.choices, null=True, blank=True
     )
-    recognized_unique_id = models.CharField(  # noqa: DJ001
-        # 폭은 students.unique_id 와 같이 간다(30) — 지면에 들어오는 값이 곧 원번이고
+    recognized_matching_key = models.CharField(  # noqa: DJ001
+        # 폭은 students.matching_key 와 같이 간다(30) — 지면에 들어오는 값이 곧 원번이고
         # (2026-07-29 재개정) 원번이 `{이름}{뒷4}` 라 옛 5자리 전제로는 못 담는다.
-        # 학년이 빠져 최대치는 24로 줄었지만 폭은 줄이지 않는다 — students.unique_id
+        # 학년이 빠져 최대치는 24로 줄었지만 폭은 줄이지 않는다 — students.matching_key
         # 와 어긋나면 저장할 수 있는 원번과 인식할 수 있는 원번이 갈린다.
-        "인식된 원번", max_length=30, null=True, blank=True
+        "인식된 대조키", max_length=30, null=True, blank=True
     )
     recognized_name = models.CharField("인식된 이름", max_length=50, null=True, blank=True)  # noqa: DJ001
     match_status = models.CharField(  # noqa: DJ001

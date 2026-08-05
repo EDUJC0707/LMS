@@ -4,7 +4,7 @@
  * API
  *   POST   /api/admin/workbook/upload         멀티파트 images[] + student_id (+session_id)
  *   GET    /api/admin/workbook?status=&session_id=
- *   PATCH  /api/admin/workbook/{id}/match     {student_id} 또는 {recognized_unique_id,recognized_name}
+ *   PATCH  /api/admin/workbook/{id}/match     {student_id} 또는 {recognized_matching_key,recognized_name}
  *   DELETE /api/admin/workbook/{id}
  *   GET    /api/admin/attendance/sessions        회차 목록(출결입력 권한이 있을 때만)
  *   GET    /api/admin/students?q=                학생 명부 검색(직원 공통 권한)
@@ -387,7 +387,7 @@ function MatchCard({
   onDelete: () => void;
 }) {
   const [picked, setPicked] = useState<DirectoryStudent | null>(null);
-  const [uniqueId, setUniqueId] = useState(row.recognized_unique_id ?? row.student.unique_id);
+  const [uniqueId, setUniqueId] = useState(row.recognized_matching_key ?? row.student.matching_key);
   const [name, setName] = useState(row.recognized_name ?? "");
 
   const match = useApiAction(
@@ -415,7 +415,7 @@ function MatchCard({
       <div className="pm-wbbody">
         <p className="pm-wbname">
           {row.student.name ?? "이름 미등록"}
-          <small className="num">원번 {row.student.unique_id}</small>
+          <small className="num">대조키 {row.student.matching_key}</small>
         </p>
 
         <div className="ui-row">
@@ -430,8 +430,8 @@ function MatchCard({
         </div>
 
         <dl className="pm-defs">
-          <dt>인식 원번</dt>
-          <dd className="num">{row.recognized_unique_id ?? "아직 없음"}</dd>
+          <dt>인식 대조키</dt>
+          <dd className="num">{row.recognized_matching_key ?? "아직 없음"}</dd>
           <dt>인식 이름</dt>
           <dd>{row.recognized_name ?? "아직 없음"}</dd>
           <dt>올린 사람</dt>
@@ -463,7 +463,7 @@ function MatchCard({
             </div>
 
             <div className="ui-stack ui-stack--sm pm-actionblock">
-              <Field label="사진에 적힌 원번">
+              <Field label="사진에 적힌 대조키">
                 {(props) => (
                   // 원번은 2026-07-29 개정으로 이름이 섞인 값이다(`김하늘0001`) —
                   // 숫자 키패드(inputMode="numeric")로는 칠 수 없어서 뗐다. 지면에
@@ -492,13 +492,13 @@ function MatchCard({
                 disabled={!uniqueId.trim()}
                 onClick={async () => {
                   const ok = await match.run({
-                    recognized_unique_id: uniqueId.trim(),
+                    recognized_matching_key: uniqueId.trim(),
                     recognized_name: name.trim(),
                   });
                   if (ok) onDone();
                 }}
               >
-                원번·이름으로 대조
+                대조키·이름으로 대조
               </Button>
             </div>
 

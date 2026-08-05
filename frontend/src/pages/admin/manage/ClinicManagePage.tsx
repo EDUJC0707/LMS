@@ -166,7 +166,7 @@ export default function ClinicManagePage() {
                   cell: (row) => (
                     <>
                       {row.student.name}{" "}
-                      <span className="num pm-none">{row.student.unique_id}</span>
+                      <span className="num pm-none">{row.student.login_id ?? row.student.matching_key}</span>
                       {row.student.clinic_banned && (
                         <>
                           {" "}
@@ -316,7 +316,7 @@ function RequestPanel({
       <div className="ui-stack ui-stack--md">
         <dl className="pm-defs">
           <dt>원번</dt>
-          <dd className="num">{request.student.unique_id}</dd>
+          <dd className="num">{request.student.login_id ?? request.student.matching_key}</dd>
           <dt>희망 일시</dt>
           <dd className="num">
             {request.requested_date} {request.requested_time}

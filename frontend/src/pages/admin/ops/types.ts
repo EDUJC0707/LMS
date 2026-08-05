@@ -37,7 +37,10 @@ export interface AttendanceBlock {
 export interface RosterStudent {
   student_id: number;
   name: string | null;
-  unique_id: string;
+  /** 원번(유일). 화면에 보이는 번호. 계정 미발급이면 null */
+  login_id: string | null;
+  /** 지면 대조 전용 키. 중복될 수 있어 사람을 특정하지 못한다 */
+  matching_key: string;
   current_class: string | null;
   enrollment_status: string;
   /** 퇴원 행. 명단에는 남지만 출결 입력 대상이 아니다(보내면 400). */
@@ -95,7 +98,14 @@ export interface MakeupRow {
   course_name: string | null;
   granted_at: string | null;
   created_at: string;
-  student: { student_id: number; name: string | null; unique_id: string };
+  student: {
+    student_id: number;
+    name: string | null;
+    /** 원번(유일). 계정 미발급이면 null */
+    login_id: string | null;
+    /** 지면 대조 전용 키. 중복될 수 있다 */
+    matching_key: string;
+  };
   requested_by: string | null;
 }
 
@@ -110,7 +120,14 @@ export interface VideoGrantBlock {
 
 export interface CounselCard {
   counsel_id: number;
-  student: { student_id: number; name: string | null; unique_id: string };
+  student: {
+    student_id: number;
+    name: string | null;
+    /** 원번(유일). 계정 미발급이면 null */
+    login_id: string | null;
+    /** 지면 대조 전용 키. 중복될 수 있다 */
+    matching_key: string;
+  };
   target: string;
   status: string;
   /** 이미 수행한 통화 시도 수(0부터). 3회째 미연결이면 알림톡으로 종결된다. */

@@ -35,9 +35,9 @@ class AlwaysPermanentAdapter(ChannelAdapter):
         raise PermanentChannelError("수신 거부된 번호")
 
 
-def make_student(phone="01011112222", unique_id="김하늘0001"):
-    user = User.objects.create_user(unique_id, role=User.Role.STUDENT, name="김하늘", phone=phone)
-    return Student.objects.create(unique_id=unique_id, user=user)
+def make_student(phone="01011112222", matching_key="김하늘0001"):
+    user = User.objects.create_user(matching_key, role=User.Role.STUDENT, name="김하늘", phone=phone)
+    return Student.objects.create(matching_key=matching_key, user=user)
 
 
 def make_notification(**kwargs):
@@ -84,7 +84,7 @@ class RecipientTests(TestCase):
 
     def test_student_without_account_is_permanent_error(self):
         # 계정 발급 전(D-1 배치 전) 학생 — 다시 걸어도 번호가 생기지 않는다.
-        notif = make_notification(student=Student.objects.create(unique_id="장예준0029"))
+        notif = make_notification(student=Student.objects.create(matching_key="장예준0029"))
         with self.assertRaises(PermanentChannelError):
             build_message(notif)
 
@@ -202,7 +202,7 @@ class DeliverFailureTests(TestCase):
     @override_settings(NOTIFICATION_CHANNEL_BACKENDS=ALL_FAKE)
     def test_missing_recipient_marks_failed_without_calling_adapter(self):
         FakeChannelAdapter.outbox.clear()
-        notif = make_notification(student=Student.objects.create(unique_id="장예준0029"))
+        notif = make_notification(student=Student.objects.create(matching_key="장예준0029"))
 
         deliver(notif.notif_id)
 

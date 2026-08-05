@@ -51,7 +51,7 @@ def make_student(login_id, name, grade="고2"):
     user = make_user(login_id, User.Role.STUDENT, name=name)
     return Student.objects.create(
         user=user,
-        unique_id=f"uid-{login_id}",
+        matching_key=f"uid-{login_id}",
         grade=grade,
         enrollment_status=Student.EnrollmentStatus.REGISTERED,
     )

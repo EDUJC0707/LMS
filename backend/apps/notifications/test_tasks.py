@@ -41,11 +41,11 @@ class CountingPermanentAdapter(ChannelAdapter):
         raise PermanentChannelError("수신 거부된 번호")
 
 
-def make_student(unique_id="김하늘0001"):
+def make_student(matching_key="김하늘0001"):
     user = User.objects.create_user(
-        unique_id, role=User.Role.STUDENT, name="김하늘", phone="01011112222"
+        matching_key, role=User.Role.STUDENT, name="김하늘", phone="01011112222"
     )
-    return Student.objects.create(unique_id=unique_id, user=user)
+    return Student.objects.create(matching_key=matching_key, user=user)
 
 
 class CeleryEagerMixin:

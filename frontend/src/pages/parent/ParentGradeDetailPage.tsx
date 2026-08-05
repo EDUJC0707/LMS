@@ -39,7 +39,7 @@ export default function ParentGradeDetailPage() {
         data.exam.round_no === null ? null : `${data.exam.round_no}회`,
         dayLabel(data.exam.exam_date),
         data.student.name,
-        `원번 ${data.student.unique_id}`,
+        `원번 ${data.student.login_id ?? data.student.matching_key}`,
       ]
         .filter(Boolean)
         .join(" · ")

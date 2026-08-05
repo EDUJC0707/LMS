@@ -57,7 +57,7 @@ export default function StudentGradeDetailPage() {
   const roundLabel = exam.round_no !== null ? `${exam.round_no}회 · ` : "";
   // 상단바는 "성적"만 말한다(레일 라벨). 어느 회차의 누구 성적표인지는 첫 카드가
   // 들고 있어야 한다 — 인쇄하면 상단바가 빠지기 때문(student.css @media print).
-  const identity = `${roundLabel}${exam.exam_date} · ${student.name} · 원번 ${student.unique_id}`;
+  const identity = `${roundLabel}${exam.exam_date} · ${student.name} · 원번 ${student.login_id ?? student.matching_key}`;
 
   if (!isTaken || !body) {
     return (

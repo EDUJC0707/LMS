@@ -47,7 +47,7 @@ export interface BulkResultRow {
   initial_password?: string;
   student_id?: number;
   /** 서버가 이름·휴대폰에서 만든 원번(입력값이 아니다). */
-  unique_id?: string;
+  matching_key?: string;
   parent?: BulkParentBlock | null;
   error?: string;
 }
@@ -83,7 +83,10 @@ export interface SessionRow {
 export interface RosterStudent {
   student_id: number;
   name: string;
-  unique_id: string;
+  /** 원번(유일). 화면에 보이는 번호. 계정 미발급이면 null */
+  login_id: string | null;
+  /** 지면 대조 전용 키. 중복될 수 있어 사람을 특정하지 못한다 */
+  matching_key: string;
   current_class: string | null;
   enrollment_status: string;
   attendance: {
@@ -108,7 +111,10 @@ export interface ClinicRequestRow {
   student: {
     student_id: number;
     name: string | null;
-    unique_id: string;
+    /** 원번(유일). 화면에 보이는 번호. 계정 미발급이면 null */
+    login_id: string | null;
+    /** 지면 대조 전용 키. 중복될 수 있어 사람을 특정하지 못한다 */
+    matching_key: string;
     noshow_count: number;
     clinic_banned: boolean;
   };
@@ -149,7 +155,10 @@ export interface ExamListRow {
 export interface ExamStudentRow {
   student_id: number;
   name: string;
-  unique_id: string;
+  /** 원번(유일). 화면에 보이는 번호. 계정 미발급이면 null */
+  login_id: string | null;
+  /** 지면 대조 전용 키. 중복될 수 있어 사람을 특정하지 못한다 */
+  matching_key: string;
   current_class: string | null;
   total_score: number | null;
   max_score: number | null;
@@ -202,10 +211,17 @@ export type WorkbookStatus = "대기" | "자동매칭" | "수동확정" | "불�
 
 export interface WorkbookRow {
   submission_id: number;
-  student: { student_id: number; name: string | null; unique_id: string };
+  student: {
+    student_id: number;
+    name: string | null;
+    /** 원번(유일). 계정 미발급이면 null */
+    login_id: string | null;
+    /** 지면 대조 전용 키. 중복될 수 있다 */
+    matching_key: string;
+  };
   session: { session_id: number; session_date: string; session_no: number | null } | null;
   image_url: string;
-  recognized_unique_id: string | null;
+  recognized_matching_key: string | null;
   recognized_name: string | null;
   /** null 이면 아직 대조 전(=대기) */
   match_status: WorkbookStatus | null;

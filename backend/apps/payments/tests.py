@@ -14,8 +14,8 @@ from . import models as payments_models
 from .models import Order, Payment, Product
 
 
-def make_student(unique_id="3_1234"):
-    return Student.objects.create(unique_id=unique_id)
+def make_student(matching_key="3_1234"):
+    return Student.objects.create(matching_key=matching_key)
 
 
 def make_product(name="로직엔제 교재", price=45000):

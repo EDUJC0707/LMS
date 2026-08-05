@@ -84,7 +84,7 @@ class PostCommentTests(TestCase):
 
 class AbsenceCounselingTests(TestCase):
     def setUp(self):
-        self.student = Student.objects.create(unique_id="3_1234")
+        self.student = Student.objects.create(matching_key="3_1234")
 
     def test_table_and_pk_column_follow_design(self):
         self.assertEqual(AbsenceCounseling._meta.db_table, "absence_counselings")

@@ -51,7 +51,7 @@ class CollectSupervisionTests(TestCase):
         cls.student_user = User.objects.create_user(
             login_id="sv-stu", password="pw-Secret-77!", name="김하늘", role=User.Role.STUDENT
         )
-        cls.student = Student.objects.create(user=cls.student_user, unique_id="김하늘0001")
+        cls.student = Student.objects.create(user=cls.student_user, matching_key="김하늘0001")
         cls.exam = Exam.objects.create(name="7월 모의고사", exam_date=WED)
         cls.slot = ClinicSlot.objects.create(
             weekday=3, start_time=datetime.time(19, 0), end_time=datetime.time(20, 0)
@@ -169,7 +169,7 @@ class CollectSupervisionTests(TestCase):
     def test_filing_path_works_without_a_student_account(self):
         # 예비등록이라 User 가 아직 없어도 원번은 있다 — 경로가 성립해야 한다
         # (원번이 곧 `{이름}{뒷4}` 라 이름을 따로 붙일 일도 없다)
-        accountless = Student.objects.create(unique_id="박지우0002")
+        accountless = Student.objects.create(matching_key="박지우0002")
         request = self.make_request()
         request.student = accountless
         request.save(update_fields=["student"])

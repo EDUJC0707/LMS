@@ -138,7 +138,8 @@ def _student_rows(scores):
             {
                 "student_id": score.student_id,
                 "name": student.user.name if student.user else None,
-                "unique_id": student.unique_id,
+                "login_id": student.user.login_id if student.user else None,
+                "matching_key": student.matching_key,
                 "current_class": student.current_class,
                 "total_score": score.total_score,
                 "max_score": score.max_score,

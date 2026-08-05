@@ -186,7 +186,9 @@ def build_detail_payload(session, roster, attendance_by_student):
           "session": {...},
           "students": [
             {
-              "student_id": 1, "name": "김서연", "unique_id": "김서연0001",
+              "student_id": 1, "name": "김서연",
+              "login_id": "김서연0001",     # 원번(유일). 화면에 보이는 번호
+              "matching_key": "김서연0001", # 지면 대조 전용(중복 가능)
               "current_class": "수요반", "enrollment_status": "등록",
               "is_withdrawn": false,      # true = 표시 전용 행(출결 입력칸 없음)
               "attendance_id": 12|null,   # 동보 즉시 지급 API 의 body 키
@@ -220,7 +222,8 @@ def build_detail_payload(session, roster, attendance_by_student):
             {
                 "student_id": student.student_id,
                 "name": student.user.name if student.user else None,
-                "unique_id": student.unique_id,
+                "login_id": student.user.login_id if student.user else None,
+                "matching_key": student.matching_key,
                 "current_class": student.current_class,
                 "enrollment_status": student.enrollment_status,
                 "is_withdrawn": not entry_target,

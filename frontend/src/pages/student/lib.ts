@@ -199,7 +199,10 @@ export interface StudentHome {
 export interface GradeStudent {
   student_id: number;
   name: string;
-  unique_id: string;
+  /** 원번(유일). 화면에 보이는 번호. 계정 미발급이면 null */
+  login_id: string | null;
+  /** 지면 대조 전용 키. 중복될 수 있어 사람을 특정하지 못한다 */
+  matching_key: string;
   school: string | null;
   current_class: string | null;
 }

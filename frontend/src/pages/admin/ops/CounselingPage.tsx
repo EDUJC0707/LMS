@@ -58,7 +58,7 @@ export default function CounselingPage() {
       if (dateFilter && card.absence_date !== dateFilter) return false;
       if (!needle) return true;
       return (
-        (card.student.name ?? "").includes(needle) || card.student.unique_id.includes(needle)
+        (card.student.name ?? "").includes(needle) || (card.student.login_id ?? "").includes(needle)
       );
     });
   }, [all, dateFilter, query]);
@@ -71,7 +71,7 @@ export default function CounselingPage() {
       cell: (r) => (
         <span className="ops-name">
           <span>{r.student.name ?? "이름 미등록"}</span>
-          <span className="ops-sub num">{r.student.unique_id}</span>
+          <span className="ops-sub num">{r.student.login_id ?? r.student.matching_key}</span>
         </span>
       ),
     },
@@ -269,7 +269,7 @@ function RecordPanel({
   return (
     <Card
       title={`${card.student.name ?? "학생"} · ${card.target} 통화 기록`}
-      aside={`원번 ${card.student.unique_id} · ${shortDate(card.absence_date)} 결석 · 지금까지 ${card.attempts}회 시도`}
+      aside={`원번 ${card.student.login_id ?? card.student.matching_key} · ${shortDate(card.absence_date)} 결석 · 지금까지 ${card.attempts}회 시도`}
     >
       <div className="ui-stack ui-stack--md ops-form" ref={anchor}>
         {record.error && <Alert tone="danger">{record.error}</Alert>}

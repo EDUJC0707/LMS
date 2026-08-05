@@ -79,7 +79,7 @@ def make_user(login_id, role, name="사용자"):
 def make_student(login_id, name):
     user = make_user(login_id, User.Role.STUDENT, name=name)
     return Student.objects.create(
-        user=user, unique_id=f"uid-{login_id}",
+        user=user, matching_key=f"uid-{login_id}",
         enrollment_status=Student.EnrollmentStatus.REGISTERED,
     )
 
@@ -406,7 +406,7 @@ class ClinicBookingCreateTests(ClinicFixtureMixin, TestCase):
         for student in (self.s_not, self.s_none):
             self.login(student.user)
             res = self.book(self.slot_thu, THU)
-            self.assertEqual(res.status_code, 403, student.unique_id)
+            self.assertEqual(res.status_code, 403, student.matching_key)
         self.assertFalse(ClinicRequest.objects.exists())
 
     def test_banned_403(self):

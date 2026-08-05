@@ -44,7 +44,7 @@ class AttendanceAdmin(admin.ModelAdmin):
         "created_at", "updated_at",
     )
     list_filter = ("status", "exam_taken", "session__session_date")
-    search_fields = ("student__unique_id", "student__user__name")
+    search_fields = ("student__matching_key", "student__user__name")
 
 
 @admin.register(Exam)
@@ -70,11 +70,11 @@ class QuestionAdmin(admin.ModelAdmin):
 @admin.register(AnswerSheet)
 class AnswerSheetAdmin(admin.ModelAdmin):
     list_display = (
-        "sheet_id", "exam", "student", "recognized_unique_id", "recognized_name",
+        "sheet_id", "exam", "student", "recognized_matching_key", "recognized_name",
         "match_status", "is_corrected", "created_at",
     )
     list_filter = ("match_status", "is_corrected", "exam")
-    search_fields = ("recognized_unique_id", "recognized_name", "student__unique_id")
+    search_fields = ("recognized_matching_key", "recognized_name", "student__matching_key")
 
 
 @admin.register(SheetAnswer)
@@ -93,14 +93,14 @@ class ScoreAdmin(admin.ModelAdmin):
         "percentile", "rank_top_pct", "is_taken",
     )
     list_filter = ("is_taken", "exam")
-    search_fields = ("student__unique_id", "student__user__name")
+    search_fields = ("student__matching_key", "student__user__name")
 
 
 @admin.register(Assignment)
 class AssignmentAdmin(admin.ModelAdmin):
     list_display = ("id", "session", "student", "done", "memo")
     list_filter = ("done", "session__session_date")
-    search_fields = ("student__unique_id", "student__user__name")
+    search_fields = ("student__matching_key", "student__user__name")
 
 
 @admin.register(QuestionBankItem)
@@ -125,7 +125,7 @@ class WeaknessCheckPdfAdmin(admin.ModelAdmin):
         "pdf_id", "exam", "student", "status", "page_count", "generated_at",
     )
     list_filter = ("status", "exam")
-    search_fields = ("student__unique_id", "student__user__name")
+    search_fields = ("student__matching_key", "student__user__name")
 
 
 @admin.register(WorkbookSubmission)
@@ -135,4 +135,4 @@ class WorkbookSubmissionAdmin(admin.ModelAdmin):
         "uploaded_by", "created_at",
     )
     list_filter = ("performance_grade", "session__session_date")
-    search_fields = ("student__unique_id", "student__user__name")
+    search_fields = ("student__matching_key", "student__user__name")

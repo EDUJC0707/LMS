@@ -60,7 +60,7 @@ def make_student(login_id, name):
     )
     return Student.objects.create(
         user=user,
-        unique_id=f"uid-{login_id}",
+        matching_key=f"uid-{login_id}",
         enrollment_status=Student.EnrollmentStatus.REGISTERED,
     )
 
@@ -294,7 +294,7 @@ class ClinicAvailabilityTests(AvailabilityFixtureMixin, TestCase):
     def test_non_target_403(self):
         for student in (self.s_not, self.s_none):
             self.client.force_login(student.user)
-            self.assertEqual(self.fetch().status_code, 403, student.unique_id)
+            self.assertEqual(self.fetch().status_code, 403, student.matching_key)
 
     def test_banned_403(self):
         self.client.force_login(self.s_banned.user)

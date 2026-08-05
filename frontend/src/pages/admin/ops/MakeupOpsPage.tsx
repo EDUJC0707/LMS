@@ -72,7 +72,7 @@ export default function MakeupOpsPage() {
       ? `${shortDate(data.video_grant.expires_at.slice(0, 10))}까지`
       : "지정된 기간 동안";
     setNotice(
-      `${row.student.name ?? "학생"}(원번 ${row.student.unique_id}) 계정에 ${row.course_name ?? "해당 강좌"} ${row.week_no ?? "-"}주차 복습영상 권한이 나갔습니다. ${until} 시청할 수 있습니다.`,
+      `${row.student.name ?? "학생"}(원번 ${row.student.login_id ?? row.student.matching_key}) 계정에 ${row.course_name ?? "해당 강좌"} ${row.week_no ?? "-"}주차 복습영상 권한이 나갔습니다. ${until} 시청할 수 있습니다.`,
     );
     void list.reload();
   };
@@ -92,7 +92,7 @@ export default function MakeupOpsPage() {
       cell: (r) => (
         <span className="ops-name">
           <span>{r.student.name ?? "이름 미등록"}</span>
-          <span className="ops-sub num">{r.student.unique_id}</span>
+          <span className="ops-sub num">{r.student.login_id ?? r.student.matching_key}</span>
         </span>
       ),
     },
@@ -226,7 +226,7 @@ export default function MakeupOpsPage() {
           <div className="ui-stack ui-stack--sm">
             {reject.error && <Alert tone="danger">{reject.error}</Alert>}
             <p>
-              {rejecting.student.name ?? "학생"}(원번 {rejecting.student.unique_id})의{" "}
+              {rejecting.student.name ?? "학생"}(원번 {rejecting.student.login_id ?? rejecting.student.matching_key})의{" "}
               {shortDate(rejecting.session_date)} 결석 동보 신청입니다.
             </p>
           </div>

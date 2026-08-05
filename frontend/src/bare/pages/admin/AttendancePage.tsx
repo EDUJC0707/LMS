@@ -160,7 +160,7 @@ export function AttendanceSessionPage() {
                       <td>
                         {student.name} (#{student.student_id})
                       </td>
-                      <td>{student.unique_id}</td>
+                      <td>{student.matching_key}</td>
                       <td>{student.current_class ?? "-"}</td>
                       <td>{student.enrollment_status}</td>
                       <td>

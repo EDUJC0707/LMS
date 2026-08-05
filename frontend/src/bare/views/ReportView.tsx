@@ -8,7 +8,7 @@ export default function ReportView({ data }: { data: any }) {
       <p>
         <strong>{data.exam.name}</strong> ({data.exam.exam_date}
         {data.exam.round_no ? ` · ${data.exam.round_no}회` : ""}) — {data.student.name} (원번{" "}
-        {data.student.unique_id} · {data.student.school || "학교 미입력"})
+        {data.student.matching_key} · {data.student.school || "학교 미입력"})
       </p>
       {data.exam.notice && <p>공지: {data.exam.notice}</p>}
       {!data.is_taken && (

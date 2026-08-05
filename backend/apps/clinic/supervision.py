@@ -76,7 +76,7 @@ def artifact_path(request):
     date = request.requested_date
     return (
         f"clinic/{date:%Y-%m}/{date:%Y-%m-%d}"
-        f"_{request.requested_time:%H%M}_{request.student.unique_id}"
+        f"_{request.requested_time:%H%M}_{request.student.matching_key}"
     )
 
 

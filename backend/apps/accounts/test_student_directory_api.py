@@ -50,7 +50,7 @@ class StudentDirectoryFixtureMixin:
             "dir-s1",
             "김서연",
             phone="01011112222",
-            unique_id="L2601",
+            matching_key="L2601",
             grade="고2",
             current_class="고2 로직엔제 B반",
             enrollment_status=Student.EnrollmentStatus.REGISTERED,
@@ -59,7 +59,7 @@ class StudentDirectoryFixtureMixin:
             "dir-s2",
             "이준호",
             phone="01033334444",
-            unique_id="L2602",
+            matching_key="L2602",
             grade="고2",
             current_class="고2 로직엔제 A반",
             enrollment_status=Student.EnrollmentStatus.REGISTERED,
@@ -67,7 +67,7 @@ class StudentDirectoryFixtureMixin:
         cls.s_reg3 = make_student(
             "dir-s3",
             "박민지",
-            unique_id="F2603",
+            matching_key="F2603",
             grade="고3",
             current_class="고3 파이널",
             enrollment_status=Student.EnrollmentStatus.REGISTERED,
@@ -75,14 +75,14 @@ class StudentDirectoryFixtureMixin:
         cls.s_pre = make_student(
             "dir-s4",
             "정예비",
-            unique_id="L2604",
+            matching_key="L2604",
             grade="고1",
             enrollment_status=Student.EnrollmentStatus.PRE_REGISTERED,
         )
         cls.s_out = make_student(
             "dir-s5",
             "최퇴원",
-            unique_id="L2605",
+            matching_key="L2605",
             grade="고2",
             enrollment_status=Student.EnrollmentStatus.WITHDRAWN,
         )
@@ -151,7 +151,8 @@ class StudentDirectoryPayloadTests(StudentDirectoryFixtureMixin, TestCase):
             {
                 "student_id": self.s_reg1.student_id,
                 "name": "김서연",
-                "unique_id": "L2601",
+                "login_id": self.s_reg1.user.login_id,
+                "matching_key": "L2601",
                 "grade": "고2",
                 "current_class": "고2 로직엔제 B반",
                 "enrollment_status": "등록",
@@ -164,7 +165,7 @@ class StudentDirectoryPayloadTests(StudentDirectoryFixtureMixin, TestCase):
         self.assertNotIn("phone", body)
 
     def test_student_without_account_has_null_name(self):
-        orphan = Student.objects.create(unique_id="L2699", grade="고1")
+        orphan = Student.objects.create(matching_key="L2699", grade="고1")
         rows = {r["student_id"]: r for r in self.get_directory().json()["results"]}
         self.assertIsNone(rows[orphan.student_id]["name"])
 
@@ -195,7 +196,7 @@ class StudentDirectorySearchTests(StudentDirectoryFixtureMixin, TestCase):
     def test_search_by_partial_name(self):
         self.assertEqual(self.ids({"q": "서연"}), [self.s_reg1.student_id])
 
-    def test_search_by_partial_unique_id(self):
+    def test_search_by_partial_matching_key(self):
         ids = set(self.ids({"q": "L260"}))
         self.assertIn(self.s_reg1.student_id, ids)
         self.assertNotIn(self.s_reg3.student_id, ids)  # F2603
@@ -262,7 +263,7 @@ class StudentDirectoryPaginationTests(StudentDirectoryFixtureMixin, TestCase):
 
     def test_page_size_and_next_link(self):
         for index in range(20):
-            make_student(f"dir-bulk{index}", f"대량{index}", unique_id=f"B26{index:02d}")
+            make_student(f"dir-bulk{index}", f"대량{index}", matching_key=f"B26{index:02d}")
         body = self.get_directory().json()
         self.assertEqual(body["count"], 25)
         self.assertEqual(len(body["results"]), 20)
@@ -284,6 +285,6 @@ class StudentDirectoryQueryCountTests(StudentDirectoryFixtureMixin, TestCase):
 
     def test_query_count_does_not_grow_with_rows(self):
         for index in range(10):
-            make_student(f"dir-n{index}", f"엔플러스{index}", unique_id=f"N26{index:02d}")
+            make_student(f"dir-n{index}", f"엔플러스{index}", matching_key=f"N26{index:02d}")
         with self.assertNumQueries(4):
             self.get_directory()

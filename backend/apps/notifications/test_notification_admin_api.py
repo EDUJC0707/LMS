@@ -36,7 +36,7 @@ class NotificationAdminFixtureMixin:
         cls.assistant = make_user("na-ast", User.Role.ASSISTANT, name="조교")
         cls.student = Student.objects.create(
             user=make_user("na-stu", User.Role.STUDENT, name="김하늘", phone="01011112222"),
-            unique_id="김하늘0001",
+            matching_key="김하늘0001",
         )
         cls.parent = Parent.objects.create(
             user=make_user("na-par", User.Role.PARENT, name="김학부"),
@@ -139,7 +139,7 @@ class NotificationAdminListTests(NotificationAdminFixtureMixin, TestCase):
 
     def test_student_without_account_falls_back_to_unique_id(self):
         # 계정 발급 전 학생 — 이름이 users 행에 있어서 비어 있다.
-        orphan = Student.objects.create(unique_id="장예준0029")
+        orphan = Student.objects.create(matching_key="장예준0029")
         self.make_notif(student=orphan)
 
         self.assertEqual(self.rows()[0]["target"]["name"], "장예준0029")

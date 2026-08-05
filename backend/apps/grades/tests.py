@@ -10,8 +10,8 @@ from decimal import Decimal
 from django.db import IntegrityError
 from django.test import TestCase
 
+from apps.accounts.matching_key import build_matching_key
 from apps.accounts.models import Student
-from apps.accounts.unique_id import build_unique_id
 
 from .models import (
     AnswerSheet,
@@ -29,8 +29,8 @@ from .models import (
 )
 
 
-def make_student(unique_id="3_1234"):
-    return Student.objects.create(unique_id=unique_id)
+def make_student(matching_key="3_1234"):
+    return Student.objects.create(matching_key=matching_key)
 
 
 def make_session(**kwargs):
@@ -169,21 +169,21 @@ class AnswerSheetTests(TestCase):
             {"정상", "부분", "불일치", "미존재", "중복", "비정상"},
         )
 
-    def test_recognized_unique_id_holds_full_length_unique_id(self):
+    def test_recognized_matching_key_holds_full_length_matching_key(self):
         """인식 컬럼은 원번이 가질 수 있는 길이를 담아야 한다(2026-07-29 개정).
 
         원번이 `{이름}{뒷4}` 가 되면서 이름 길이만큼 길어졌다 — 옛 5자리 전제로
         잡힌 폭이면 긴 이름 학생의 답안지 인식 결과를 저장할 수 없다.
         """
-        unique_id = build_unique_id("무하마드알리", "01012344821")
-        self.assertGreater(len(unique_id), 5)
+        matching_key = build_matching_key("무하마드알리", "01012344821")
+        self.assertGreater(len(matching_key), 5)
         sheet = AnswerSheet.objects.create(
             exam=self.exam, scan_image_path="omr/2026/0722/002.jpg",
             match_status=AnswerSheet.MatchStatus.MATCHED,
-            recognized_unique_id=unique_id, recognized_name="무하마드알리",
+            recognized_matching_key=matching_key, recognized_name="무하마드알리",
         )
         sheet.refresh_from_db()
-        self.assertEqual(sheet.recognized_unique_id, unique_id)
+        self.assertEqual(sheet.recognized_matching_key, matching_key)
 
 
 class SheetAnswerTests(TestCase):
@@ -332,7 +332,7 @@ class WorkbookSubmissionTests(TestCase):
         submission = WorkbookSubmission.objects.create(
             student=make_student(), image_path="workbook/2026/0722/3_1234.jpg"
         )
-        self.assertIsNone(submission.recognized_unique_id)
+        self.assertIsNone(submission.recognized_matching_key)
         self.assertIsNone(submission.recognized_name)
         self.assertIsNone(submission.match_status)
 
@@ -347,7 +347,7 @@ class WorkbookSubmissionTests(TestCase):
         submission = WorkbookSubmission.objects.create(
             student=make_student(),
             image_path="workbook/2026/0722/3_1234.jpg",
-            recognized_unique_id="3_1234",
+            recognized_matching_key="3_1234",
             match_status=WorkbookSubmission.MatchStatus.AUTO_MATCHED,
         )
         self.assertEqual(submission.match_status, "자동매칭")

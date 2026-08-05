@@ -18,11 +18,11 @@ from .sending import queue
 FAKE = "apps.notifications.channels.FakeChannelAdapter"
 
 
-def make_student(unique_id="김하늘0001"):
+def make_student(matching_key="김하늘0001"):
     user = User.objects.create_user(
-        unique_id, role=User.Role.STUDENT, name="김하늘", phone="01011112222"
+        matching_key, role=User.Role.STUDENT, name="김하늘", phone="01011112222"
     )
-    return Student.objects.create(unique_id=unique_id, user=user)
+    return Student.objects.create(matching_key=matching_key, user=user)
 
 
 @override_settings(NOTIFICATION_CHANNEL_BACKENDS={"카카오알림톡": FAKE, "문자": FAKE})
