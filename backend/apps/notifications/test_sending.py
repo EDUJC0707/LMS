@@ -36,7 +36,9 @@ class AlwaysPermanentAdapter(ChannelAdapter):
 
 
 def make_student(phone="01011112222", matching_key="김하늘0001"):
-    user = User.objects.create_user(matching_key, role=User.Role.STUDENT, name="김하늘", phone=phone)
+    user = User.objects.create_user(
+        matching_key, role=User.Role.STUDENT, name="김하늘", phone=phone
+    )
     return Student.objects.create(matching_key=matching_key, user=user)
 
 
