@@ -328,7 +328,9 @@
      빈 칸이 더 눈에 띄었다. */
   .foot dl{ display:flex; flex-wrap:wrap; gap:.3rem 1.5rem; margin:0; font-size:.78rem }
   .foot dl div{ display:flex; gap:.45rem }
-  .foot dt{ opacity:.55 }
+  /* 라벨은 줄어들지 않는다. 주소 값이 길어서 flex 가 dt 를 짜부라뜨렸고
+     `주소` 가 `주`/`소` 로 쪼개졌다(390px 에서 dt 박스 19x45 — 한 글자 폭에 두 줄). */
+  .foot dt{ opacity:.55; flex-shrink:0; white-space:nowrap }
   .foot dd{ margin:0 }
 
   /* ── 모바일 ──────────────────────────────────────────────── */
