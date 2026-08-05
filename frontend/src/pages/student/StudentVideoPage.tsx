@@ -173,12 +173,30 @@ export default function StudentVideoPage() {
   if (playing) {
     return (
       <div className="ui-stack">
-        <Button variant="ghost" onClick={() => setPlaying(null)}>
-          목록으로
-        </Button>
-
         <Card
-          title={playing.video.title}
+          title={
+            <span className="vd-title">
+              <button
+                type="button"
+                className="vd-back"
+                onClick={() => setPlaying(null)}
+                aria-label="목록으로"
+              >
+                {/* PageIcon 과 같은 결: viewBox 24 · stroke 1.7 · 둥근 끝 */}
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path
+                    d="M14.5 5.5 8 12l6.5 6.5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+              {playing.video.title}
+            </span>
+          }
           aside={`${playing.video.week_no}주차`}
           padding="none"
         >

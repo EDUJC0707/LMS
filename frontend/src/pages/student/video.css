@@ -1,3 +1,45 @@
+/* 재생 화면 헤더 — 제목 왼쪽에 뒤로 가기.
+   카드 밖에 따로 [목록으로] 버튼을 두면 영상 위에 줄이 하나 더 생겨
+   화면이 아래로 밀린다. 제목 줄 안에 넣어 그 줄을 없앤다. */
+
+.vd-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  min-width: 0;
+}
+
+.vd-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-left: calc(var(--space-2xs) * -1); /* 아이콘 여백만큼 당겨 제목 줄을 맞춘다 */
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.vd-back svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.vd-back:hover {
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+}
+
+.vd-back:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 /* 복습영상 재생 — 플레이어와 워터마크.
  *
  * 워터마크는 `mux-player` 의 자식(slot)이라 전체화면에서도 살아남는다.
