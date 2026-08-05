@@ -40,6 +40,7 @@ from .permissions import (
     IsStudent,
 )
 from .serializers import LoginSerializer, PasswordChangeSerializer, user_summary
+from .throttling import THROTTLED_MESSAGE, client_ip, is_throttled, record_failure
 
 # 실패 사유(계정 없음/비밀번호 오류/비활성/역할 불일치)를 구분하지 않는 단일 메시지 —
 # 경쟁사 정찰 등 계정 존재 탐색을 막는다(상태 기반 노출 원칙과 같은 방향).
@@ -67,13 +68,24 @@ class RoleLoginView(APIView):
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        login_id = serializer.validated_data["login_id"]
+        ip = client_ip(request)
+
+        # **authenticate 앞에서** 판정한다. 뒤에 두면 한도를 소진한 공격자가
+        # 다음 시도에 비밀번호를 맞혔을 때 그대로 들어온다(throttling.py 참조).
+        if is_throttled(login_id, ip):
+            return Response(
+                {"detail": THROTTLED_MESSAGE}, status=status.HTTP_429_TOO_MANY_REQUESTS
+            )
+
         user = authenticate(
             request,
-            username=serializer.validated_data["login_id"],
+            username=login_id,
             password=serializer.validated_data["password"],
         )
         # ModelBackend 는 is_active=False 를 인증 실패로 처리한다(차단 요구 충족).
         if user is None:
+            record_failure(login_id, ip)
             return Response(
                 {"detail": _LOGIN_FAILED_MESSAGE}, status=status.HTTP_401_UNAUTHORIZED
             )

@@ -307,3 +307,39 @@ class StaffFeatureGrant(models.Model):
     def __str__(self):
         sign = "+" if self.is_granted else "-"
         return f"{self.user_id} {sign}{self.feature_key}"
+
+
+class LoginAttempt(models.Model):
+    """실패한 로그인 시도 1건 — 시도 제한의 근거이자, 침입 시도의 흔적.
+
+    **성공은 기록하지 않는다.** 매일 로그인하는 학생이 제 발로 한도를 소진하면
+    안 되고, 여기 쌓이는 것은 "누가 무엇을 두드렸나"여야 의미가 있다.
+
+    **왜 캐시가 아니라 표인가**: ① 운영 웹은 gunicorn 워커 3개라 프로세스별
+    메모리 캐시로는 셈이 3 등분된다 ② Redis 는 아직 안 떠 있다(DEPLOY.md 6장)
+    ③ 표적 공격을 전제하는 이상 **차단만으로는 부족하고 흔적이 남아야 한다** —
+    "경쟁 학원이 대표 계정을 두드렸나"에 답할 수 있는 자리가 여기다.
+
+    `login_id` 는 존재하지 않는 계정도 그대로 적는다(FK 아님). 없는 아이디를
+    두드린 것 자체가 정찰의 증거이고, 계정이 지워져도 흔적은 남아야 한다.
+
+    보존은 무한이 아니다 — 실패한 아이디와 IP 도 개인정보에 준해 다룬다.
+    창(FAILURE_WINDOW)을 한참 지난 행은 주기적으로 지운다(미구현, 후속).
+    """
+
+    login_id = models.CharField("로그인 아이디", max_length=50)
+    ip = models.GenericIPAddressField("클라이언트 IP", null=True, blank=True)
+    created_at = models.DateTimeField("시각", auto_now_add=True)
+
+    class Meta:
+        db_table = "login_attempts"
+        verbose_name = "로그인 실패 시도"
+        verbose_name_plural = "로그인 실패 시도"
+        indexes = [
+            # 두 한도가 각각 창 안의 건수를 센다 — 그 두 질의만 인덱스를 탄다.
+            models.Index(fields=["login_id", "created_at"], name="idx_login_attempt_id"),
+            models.Index(fields=["ip", "created_at"], name="idx_login_attempt_ip"),
+        ]
+
+    def __str__(self):
+        return f"{self.login_id} @ {self.ip or '-'}"
