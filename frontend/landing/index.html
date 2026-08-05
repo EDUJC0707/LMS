@@ -357,6 +357,13 @@
        세이프에어리어를 더해도 겹침이 남아서 아래를 그만큼 비운다.
        600px 부터는 사업자 정보가 런처까지 닿지 않아 여기(모바일)에만 건다. */
     footer{ padding-bottom:calc(env(safe-area-inset-bottom) + 24px + 56px + 16px) }
+
+    /* 좁은 화면에서 사업자 정보를 한 줄로 흘리면 줄바꿈이 값 길이에 좌우돼
+       들쭉날쭉해진다(상호+사업자등록번호가 한 줄, 대표 혼자 한 줄, 주소는 두 줄).
+       라벨 열·값 열로 세워 한 쌍이 한 행을 갖게 한다.
+       display:contents 로 래퍼 div 를 걷어내 dt/dd 가 직접 격자 칸이 된다. */
+    .foot dl{ display:grid; grid-template-columns:auto 1fr; gap:.4rem .8rem }
+    .foot dl div{ display:contents }
   }
   /* prefers-reduced-motion 은 JS 가 처리한다 — 정적 1프레임만 그린다.
      CSS 로 배경을 끄면 히어로가 통째로 검게 남는다. */
