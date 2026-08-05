@@ -40,6 +40,68 @@ def test_every_answer_cell_sits_inside_the_marker_quad():
         assert 0.0 < v < 1.0
 
 
+def test_name_grid_is_twelve_columns_with_vowel_tail():
+    """성명란 계약 — 초·종성 여덟 열은 14행, 중성 네 열만 19행. 합 188."""
+    cells = card.name_cells()
+
+    assert len(cells) == 188
+    by_column = {}
+    for (column, row), _ in cells:
+        by_column.setdefault(column, set()).add(row)
+    assert set(by_column) == set(range(1, 13))
+    for column, rows in by_column.items():
+        expected = 19 if column in card.NAME_VOWEL_COLUMNS else 14
+        assert rows == set(range(1, expected + 1))
+
+
+def test_phone_grid_is_four_positions_by_ten_digits():
+    cells = card.phone_cells()
+
+    assert len(cells) == 40
+    assert {key for key, _ in cells} == {
+        (position, digit) for position in range(1, 5) for digit in range(10)
+    }
+
+
+def test_total_bubble_count_is_328():
+    """모듈 docstring 의 검산 — 성명 188 + 전화 40 + 답란 100."""
+    total = len(card.answer_cells()) + len(card.name_cells()) + len(card.phone_cells())
+
+    assert total == 328
+
+
+def test_name_and_phone_lattices_keep_measured_positions():
+    """실물 평균판에서 잰 자리를 고정한다 — 실제 마킹 753건의 중심과 평균 0.4px
+    안에서 일치함을 확인한 값이다(2026-08-05). 조용히 밀리면 여기서 잡는다.
+    """
+    name = dict(card.name_cells())
+    phone = dict(card.phone_cells())
+
+    assert round(name[(1, 1)][0], 5) == 0.03931
+    assert round(name[(1, 1)][1], 5) == 0.46468
+    assert round(name[(2, 19)][0], 5) == 0.05779
+    assert round(name[(2, 19)][1], 5) == 0.93170
+    assert round(phone[(1, 0)][0], 5) == 0.31792
+    assert round(phone[(1, 0)][1], 5) == 0.46783
+    assert round(phone[(4, 9)][0], 5) == 0.40301
+    assert round(phone[(4, 9)][1], 5) == 0.76947
+
+
+def test_every_name_and_phone_cell_sits_inside_the_marker_quad():
+    for _, (u, v) in card.name_cells() + card.phone_cells():
+        assert 0.0 < u < 1.0
+        assert 0.0 < v < 1.0
+
+
+def test_name_sampling_radius_stays_inside_the_printed_circle():
+    """성명 버블은 지름 ~31px 정원, 테두리 안 여백은 반지름 ~13px — 65% 표본이
+    그 안에 있어야 한다(답란과 같은 계약)."""
+    radius_u, radius_v = card.NAME_BUBBLE_RADIUS
+
+    assert 0.65 * radius_u * 2223.5 < 13.0
+    assert 0.65 * radius_v * 1493.5 < 13.0
+
+
 def test_sampling_radius_stays_inside_the_printed_stadium():
     """표본 반경 계약 — 65% 표본 발자국이 실측 테두리 안 여백을 넘으면 안 된다.
 
