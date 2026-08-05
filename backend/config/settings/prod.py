@@ -11,6 +11,14 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = env.bool("DJANGO_SECURE_SSL_REDIRECT", default=True)
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
+
+# 프런트(Vercel)와 API(Fly)가 다른 호스트에 산다 — `lms.hjcedu.com` 과 `api.hjcedu.com`.
+# 쿠키를 `.hjcedu.com` 으로 발급해야 두 호스트가 같은 세션을 본다.
+# **비워 두면 안 된다**: 기본값이면 쿠키가 `api.hjcedu.com` 전용으로 발급돼
+# 프런트에서 로그인 상태가 유지되지 않는다.
+# 값이 없으면(로컬·단일 호스트) Django 기본 동작 그대로 — None 이 기본이다.
+SESSION_COOKIE_DOMAIN = env("SESSION_COOKIE_DOMAIN", default=None)
+CSRF_COOKIE_DOMAIN = env("CSRF_COOKIE_DOMAIN", default=None)
 SECURE_HSTS_SECONDS = 60 * 60 * 24 * 30
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 
