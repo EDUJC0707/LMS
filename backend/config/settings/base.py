@@ -101,6 +101,20 @@ CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_TIMEZONE = "Asia/Seoul"
 CELERY_TASK_TRACK_STARTED = True
 
+# beat 주기 작업. **워커가 아직 안 떠 있어서 지금은 아무도 안 부른다** —
+# 켜는 절차는 infra/DEPLOY.md 6장(Redis 프로비저닝 → 시크릿 → 워커 프로세스).
+# 여기 선언해 두는 이유는 주기가 코드에 남아 버전 관리되게 하기 위해서다.
+CELERY_BEAT_SCHEDULE = {
+    # 클리닉 감독 자료 수집. 멱등이라 헛돌아도 되고 두 번 돌아도 된다.
+    # 20분 주기인 이유: 회의가 끝나고 자료가 생기기까지 몇 분 걸리고 수집은
+    # 거기에 30분을 더 기다린다. 주기가 그보다 성기면 대기가 주기만큼 통째로
+    # 늘어난다. 한 번 걸러도 다음 차례가 메운다.
+    "clinic-supervision": {
+        "task": "apps.clinic.tasks.collect_clinic_supervision",
+        "schedule": 20 * 60,
+    },
+}
+
 # --- 비밀번호 검증 -------------------------------------------------------
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},

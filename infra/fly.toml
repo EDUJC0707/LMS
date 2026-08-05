@@ -21,18 +21,26 @@ primary_region = "nrt"     # 도쿄
 # 프로세스 그룹. .venv 바이너리 직접 실행 — uv run 이 부팅마다 dev deps 재설치/
 # 바이트컴파일하는 지연 제거.
 #
-# **worker(celery) 는 뺐다**(2026-07-29). 지금 이 저장소에 @shared_task 가 하나도 없고,
+# **worker(celery) 는 뺐다**(2026-07-29). 뺄 당시 이 저장소에 @shared_task 가 하나도 없고,
 # 부르는 곳도 beat 스케줄도 없다. 게다가 REDIS_URL/CELERY_BROKER_URL 시크릿이 없어
 # localhost:6379 로 붙으려다 32초마다 접속 실패 로그만 찍고 있었다.
 # 하는 일 없이 월 $3.32 였다.
 #
-# 되살릴 때: 아래 줄을 풀기 전에 (1) 실제 태스크 (2) Redis 프로비저닝 + 시크릿 주입
-# 이 먼저다. 순서가 반대면 또 에러만 찍는 머신이 선다.
+# **(1) 은 2026-08-04 에 충족됐다** — `apps/clinic/tasks.py` 가 첫 태스크이고
+# beat 일정도 `CELERY_BEAT_SCHEDULE` 에 선언돼 있다(20분 주기, 클리닉 감독 자료
+# 수집). 그런데도 아직 안 켠다: **배포는 보류**(2026-08-04 사용자 지시).
+# 그동안 그 일은 `manage.py collect_clinic_supervision` 로 손으로 돌린다.
+#
+# 되살릴 때: 아래 줄을 풀기 전에 (2) Redis 프로비저닝 + 시크릿 주입이 먼저다.
+# 순서가 반대면 또 에러만 찍는 머신이 선다.
 #   fly redis create                      # Upstash 연동
 #   fly secrets set REDIS_URL=... CELERY_BROKER_URL=... -a edujc-lms
+# **beat 도 같이 띄워야 한다** — worker 만 켜면 태스크는 등록돼 있는데 아무도
+# 부르지 않아 조용히 안 돈다(가장 잦은 실수).
 [processes]
   web = ".venv/bin/gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
   # worker = ".venv/bin/celery -A config worker -l info"
+  # beat   = ".venv/bin/celery -A config beat -l info"
 
 [http_service]
   internal_port = 8000

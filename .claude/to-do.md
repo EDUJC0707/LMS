@@ -126,7 +126,13 @@
 - [ ] CI `FLY_API_TOKEN` 시크릿(현재 미설정이라 자동배포 실행 자체가 안 됨)
 - [ ] Fly `edujc-lms` 헬스체크 critical 상태 원인 확인
 - [ ] **Sentry 붙이기 — 사용자 가입만 남음**(2026-07-28 보류). 코드는 이미 완료: `prod.py`에 `sentry_sdk.init()`(DSN 있으면 활성화, `send_default_pii=False`) + `sentry-sdk>=2.14` 의존성. **남은 건 DSN 하나.** `fly ext sentry create`는 **불가**(7/28 실행 확인: "Sentry is no longer accepting new Fly.io integrations" — Team 1년 무료 딜 소멸) → **sentry.io 직접 가입**(Developer 무료: 에러 5천건/월·1명, LMS 규모엔 충분) → 플랫폼 Django → DSN 복사 → `fly secrets set SENTRY_DSN="<DSN>" -a edujc-lms` → 실제 에러 1건으로 수집 검증. **동기**: `fly logs`가 ~30분만 남아 "어제 왜 500났지"를 사후 추적 못 함(7/28 qbank 500 조사에서 실제로 막힘)
-- [ ] **Celery 워커 + Redis 기동 — 아직 아님**(2026-07-22 결정, 보류 유지). `@shared_task` 0건이라 할 일이 없고 워커는 auto_stop 대상이 아니라 24시간 돌며 월 ~$3.3. **해제 트리거 = 첫 `@shared_task` 작성 시점**(알림톡 발송 또는 영상 처리). 복구 3단계와 경위는 `infra/DEPLOY.md` 6장
+- [ ] **Celery 워커 + Redis 기동 — 트리거는 켜졌지만 배포는 보류**(2026-08-04 갱신).
+  해제 트리거였던 "첫 `@shared_task`" 가 생겼다 — `apps/clinic/tasks.py`(감독 자료
+  수집) + `CELERY_BEAT_SCHEDULE` 20분 주기. **그래도 아직 안 띄운다**(사용자 지시).
+  그동안 그 일은 `manage.py collect_clinic_supervision` 을 손으로 돌려 메운다.
+  띄울 때: Redis 프로비저닝 → 시크릿 → fly.toml 의 `worker` **와 `beat` 둘 다** 주석
+  해제(worker 만 켜면 아무도 안 부른다). 워커는 auto_stop 대상이 아니라 24시간 돌며
+  월 ~$3.3. 경위는 `infra/DEPLOY.md` 6장
 
 ## 외부 대기 (오는 대로 붙임 — 자리는 다 파여 있음)
 
@@ -159,9 +165,13 @@
   준다. **평가 UI 는 나중**(2026-08-04 사용자: *"평가가 아니라 일단은 그냥 과거
   클리닉을 보여주고 결과를 보여주자"*). 지금은 `ai_summary`·`transcript_url` 이
   DB 에 들어오는데 렌더링이 없어 아무도 못 본다
-- [ ] **수집을 무엇이 부를지 미정** — 지금은 손으로 돌리는 관리 명령이다.
-  cron 이냐, 이걸 첫 `@shared_task` 로 삼아 Celery 워커를 켜느냐(그 트리거가
-  '배포 전' 절에 걸려 있다)
+- ~~수집을 무엇이 부를지~~ → **Celery beat 20분 주기**(2026-08-04 확정).
+  코드는 다 섰다 — `apps/clinic/tasks.py`(이 저장소 첫 `@shared_task`) +
+  `CELERY_BEAT_SCHEDULE`. **배포는 보류**(사용자 지시) — 워커·Redis 는 그대로
+  파킹이고 그동안은 `manage.py collect_clinic_supervision` 을 손으로 돌린다.
+  Fly 스케줄 머신(월 $0.16, 워커는 $3.32)을 검토했다가 접었다: 최소 주기가
+  매시라 30분을 못 맞추고, `fly machine run` 이 명령형이라 fly.toml 에 안 잡혀
+  앱을 다시 세우면 조용히 사라지고, Fly 를 떠나면 못 따라간다
 - ~~녹화를 켤지~~ → **끄고 간다**(2026-08-04 확정). Business Standard 로 켤 수는
   있지만 조교·학생 얼굴과 목소리가 영상으로 쌓여 8-1(동의·보관·파기·노무)이
   무거워진다. 전사가 화자·시각까지 잡아 감독 목적은 이미 충족된다.
