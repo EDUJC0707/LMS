@@ -113,7 +113,7 @@ class SettingsWiringTests(SimpleTestCase):
             set(backends), {"카카오알림톡", "문자"}
         )
         for path in backends.values():
-            self.assertIn("solapi", path)
+            self.assertIn("aligo", path)  # 업체 확정(decisions.md §3-1)
             self.assertNotIn("Fake", path)
 
     def test_dev_wires_the_fake_so_local_sending_does_not_leave_the_machine(self):

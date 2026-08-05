@@ -14,6 +14,8 @@ dependencies = [
     "django-storages[s3]>=1.14",
     "gunicorn>=23.0",
     "sentry-sdk>=2.14",
+    # 알림 발송 업체(알리고) HTTP 호출 — apps/notifications/aligo.py 한 곳에서만 쓴다.
+    "requests>=2.32",
 ]
 
 # 개발 전용 의존성 (uv sync --no-dev 로 운영 이미지에서는 제외)
