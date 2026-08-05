@@ -49,13 +49,26 @@ RUNNER_FRACTION = 0.65
 #: 연필이 닿았다고 볼 수 있는 lead 하한 — 개별 판정용이 아니라 **집계용**이다.
 #: 실물 빈칸 267줄의 lead 최대가 32.5 인데 실제 마킹 1033줄의 최소는 29.5 라
 #: 겹친다 — 그래서 이 값으로 문항 하나를 판정하지 않는다. 줄 수를 세는 데만 쓴다:
-#: 잡음(<=32.5)은 40 을 못 넘고, 실물 65장 전부가 40 이상인 줄을 13줄 넘게 가진다.
+#: 잡음은 40 을 못 넘고, 실물 65장 전부가 40 이상인 줄을 13줄 넘게 가진다.
 PENCIL_LEAD_MIN = 40.0
-#: 빈칸 문턱의 절대 하한. 순수 상대 문턱(0.40 x 장 중앙 lead)은 흐린 장에서 인쇄
-#: 잡음 아래로 내려간다 — 실물 세 장(중앙 lead 45.8·57.9·75.3)의 안 칠한 줄에서
-#: ⑤ 글리프가 답으로 승격됐다. 실물 마킹의 최소 lead 가 29.5 라 28 은 마킹을
-#: 하나도 잃지 않으면서 그 아래 잡음(빈 줄 267 중 255)을 자른다.
-LEAD_MIN = 28.0
+#: 확실히 빈칸인 절대 상한 / 확실히 마킹인 절대 하한.
+#: **쌍선형 표본계에서 두 모집단이 갈라졌다** — 실측(65장, 진짜 빈 줄 267 · 마킹
+#: 1033): 빈칸 최대 **11.7**, 마킹 최소 **42.6**. 최근접 표본계에서 29.5 대 32.5 로
+#: 겹쳐 보였던 것은 양자화 잡음이었다("절대값으로는 원리상 못 가른다"는 옛 결론은
+#: 표본계의 산물이지 지면의 성질이 아니었다). 20 과 35 는 그 30 눈금짜리 빈
+#: 구간 안이고, 아래로 1.7배 · 위로 1.2배 여유가 있다.
+BLANK_MAX_ABS = 20.0
+MARK_MIN_ABS = 35.0
+#: 빈칸이라고 확신할 수 있는 상한(장 중앙 lead 대비). 이 위 ~ 마킹 문턱 사이는
+#: **어느 쪽도 아니다** — 접힘·잘림으로 희석된 마킹이 정확히 거기 떨어진다.
+#: 실측: 빈칸 비 최대 0.094 · 마킹 비 최소 0.342 로 그 사이가 통째로 비어 있다.
+#: 그 구간에 든 줄이 하나라도 있으면 **장째 보류**한다 — 희석된 마킹을 조용히
+#: "무응답"으로 채점하는 것이 이 엔진의 마지막 사각지대였다.
+BLANK_MAX_RATIO = 0.15
+#: 표본 자리가 인쇄 격자 위라고 믿기 위한 절대 바닥. 줄 기준선은 인쇄 글리프가
+#: 있어 실물 1300줄 전부 24.5 이상이었다 — 맨 종이는 0~5 다. 이 아래면 격자가
+#: 지면을 벗어난 것이고(접힘·뒤틀림), 그 장의 모든 좌표를 못 믿는다.
+MIN_ROW_FLOOR = 12.0
 #: 버블 반지름의 몇 할까지만 표본할지. 링에 물리면 빈칸이 칠한 것처럼 읽힌다 —
 #: 실제로 보정 전 격자가 링에 얹혔을 때 그 일이 났다.
 INTERIOR_FRACTION = 0.65
@@ -135,8 +148,13 @@ def classify_answers(inks):
     leads = [stats.lead for stats in rows.values()]
     if 2 * sum(lead >= PENCIL_LEAD_MIN for lead in leads) <= len(leads):
         return None
+    if min(stats.floor for stats in rows.values()) < MIN_ROW_FLOOR:
+        return None
     sheet_lead = median(leads)
-    floor_lead = max(LEAD_FRACTION * sheet_lead, LEAD_MIN)
+    floor_lead = max(LEAD_FRACTION * sheet_lead, MARK_MIN_ABS)
+    blank_ceiling = max(BLANK_MAX_RATIO * sheet_lead, BLANK_MAX_ABS)
+    if any(blank_ceiling <= stats.lead < floor_lead for stats in rows.values()):
+        return None
     runner_min = min(RUNNER_MIN, RUNNER_FRACTION * sheet_lead)
     return {
         question: _marked_choices(stats, floor_lead, runner_min)

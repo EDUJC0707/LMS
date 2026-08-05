@@ -202,16 +202,17 @@ def test_vectorised_sampling_clips_out_of_frame_points_like_the_loop():
 
 
 def glyph_noise_row(index):
-    """마킹 없는 줄의 실측 잉크 모사 — 인쇄 글리프만으로 lead 7.5~18 이 남는다.
+    """마킹 없는 줄의 실측 잉크 모사 — 인쇄 글리프만으로 lead 4~11 이 남는다.
 
-    실물 빈칸 267줄의 lead 는 1.5~32.5 였고, 열마다 글리프 잉크가 달라 1등은
-    5·2 번 칸에 쏠렸다(260줄 중 5번 121회 · 2번 67회).
+    **쌍선형 표본계 실측치다**(65장, 진짜 빈 줄 267개): lead 중앙값 4.8 · 최대
+    11.7. 최근접 표본계에서 최대 32.5 로 보이던 것은 양자화 잡음이 얹힌 값이었다.
+    열마다 글리프 잉크가 달라 1등은 5·2 번 칸에 쏠린다.
     """
     rows = (
-        row(c1=33.0, c2=36.0, c3=34.0, c4=31.0, c5=47.0),
-        row(c1=32.0, c2=41.0, c3=35.0, c4=30.0, c5=38.0),
-        row(c1=34.0, c2=37.0, c3=44.0, c4=32.0, c5=40.0),
-        row(c1=31.0, c2=35.0, c3=33.0, c4=36.0, c5=52.0),
+        row(c1=33.0, c2=36.0, c3=34.0, c4=31.0, c5=42.0),
+        row(c1=32.0, c2=38.0, c3=35.0, c4=30.0, c5=36.0),
+        row(c1=34.0, c2=37.0, c3=39.0, c4=32.0, c5=38.0),
+        row(c1=31.0, c2=35.0, c3=33.0, c4=34.0, c5=43.0),
     )
     return dict(rows[index % 4])
 
@@ -314,11 +315,11 @@ def test_reports_all_five_when_everything_is_filled():
 def test_glyph_noise_stays_blank_on_a_faint_sheet():
     """흐린 장에서도 인쇄 글리프는 답이 아니다 — 상대 문턱만으로는 새어 나간다.
 
-    실물 세 장(중앙 lead 45.8·57.9·75.3)의 안 칠한 줄에서 5번 글리프가 답으로
-    승격됐다(lead 21.9·24.7·30.3). 절대 하한 28 이 그 아래를 자른다.
+    실물 세 장의 안 칠한 줄에서 5번 글리프가 답으로 승격됐다. 쌍선형 실측에서
+    진짜 빈 줄의 lead 는 최대 11.7 이고, 절대 상한 20 이 그 위를 자른다.
     """
     inks = varied_sheet(lead=46)
-    inks[5] = row(c1=31.5, c2=47.0, c3=35.0, c4=31.5, c5=53.0)
+    inks[5] = row(c1=31.5, c2=38.0, c3=35.0, c4=31.5, c5=41.0)
 
     assert read.classify_answers(inks)[5] == ()
 
@@ -334,3 +335,29 @@ def test_flags_an_x_cancel_in_a_light_glyph_cell():
     inks[5] = row(c1=31.5, c2=78.0, c3=35.0, c4=62.0, c5=49.0)
 
     assert read.classify_answers(inks)[5] == (2, 4)
+
+
+def test_holds_a_sheet_when_a_row_reads_bare_paper():
+    """줄 기준선이 맨 종이면 격자가 지면을 벗어난 것이다 — 장째 보류.
+
+    실물 1040줄의 기준선은 전부 24.5 이상이었다(칸마다 인쇄 글리프가 있으니
+    잉크가 반드시 남는다). 맨 종이는 0~5 다. 접힘·뒤틀림으로 표본이 격자 밖으로
+    나가면 여기서 걸린다 — 실측: 국소 40px 뒤틀림에서 65장 전원 보류.
+    """
+    inks = varied_sheet(lead=90)
+    inks[7] = row(c1=2.0, c2=3.0, c3=2.5, c4=1.0, c5=3.5)
+
+    assert read.classify_answers(inks) is None
+
+
+def test_holds_a_sheet_with_a_half_strength_mark():
+    """빈칸도 마킹도 아닌 줄이 하나라도 있으면 장째 보류다.
+
+    실측(65장·1040줄): 빈칸의 lead 비는 최대 0.094, 마킹은 최소 0.342 로 그
+    사이가 통째로 비어 있다. 접힘·잘림으로 희석된 마킹이 정확히 거기 떨어지는데,
+    예전 규칙은 그걸 조용히 "무응답"으로 채점했다 — 학생이 답한 문항이 빈칸이 된다.
+    """
+    inks = varied_sheet(lead=100)
+    inks[6] = row(c1=30.0, c2=30.0, c3=50.0, c4=30.0, c5=30.0)
+
+    assert read.classify_answers(inks) is None
