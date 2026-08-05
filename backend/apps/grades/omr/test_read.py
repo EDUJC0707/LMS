@@ -143,23 +143,28 @@ def test_glyph_ink_on_a_faint_sheet_stays_single():
 
 
 def scalar_sample_cells(image, frame, cells, radius):
-    """벡터화 전의 원본 루프 — sample_cells 등가의 기준 구현.
+    """벡터화 전의 셀 단위 루프 — sample_cells 등가의 기준 구현(쌍선형).
 
-    실물 65장 전수(잉크 6,500개)에서 벡터판과 바이트 단위로 일치함을 확인했다
-    (2026-08-05). 여기서는 그 등가를 합성 이미지로 고정한다.
+    벡터판이 (셀 x 표본점)을 한 번에 처리하면서도 표본점별 누적 순서를 지키는지
+    고정한다. 표본이 한 자리만 어긋나거나 합산 순서가 바뀌면 마지막 비트가 갈린다.
     """
     height, width = image.shape
     offsets = read._interior_offsets(radius)
-    inks = {}
-    for key, (u, v) in cells:
-        total = 0.0
-        for offset_u, offset_v in offsets:
+    totals = {key: 0.0 for key, _ in cells}
+    for offset_u, offset_v in offsets:
+        for key, (u, v) in cells:
             x, y = frame.to_source(u + offset_u, v + offset_v)
-            column = min(max(int(round(x)), 0), width - 1)
-            row = min(max(int(round(y)), 0), height - 1)
-            total += image[row, column]
-        inks[key] = 255.0 - total / len(offsets)
-    return inks
+            column = min(max(int(np.floor(x)), 0), width - 2)
+            row = min(max(int(np.floor(y)), 0), height - 2)
+            fx = min(max(x - column, 0.0), 1.0)
+            fy = min(max(y - row, 0.0), 1.0)
+            totals[key] += (
+                (1 - fx) * (1 - fy) * image[row, column]
+                + fx * (1 - fy) * image[row, column + 1]
+                + (1 - fx) * fy * image[row + 1, column]
+                + fx * fy * image[row + 1, column + 1]
+            )
+    return {key: 255.0 - total / len(offsets) for key, total in totals.items()}
 
 
 def assert_bit_identical(actual, expected):
@@ -260,3 +265,72 @@ def test_still_reads_a_sheet_when_marks_hold_the_majority():
     assert readings is not None
     assert all(readings[question] == (3,) for question in range(1, 10))
     assert all(readings[question] == () for question in range(10, 17))
+
+
+def varied_sheet(lead=90, count=16):
+    """답이 흩어진 장 — 한 선택지만 계속 찍으면 그 열의 중앙값까지 오염된다."""
+    answers = (1, 4, 2, 5, 3, 1, 4, 2, 5, 3, 1, 4, 2, 5, 3, 1)
+    return {
+        question: {
+            choice: (30.0 + lead if choice == answers[(question - 1) % 16] else 30.0)
+            for choice in range(1, 6)
+        }
+        for question in range(1, count + 1)
+    }
+
+
+def test_reports_all_three_marks_when_a_row_has_three():
+    """세 칸을 칠하면 셋 다 넘긴다 — 줄 기준선만 쓰면 하나만 나간다.
+
+    "나머지 넷"에 마킹이 둘 들어와 기준선이 마킹 높이의 절반까지 오르기 때문이다.
+    장 중앙 lead 가 100 미만이면 발생하고, 코퍼스의 25%(16/65장)가 그 아래다.
+    """
+    inks = varied_sheet(lead=90)
+    inks[5] = row(c1=120.0, c2=120.0, c3=120.0, c4=30.0, c5=30.0)
+
+    assert read.classify_answers(inks)[5] == (1, 2, 3)
+
+
+def test_reports_four_marks_instead_of_blank():
+    """넉 칸을 칠하면 넷 다 넘긴다 — 줄 기준선만 쓰면 **빈칸**이 나간다.
+
+    넉 칸이면 나머지 넷의 중앙값이 마킹 그 자체가 되어 높이가 전부 0 이 된다.
+    학생이 넷을 칠했는데 "무응답"으로 채점되는, 아무 신호 없는 오답이다.
+    """
+    inks = varied_sheet(lead=120)
+    inks[5] = row(c1=150.0, c2=150.0, c3=150.0, c4=150.0, c5=30.0)
+
+    assert read.classify_answers(inks)[5] == (1, 2, 3, 4)
+
+
+def test_reports_all_five_when_everything_is_filled():
+    """다섯 칸 전부 칠해도 빈칸이 아니다 — 사람에게 넘어가야 할 장이다."""
+    inks = varied_sheet(lead=120)
+    inks[5] = row(c1=150.0, c2=150.0, c3=150.0, c4=150.0, c5=150.0)
+
+    assert read.classify_answers(inks)[5] == (1, 2, 3, 4, 5)
+
+
+def test_glyph_noise_stays_blank_on_a_faint_sheet():
+    """흐린 장에서도 인쇄 글리프는 답이 아니다 — 상대 문턱만으로는 새어 나간다.
+
+    실물 세 장(중앙 lead 45.8·57.9·75.3)의 안 칠한 줄에서 5번 글리프가 답으로
+    승격됐다(lead 21.9·24.7·30.3). 절대 하한 28 이 그 아래를 자른다.
+    """
+    inks = varied_sheet(lead=46)
+    inks[5] = row(c1=31.5, c2=47.0, c3=35.0, c4=31.5, c5=53.0)
+
+    assert read.classify_answers(inks)[5] == ()
+
+
+def test_flags_an_x_cancel_in_a_light_glyph_cell():
+    """글리프가 가벼운 칸(1·4번) 위의 X 취소도 잡는다.
+
+    줄 기준선은 무거운 칸(5번 47.0)과 가벼운 칸(1번 31.6)을 한 값으로 뭉개
+    가벼운 칸 마킹의 높이를 약 15 깎는다 — 제일 흐린 장에서 진짜 X 가 복수
+    문턱 밑으로 숨었다. 열 기준선이 그 차이를 되살린다.
+    """
+    inks = varied_sheet(lead=46)
+    inks[5] = row(c1=31.5, c2=78.0, c3=35.0, c4=62.0, c5=49.0)
+
+    assert read.classify_answers(inks)[5] == (2, 4)

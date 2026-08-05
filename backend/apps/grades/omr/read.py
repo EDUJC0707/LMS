@@ -17,8 +17,10 @@
 
 ## 임계값의 근거
 
-- `LEAD_FRACTION = 0.40` — 장 중앙 lead 의 40% 미만이면 빈칸으로 본다.
-  0.35~0.50 구간에서 결과가 동일했다(1029/4/7 고정) — 고원 한가운데 값이다
+- `LEAD_FRACTION = 0.25` — 장 중앙 lead 의 25% 미만이면 빈칸으로 본다.
+  **옛 0.40 과 "0.35~0.50 고원"은 최근접 표본계의 산물이었다.** 쌍선형 11x11 로
+  바꾸니 부분 마킹의 참값이 드러나 고원이 **0.20~0.35** 로 옮겨갔고, 0.40 에서는
+  칸을 벗어나게 칠한 실제 답 2건이 죽는다(1027/4/9). 0.25 는 새 고원 안이다
 - 복수 마킹 문턱은 `min(RUNNER_MIN, RUNNER_FRACTION x 장 중앙 lead)` 다.
   절대값 하나만 쓰면 문턱이 장에 따라 중앙 lead 의 0.32배(중앙 154)에서
   1.03배(중앙 48.5)까지 벌어진다 — **감도가 3.18배 갈린다.** 실물 X 넷의 2등은
@@ -39,7 +41,7 @@ from statistics import median
 import numpy as np
 
 #: 장 중앙 lead 대비 이 비율 미만이면 빈칸 — 모듈 docstring 참조.
-LEAD_FRACTION = 0.40
+LEAD_FRACTION = 0.25
 #: 2등이 줄 기준선보다 이만큼 위면 복수 마킹 — **절대 하한**. 상대 문턱과 함께 쓴다.
 RUNNER_MIN = 50.0
 #: 2등이 장 중앙 lead 의 이 비율을 넘어도 복수 마킹 — 흐린 장을 위한 눈금.
@@ -49,11 +51,19 @@ RUNNER_FRACTION = 0.65
 #: 겹친다 — 그래서 이 값으로 문항 하나를 판정하지 않는다. 줄 수를 세는 데만 쓴다:
 #: 잡음(<=32.5)은 40 을 못 넘고, 실물 65장 전부가 40 이상인 줄을 13줄 넘게 가진다.
 PENCIL_LEAD_MIN = 40.0
+#: 빈칸 문턱의 절대 하한. 순수 상대 문턱(0.40 x 장 중앙 lead)은 흐린 장에서 인쇄
+#: 잡음 아래로 내려간다 — 실물 세 장(중앙 lead 45.8·57.9·75.3)의 안 칠한 줄에서
+#: ⑤ 글리프가 답으로 승격됐다. 실물 마킹의 최소 lead 가 29.5 라 28 은 마킹을
+#: 하나도 잃지 않으면서 그 아래 잡음(빈 줄 267 중 255)을 자른다.
+LEAD_MIN = 28.0
 #: 버블 반지름의 몇 할까지만 표본할지. 링에 물리면 빈칸이 칠한 것처럼 읽힌다 —
 #: 실제로 보정 전 격자가 링에 얹혔을 때 그 일이 났다.
 INTERIOR_FRACTION = 0.65
-#: 표본점 격자 — 안쪽 타원에 드는 점만 쓴다(7x7 중 29점).
-_SAMPLE_STEPS = 7
+#: 표본점 격자 — 안쪽 타원에 드는 점만 쓴다(11x11 중 77점).
+#: 7x7(29점)은 정답을 낼 수 있는 **최소** 밀도였고, 그때 INTERIOR_FRACTION 이
+#: 통하는 대역은 0.65~0.70 두 칸뿐이었다(9x9 는 0.7·0.9 에서 도로 깨진다 —
+#: 비단조성 자체가 양자화 잡음의 징후다). 11x11 은 0.6~1.0 전 대역에서 안정하다.
+_SAMPLE_STEPS = 11
 
 
 def sample_cells(image, frame, cells, radius):
@@ -70,15 +80,23 @@ def sample_cells(image, frame, cells, radius):
     height, width = image.shape
     if not cells:
         return {}
-    offsets = np.array(_interior_offsets(radius), dtype=np.float64)
+    offsets = _interior_offsets(radius)
     keys = [key for key, _ in cells]
     centers = np.array([center for _, center in cells], dtype=np.float64)
-    points = (centers[:, None, :] + offsets[None, :, :]).reshape(-1, 2)
-    xs, ys = frame.to_source_many(points)
-    columns = np.clip(np.rint(xs).astype(np.intp), 0, width - 1)
-    rows = np.clip(np.rint(ys).astype(np.intp), 0, height - 1)
-    samples = image[rows, columns].reshape(len(keys), -1)
-    inks = 255.0 - samples.sum(axis=1, dtype=np.float64) / len(offsets)
+    totals = np.zeros(len(keys), dtype=np.float64)
+    for offset in offsets:
+        xs, ys = frame.to_source_many(centers + offset)
+        columns = np.clip(np.floor(xs).astype(np.intp), 0, width - 2)
+        rows = np.clip(np.floor(ys).astype(np.intp), 0, height - 2)
+        fx = np.clip(xs - columns, 0.0, 1.0)
+        fy = np.clip(ys - rows, 0.0, 1.0)
+        totals += (
+            (1 - fx) * (1 - fy) * image[rows, columns]
+            + fx * (1 - fy) * image[rows, columns + 1]
+            + (1 - fx) * fy * image[rows + 1, columns]
+            + fx * fy * image[rows + 1, columns + 1]
+        )
+    inks = 255.0 - totals / len(offsets)
     return dict(zip(keys, inks))
 
 
@@ -108,14 +126,17 @@ def classify_answers(inks):
     절대값으로 안 갈리므로(마킹 최소 29.5 < 잡음 최대 32.5) 몇 줄만 골라 살리지
     않고 장째 사람에게 넘긴다 — 방향을 못 가릴 때 보류하는 locate_card 와 같은 태도다.
     """
-    rows = {question: _row_stats(cells) for question, cells in inks.items()}
-    if not rows:
+    if not inks:
         return {}
+    column_floors = _column_floors(inks)
+    rows = {
+        question: _row_stats(cells, column_floors) for question, cells in inks.items()
+    }
     leads = [stats.lead for stats in rows.values()]
     if 2 * sum(lead >= PENCIL_LEAD_MIN for lead in leads) <= len(leads):
         return None
     sheet_lead = median(leads)
-    floor_lead = LEAD_FRACTION * sheet_lead
+    floor_lead = max(LEAD_FRACTION * sheet_lead, LEAD_MIN)
     runner_min = min(RUNNER_MIN, RUNNER_FRACTION * sheet_lead)
     return {
         question: _marked_choices(stats, floor_lead, runner_min)
@@ -135,13 +156,42 @@ class _RowStats:
         self.top = top
 
 
-def _row_stats(cells):
-    """나머지 넷의 중앙값을 기준선으로 삼는다 — 칠해진 칸 하나가 기준선을 끌어올리지 못한다."""
-    ordered = sorted(cells.items(), key=lambda item: item[1], reverse=True)
-    top_choice = ordered[0][0]
-    floor = median(ink for _, ink in ordered[1:])
-    heights = {choice: ink - floor for choice, ink in cells.items()}
-    return _RowStats(floor, heights[top_choice], heights, top_choice)
+def _column_floors(inks):
+    """선택지별 잉크 중앙값 — 그 열의 "안 칠한 값"이다.
+
+    줄 기준선은 글리프가 무거운 칸(⑤ 47.0)과 가벼운 칸(① 31.6)을 한 값으로 뭉갠다 —
+    가벼운 칸 위의 마킹은 높이가 약 15 깎인다. 열 중앙값은 그 차이를 그대로 담는다.
+    한 열이 문항 절반 넘게 칠해지면 이 중앙값도 오염되지만, 그때는 줄 기준선이
+    살아 있으므로 min 이 막는다.
+    """
+    return {
+        choice: median(cells[choice] for cells in inks.values())
+        for choice in next(iter(inks.values()))
+    }
+
+
+def _row_stats(cells, column_floors):
+    """칸의 기준선 = min(줄의 나머지 넷 중앙값, 그 열의 장 중앙값).
+
+    줄 기준선 하나만 쓰면 두 방향으로 깨진다(실측):
+
+    - **세 칸을 칠하면** "나머지 넷"에 마킹이 둘 들어와 기준선이 마킹 높이의 절반까지
+      올라간다 — 높이가 반토막 나 셋 중 **하나만** 확신 단일로 나간다(장 중앙 lead
+      100 미만, 코퍼스의 25%). **넉 칸이면 기준선이 마킹 그 자체**가 되어 전 장에서
+      **빈칸**으로 나간다 — 학생이 넷을 칠했는데 "무응답"이 된다
+    - **글리프가 가벼운 칸**(①·④)의 마킹은 높이가 약 15 깎여, 제일 흐린 장에서는
+      진짜 X 취소 흔적이 복수 문턱 밑으로 숨는다
+
+    열 중앙값은 줄 안의 마킹 수와 무관하고, 줄 중앙값은 열 안의 마킹 수와 무관하다 —
+    min 은 둘 중 오염되지 않은 쪽을 고른다.
+    """
+    row_floor = median(sorted(cells.values())[:4])
+    heights = {
+        choice: ink - min(row_floor, column_floors[choice])
+        for choice, ink in cells.items()
+    }
+    top_choice = max(heights, key=heights.get)
+    return _RowStats(row_floor, heights[top_choice], heights, top_choice)
 
 
 def _marked_choices(stats, floor_lead, runner_min):
