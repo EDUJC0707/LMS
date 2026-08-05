@@ -76,7 +76,7 @@ fly secrets set \
   CSRF_TRUSTED_ORIGINS="https://edujc-lms.fly.dev" \
   CORS_ALLOWED_ORIGINS="https://<프론트도메인>" \
   -a edujc-lms
-#   (SENTRY_DSN 은 Sentry 프로젝트 만들면 추가)
+#   (SENTRY_DSN 은 8장 — 가입부터 수집 검증까지 절차가 거기 있다)
 
 # 2-6) 배포 (⚠️ 레포 루트에서, 빌드 컨텍스트=루트 → -c 로 fly.toml 지정)
 cd /path/to/LMS
@@ -235,6 +235,123 @@ lsof -nP -iTCP:15432 -sTCP:LISTEN     # 아무것도 안 나오면 프록시가 
 - `fly proxy 5432:5432` → bind 실패
 - DBeaver가 `localhost:5432`로 붙으면 fly DB가 아니라 **로컬 도커 DB(lms/lms/lms)에 조용히 연결된다**
   → "연결은 되는데 테이블이 비어 있다" 증상의 정체. 반드시 **15432** 같은 다른 포트를 쓴다.
+
+---
+
+## 8. Sentry — 에러 추적 ✅ 가동 중 (2026-08-04)
+
+> **이미 붙어 있다.** 조직 EDUJC · US 리전 · Developer(무료) · 프로젝트 `edujc-lms`.
+> `SENTRY_DSN` 은 `fly secrets` 에 들어 있고, 실제 500 한 건으로 수집을 확인했다
+> (이슈 `EDUJC-LMS-1` — `RuntimeError: Sentry 수집 확인용 예외`). 확인 후
+> `SENTRY_DEBUG_TOKEN` 은 회수했고 `/sentry-debug` 는 다시 404 다.
+> 아래는 **다시 세팅할 일이 생겼을 때**(DSN 교체·재발급·다른 앱에 붙일 때) 그대로 따라갈 절차다.
+
+**왜 붙였나**: `fly logs` 는 약 30분치만 남는다. "어제 왜 500 났지"를 사후에 추적할
+수단이 없어 2026-07-28 qbank 500 조사에서 실제로 막혔다.
+
+코드는 붙어 있다(`backend/config/observability.py`). **`SENTRY_DSN` 이 비면 아무것도
+하지 않는다** — 로컬·테스트에서는 꺼진 채로 돈다. 계약은 `backend/config/tests.py` 가 지킨다.
+
+### 8-1. DSN 발급 — 사람이 해야 한다
+
+`fly ext sentry create` 는 **안 된다**(2026-07-28 실행 확인: *"Sentry is no longer
+accepting new Fly.io integrations"* — Fly 경유 Team 1년 무료 딜은 소멸). sentry.io 에 직접 가입한다.
+
+1. <https://sentry.io/signup/> 가입 (Developer 플랜 무료 — 1인·소규모 한도)
+2. 조직 이름 정하고 → **Create Project** → 플랫폼 **Django** 선택
+3. 온보딩 코드 스니펫의 `dsn="https://…@…ingest…sentry.io/…"` 에서 **따옴표 안 URL 만** 복사
+   - 지나쳤으면: **Settings → Projects → \<프로젝트\> → Client Keys (DSN)**
+4. 온보딩이 시키는 코드 붙여넣기·패키지 설치는 **하지 않는다.** 이미 다 돼 있다
+
+> DSN 은 비밀번호가 아니라 공개 키에 가깝다(브라우저 SDK 에도 박히는 값). 그래도
+> 알면 아무나 우리 프로젝트에 이벤트를 밀어넣어 한도를 태울 수 있으니 **저장소에 넣지 않는다.**
+
+### 8-2. 주입
+
+```bash
+export PATH="$HOME/.fly/bin:$PATH"
+fly secrets set SENTRY_DSN="<복사한 DSN>" -a edujc-lms     # 시크릿을 넣으면 앱이 재배포·재시작된다
+```
+
+DSN 형식이 잘못돼도 **부팅은 죽지 않는다.** 대신 꺼진 채로 뜨고 로그에 경고가 남는다 —
+`fly logs -a edujc-lms` 에 `SENTRY_DSN 형식이 올바르지 않아` 가 보이면 값을 다시 넣는다.
+
+### 8-3. 검증 — 실제 에러 1건을 일부러 낸다
+
+`/sentry-debug` 는 **토큰이 맞을 때만** 500 을 낸다(토큰이 없으면 404). 상시 열린
+500 엔드포인트를 두지 않으려는 것이고, 확인이 끝나면 토큰을 빼서 다시 닫는다.
+
+```bash
+# 1) 확인용 열쇠를 잠깐 건다
+TOKEN="$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')"
+fly secrets set SENTRY_DEBUG_TOKEN="$TOKEN" -a edujc-lms
+
+# 2) 진짜 웹 요청으로 500 을 낸다 (gunicorn → Django → Sentry 전 경로를 탄다)
+curl -i "https://edujc-lms.fly.dev/sentry-debug?token=$TOKEN"
+#    → HTTP/2 500.   토큰이 없거나 틀리면 404 다.
+
+# 3) Sentry → Issues 에 몇 초 안에 뜬다:
+#    RuntimeError: Sentry 수집 확인용 예외      (culprit: config.urls in sentry_debug)
+#    안 뜨면 → fly logs -a edujc-lms 로 경고 확인 → DSN 재확인
+
+# 4) 확인 끝나면 열쇠를 뺀다 — 경로가 다시 404 가 된다
+fly secrets unset SENTRY_DEBUG_TOKEN -a edujc-lms
+curl -i "https://edujc-lms.fly.dev/sentry-debug?token=$TOKEN"    # → 404 여야 한다
+```
+
+이슈가 떴으면 **그 이슈 화면에서 아래 3개를 눈으로 확인한다**(8-4 가 지켜졌는지):
+`request` 에 본문(`data`)이 없을 것 · 쿼리 값이 `[Filtered]` 일 것 · 스택 프레임에
+`Local variables` 가 없을 것.
+
+### 8-4. 무엇을 보내고 무엇을 막나
+
+보내는 것은 **예외와 그 예외가 난 위치**뿐이다. 학생 이름·전화번호가 실릴 수 있는 자리는 전부 막았다.
+
+| 자리 | 어떻게 막나 |
+|---|---|
+| 요청 본문 | `max_request_body_size="never"` + `before_send` 에서 제거 |
+| 쿼리스트링 | `before_send` 에서 값 마스킹(`q=[Filtered]`) — 키는 남긴다 |
+| 스택 지역변수 | `include_local_variables=False` |
+| 쿠키·세션·IP·로그인 계정 | `send_default_pii=False` |
+
+`send_default_pii=False` **하나로는 위의 앞 셋이 막히지 않는다** — 각각 다른 옵션 소관이고,
+SDK 기본 스크러버는 `password`·`token` 류만 잡는다(이름·전화번호는 그대로 통과). 이름과
+휴대폰 번호는 미성년 학생의 개인정보이고 Sentry 는 국외 서비스라, 기본값을 **안 보내는 쪽**으로 뒀다.
+
+> 되짚어야 할 때(예: 요청 본문이 꼭 필요한 버그) 는 `config/observability.py` 한 곳만 고치면 되고,
+> 고치는 순간 `config/tests.py` 가 빨개진다 — 실수로 열리지는 않는다는 뜻이다.
+
+**추정이 아니라 실측이다**(2026-08-04). 가짜 수집 서버로 DSN 을 돌리고 prod 설정 + 진짜 WSGI
+(운영과 같은 `config.wsgi.application`)로 500 을 낸 뒤, 나가는 엔벨로프를 그대로 열어 봤다.
+학생 이름·휴대폰·비밀번호를 쿼리와 본문에 둘 다 실어 보냈고 결과는 —
+
+```
+남은 것:  RuntimeError | Sentry 수집 확인용 예외
+          url=…/sentry-debug · method=POST · transaction=/sentry-debug
+          마지막 프레임 config/urls.py:36 sentry_debug
+막힌 것:  query_string='token=[Filtered]&q=[Filtered]&page=[Filtered]'
+          data=None · user=None · cookies=None · 지역변수 실린 프레임 없음
+          headers = Host/User-Agent/Content-Type 등 무해한 것만
+페이로드 원문에서 이름·전화번호·비밀번호 검색 → 0건
+```
+
+즉 **어느 엔드포인트에서 몇 번째 줄이 터졌는지는 남고, 누구의 무엇이었는지는 안 남는다.**
+
+성능 추적은 `traces_sample_rate=0.1`(요청 10건 중 1건)로 켜져 있다. 에러 한도와 별개 항목이라
+한도를 태우면 이 값을 0 으로 내린다.
+
+### 8-5. 한도·범위에 관해 같이 실측한 것 (2026-08-04)
+
+- **500 한 건 = 이벤트 1건.** Django 가 500 마다 `django.request` 로 ERROR 로그도 남기지만
+  중복 이벤트가 되지 않는다. 무료 한도(에러 5천건/월)가 반으로 줄지 않는다는 뜻이다
+- **Celery 도 이미 잡힌다.** 활성 통합에 `celery`·`redis`·`boto3` 가 자동으로 들어간다
+  (`prod.py` 는 Django 만 명시하지만 SDK 가 설치된 패키지를 감지해 붙인다). 워커를 띄우는
+  날(6장) 알림 발송 태스크 실패는 별도 작업 없이 수집된다
+- **`release` 는 빌드가 넣는다**(2026-08-04 처리). 이미지에 `.git` 이 없어 SDK 가 스스로
+  추론할 수단이 없다 → `Dockerfile` 의 `ARG GIT_SHA` → `ENV SENTRY_RELEASE`.
+  넘기는 쪽은 두 군데뿐이다: CI(`--build-arg GIT_SHA=${{ github.sha }}`)와 `make deploy`.
+  **`fly deploy` 를 손으로 직접 치면 태그가 조용히 사라진다** — 그래서 `make deploy` 가 있다.
+  로컬 도커 빌드로 실측: 인자를 넘기면 `options['release']` 가 그 값, 안 넘기면 `None`
 
 ---
 

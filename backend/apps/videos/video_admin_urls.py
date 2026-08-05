@@ -19,6 +19,11 @@ urlpatterns = [
         name="admin-video-course-weeks",
     ),
     path(
+        "admin/videos/uploads",
+        views.AdminVideoUploadView.as_view(),
+        name="admin-video-upload",
+    ),
+    path(
         "admin/videos/<int:video_id>",
         views.AdminVideoDetailView.as_view(),
         name="admin-video-detail",
@@ -27,6 +32,11 @@ urlpatterns = [
         "admin/videos/<int:video_id>/publish",
         views.AdminVideoPublishView.as_view(),
         name="admin-video-publish",
+    ),
+    path(
+        "admin/videos/<int:video_id>/sync",
+        views.AdminVideoSyncView.as_view(),
+        name="admin-video-sync",
     ),
     path(
         "admin/videos/<int:video_id>/archive",

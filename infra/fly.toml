@@ -35,12 +35,16 @@ primary_region = "nrt"     # 도쿄
 # 순서가 반대면 또 에러만 찍는 머신이 선다.
 #   fly redis create                      # Upstash 연동
 #   fly secrets set REDIS_URL=... CELERY_BROKER_URL=... -a edujc-lms
-# **beat 도 같이 띄워야 한다** — worker 만 켜면 태스크는 등록돼 있는데 아무도
-# 부르지 않아 조용히 안 돈다(가장 잦은 실수).
+#
+# **`-B` 로 beat 를 워커 안에 넣는다.** Fly 는 프로세스 그룹마다 머신을 하나씩
+# 띄우므로 worker·beat 를 따로 적으면 월 $3.32 가 두 번 나간다. 워커가 하나뿐이라
+# 스케줄이 중복 발행될 여지가 없고, 태스크도 멱등이라 합쳐도 안전하다.
+# (워커를 2대 이상으로 늘리는 날에는 beat 를 반드시 분리해야 한다 — 안 그러면
+#  같은 시각에 여러 머신이 같은 작업을 발행한다.)
+# beat 를 빠뜨리면 태스크는 등록돼 있는데 아무도 부르지 않아 조용히 안 돈다.
 [processes]
   web = ".venv/bin/gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
-  # worker = ".venv/bin/celery -A config worker -l info"
-  # beat   = ".venv/bin/celery -A config beat -l info"
+  # worker = ".venv/bin/celery -A config worker -B -l info"
 
 [http_service]
   internal_port = 8000

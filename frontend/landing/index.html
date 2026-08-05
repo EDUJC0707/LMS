@@ -15,6 +15,15 @@
 <link rel="icon" type="image/png" sizes="32x32" href="assets/logo/atom-32.png">
 <link rel="icon" type="image/png" sizes="512x512" href="assets/logo/atom-512.png">
 <link rel="apple-touch-icon" href="assets/logo/atom-180.png">
+<!-- 채널톡 플러그인 키가 서는 자리. 비어 있으면 위젯이 뜨지 않는다(chat.js).
+     발급: 채널톡 웹 데스크 좌측 하단 → 채널 설정 > 일반 설정 > 버튼 설치 및 설정.
+     설치 화면이 주는 <script> 스니펫은 붙여넣지 말 것 — 부트는 chat.js 가 이미 한다.
+
+     시크릿이 아니라 여기에 그냥 적는다. 채널톡 부트 스니펫이 페이지 소스에 노출하는
+     공개 값이고, 신원 위조를 막는 건 서버 쪽 memberHash 다.
+     **클래식 스크립트인 것이 계약이다** — chat.js 는 모듈이라 defer 로 늦게 도는 반면
+     이 줄은 파싱 중 즉시 실행돼 항상 먼저 선다. 비동기로 넣으면 키를 놓친다. -->
+<script>window.__CHANNEL_TALK_KEY__ = '';</script>
 <!-- SUIT 가변 — 본체 앱(frontend/index.html)과 같은 서체로 간다.
      가변이라 100~900을 한 파일로 쓰고, 헤드라인은 900까지 밀어붙인다. -->
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -340,6 +349,12 @@
     .scope{ padding-top:.3rem; line-height:1.8 }
     .step-no{ padding-left:1.4rem; font-size:1.3rem }
 
+    /* 채널톡 런처가 앉을 자리를 비운다. 런처는 화면 오른쪽 아래에 고정으로 뜨는데
+       (24px 안쪽, 56px 크기 — 채널톡 번들 실측) 좁은 화면에서는 사업자 정보가
+       거기까지 흘러 내려와 `주소` 를 덮었다(390px 22×22 · 430px 8×22 실측).
+       세이프에어리어를 더해도 겹침이 남아서 아래를 그만큼 비운다.
+       600px 부터는 사업자 정보가 런처까지 닿지 않아 여기(모바일)에만 건다. */
+    footer{ padding-bottom:calc(env(safe-area-inset-bottom) + 24px + 56px + 16px) }
   }
   /* prefers-reduced-motion 은 JS 가 처리한다 — 정적 1프레임만 그린다.
      CSS 로 배경을 끄면 히어로가 통째로 검게 남는다. */

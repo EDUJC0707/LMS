@@ -21,6 +21,15 @@ RUN uv sync --no-dev
 # 2) 앱 소스
 COPY backend/ /app/
 
+# 3) 이 이미지가 어느 커밋인지 — Sentry 의 release 태그.
+#    **여기 위치가 중요하다**: ARG/ENV 는 뒤따르는 레이어의 캐시를 무효화하므로,
+#    커밋마다 값이 바뀌는 이 줄은 의존성 설치(uv sync) 뒤에 와야 한다.
+#    이미지에는 `.git` 이 없어 SDK 가 스스로 추론할 방법이 없다 — 빌드가 안 넣어 주면
+#    release 없이 뜨고, "어제 500 났는데 어느 배포냐"에 답할 수 없다.
+#    넘기는 쪽: CI 는 `.github/workflows/fly-deploy.yml`, 손배포는 `make deploy`.
+ARG GIT_SHA=""
+ENV SENTRY_RELEASE=$GIT_SHA
+
 EXPOSE 8000
 
 # 웹 프로세스 기본 커맨드(워커는 fly.toml [processes] 에서 커맨드만 교체).

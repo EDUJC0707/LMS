@@ -14,6 +14,13 @@
  * 덤으로 권한 검사도 재생 시점에 걸린다 — 목록만 열어 두고 몇 시간 뒤 재생하는
  * 경우에도 7일 만료가 제대로 잡힌다.
  *
+ * ## 재생 참조는 서버가 정한다
+ *
+ * 시드 데이터는 재생될 수 없는 가짜 참조(`seed-*`)를 갖는데, 그 대체를 **서버가**
+ * 한다(playback.resolve_ref). 여기서 갈아치우면 서명은 원래 값 앞으로 나가고
+ * 재생은 다른 자산이 되어 Mux 가 거부한다 — 실제로 그렇게 죽었다(2026-08-04).
+ * 프런트는 서버가 준 `external_ref` 와 `tokens` 를 **그대로** 쓴다.
+ *
  * ## 워터마크는 플레이어 **안쪽**이다
  *
  * 바깥 래퍼에 얹으면 전체화면에서 사라진다(플레이어 요소만 전체화면이 되므로).
@@ -35,34 +42,13 @@ import {
 } from "../../components";
 import "./video.css";
 
-/**
- * 실계정 전환 지점 — 여기만 갈아 끼우면 된다.
- *
- * Mux 계정이 아직 없다(결제를 런칭 직전으로 미룸 — docs/decisions.md §3).
- * 서버가 내리는 `provider`·`external_ref` 가 채워지면 그 값을 쓰고, 비어 있는
- * 동안은 Mux 공개 데모 재생 ID 로 화면을 확인한다.
- */
-const DEMO_PLAYBACK_ID = "qxb01i6T202018GFS02vp9RIe01icTcDCjVzQpmaB00CUisJ4";
-
-/** 시드가 넣는 가짜 참조의 접두 — 실제 Mux 값이 아니라는 표시(seed_demo.py). */
-const SEED_REF_PREFIX = "seed-";
-
-function playbackIdOf(video: PlaybackVideo): string {
-  if (video.provider !== "mux" || !video.external_ref) return DEMO_PLAYBACK_ID;
-  // 시드 데이터는 재생될 수 없는 값이라 데모로 떨어뜨린다. 실제 참조는 그대로 쓴다 —
-  // 여기서 관대하게 폴백하면 **잘못 적은 참조도 데모가 재생돼** 오류가 묻힌다.
-  return video.external_ref.startsWith(SEED_REF_PREFIX)
-    ? DEMO_PLAYBACK_ID
-    : video.external_ref;
-}
-
 interface VideoRow {
   video_id: number;
   title: string;
   sequence_no: number;
   duration_seconds: number | null;
-  course_name: string;
-  week_no: number;
+  course_name: string | null;
+  week_no: number | null;
   expires_at: string;
 }
 
@@ -71,13 +57,17 @@ interface PlaybackVideo {
   title: string;
   provider: string | null;
   external_ref: string | null;
-  course_name: string;
-  week_no: number;
+  /** 서명 정책 영상의 재생 토큰 — 서버가 개인키로 발급한다(playback.py). */
+  tokens: { playback?: string; thumbnail?: string; storyboard?: string };
+  course_name: string | null;
+  week_no: number | null;
 }
 
 interface Playback {
   video: PlaybackVideo;
   watermark: string;
+  /** Mux Data 시청자 축 — 실명이 아니라 학생 내부 번호다(playback.py). */
+  viewer_id: string;
   expires_at: string;
 }
 
@@ -128,8 +118,14 @@ export default function StudentVideoPage() {
             <MuxPlayer
               className="vd-player"
               streamType="on-demand"
-              playbackId={playbackIdOf(playing.video)}
-              metadata={{ video_title: playing.video.title }}
+              playbackId={playing.video.external_ref ?? ""}
+              tokens={playing.video.tokens}
+              metadata={{
+                video_title: playing.video.title,
+                // 유출 시 Mux Data 에서 "누가 봤나"를 되짚는 축. 워터마크가
+                // 유출본에 찍히는 추적이라면 이건 재생 기록 쪽이다.
+                viewer_user_id: playing.viewer_id,
+              }}
               autoPlay
             >
               {/* 플레이어 안쪽 — 전체화면에서도 남는다(파일 머리말 참조) */}
@@ -161,8 +157,9 @@ export default function StudentVideoPage() {
             header: "주차",
             numeric: true,
             width: "4.5rem",
-            sortValue: (row) => row.week_no,
-            cell: (row) => `${row.week_no}주차`,
+            // 주차 없는 특강은 뒤로 — 빈 값이 위로 오면 목록 첫 화면이 어수선해진다
+            sortValue: (row) => row.week_no ?? 9999,
+            cell: (row) => (row.week_no === null ? "—" : `${row.week_no}주차`),
           },
           {
             key: "title",

@@ -155,6 +155,32 @@ CORS_ALLOW_CREDENTIALS = True
 # Vite(5173) → Django 세션 인증 쓰기 요청이 CSRF 403으로 막히는 것 실측 → 신뢰 오리진 등록.
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=["http://localhost:5173"])
 
+# --- 관측(Sentry) -------------------------------------------------------
+# 수집 확인용 /sentry-debug 의 열쇠. 비어 있으면 그 경로는 404 다(기본값 = 닫힘).
+# DSN 자체는 prod.py 에서만 읽는다 — 로컬·테스트에서 Sentry 는 켜지지 않는다.
+SENTRY_DEBUG_TOKEN = env("SENTRY_DEBUG_TOKEN", default="")
+
+# ── Mux 서명 재생 (apps.videos.mux) ──────────────────────────────────
+# Playback ID 정책이 `signed` 면 서버가 RS256 JWT 를 서명해야 재생된다.
+# 비어 있으면 서명하지 않는다 — 로컬·시드는 데모/공개 영상으로 돌기 때문
+# (없다고 죽이면 키 없는 개발 환경에서 재생 화면 자체가 못 뜬다).
+# 개인키는 Mux 가 base64 로 주며 **시크릿이다** — .env 로만 넣고 커밋 금지.
+MUX_SIGNING_KEY_ID = env("MUX_SIGNING_KEY_ID", default="")
+MUX_SIGNING_PRIVATE_KEY = env("MUX_SIGNING_PRIVATE_KEY", default="")
+
+# Mux REST API 자격증명 — **서명 키와 다른 것이다.**
+# 서명 키(위)는 재생 토큰용이고, 이건 업로드·자산 관리용이다
+# (대시보드 Settings → Access Tokens). 업로드 커맨드만 쓴다.
+MUX_TOKEN_ID = env("MUX_TOKEN_ID", default="")
+MUX_TOKEN_SECRET = env("MUX_TOKEN_SECRET", default="")
+
+# 시드 영상이 대신 재생할 실제 자산의 Playback ID(개발 편의).
+# 시드는 `seed-*` 라는 가짜 참조를 넣는데 그건 재생될 수 없다. 이 값이 있으면
+# 서버가 **대체와 서명을 같은 자리에서** 처리한다 — 프런트가 따로 갈아치우면
+# "서명은 seed-1-1 앞으로, 재생은 다른 자산" 이 되어 Mux 가 거부한다(2026-08-04 실측).
+# 비어 있으면 대체하지 않는다(운영에는 시드 데이터가 없다).
+MUX_DEMO_PLAYBACK_ID = env("MUX_DEMO_PLAYBACK_ID", default="")
+
 # --- 오브젝트 스토리지 (Tigris/S3, django-storages) ----------------------
 # 버킷명이 있으면 S3(Tigris) 사용, 없으면 로컬 파일시스템(MEDIA_ROOT).
 AWS_ACCESS_KEY_ID = env("AWS_ACCESS_KEY_ID", default="")

@@ -34,9 +34,31 @@ revoke 하는 쪽이다(makeup.complete_makeup 이 `지급완료` 전이에서 V
 Asia/Seoul** 로 찍는다. 클라이언트가 자기 프로필·기기 시계로 조립하면
 개발자도구로 남의 이름·다른 날짜로 바꿔치기할 수 있어 유출 추적이 무너진다.
 """
+from django.conf import settings
 from django.utils import timezone
 
+from . import mux
 from .models import Video, VideoGrant
+
+#: 시드가 넣는 가짜 참조의 접두 — 실제 자산이 아니라는 표시(seed_demo.py).
+SEED_REF_PREFIX = "seed-"
+
+
+def resolve_ref(external_ref):
+    """재생기에 실제로 넘길 참조 — 시드용 가짜 값이면 데모 자산으로 바꾼다.
+
+    **대체와 서명이 반드시 같은 자리에 있어야 한다.** 프런트가 갈아치우면
+    서명은 `seed-1-1` 앞으로 나가고 재생은 다른 자산이 되어 Mux 가 거부한다
+    ("playback-token formatted with incorrect information" — 2026-08-04 실측).
+    그래서 판정을 여기 하나로 모은다.
+
+    설정이 비어 있으면 그대로 둔다 — 운영에는 시드 데이터가 없고, 조용히
+    다른 영상을 틀어 주는 것보다 재생이 실패하는 편이 낫다.
+    """
+    demo = (getattr(settings, "MUX_DEMO_PLAYBACK_ID", "") or "").strip()
+    if demo and (not external_ref or external_ref.startswith(SEED_REF_PREFIX)):
+        return demo
+    return external_ref
 
 # 워터마크 조각 구분자 — `고2 · 김하늘 · 2026-07-30`
 WATERMARK_SEPARATOR = " · "
@@ -82,6 +104,7 @@ def build_playback(student, video_id, now):
     # 주차 없는 특강 — 권한이 영상을 직접 가리키므로 재생은 성립한다.
     # 표시값만 비운다(build_video_list 와 같은 판단 — 두 경로가 갈리면
     # "목록엔 있는데 누르면 500" 이 난다).
+    ref = resolve_ref(video.external_ref)
     week = video.course_week
     return {
         "video": {
@@ -92,11 +115,23 @@ def build_playback(student, video_id, now):
             # 업체 미정 — provider·external_ref 를 그대로 내리고 재생기가
             # 해석한다(Provider 중립 계약, Video 모델 docstring)
             "provider": video.provider,
-            "external_ref": video.external_ref,
+            "external_ref": ref,
+            # 서명 정책 영상은 토큰 없이는 403 이다. 발급은 서버 몫 —
+            # 개인키가 프런트로 나가면 누구나 자기 토큰을 찍을 수 있다.
+            # 위 `ref` 로 서명한다 — 대체된 값과 같아야 Mux 가 받는다.
+            "tokens": (
+                mux.playback_tokens(ref, now)
+                if video.provider == Video.Provider.MUX
+                else {}
+            ),
             "course_name": week.course.name if week else None,
             "week_no": week.week_no if week else None,
         },
         "watermark": build_watermark(student, timezone.localdate(now)),
+        # Mux Data 의 시청자 축 — 유출 시 "누가 재생했나"를 되짚는다.
+        # 이름이 아니라 **내부 번호**를 쓴다: 업체 분석 화면에 실명을 흘리지 않고
+        # 우리 DB 로만 사람을 되짚는다(Mux 권고 — viewer_user_id 에 PII 금지).
+        "viewer_id": str(student.student_id),
         "expires_at": timezone.localtime(grant.expires_at).isoformat(),
     }
 
