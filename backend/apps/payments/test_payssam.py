@@ -145,12 +145,31 @@ class SendBillTests(SimpleTestCase):
 class ResponseHandlingTests(SimpleTestCase):
     """성공 판정과 재시도 분류 — 여기서 틀리면 조용히 어긋난다."""
 
-    def test_v2_reads_msg_not_message(self):
-        # V1 의 `message` 를 읽으면 거절 사유가 늘 비어 나간다.
+    def test_reason_is_read_from_the_documented_msg_field(self):
         post = recorder(FakeResponse({"code": "VALIDATION_002", "msg": "해시 불일치"}))
         with self.assertRaises(PermanentPaymentError) as caught:
             PayssamAdapter(http_post=post).send_bill(bill_request())
         self.assertIn("해시 불일치", str(caught.exception))
+
+    def test_reason_is_read_from_the_message_field_the_sandbox_actually_sends(self):
+        # **문서와 서버가 다르다.** `preparation/req-res` 는 V2 가 `msg` 라고
+        # 적어 두었지만 샌드박스 실호출은 `message` 로 답한다(2026-08-05 실측):
+        #   {"code":"BILL_003","message":"청구서를 찾을 수 없습니다.","data":null}
+        # 문서만 믿고 `msg` 만 읽으면 거절 사유가 늘 비어 나가 운영에서
+        # 원인을 못 본다. 어느 쪽이 와도 읽는다.
+        post = recorder(
+            FakeResponse({"code": "BILL_003", "message": "청구서를 찾을 수 없습니다."})
+        )
+        with self.assertRaises(PermanentPaymentError) as caught:
+            PayssamAdapter(http_post=post).read_bill("1024")
+        self.assertIn("청구서를 찾을 수 없습니다", str(caught.exception))
+
+    def test_null_data_does_not_crash(self):
+        # 샌드박스는 오류 응답에 `"data": null` 을 싣는다(실측). 성공 경로에서도
+        # 빈 값이 올 수 있으므로 dict 로 정규화해 둔다.
+        post = recorder(FakeResponse({"code": "0000", "msg": "Success", "data": None}))
+        with self.assertRaises(PermanentPaymentError):
+            PayssamAdapter(http_post=post).send_bill(bill_request())
 
     def test_permanent_vendor_codes_do_not_retry(self):
         for code in ["PARTNER_001", "VALIDATION_002", "BILL_001", "POINT_001"]:
