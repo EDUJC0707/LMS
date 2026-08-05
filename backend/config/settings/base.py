@@ -132,13 +132,6 @@ ALIGO_USER_ID = env("ALIGO_USER_ID", default="")
 ALIGO_SENDER_PHONE = env("ALIGO_SENDER_PHONE", default="")  # 사전 등록된 발신번호
 ALIGO_SENDER_KEY = env("ALIGO_SENDER_KEY", default="")  # 카카오 발신프로필키(senderkey)
 
-# 솔라피 자격증명 — 업체가 알리고로 바뀌어 쓰이지 않는다(2026-08-05).
-# solapi.py 와 함께 삭제 후보.
-SOLAPI_API_KEY = env("SOLAPI_API_KEY", default="")
-SOLAPI_API_SECRET = env("SOLAPI_API_SECRET", default="")
-SOLAPI_SENDER_PHONE = env("SOLAPI_SENDER_PHONE", default="")
-SOLAPI_KAKAO_PFID = env("SOLAPI_KAKAO_PFID", default="")
-
 # --- 비밀번호 검증 -------------------------------------------------------
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
