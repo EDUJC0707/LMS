@@ -50,7 +50,11 @@ PUBLIC_KEY, PEM, B64 = _keypair()
 
 
 def signed(**overrides):
-    settings = {"MUX_SIGNING_KEY_ID": KEY_ID, "MUX_SIGNING_PRIVATE_KEY": B64}
+    settings = {
+        "MUX_SIGNING_KEY_ID": KEY_ID,
+        "MUX_SIGNING_PRIVATE_KEY": B64,
+        "MUX_PLAYBACK_RESTRICTION_ID": "",
+    }
     settings.update(overrides)
     return override_settings(**settings)
 
@@ -152,6 +156,24 @@ class MuxSigningTests(SimpleTestCase):
         with signed(MUX_SIGNING_PRIVATE_KEY="!!not-base64!!"):
             with self.assertRaises(ValueError):
                 mux.sign(PLAYBACK_ID, mux.AUDIENCE_VIDEO, NOW)
+
+    def test_restriction_claim_rides_along_when_set(self):
+        """만료만으로는 토큰이 사는 동안 스트림을 통째로 받는 것을 못 막는다.
+
+        규칙 id 를 claim 으로 실으면 Mux 가 Referer·User-Agent 를 함께 본다
+        (실측: referer 없는 curl 403 · 허용 도메인 200 · 다른 도메인 403).
+        """
+        with signed(MUX_PLAYBACK_RESTRICTION_ID="restriction-id"):
+            token = mux.sign(PLAYBACK_ID, mux.AUDIENCE_VIDEO, NOW)
+        claims = jwt.decode(token, PUBLIC_KEY, audience=mux.AUDIENCE_VIDEO, **DECODE)
+        self.assertEqual(claims["playback_restriction_id"], "restriction-id")
+
+    def test_no_restriction_claim_when_unset(self):
+        """없는 규칙 id 를 실으면 재생이 통째로 막힌다 — 비면 claim 자체를 뺀다."""
+        with signed(MUX_PLAYBACK_RESTRICTION_ID=""):
+            token = mux.sign(PLAYBACK_ID, mux.AUDIENCE_VIDEO, NOW)
+        claims = jwt.decode(token, PUBLIC_KEY, audience=mux.AUDIENCE_VIDEO, **DECODE)
+        self.assertNotIn("playback_restriction_id", claims)
 
     def test_no_token_without_a_playback_id(self):
         """연동 전 영상은 external_ref 가 비어 있다 — 빈 sub 로 서명하지 않는다."""

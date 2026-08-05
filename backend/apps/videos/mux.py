@@ -80,21 +80,32 @@ def is_configured():
 
 
 def sign(playback_id, audience, now, ttl=TOKEN_TTL):
-    """재생 토큰 1장. 키가 없으면 None(머리말의 "서명하지 않는다" 계약)."""
+    """재생 토큰 1장. 키가 없으면 None(머리말의 "서명하지 않는다" 계약).
+
+    **`playback_restriction_id` 를 왜 싣나**: 만료만으로는 토큰이 살아 있는 동안
+    스트림을 통째로 받아가는 것을 못 막는다 — 50분 강의는 1분이면 내려받힌다.
+    제한 규칙을 걸면 Mux 가 `Referer`·`User-Agent` 를 함께 본다. 기본값이
+    "referer 없으면 거부" 라서 curl·yt-dlp 처럼 브라우저가 아닌 도구가 막힌다.
+
+    **벽은 아니다.** 두 헤더 다 위조할 수 있다. 복사한 URL 을 그대로 도구에
+    붙여넣는 경로를 닫을 뿐이고, 진짜 방어는 DRM 이다(아직 안 켰다).
+    설정이 비면 claim 을 넣지 않는다 — 없는 규칙 id 를 실으면 재생이 통째로 막힌다.
+    """
     key_id = (getattr(settings, "MUX_SIGNING_KEY_ID", "") or "").strip()
     key = _private_key()
     if not key_id or key is None or not playback_id:
         return None
-    return jwt.encode(
-        {
-            "sub": playback_id,
-            "aud": audience,
-            "exp": int((now + ttl).timestamp()),
-        },
-        key,
-        algorithm="RS256",
-        headers={"kid": key_id},
-    )
+    claims = {
+        "sub": playback_id,
+        "aud": audience,
+        "exp": int((now + ttl).timestamp()),
+    }
+    restriction = (
+        getattr(settings, "MUX_PLAYBACK_RESTRICTION_ID", "") or ""
+    ).strip()
+    if restriction:
+        claims["playback_restriction_id"] = restriction
+    return jwt.encode(claims, key, algorithm="RS256", headers={"kid": key_id})
 
 
 def playback_tokens(playback_id, now):
