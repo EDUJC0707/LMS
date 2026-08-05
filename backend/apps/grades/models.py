@@ -329,6 +329,15 @@ class AnswerSheet(models.Model):
         db_table = "answer_sheets"
         verbose_name = "OMR 답안지"
         verbose_name_plural = "OMR 답안지"
+        constraints = [
+            # 스캔에는 일련번호가 없다 — 답안지의 정체성은 (시험, 스캔 파일)이다.
+            # 재업로드·재판독이 같은 파일로 돌아오면 같은 행으로 수렴한다
+            # (omr_store 멱등 계약 — 경로는 페이지 바이트의 내용 주소로 발급).
+            models.UniqueConstraint(
+                fields=["exam", "scan_image_path"],
+                name="uq_answer_sheets_exam_scan",
+            ),
+        ]
 
     def __str__(self):
         return f"답안지 {self.sheet_id}({self.match_status})"
