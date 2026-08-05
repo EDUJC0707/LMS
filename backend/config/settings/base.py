@@ -244,3 +244,28 @@ CLINIC_CONFERENCE_BACKEND = env(
 GOOGLE_MEET_CLIENT_ID = env("GOOGLE_MEET_CLIENT_ID", default="")
 GOOGLE_MEET_CLIENT_SECRET = env("GOOGLE_MEET_CLIENT_SECRET", default="")
 GOOGLE_MEET_REFRESH_TOKEN = env("GOOGLE_MEET_REFRESH_TOKEN", default="")
+
+# --- 결제 — key_considerations §4 추상화 경계 (PRD 6-5) ------------------
+# 업체 교체(결제선생 → PG)는 이 경로 한 줄이다(apps.payments.provider 계약).
+# 비면 청구·조회·취소가 전부 막힌다 — 닫힘이 안전 기본값(§5). 돈이 오가는
+# 경로라 "미설정 = 조용한 성공" 이 특히 위험하다.
+PAYMENT_PROVIDER_BACKEND = env("PAYMENT_PROVIDER_BACKEND", default="")
+
+# 결제선생(페이민트) 자격증명 — 업체 이름이 나오는 것은 이 층까지고 DB
+# 스키마에는 새지 않는다(apps/payments/models.py Provider 추상화 계약).
+# 샌드박스 키는 2026-08-05 페이민트 김상진 님 전달분. **운영 키는 연동 검수
+# 통과 후 별도 발급**되므로 아직 없다.
+#   MEMBER_ID    파트너 사용자 코드(요청의 `member`)
+#   MERCHANT_ID  파트너 상점 코드(요청의 `merchant`) — 학원이 앉는 자리
+PAYSSAM_API_KEY = env("PAYSSAM_API_KEY", default="")
+PAYSSAM_MEMBER_ID = env("PAYSSAM_MEMBER_ID", default="")
+PAYSSAM_MERCHANT_ID = env("PAYSSAM_MERCHANT_ID", default="")
+# V2 기준. 운영 URL 은 검수 후 제공되므로 기본값을 샌드박스로 둔다 — 운영
+# 주소를 안 넣었을 때 실수로 진짜 청구서가 나가는 것보다 샌드박스로 빠지는
+# 편이 안전하다(V1 `stg.paymint.co.kr` 은 폐기 — 2026-08-05 업체 안내).
+PAYSSAM_API_BASE_URL = env(
+    "PAYSSAM_API_BASE_URL", default="https://sandbox.paymint.co.kr/partner"
+)
+# 결제 승인 콜백이 돌아올 우리 쪽 주소(청구서 단위로 실려 나간다).
+# 비면 승인 통지를 못 받고 `/bill/read` 폴링에만 의존하게 된다.
+PAYSSAM_CALLBACK_BASE_URL = env("PAYSSAM_CALLBACK_BASE_URL", default="")
