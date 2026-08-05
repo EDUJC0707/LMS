@@ -66,6 +66,8 @@ api_urlpatterns = [
     path("", include("apps.boards.counseling_urls")),
     # 내 알림 내역(/api/me/notifications) — 8차(설계 도메인 8)
     path("", include("apps.notifications.me_urls")),
+    # 관리자 발송내역(/api/admin/notifications) — PRD 3.1.2
+    path("", include("apps.notifications.admin_urls")),
     path("accounts/", include("apps.accounts.urls")),
     path("grades/", include("apps.grades.urls")),
     path("curriculum/", include("apps.curriculum.urls")),

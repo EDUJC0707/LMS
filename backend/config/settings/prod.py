@@ -31,3 +31,12 @@ SENTRY_DSN = env("SENTRY_DSN", default="")
 # SDK 가 이 환경변수를 스스로 읽기도 하지만, 그 동작은 코드에서 안 보이고 SDK 판올림에
 # 딸려 바뀔 수 있어 명시적으로 넘긴다.
 SENTRY_ENABLED = init_sentry(SENTRY_DSN, release=env("SENTRY_RELEASE", default=""))
+
+# 알림 채널 — 실업체(알리고, docs/decisions.md §3-1). 자격증명은 fly secrets 로
+# 주입하고, 비어 있으면 발송이 "API 키가 설정되지 않았습니다" 로 실패한다
+# (조용한 성공 없음). 앱푸시는 아직 어댑터가 없다 — 구현체가 생길 때 한 줄 추가한다.
+_ALIGO = "apps.notifications.aligo.AligoAdapter"
+NOTIFICATION_CHANNEL_BACKENDS = {
+    "카카오알림톡": _ALIGO,
+    "문자": _ALIGO,
+}

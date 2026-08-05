@@ -16,6 +16,8 @@ dependencies = [
     "sentry-sdk>=2.14",
     # Mux signed playback — RS256 JWT 서명(cryptography 가 RSA 백엔드)
     "pyjwt[crypto]>=2.9",
+    # 알림 발송 업체(알리고) HTTP 호출 — apps/notifications/aligo.py 한 곳에서만 쓴다.
+    "requests>=2.32",
 ]
 
 # 개발 전용 의존성 (uv sync --no-dev 로 운영 이미지에서는 제외)

@@ -100,6 +100,37 @@ CELERY_BROKER_URL = env("CELERY_BROKER_URL", default=REDIS_URL)
 CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_TIMEZONE = "Asia/Seoul"
 CELERY_TASK_TRACK_STARTED = True
+# 실패·정체 알림 재발송(apps.notifications.tasks). beat 프로세스는 아직 안 뜬다 —
+# 워커와 함께 켜는 시점은 infra/DEPLOY.md 6장 참조.
+CELERY_BEAT_SCHEDULE = {
+    "retry-failed-notifications": {
+        "task": "notifications.retry_failed_notifications",
+        "schedule": 60 * 60,
+    },
+}
+
+# --- 알림 채널 (PRD 6-8 채널 추상화 — apps/notifications/channels.py) --------
+# 채널 값 → 어댑터 dotted path. **기본값은 비어 있다(닫힘)**: 아무것도 안 물린
+# 환경에서 발송은 실패하고 사유가 남는다. Fake 를 기본으로 두면 운영에서 알림이
+# 조용히 증발하고 발송내역에는 성공만 쌓인다. dev/prod 가 각자 물린다.
+NOTIFICATION_CHANNEL_BACKENDS = {}
+# 알림 유형 → 승인된 카카오 알림톡 템플릿 코드. **비어 있다 — 8-17 대기**
+# (발송 시점 목록이 확정돼야 템플릿 승인이 시작된다). 승인분이 나오면 여기에
+# `"성적": "TPL_…"` 를 추가하는 것이 연동의 전부다.
+NOTIFICATION_KAKAO_TEMPLATE_CODES = {}
+NOTIFICATION_MAX_RETRIES = env.int("NOTIFICATION_MAX_RETRIES", default=5)
+# 재발송 배치 선정창 — 새 행(재시도 중)과 지난 행(보내도 의미 없음)을 뺀다.
+NOTIFICATION_RETRY_GRACE_MINUTES = env.int("NOTIFICATION_RETRY_GRACE_MINUTES", default=30)
+NOTIFICATION_RETRY_MAX_AGE_HOURS = env.int("NOTIFICATION_RETRY_MAX_AGE_HOURS", default=24)
+NOTIFICATION_RETRY_BATCH_SIZE = env.int("NOTIFICATION_RETRY_BATCH_SIZE", default=200)
+
+# 알리고 자격증명 — **아직 없다**(대표 전달 대기, docs/decisions.md §3-1).
+# 업체 이름이 나오는 것은 이 층까지고 DB 스키마에는 새지 않는다
+# (apps/notifications/models.py 채널 추상화 계약).
+ALIGO_API_KEY = env("ALIGO_API_KEY", default="")
+ALIGO_USER_ID = env("ALIGO_USER_ID", default="")
+ALIGO_SENDER_PHONE = env("ALIGO_SENDER_PHONE", default="")  # 사전 등록된 발신번호
+ALIGO_SENDER_KEY = env("ALIGO_SENDER_KEY", default="")  # 카카오 발신프로필키(senderkey)
 
 # --- 비밀번호 검증 -------------------------------------------------------
 AUTH_PASSWORD_VALIDATORS = [

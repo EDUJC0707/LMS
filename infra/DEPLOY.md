@@ -152,7 +152,10 @@ class AnswerSheet(models.Model):
 
 ### 왜 지금 안 띄우나
 
-1. **할 일이 없다** — `@shared_task` 정의 0건, `tasks.py` 파일 0개. 워커가 떠도 idle.
+1. **할 일이 없다** — 2026-08-04 `apps/notifications/tasks.py` 로 첫 `@shared_task`
+   두 건(발송·재발송 배치)이 생겼지만 **부르는 곳이 아직 없다**: 발송 시점 목록이
+   미결(8-17)이라 태스크를 거는 트리거가 없고, 솔라피 API 키가 없어 어댑터가
+   `_request` 에서 막힌다. 워커를 띄워도 여전히 idle 이다.
 2. **auto-stop이 안 먹는다** — `fly.toml`의 `auto_stop_machines`는 `[http_service]`에만 걸린다.
    워커는 HTTP로 깨우는 대상이 아니라 **한번 띄우면 24시간 계속 돈다.**
 3. 즉 지금 띄우면 **아무 일도 안 하는 머신에 월 ~$3.3**을 낸다.
@@ -172,7 +175,10 @@ Redis는 부담이 아니다 — 최소요금이 없어 요청이 없으면 사�
 
 ### 해제 트리거
 
-**첫 `@shared_task` 를 작성하는 시점.** (알림톡 발송 / 영상 처리 등)
+~~첫 `@shared_task` 를 작성하는 시점~~ → **옮김**(2026-08-04). 태스크는 이미 있고,
+있어도 부를 곳이 없어 워커는 idle 이다(위 참조). 실제 기준은 **알림을 처음 실제로
+보내는 시점** — 즉 ① 발송 시점 목록(8-17) 확정 + 알림톡 템플릿 승인 ② 솔라피
+API 키 수령 **둘 다** 충족되는 날이다. 그날 아래 3단계를 함께 돌린다.
 
 ### 복구 절차 (트리거 도달 시, 3단계)
 
@@ -186,6 +192,10 @@ fly redis create --org EduJC --region nrt --name edujc-redis
 
 # 2) secret 주입 (base.py 는 REDIS_URL 을 읽고 CELERY_BROKER_URL 기본값으로 재사용)
 fly secrets set REDIS_URL="redis://..." -a edujc-lms
+#    알림 발송을 켜는 것이면 솔라피 자격증명도 함께(없으면 발송이 "API 키가
+#    설정되지 않았습니다" 로 실패한다 — base.py 알림 채널 절)
+fly secrets set SOLAPI_API_KEY="..." SOLAPI_API_SECRET="..." \
+                SOLAPI_SENDER_PHONE="..." SOLAPI_KAKAO_PFID="..." -a edujc-lms
 
 # 3) 워커 기동 — fly.toml 의 [processes] worker 정의는 그대로 살아 있으므로 count 만 올리면 된다
 fly scale count worker=1 -a edujc-lms
@@ -196,6 +206,13 @@ fly scale show -a edujc-lms          # worker 그룹이 COUNT 1 로 보여야 �
 ```
 
 > 되돌리기: `fly scale count worker=0 -a edujc-lms`
+
+> **실패 재발송 배치는 beat 가 있어야 돈다.** `CELERY_BEAT_SCHEDULE` 에
+> `retry-failed-notifications`(1시간 주기)가 등록돼 있지만, 스케줄러 프로세스가
+> 없으면 아무도 그것을 깨우지 않는다. 워커 하나뿐인 규모에서는 `fly.toml` 의
+> worker 커맨드에 `-B` 를 붙여 워커에 beat 를 태우는 쪽이 싸다(머신 추가 없음).
+> 단 **worker 를 2대 이상으로 늘리는 순간 `-B` 는 빼야 한다** — beat 가 중복
+> 실행돼 같은 배치가 여러 번 돈다.
 
 ---
 

@@ -5,22 +5,25 @@
 - 대기열: 출결 트리거가 만든 `대기` 카드 + **시도 횟수 표시**
 - 통화 결과 기록: 연결→완료 / 미연결→카드 확정 + **재시도 카드 생성**
   (행=시도 이력 — 스키마 불변 제약 하의 시도 횟수 산출 축)
-- **3회 시도 후 문자 종결(8-18)**: 재시도 카드 미생성 + 알림 행 기록만
-  (발송은 알림톡 연동 대기)
+- **3회 시도 후 문자 종결(8-18)**: 재시도 카드 미생성 + 학부모 알림 발송
+  (행은 지금, 발송은 커밋 뒤)
 - 동보 여부는 기록만 — 지급은 동보 체크 API(영상지급관리) 소관
 """
 import datetime
 import json
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from apps.accounts.features import FeatureKey
 from apps.accounts.models import Parent, ParentStudent, StaffFeatureGrant, Student, User
 from apps.grades.models import Attendance, ClassSession
 from apps.notifications.models import Notification
 from apps.videos.models import MakeupGrant
+from config.celery import app as celery_app
 
 from .models import AbsenceCounseling
+
+FAKE_CHANNEL = "apps.notifications.channels.FakeChannelAdapter"
 
 PASSWORD = "pw-Secret-77!"
 QUEUE_URL = "/api/admin/counseling/queue"
@@ -176,10 +179,30 @@ class CounselingPatchTests(CounselingFixtureMixin, TestCase):
             ).count(),
             0,
         )
-        # 문자(알림톡) 종결은 **기록만** — 학부모 대상 대기 행.
+        # 종결 알림은 학부모 대상. 발송은 커밋 뒤라 이 시점엔 아직 대기다.
         notif = Notification.objects.get(type=Notification.Type.ABSENCE_COUNSEL)
         self.assertEqual(notif.parent, self.parent)
         self.assertEqual(notif.status, Notification.Status.PENDING)
+
+    @override_settings(NOTIFICATION_CHANNEL_BACKENDS={"카카오알림톡": FAKE_CHANNEL})
+    def test_sms_closure_is_dispatched_on_commit(self):
+        # 3회 미연결 종결은 학부모에게 **실제로 나가야** 끝난 것이다 —
+        # 행만 남기면 재발송 배치가 집을 때까지 결석 안내가 밀린다.
+        eager = celery_app.conf.task_always_eager
+        celery_app.conf.task_always_eager = True
+        self.addCleanup(setattr, celery_app.conf, "task_always_eager", eager)
+        card = self.card
+        for _ in (1, 2):
+            body = self.patch_card(card.counsel_id, {"result": "미연결"}).json()
+            card = AbsenceCounseling.objects.get(pk=body["next_counsel_id"])
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertTrue(
+                self.patch_card(card.counsel_id, {"result": "미연결"}).json()["closed_by_sms"]
+            )
+
+        notif = Notification.objects.get(type=Notification.Type.ABSENCE_COUNSEL)
+        self.assertEqual(notif.status, Notification.Status.SUCCESS)
 
     def test_handled_card_cannot_be_patched_again(self):
         self.patch_card(self.card.counsel_id, {"result": "연결"})

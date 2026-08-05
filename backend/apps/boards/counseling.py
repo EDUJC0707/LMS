@@ -11,9 +11,9 @@ attendance 기준 "행 존재 여부"라 재시도 카드와 충돌하지 않고
 
 **3회 시도 후 문자 종결(8-18 확정)**: 당일 학부모 1차 최대 3회 → 3회째도
 미연결이면 재시도 카드를 만들지 않고 알림톡(결석 안내+동보 신청 링크)으로
-종결한다. 이번 슬라이스는 **기록만** — notifications 행(status `대기`)을
-남기고 실제 발송은 알림톡 채널 연동 시 발송 배치가 집어간다(clinic_admin
-과 동일 임시 정책).
+종결한다. 발송은 `notifications.sending.queue` 가 건다 — 행을 남기고 **커밋
+뒤** 태스크가 걸린다(2026-08-04 발송 파이프라인 도입 전까지는 행 기록만 하고
+배치를 기다렸다. clinic_admin 과 동일).
 
 **동보 여부는 기록만**: makeup_requested 체크는 상담기록 소관이고 영상
 지급은 동보 체크 API(영상지급관리 키 — grades.MakeupCheckView)가 담당한다
@@ -25,6 +25,7 @@ from django.utils import timezone
 
 from apps.accounts.models import ParentStudent
 from apps.notifications.models import Notification
+from apps.notifications.sending import queue as queue_notification
 
 from .models import AbsenceCounseling
 
@@ -142,14 +143,13 @@ def record_call(card, result, fields, actor):
 
 
 def _record_sms_closure(card):
-    """3회 종결 — 알림톡(결석 안내+동보 링크) **기록만**(모듈 docstring)."""
+    """3회 종결 — 알림톡(결석 안내+동보 링크)을 건다(모듈 docstring)."""
     for link in ParentStudent.objects.filter(student=card.student):
-        Notification.objects.create(
+        queue_notification(
             parent=link.parent,
             channel=Notification.Channel.KAKAO,
             type=Notification.Type.ABSENCE_COUNSEL,
             title="결석 안내(전화 미연결 종결)",
             ref_type="absence_counseling",
             ref_id=card.counsel_id,
-            status=Notification.Status.PENDING,
         )
