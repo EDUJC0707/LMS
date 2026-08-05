@@ -112,6 +112,12 @@ class Order(models.Model):
     )
     is_billed = models.BooleanField("청구서 발송 여부", default=False)
     billed_at = models.DateTimeField("청구 발송 시각", null=True, blank=True)
+    # 발송된 청구서의 결제 링크. **업체 종속 컬럼이 아니다** — 어느 제공자든
+    # 결제 페이지 URL 을 돌려주므로 중립 값이다(Provider 계약).
+    # 여기 남겨 두는 이유: PRD 3.2.5 임베드가 이 주소를 열고, 3.1.5 중복 차단이
+    # 재발송을 막으므로 두 번째 클릭에 돌려줄 URL 이 DB 에 없으면 학생이 자기
+    # 청구서로 되돌아갈 방법이 사라진다(업체 조회 API 는 이 URL 을 안 준다).
+    pay_url = models.URLField("결제 링크", max_length=500, null=True, blank=True)  # noqa: DJ001
     charge_trigger = models.CharField(  # noqa: DJ001
         "청구 트리거", max_length=15, choices=ChargeTrigger.choices, null=True, blank=True
     )

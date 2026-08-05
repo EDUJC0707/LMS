@@ -116,7 +116,16 @@ class Receipt:
 
 
 class PaymentAdapter(ABC):
-    """청구서를 실제로 보내고, 상태를 읽고, 취소·파기하는 구현체."""
+    """청구서를 실제로 보내고, 상태를 읽고, 취소·파기하는 구현체.
+
+    `provider_value` 는 이 구현체가 `Payment.provider` 에 남길 값집합 값이다.
+    **어느 업체인지는 어댑터가 안다** — 앱 레이어가 설정 경로를 보고 업체를
+    추측하면 구현체를 바꿀 때마다 그 추측도 같이 고쳐야 하고, 그 순간
+    "구현체만 교체"가 성립하지 않는다.
+    """
+
+    #: `Payment.Provider` 의 값. 구현체가 선언한다.
+    provider_value: str = ""
 
     @abstractmethod
     def send_bill(self, request: BillRequest) -> Bill:
@@ -142,6 +151,10 @@ class FakePaymentAdapter(PaymentAdapter):
     docstring 의 닫힘 기본값 참조). 운영에 남으면 결제 내역에는 청구 성공만
     쌓이고 학부모는 아무 청구서도 못 받는다.
     """
+
+    # 로컬에서도 `Payment.provider` 는 채워져야 한다 — 값집합에 없는 값을 쓰면
+    # 관리 화면 필터가 그 행을 못 찾는다.
+    provider_value = "결제선생"
 
     sent: list[BillRequest] = []
     _bills: dict[str, Receipt] = {}
