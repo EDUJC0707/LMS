@@ -19,9 +19,17 @@
 
 - `LEAD_FRACTION = 0.40` — 장 중앙 lead 의 40% 미만이면 빈칸으로 본다.
   0.35~0.50 구간에서 결과가 동일했다(1029/4/7 고정) — 고원 한가운데 값이다
-- `RUNNER_MIN = 50.0` — 2등이 기준선보다 이만큼 위면 복수 마킹이다.
-  실물에서 진짜 X 넷의 2등은 85·102·120·142 였고 나머지 전부는 35 이하였다.
-  50 은 그 사이 빈 구간에 있다
+- 복수 마킹 문턱은 `min(RUNNER_MIN, RUNNER_FRACTION x 장 중앙 lead)` 다.
+  절대값 하나만 쓰면 문턱이 장에 따라 중앙 lead 의 0.32배(중앙 154)에서
+  1.03배(중앙 48.5)까지 벌어진다 — **감도가 3.18배 갈린다.** 실물 X 넷의 2등은
+  중앙 lead 의 0.93~1.17배였으므로, 같은 X 를 제일 흐린 장에 옮기면 2등이 ~45 로
+  절대 50 아래에 숨어 **단일 확신 판정으로 나간다.** 그래서 문턱도 장에 맞춰 내린다
+- `RUNNER_FRACTION = 0.65` — 상대 공간에서 잡음 천장이 0.468(인쇄 ⑤ 글리프),
+  신호 바닥이 0.926(X)이라 1.98배 벌어져 있다. 0.65 는 그 기하 중점이다
+- `RUNNER_MIN = 50.0` 은 **하한으로 남긴다.** 상대만 쓰면 진한 장(중앙 154)에서
+  문턱이 100 까지 올라가 절대 85 짜리 X 를 놓친다. 비-X 전수의 2등 최대가 34.8 이라
+  이 하한이 만드는 오탐은 0 — 재현율만 얻고 잃는 게 없다. 하한을 두면 고원이
+  0.47~1.40 으로 넓어진다(상대 단독은 0.47~0.92)
 
 이 규칙으로 1040문항이 단일 1029 · 복수 4 · 빈칸 7 로 갈렸고, 복수 넷은 눈으로
 찾은 X 넷과, 빈칸 일곱은 절대 농도로 찾은 빈칸 일곱과 정확히 일치했다.
@@ -32,8 +40,10 @@ import numpy as np
 
 #: 장 중앙 lead 대비 이 비율 미만이면 빈칸 — 모듈 docstring 참조.
 LEAD_FRACTION = 0.40
-#: 2등이 줄 기준선보다 이만큼 위면 복수 마킹.
+#: 2등이 줄 기준선보다 이만큼 위면 복수 마킹 — **절대 하한**. 상대 문턱과 함께 쓴다.
 RUNNER_MIN = 50.0
+#: 2등이 장 중앙 lead 의 이 비율을 넘어도 복수 마킹 — 흐린 장을 위한 눈금.
+RUNNER_FRACTION = 0.65
 #: 버블 반지름의 몇 할까지만 표본할지. 링에 물리면 빈칸이 칠한 것처럼 읽힌다 —
 #: 실제로 보정 전 격자가 링에 얹혔을 때 그 일이 났다.
 INTERIOR_FRACTION = 0.65
@@ -84,9 +94,11 @@ def classify_answers(inks):
     rows = {question: _row_stats(cells) for question, cells in inks.items()}
     if not rows:
         return {}
-    floor_lead = LEAD_FRACTION * median(stats.lead for stats in rows.values())
+    sheet_lead = median(stats.lead for stats in rows.values())
+    floor_lead = LEAD_FRACTION * sheet_lead
+    runner_min = min(RUNNER_MIN, RUNNER_FRACTION * sheet_lead)
     return {
-        question: _marked_choices(stats, floor_lead)
+        question: _marked_choices(stats, floor_lead, runner_min)
         for question, stats in rows.items()
     }
 
@@ -112,10 +124,10 @@ def _row_stats(cells):
     return _RowStats(floor, heights[top_choice], heights, top_choice)
 
 
-def _marked_choices(stats, floor_lead):
+def _marked_choices(stats, floor_lead, runner_min):
     """기준을 넘긴 칸들. 1등은 기준을 넘겼다면 항상 들어간다."""
     if stats.lead < floor_lead:
         return ()
-    marked = {choice for choice, height in stats.heights.items() if height >= RUNNER_MIN}
+    marked = {choice for choice, height in stats.heights.items() if height >= runner_min}
     marked.add(stats.top)
     return tuple(sorted(marked))

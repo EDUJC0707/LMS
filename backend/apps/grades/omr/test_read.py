@@ -103,3 +103,40 @@ def test_measures_ink_only_where_a_bubble_is_filled():
 
     assert inks[(4, 2)] > 200
     assert max(ink for key, ink in inks.items() if key != (4, 2)) < 5
+
+
+def test_flags_a_faint_double_mark_below_the_absolute_floor():
+    """흐린 장의 복수 마킹 — 절대 50 아래라도 그 장 눈금으로는 2등이 크다.
+
+    실물 X 넷의 2등은 장 중앙 lead 의 0.93~1.17배였다. 같은 X 를 제일 흐린 장
+    (중앙 lead 48.5)에 옮기면 2등은 ~45 로 절대 50 아래에 숨는다 — 절대 임계만
+    쓰면 단일 확신 판정이 나가고 조교가 볼 증거가 사라진다.
+    """
+    inks = uniform_sheet(marked_choice=3, lead=48)
+    inks[5] = row(c1=30.0, c2=30.0, c3=82.0, c4=74.0, c5=30.0)
+
+    assert read.classify_answers(inks)[5] == (3, 4)
+
+
+def test_keeps_the_absolute_floor_on_dark_sheets():
+    """진한 장의 복수 마킹 — 장 눈금(0.65 x 150 ~ 98)에 못 미쳐도 절대 50 이면 잡는다.
+
+    실물 X 하나는 2등이 절대 85 였다. 상대 기준만 쓰면 진한 장에서 문턱이 100
+    근처로 올라가 이런 X 를 놓친다 — 절대 하한이 그걸 막는다.
+    """
+    inks = uniform_sheet(marked_choice=2, lead=150)
+    inks[9] = row(c1=30.0, c2=185.0, c3=30.0, c4=115.0, c5=30.0)
+
+    assert read.classify_answers(inks)[9] == (2, 4)
+
+
+def test_glyph_ink_on_a_faint_sheet_stays_single():
+    """흐린 장에서 문턱이 내려가도 인쇄 글리프 잉크는 복수로 안 잡힌다.
+
+    비-X 1029문항의 상대 2등 최대는 0.47 이었다(⑤ 글리프가 제일 도드라진 장).
+    그 천장을 그대로 흐린 장에 놓아도 문턱(0.65) 아래다.
+    """
+    inks = uniform_sheet(marked_choice=3, lead=60)
+    inks[8] = row(c1=30.0, c2=30.0, c3=90.0, c4=30.0, c5=58.0)
+
+    assert read.classify_answers(inks)[8] == (3,)
