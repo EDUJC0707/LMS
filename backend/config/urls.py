@@ -58,6 +58,8 @@ api_urlpatterns = [
     path("", include("apps.videos.video_admin_urls")),
     # 클리닉 신청(/api/student/clinic*) — 역할 경로 직결(PRD 3.2.4)
     path("", include("apps.clinic.consumer_urls")),
+    # 교재 결제 조회(/api/student/payments · /api/parent/payments) — PRD 3.2.5
+    path("", include("apps.payments.consumer_urls")),
     # 관리자 운영(/api/admin/staff*·/api/admin/accounts*) — 8차(PRD §4·3.1.5)
     path("", include("apps.accounts.admin_urls")),
     # 클리닉 관리자(/api/admin/clinic/*) — 8차(PRD 3.2.4)
