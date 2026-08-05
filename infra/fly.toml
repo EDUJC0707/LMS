@@ -42,9 +42,25 @@ primary_region = "nrt"     # 도쿄
 # (워커를 2대 이상으로 늘리는 날에는 beat 를 반드시 분리해야 한다 — 안 그러면
 #  같은 시각에 여러 머신이 같은 작업을 발행한다.)
 # beat 를 빠뜨리면 태스크는 등록돼 있는데 아무도 부르지 않아 조용히 안 돈다.
+#
+# ── 주기 작업은 supercronic 이 맡는다(2026-08-05 결정) ────────────────────
+# 클리닉 감독 자료 수집은 시간이 되면 도는 게 전부라 브로커가 필요 없다.
+# Celery 로 가면 워커 머신($2.02~3.32)에 **Redis 가 얹힌다** — Upstash 공식 문서가
+# "Celery 워커는 큐가 비어도 계속 폴링해서 종량제에서 비용이 커진다"며 정액
+# (250MB $10/월)을 권한다. 합치면 월 $12~13 이고, 그 돈은 **웹 요청이 일을
+# 떠넘길 때 쓰는 부품**에 나가는데 이 배치엔 떠넘길 요청이 없다.
+# supercronic 은 머신 하나($2.02)로 같은 일을 하고 주기 제한도 없다.
+# (알림톡 발송이 워커를 세우는 날, beat 로 옮겨 타면 된다 — `tasks.py` 는 그대로 둔다.)
 [processes]
   web = ".venv/bin/gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+  cron = "supercronic /app/crontab"
   # worker = ".venv/bin/celery -A config worker -B -l info"
+
+# cron 머신은 파이썬 하나 띄우는 게 전부라 web 만큼 안 준다.
+[[vm]]
+  processes = ["cron"]
+  size = "shared-cpu-1x"
+  memory = "256mb"
 
 [http_service]
   internal_port = 8000

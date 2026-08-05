@@ -144,13 +144,13 @@
 - [x] ~~Sentry `release` 주입~~ → **2026-08-04 완료.** `Dockerfile` 의 `ARG GIT_SHA` →
   `ENV SENTRY_RELEASE`, CI 와 `make deploy` 가 넘긴다. **`fly deploy` 를 손으로 직접
   치면 태그가 사라지므로 `make deploy` 를 쓸 것.** 다음 배포부터 붙는다
-- [ ] **Celery 워커 + Redis 기동 — 트리거는 켜졌지만 배포는 보류**(2026-08-04 갱신).
-  해제 트리거였던 "첫 `@shared_task`" 가 생겼다 — `apps/clinic/tasks.py`(감독 자료
-  수집) + `CELERY_BEAT_SCHEDULE` 20분 주기. **그래도 아직 안 띄운다**(사용자 지시).
-  그동안 그 일은 `manage.py collect_clinic_supervision` 을 손으로 돌려 메운다.
-  띄울 때: Redis 프로비저닝 → 시크릿 → fly.toml 의 `worker` 주석 해제(`-B` 로 beat 가
-  워커 안에 들어 있다 — 따로 띄우면 머신이 둘이라 월 $6.6). 워커는 auto_stop 대상이
-  아니라 24시간 돌며 월 ~$3.3. 경위는 `infra/DEPLOY.md` 6장
+- ~~Celery 워커 + Redis 기동~~ → **안 세운다**(2026-08-05 결정). 주기 작업은
+  **supercronic** 이 맡는다 — `infra/crontab` + fly.toml `cron` 프로세스 그룹,
+  머신 하나 월 $2.02. Celery 로 가면 워커 머신에 **Redis 가 얹혀 월 $12~13** 이 되는데
+  (Upstash 공식 문서: 워커가 큐가 비어도 계속 폴링해 종량제 비용이 커지니 정액
+  $10/월 권장), 그 돈이 나가는 브로커는 **웹 요청이 일을 떠넘길 때** 쓰는 부품이라
+  이 배치엔 쓸 데가 없다. `apps/clinic/tasks.py` 와 `CELERY_BEAT_SCHEDULE` 은 그대로
+  둔다 — 알림톡 발송이 워커를 세우는 날 옮겨 타면 되고 그때는 추가 비용이 없다
 
 ## 외부 대기 (오는 대로 붙임 — 자리는 다 파여 있음)
 
