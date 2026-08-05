@@ -531,8 +531,20 @@
   }
 }
 
+/* 로딩 스피너는 **흐름 밖**에 띄운다.
+   전에는 라벨 옆에 끼워 넣어서 로딩이 시작되면 버튼이 넓어졌다
+   (표 안 버튼 실측 48.5 → 70.5px, +22px). 표 한 줄 안에서 폭이 튀면
+   옆 버튼들이 밀린다. 이제 스피너는 절대배치로 겹치고, 라벨은
+   `visibility` 로만 숨겨 **자리를 그대로 차지한다** — 폭이 변하지 않는다. */
 .ui-btn__spinner {
-  flex: none;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.ui-btn[aria-busy="true"] .ui-btn__label {
+  visibility: hidden;
 }
 
 /* ═══ Field / Input / Select / Textarea ══════════════════════════════
