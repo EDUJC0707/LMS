@@ -27,6 +27,13 @@ PLAYBACK_ID = "oxfSIcgB5hF1OWCXYEfg8mH3Rmm01JStKGFzZosOmukA"
 KEY_ID = "signing-key-id"
 NOW = timezone.make_aware(datetime.datetime(2026, 8, 4, 14, 0))
 
+#: 토큰을 **고정된 과거 시각**으로 서명하므로 `exp` 는 이미 지나 있다.
+#: PyJWT 는 실제 벽시계로 만료를 보기 때문에 이 검사를 켜 두면 테스트가
+#: 그 시각 이후 **매일 깨진다**(2026-08-05 다른 세션이 발견).
+#: 여기서 확인할 것은 서명이 공개키로 검증되는가와 클레임 값이지 만료 판정이
+#: 아니다 — 만료 정책은 아래에서 `exp` 를 직접 재서 따로 검사한다.
+DECODE = {"algorithms": ["RS256"], "options": {"verify_exp": False}}
+
 
 def _keypair():
     """Mux Signing Keys API 가 주는 형태(base64 로 감싼 PKCS8 PEM)를 흉내낸다."""
@@ -82,7 +89,7 @@ class MuxSigningTests(SimpleTestCase):
         with signed():
             token = mux.sign(PLAYBACK_ID, mux.AUDIENCE_VIDEO, NOW)
         claims = jwt.decode(
-            token, PUBLIC_KEY, algorithms=["RS256"], audience=mux.AUDIENCE_VIDEO
+            token, PUBLIC_KEY, audience=mux.AUDIENCE_VIDEO, **DECODE
         )
         self.assertEqual(claims["sub"], PLAYBACK_ID)
 
@@ -99,7 +106,7 @@ class MuxSigningTests(SimpleTestCase):
         with signed():
             token = mux.sign(PLAYBACK_ID, mux.AUDIENCE_VIDEO, NOW)
         claims = jwt.decode(
-            token, PUBLIC_KEY, algorithms=["RS256"], audience=mux.AUDIENCE_VIDEO
+            token, PUBLIC_KEY, audience=mux.AUDIENCE_VIDEO, **DECODE
         )
         lasted = datetime.timedelta(seconds=claims["exp"] - NOW.timestamp())
         self.assertGreater(lasted, datetime.timedelta(hours=2))
