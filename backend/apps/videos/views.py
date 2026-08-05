@@ -1,11 +1,13 @@
 """videos 뷰 — 복습영상 재생 + 동보 신청 API (PRD 3.1.3/3.1.4·3.2.3·§4).
 
 - GET  /api/student/videos/{video_id}/playback  재생 (IsStudent)
+- POST /api/student/videos/{video_id}/tamper    워터마크 제거 기록 (IsStudent)
 - GET/POST   /api/admin/videos                  영상 목록·등록 (영상지급관리)
 - PATCH      /api/admin/videos/{id}             메타·자산 수정
 - POST       /api/admin/videos/{id}/publish     `공개` 전환(조건 강제)
 - POST       /api/admin/videos/{id}/archive     `아카이브` 전환
 - GET        /api/admin/videos/course-weeks     등록 폼 주차 선택지
+- GET        /api/admin/videos/{id}/preview     관리자 미리보기(상태·권한 무시)
 - POST       /api/admin/videos/uploads          업로드 자리 발급(파일은 서버를 안 지남)
 - POST       /api/admin/videos/{id}/sync        업로드·인코딩 완료 확인
 - POST /api/student/makeup-request      학생 본인 결석의 동보 신청 (IsStudent)
@@ -42,7 +44,7 @@ from apps.grades.models import Attendance
 
 from . import playback, video_admin
 from .makeup import complete_makeup
-from .models import MakeupGrant, Video
+from .models import MakeupGrant, Video, WatermarkTamper
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
 # 거절만 재신청 허용 — 신청/승인/지급완료는 살아있는 신청으로 본다(중복 400).
@@ -155,6 +157,29 @@ class StudentVideoPlaybackView(APIView):
         if payload is None:
             return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
         return Response(payload)
+
+
+class StudentWatermarkTamperView(APIView):
+    """POST /api/student/videos/{video_id}/tamper — 워터마크가 제거됐다.
+
+    화면이 스스로 신고한다. **막지 못하는 것을 기록으로 바꾸는 자리**이므로
+    (WatermarkTamper 모델 docstring) 여기서 재생을 끊거나 화면에 무엇을 띄우지
+    않는다 — 알리면 신고 요청부터 막는 법을 배우게 된다.
+
+    권한을 보지 않는다. 지금 이 학생이 그 영상을 볼 자격이 있었는지보다
+    **시도했다는 사실**이 기록의 대상이다. 없는 영상 번호는 조용히 무시한다 —
+    잘못된 번호로 404 를 흘리면 존재 여부가 새어 나간다(§4).
+    """
+
+    permission_classes = [IsStudent]
+
+    def post(self, request, video_id):
+        student = Student.objects.filter(user=request.user).first()
+        video = Video.objects.filter(pk=video_id).first()
+        if student is not None and video is not None:
+            WatermarkTamper.objects.create(student=student, video=video)
+        # 성공·실패를 구분해 알리지 않는다(위 docstring).
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class StudentMakeupRequestView(APIView):
@@ -459,6 +484,24 @@ class AdminVideoSyncView(APIView):
         if error:
             return Response({"detail": error}, status=status.HTTP_502_BAD_GATEWAY)
         return Response({"video": video_admin.video_row(video)})
+
+
+class AdminVideoPreviewView(APIView):
+    """GET /api/admin/videos/{video_id}/preview — 등록한 영상이 실제로 나오는지.
+
+    소비자 재생과 달리 상태·권한을 보지 않는다(playback.build_preview).
+    **접근 통제는 이 기능 게이트 하나가 진다** — 서비스 쪽에는 게이트가 없다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.VIDEO_GRANT_ADMIN)]
+
+    def get(self, request, video_id):
+        video = video_admin.load_video(video_id)
+        if video is None:
+            return Response(
+                {"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND
+            )
+        return Response(playback.build_preview(video, request.user, timezone.now()))
 
 
 class AdminVideoCourseWeekListView(APIView):

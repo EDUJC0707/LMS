@@ -74,6 +74,7 @@ user. Request bodies, stack frame locals, and query strings are
 governed by separate options and were all wide open.
 ```
 
+- **영어는 커밋 메시지에만** 적용된다. 코드 주석·문서는 한국어 그대로다(값집합이 한국어라 그쪽은 안 바꾼다).
 - **`Added`·`Adds` 가 아니라 `Add`** 다. "이 커밋을 적용하면 ___ 한다"의 빈칸에 들어갈 말을 쓴다.
 - **서술형 제목을 쓰지 않는다.** `Sentry 는 예외만 보낸다 — 이름·전화번호가 실리는 자리를 막았다`
   같은 산문은 금지. 로그지 에세이가 아니다.

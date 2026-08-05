@@ -160,6 +160,10 @@ MUX_SIGNING_PRIVATE_KEY = env("MUX_SIGNING_PRIVATE_KEY", default="")
 MUX_TOKEN_ID = env("MUX_TOKEN_ID", default="")
 MUX_TOKEN_SECRET = env("MUX_TOKEN_SECRET", default="")
 
+# 재생 제한 규칙 id — 서명 토큰에 실어 보내면 Mux 가 Referer·User-Agent 를 함께 본다.
+# 비어 있으면 claim 을 넣지 않는다(제한 없음). `manage.py mux_restriction` 으로 만든다.
+MUX_PLAYBACK_RESTRICTION_ID = env("MUX_PLAYBACK_RESTRICTION_ID", default="")
+
 # 시드 영상이 대신 재생할 실제 자산의 Playback ID(개발 편의).
 # 시드는 `seed-*` 라는 가짜 참조를 넣는데 그건 재생될 수 없다. 이 값이 있으면
 # 서버가 **대체와 서명을 같은 자리에서** 처리한다 — 프런트가 따로 갈아치우면

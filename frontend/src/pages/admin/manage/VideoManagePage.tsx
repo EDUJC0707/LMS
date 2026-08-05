@@ -7,6 +7,7 @@
  *   POST  /api/admin/videos/{id}/publish   `공개` 전환
  *   POST  /api/admin/videos/{id}/archive   `아카이브` 전환
  *   GET   /api/admin/videos/course-weeks   주차 선택지
+ *   GET   /api/admin/videos/{id}/preview   미리보기(상태·권한 무시 — ./VideoPreview)
  *
  * **파일 업로드는 만들어 뒀지만 여기 연결하지 않았다**(2026-08-04 사용자 지시) —
  * `./VideoUploadField.tsx` 에 완성돼 있고 연결법도 그 머리말에 있다. 학원 회선에서
@@ -36,6 +37,7 @@ import {
   Table,
 } from "../../../components";
 import "./manage.css";
+import { VideoPreview } from "./VideoPreview";
 
 interface CourseWeekBlock {
   week_id: number;
@@ -126,6 +128,7 @@ export default function VideoManagePage() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [query, setQuery] = useState("");
+  const [preview, setPreview] = useState<VideoRow | null>(null);
 
   const rows = list.data ?? [];
   const weekRows = weeks.data ?? [];
@@ -175,10 +178,24 @@ export default function VideoManagePage() {
     return true;
   });
 
+  /**
+   * 지금 전환 중인 (행, 동작) — 로딩 표시가 **누른 버튼에만** 걸리게 한다.
+   *
+   * `useApiAction` 의 `pending` 은 하나뿐이라 어느 행·어느 버튼인지 모른다.
+   * 그대로 물리면 한 행의 [공개] 를 눌러도 **모든 행의 공개·보관이 함께 돌고**
+   * 잠긴다(Button 이 disabled={loading}). 한 행에 버튼이 둘이라 동작까지 함께 잡는다.
+   */
+  const [busy, setBusy] = useState<{ id: number; verb: string } | null>(null);
+
   const transition = useApiAction(async (video: VideoRow, verb: "publish" | "archive") => {
-    await http.post(`/admin/videos/${video.video_id}/${verb}`);
-    await list.reload();
-    return true;
+    setBusy({ id: video.video_id, verb });
+    try {
+      await http.post(`/admin/videos/${video.video_id}/${verb}`);
+      await list.reload();
+      return true;
+    } finally {
+      setBusy(null);
+    }
   });
 
   const openCreate = () => {
@@ -288,9 +305,17 @@ export default function VideoManagePage() {
             {
               key: "actions",
               header: "",
-              width: "13rem",
+              width: "17rem",
               cell: (row) => (
                 <div className="pm-rowactions">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={row.uploading}
+                    onClick={() => setPreview(row)}
+                  >
+                    미리보기
+                  </Button>
                   <Button size="sm" variant="ghost" onClick={() => openEdit(row)}>
                     수정
                   </Button>
@@ -298,7 +323,7 @@ export default function VideoManagePage() {
                     <Button
                       size="sm"
                       variant="primary"
-                      loading={transition.pending}
+                      loading={busy?.id === row.video_id && busy.verb === "publish"}
                       onClick={() => void transition.run(row, "publish")}
                     >
                       공개
@@ -308,7 +333,7 @@ export default function VideoManagePage() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      loading={transition.pending}
+                      loading={busy?.id === row.video_id && busy.verb === "archive"}
                       onClick={() => void transition.run(row, "archive")}
                     >
                       보관
@@ -320,6 +345,14 @@ export default function VideoManagePage() {
           ]}
         />
       </Card>
+
+      {preview && (
+        <VideoPreview
+          videoId={preview.video_id}
+          title={preview.title}
+          onClose={() => setPreview(null)}
+        />
+      )}
 
       <Modal
         open={open}

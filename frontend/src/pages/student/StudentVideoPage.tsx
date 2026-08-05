@@ -14,12 +14,30 @@
  * 덤으로 권한 검사도 재생 시점에 걸린다 — 목록만 열어 두고 몇 시간 뒤 재생하는
  * 경우에도 7일 만료가 제대로 잡힌다.
  *
+ * ## 자동재생하지 않는다
+ *
+ * 목록의 [보기] 는 **여는 것**이고 재생은 학생이 플레이어에서 시작한다.
+ * 두 가지 이유다 — ① 잘못 누른 사람에게도 재생이 시작되면 그게 그대로 요금이다
+ * (Mux 는 "본 시간" 이 아니라 **"내려간 시간"** 으로 과금한다) ② 목록 버튼이
+ * `재생` 인데 실제 재생은 다음 화면에서 일어나면 이름과 동작이 어긋난다.
+ *
  * ## 재생 참조는 서버가 정한다
  *
  * 시드 데이터는 재생될 수 없는 가짜 참조(`seed-*`)를 갖는데, 그 대체를 **서버가**
  * 한다(playback.resolve_ref). 여기서 갈아치우면 서명은 원래 값 앞으로 나가고
  * 재생은 다른 자산이 되어 Mux 가 거부한다 — 실제로 그렇게 죽었다(2026-08-04).
  * 프런트는 서버가 준 `external_ref` 와 `tokens` 를 **그대로** 쓴다.
+ *
+ * ## 워터마크가 지워지면 기록한다
+ *
+ * 오버레이는 개발자도구 한 줄로 지워진다(`.vd-mark` 를 remove). 서버측 굽기를
+ * 파는 업체가 우리 규모에 없어 **원리상 막을 수 없다**(2026-08-04 전수조사).
+ * 그래서 막는 대신 적는다 — 실수로 지울 수 있는 물건이 아니므로 기록 한 줄이
+ * 곧 의도의 증거다(WatermarkTamper 모델).
+ *
+ * 지워지면 **다시 붙이고** 신고한다. 다시 붙이는 것은 우연·가벼운 제거를 되돌리고,
+ * 신고는 작정한 쪽을 기록에 남긴다. **화면에는 아무 것도 알리지 않는다** —
+ * 알리면 신고 요청부터 막는 법을 배우게 된다.
  *
  * ## 워터마크는 플레이어 **안쪽**이다
  *
@@ -29,7 +47,7 @@
  * 개발자도구로 남의 이름·다른 날짜로 바꿔치기할 수 있다(playback.py 계약).
  */
 import MuxPlayer from "@mux/mux-player-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { http, useApi, useApiAction } from "../../api";
 import {
@@ -83,18 +101,68 @@ function dayLabel(iso: string): string {
   return `${date.getMonth() + 1}월 ${date.getDate()}일`;
 }
 
+/**
+ * 워터마크가 사라지면 되살리고 한 번 신고한다.
+ *
+ * 세션당 1회만 보낸다 — 되살리기가 다시 관찰을 부르므로 상한이 없으면
+ * 무한 루프로 요청이 나간다.
+ */
+function useWatermarkGuard(
+  stageRef: React.RefObject<HTMLDivElement>,
+  playing: Playback | null,
+) {
+  const reported = useRef(false);
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !playing) return;
+    reported.current = false;
+    const observer = new MutationObserver(() => {
+      if (stage.querySelector(".vd-mark")) return;
+      const mark = document.createElement("div");
+      mark.className = "vd-mark";
+      const text = document.createElement("span");
+      text.className = "vd-mark__text";
+      text.textContent = playing.watermark;
+      mark.appendChild(text);
+      (stage.querySelector("mux-player") ?? stage).appendChild(mark);
+      if (!reported.current) {
+        reported.current = true;
+        void http.post(`/student/videos/${playing.video.video_id}/tamper`).catch(() => {});
+      }
+    });
+    observer.observe(stage, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [stageRef, playing]);
+}
+
 export default function StudentVideoPage() {
   const list = useApi(
     () => http.get<{ videos: VideoRow[] }>("/student/videos").then((r) => r.data.videos),
     [],
   );
   const [playing, setPlaying] = useState<Playback | null>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  useWatermarkGuard(stageRef, playing);
+
+  /**
+   * 지금 열고 있는 행 — 버튼의 로딩 표시가 **그 행에만** 걸리게 한다.
+   *
+   * `useApiAction` 의 `pending` 은 페이지에 하나뿐인 불리언이라 어느 행을 눌렀는지
+   * 모른다. 그대로 `loading` 에 물리면 한 행을 눌러도 **모든 행이 함께 돌고**,
+   * Button 이 `disabled={loading}` 이라 나머지 행이 잠긴다(2026-08-04 실측).
+   */
+  const [openingId, setOpeningId] = useState<number | null>(null);
 
   // 재생 정보는 누르는 순간 받는다(파일 머리말 참조).
   const open = useApiAction(async (videoId: number) => {
-    const res = await http.get<Playback>(`/student/videos/${videoId}/playback`);
-    setPlaying(res.data);
-    return true;
+    setOpeningId(videoId);
+    try {
+      const res = await http.get<Playback>(`/student/videos/${videoId}/playback`);
+      setPlaying(res.data);
+      return true;
+    } finally {
+      setOpeningId(null);
+    }
   });
 
   if (list.initialLoading) return <Loading label="복습영상을 불러오는 중…" />;
@@ -105,16 +173,34 @@ export default function StudentVideoPage() {
   if (playing) {
     return (
       <div className="ui-stack">
-        <Button variant="ghost" onClick={() => setPlaying(null)}>
-          목록으로
-        </Button>
-
         <Card
-          title={playing.video.title}
+          title={
+            <span className="vd-title">
+              <button
+                type="button"
+                className="vd-back"
+                onClick={() => setPlaying(null)}
+                aria-label="목록으로"
+              >
+                {/* PageIcon 과 같은 결: viewBox 24 · stroke 1.7 · 둥근 끝 */}
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path
+                    d="M14.5 5.5 8 12l6.5 6.5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+              {playing.video.title}
+            </span>
+          }
           aside={`${playing.video.week_no}주차`}
           padding="none"
         >
-          <div className="vd-stage">
+          <div className="vd-stage" ref={stageRef}>
             <MuxPlayer
               className="vd-player"
               streamType="on-demand"
@@ -126,7 +212,6 @@ export default function StudentVideoPage() {
                 // 유출본에 찍히는 추적이라면 이건 재생 기록 쪽이다.
                 viewer_user_id: playing.viewer_id,
               }}
-              autoPlay
             >
               {/* 플레이어 안쪽 — 전체화면에서도 남는다(파일 머리말 참조) */}
               <div className="vd-mark">
@@ -191,10 +276,10 @@ export default function StudentVideoPage() {
               <Button
                 size="sm"
                 variant="primary"
-                loading={open.pending}
+                loading={openingId === row.video_id}
                 onClick={() => void open.run(row.video_id)}
               >
-                재생
+                보기
               </Button>
             ),
           },

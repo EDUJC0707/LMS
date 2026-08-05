@@ -43,7 +43,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       aria-busy={loading || undefined}
     >
       {loading && <Spinner size="sm" className="ui-btn__spinner" />}
-      {children}
+      {/* 라벨을 감싸는 이유는 CSS 주석(.ui-btn__label) 참조 — 로딩 중에도
+          자리를 차지해야 버튼 폭이 그대로 유지된다. */}
+      <span className="ui-btn__label">{children}</span>
     </button>
   );
 });
