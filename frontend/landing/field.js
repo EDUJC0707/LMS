@@ -516,6 +516,11 @@ export function mountField(root, units) {
        포인터 분기를 끄면 자율항이 wgt 1 로 돌아 한 프레임에 구도가 잡힌다.
        커서로 걷어내는 연출을 그대로 두면 이 사용자에게는 먼지밭만 남는다. */
     FINE = false;
+    /* woke 게이트(07-29)가 이 분기(07-28)보다 뒤에 들어와 그 의도를 덮어썼다.
+       이 줄이 없으면 paint 의 `if(!woke){ ... wgt=0 }` 가 이겨서 grow=0,
+       ready=false — 바로 위 주석이 막으려던 상태(먼지밭만 남는다)가 그대로 된다.
+       동작 줄이기를 켠 사용자는 스크롤로도 이걸 풀 수 없다. */
+    woke = true;
     paint(0, 1);
   } else {
     raf = requestAnimationFrame(frame);
