@@ -21,18 +21,46 @@ primary_region = "nrt"     # 도쿄
 # 프로세스 그룹. .venv 바이너리 직접 실행 — uv run 이 부팅마다 dev deps 재설치/
 # 바이트컴파일하는 지연 제거.
 #
-# **worker(celery) 는 뺐다**(2026-07-29). 지금 이 저장소에 @shared_task 가 하나도 없고,
+# **worker(celery) 는 뺐다**(2026-07-29). 뺄 당시 이 저장소에 @shared_task 가 하나도 없고,
 # 부르는 곳도 beat 스케줄도 없다. 게다가 REDIS_URL/CELERY_BROKER_URL 시크릿이 없어
 # localhost:6379 로 붙으려다 32초마다 접속 실패 로그만 찍고 있었다.
 # 하는 일 없이 월 $3.32 였다.
 #
-# 되살릴 때: 아래 줄을 풀기 전에 (1) 실제 태스크 (2) Redis 프로비저닝 + 시크릿 주입
-# 이 먼저다. 순서가 반대면 또 에러만 찍는 머신이 선다.
+# **(1) 은 2026-08-04 에 충족됐다** — `apps/clinic/tasks.py` 가 첫 태스크이고
+# beat 일정도 `CELERY_BEAT_SCHEDULE` 에 선언돼 있다(20분 주기, 클리닉 감독 자료
+# 수집). 그런데도 아직 안 켠다: **배포는 보류**(2026-08-04 사용자 지시).
+# 그동안 그 일은 `manage.py collect_clinic_supervision` 로 손으로 돌린다.
+#
+# 되살릴 때: 아래 줄을 풀기 전에 (2) Redis 프로비저닝 + 시크릿 주입이 먼저다.
+# 순서가 반대면 또 에러만 찍는 머신이 선다.
 #   fly redis create                      # Upstash 연동
 #   fly secrets set REDIS_URL=... CELERY_BROKER_URL=... -a edujc-lms
+#
+# **`-B` 로 beat 를 워커 안에 넣는다.** Fly 는 프로세스 그룹마다 머신을 하나씩
+# 띄우므로 worker·beat 를 따로 적으면 월 $3.32 가 두 번 나간다. 워커가 하나뿐이라
+# 스케줄이 중복 발행될 여지가 없고, 태스크도 멱등이라 합쳐도 안전하다.
+# (워커를 2대 이상으로 늘리는 날에는 beat 를 반드시 분리해야 한다 — 안 그러면
+#  같은 시각에 여러 머신이 같은 작업을 발행한다.)
+# beat 를 빠뜨리면 태스크는 등록돼 있는데 아무도 부르지 않아 조용히 안 돈다.
+#
+# ── 주기 작업은 supercronic 이 맡는다(2026-08-05 결정) ────────────────────
+# 클리닉 감독 자료 수집은 시간이 되면 도는 게 전부라 브로커가 필요 없다.
+# Celery 로 가면 워커 머신($2.02~3.32)에 **Redis 가 얹힌다** — Upstash 공식 문서가
+# "Celery 워커는 큐가 비어도 계속 폴링해서 종량제에서 비용이 커진다"며 정액
+# (250MB $10/월)을 권한다. 합치면 월 $12~13 이고, 그 돈은 **웹 요청이 일을
+# 떠넘길 때 쓰는 부품**에 나가는데 이 배치엔 떠넘길 요청이 없다.
+# supercronic 은 머신 하나($2.02)로 같은 일을 하고 주기 제한도 없다.
+# (알림톡 발송이 워커를 세우는 날, beat 로 옮겨 타면 된다 — `tasks.py` 는 그대로 둔다.)
 [processes]
   web = ".venv/bin/gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
-  # worker = ".venv/bin/celery -A config worker -l info"
+  cron = "supercronic /app/crontab"
+  # worker = ".venv/bin/celery -A config worker -B -l info"
+
+# cron 머신은 파이썬 하나 띄우는 게 전부라 web 만큼 안 준다.
+[[vm]]
+  processes = ["cron"]
+  size = "shared-cpu-1x"
+  memory = "256mb"
 
 [http_service]
   internal_port = 8000

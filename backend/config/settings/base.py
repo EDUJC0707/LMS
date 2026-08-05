@@ -100,12 +100,24 @@ CELERY_BROKER_URL = env("CELERY_BROKER_URL", default=REDIS_URL)
 CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_TIMEZONE = "Asia/Seoul"
 CELERY_TASK_TRACK_STARTED = True
-# 실패·정체 알림 재발송(apps.notifications.tasks). beat 프로세스는 아직 안 뜬다 —
-# 워커와 함께 켜는 시점은 infra/DEPLOY.md 6장 참조.
+# 주기 작업 — **한 딕셔너리에 모은다.** 트랙마다 각자 `CELERY_BEAT_SCHEDULE = {...}`
+# 를 새로 쓰면 git 은 충돌 없이 합쳐 놓고 **나중 대입이 앞의 것을 통째로 덮는다**
+# (2026-08-05 병합에서 실제로 retry-failed-notifications 가 조용히 사라졌다).
+# 항목을 추가할 때는 새 대입이 아니라 이 딕셔너리에 키를 더한다.
+# beat 프로세스는 아직 안 뜬다 — 켜는 시점은 infra/DEPLOY.md 6장.
 CELERY_BEAT_SCHEDULE = {
+    # 실패·정체 알림 재발송(apps.notifications.tasks)
     "retry-failed-notifications": {
         "task": "notifications.retry_failed_notifications",
         "schedule": 60 * 60,
+    },
+    # 클리닉 감독 자료 수집. 멱등이라 헛돌아도 되고 두 번 돌아도 된다.
+    # 20분 주기인 이유: 회의가 끝나고 자료가 생기기까지 몇 분 걸리고 수집은
+    # 거기에 30분을 더 기다린다. 주기가 그보다 성기면 대기가 주기만큼 통째로
+    # 늘어난다. 한 번 걸러도 다음 차례가 메운다.
+    "clinic-supervision": {
+        "task": "apps.clinic.tasks.collect_clinic_supervision",
+        "schedule": 20 * 60,
     },
 }
 
@@ -131,6 +143,10 @@ ALIGO_API_KEY = env("ALIGO_API_KEY", default="")
 ALIGO_USER_ID = env("ALIGO_USER_ID", default="")
 ALIGO_SENDER_PHONE = env("ALIGO_SENDER_PHONE", default="")  # 사전 등록된 발신번호
 ALIGO_SENDER_KEY = env("ALIGO_SENDER_KEY", default="")  # 카카오 발신프로필키(senderkey)
+
+# beat 주기 작업. **워커가 아직 안 떠 있어서 지금은 아무도 안 부른다** —
+# 켜는 절차는 infra/DEPLOY.md 6장(Redis 프로비저닝 → 시크릿 → 워커 프로세스).
+# 여기 선언해 두는 이유는 주기가 코드에 남아 버전 관리되게 하기 위해서다.
 
 # --- 비밀번호 검증 -------------------------------------------------------
 AUTH_PASSWORD_VALIDATORS = [
@@ -215,3 +231,16 @@ if AWS_STORAGE_BUCKET_NAME:
         "default": {"BACKEND": "storages.backends.s3.S3Storage"},
         "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
     }
+
+# --- 화상(클리닉) — key_considerations §4 추상화 경계 --------------------
+# 업체 교체는 이 경로 한 줄이다(apps.clinic.conferencing 계약).
+CLINIC_CONFERENCE_BACKEND = env(
+    "CLINIC_CONFERENCE_BACKEND", default="apps.clinic.google_meet.GoogleMeetAdapter"
+)
+# 구글 미트는 **사용자 인증만** 받는다(서비스 계정은 워크스페이스 도메인 위임
+# 한정) — 계정 1개로 한 번 동의받은 갱신 토큰을 서버가 들고 쓴다.
+# 발급: `manage.py meet_authorize`. 셋 중 하나라도 비면 스페이스 생성은
+# 막히고 배정은 관리자 수동 입력으로만 성립한다(닫힘이 안전 기본값 — §5).
+GOOGLE_MEET_CLIENT_ID = env("GOOGLE_MEET_CLIENT_ID", default="")
+GOOGLE_MEET_CLIENT_SECRET = env("GOOGLE_MEET_CLIENT_SECRET", default="")
+GOOGLE_MEET_REFRESH_TOKEN = env("GOOGLE_MEET_REFRESH_TOKEN", default="")

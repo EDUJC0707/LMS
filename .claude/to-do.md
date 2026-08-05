@@ -200,6 +200,10 @@
 ## 배포 전 (반나절 거리, 첫 실배포 직전 일괄)
 
 - [ ] prod `SECRET_KEY` fail-fast(기본값 제거), whitenoise + collectstatic(현재 /static/ 404)
+- [ ] **구글 미트 시크릿 3개를 운영에 올리기** — 로컬은 `backend/.env` 로 이미 돈다(2026-08-04 실계정 확인).
+  `fly secrets set GOOGLE_MEET_CLIENT_ID=... GOOGLE_MEET_CLIENT_SECRET=... GOOGLE_MEET_REFRESH_TOKEN=... -a edujc-lms`
+  **원본은 `backend/.env` 뿐이다** — fly 도 구글도 갱신 토큰을 다시 보여주지 않는다.
+  잃어버리면 `manage.py meet_authorize` 로 재발급(같은 값이 아니라 새 값이 나온다)
 - [ ] `infra/Dockerfile`에 `ENV UV_NO_DEV=1`(부팅 13초 지연), uv 이미지 태그 고정
 - [x] ~~CI `FLY_API_TOKEN` 시크릿(현재 미설정이라 자동배포 실행 자체가 안 됨)~~ →
   **틀린 정보였다**(2026-08-04 확인). 시크릿은 **2026-07-29 부터 등록돼 있고 CI 는 계속 성공하고 있다.**
@@ -210,7 +214,13 @@
 - [x] ~~Sentry `release` 주입~~ → **2026-08-04 완료.** `Dockerfile` 의 `ARG GIT_SHA` →
   `ENV SENTRY_RELEASE`, CI 와 `make deploy` 가 넘긴다. **`fly deploy` 를 손으로 직접
   치면 태그가 사라지므로 `make deploy` 를 쓸 것.** 다음 배포부터 붙는다
-- [ ] **Celery 워커 + Redis 기동 — 아직 아님**(2026-07-22 결정, 보류 유지). `@shared_task` 0건이라 할 일이 없고 워커는 auto_stop 대상이 아니라 24시간 돌며 월 ~$3.3. **해제 트리거 = 첫 `@shared_task` 작성 시점**(알림톡 발송 또는 영상 처리). 복구 3단계와 경위는 `infra/DEPLOY.md` 6장
+- ~~Celery 워커 + Redis 기동~~ → **안 세운다**(2026-08-05 결정). 주기 작업은
+  **supercronic** 이 맡는다 — `infra/crontab` + fly.toml `cron` 프로세스 그룹,
+  머신 하나 월 $2.02. Celery 로 가면 워커 머신에 **Redis 가 얹혀 월 $12~13** 이 되는데
+  (Upstash 공식 문서: 워커가 큐가 비어도 계속 폴링해 종량제 비용이 커지니 정액
+  $10/월 권장), 그 돈이 나가는 브로커는 **웹 요청이 일을 떠넘길 때** 쓰는 부품이라
+  이 배치엔 쓸 데가 없다. `apps/clinic/tasks.py` 와 `CELERY_BEAT_SCHEDULE` 은 그대로
+  둔다 — 알림톡 발송이 워커를 세우는 날 옮겨 타면 되고 그때는 추가 비용이 없다
 
 ## 외부 대기 (오는 대로 붙임 — 자리는 다 파여 있음)
 
@@ -223,6 +233,23 @@
   업체는 **알리고**로 확정(솔라피에서 변경 — `docs/decisions.md` §3-1). 남은 것은 ①알리고 키 4개
   ②발송 시점 목록(8-17) ③`aligo.py` 의 `_request` HTTP 한 곳 ④워커 기동(`infra/DEPLOY.md` 6장)
 - [ ] **박 대표 컨펌**: UI 방향 (0721 회의에서 당일 컨펌 예정이었음). 영상 업체는 2026-07-30 Mux 확정
-- [ ] Meet API(현재 meet_url 수동 입력). **OMR 인식 엔진은 여기서 뺐다** — 실물이 마킹
-  카드라 외부 엔진 없이 갈 수 있다(위 OMR 절)
+- ~~Meet API~~ → **연결됨**(2026-08-04). **OMR 인식 엔진도 여기서 뺐다** — 실물이
+  마킹 카드라 외부 엔진 없이 갈 수 있다(위 OMR 절)
+
 - [ ] **Carbon MCP 인바이트** — IBM 승인 대기(7/22 요청). 코드 오면 `claude mcp add-json carbon-mcp ...` → 세션 재시작. **단 현재 디자인은 hallmark 네이비로 확정됐으므로 참고용으로 격하**
+
+## 클리닉 화상 (브랜치 `meet` — 미배포)
+
+배정→방 생성→전사·요약 수집까지 전부 돌고 실계정으로 확인됐다.
+경위·결정 근거는 `progress.md` 2026-08-05. 여기는 남은 것만.
+
+- [ ] **배포** — `meet` 이 아직 main 밖이다. 시크릿 3개(`GOOGLE_MEET_CLIENT_ID`·
+  `CLIENT_SECRET`·`REFRESH_TOKEN`)가 로컬 `.env` 에만 있어 `fly secrets set` 이 필요하고,
+  그다음부터 fly.toml 의 `cron` 프로세스가 20분마다 수집을 돈다.
+  ⚠ **main 에 push 하면 그 순간 실배포된다**(CI 가 실제로 돈다 — '배포 전' 절 참조)
+- [ ] **클리닉 리마인더** — 시작 6분 전 "5분 뒤 12:00 클리닉" 안내.
+  **크론이 필요 없다**: 솔라피 예약 발송(최대 6개월 · 취소 API 있음)에 배정 시점 한 번
+  걸어 두면 업체가 정확한 시각에 쏜다. 우리 자리는 둘 — `assign` 에서 예약,
+  `change_booking` 에서 취소. **문구는 8-17 템플릿 승인 대기**라 지금 박으면 갈아엎는다
+- [ ] **평가 UI** — 지난 클리닉 화면은 요약·링크를 보여 주는 데까지다. 조교 평가표
+  (항목별 판단·종합 판정)는 나중(2026-08-05 사용자: *"평가는 나중에"*)

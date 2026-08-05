@@ -25,7 +25,13 @@ from . import mux
 
 PLAYBACK_ID = "oxfSIcgB5hF1OWCXYEfg8mH3Rmm01JStKGFzZosOmukA"
 KEY_ID = "signing-key-id"
-NOW = timezone.make_aware(datetime.datetime(2026, 8, 4, 14, 0))
+# **고정 시각으로 잡지 않는다.** 2026-08-04 14:00 을 박아 뒀더니 TTL 6시간이
+# 지난 그날 저녁 20시부터 `jwt.decode` 가 `ExpiredSignatureError` 를 냈다 —
+# 서명은 이 값으로 하는데 검증은 진짜 시계로 하기 때문이다. 하루 만에 저절로
+# 빨개지는 테스트였다(2026-08-05 발견·수정).
+# 여기서 확인하려는 것은 "언제"가 아니라 TTL 길이와 대상(aud) 분리라서
+# 실제 시각으로 서명해도 뜻이 그대로다.
+NOW = timezone.now()
 
 #: 토큰을 **고정된 과거 시각**으로 서명하므로 `exp` 는 이미 지나 있다.
 #: PyJWT 는 실제 벽시계로 만료를 보기 때문에 이 검사를 켜 두면 테스트가

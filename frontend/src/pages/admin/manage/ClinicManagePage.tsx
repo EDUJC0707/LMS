@@ -3,7 +3,7 @@
  *
  * API
  *   GET  /api/admin/clinic/requests?status=&date=
- *   POST /api/admin/clinic/requests/{id}/assign      {assigned_staff_id, meet_url}
+ *   POST /api/admin/clinic/requests/{id}/assign      {assigned_staff_id, conference_url?}
  *   POST /api/admin/clinic/requests/{id}/reject
  *   POST /api/admin/clinic/requests/{id}/attendance  {status: "출석"|"결석"}
  *   POST /api/admin/clinic/requests/{id}/evaluation  {items[], overall_result?}
@@ -45,13 +45,16 @@ import {
 import "./manage.css";
 import type { ClinicCriteria, ClinicRequestRow, ClinicStatus, StaffMatrix } from "./types";
 
-type TabKey = "전체" | ClinicStatus;
+// `지난` 만 축이 다르다 — 나머지는 상태, 이것은 기간이다. 한 줄에 섞어 두는
+// 이유는 관리자가 하는 일이 하나라서다: 목록을 좁혀서 한 건을 고른다.
+type TabKey = "전체" | "지난" | ClinicStatus;
 const TABS: { key: TabKey; label: string }[] = [
   { key: "대기", label: "대기" },
   { key: "승인배정", label: "승인·배정" },
   { key: "미승인", label: "미승인" },
   { key: "취소", label: "취소" },
   { key: "전체", label: "전체" },
+  { key: "지난", label: "지난" },
 ];
 
 export default function ClinicManagePage() {
@@ -65,7 +68,8 @@ export default function ClinicManagePage() {
   const queue = useApi(async () => {
     const { data } = await http.get<{ requests: ClinicRequestRow[] }>("/admin/clinic/requests", {
       params: {
-        ...(tab === "전체" ? {} : { status: tab }),
+        ...(tab === "전체" || tab === "지난" ? {} : { status: tab }),
+        ...(tab === "지난" ? { period: "지난" } : {}),
         ...(date ? { date } : {}),
       },
     });
@@ -148,7 +152,7 @@ export default function ClinicManagePage() {
               empty={
                 <EmptyState
                   title={
-                    tab === "전체"
+                    tab === "전체" || tab === "지난"
                       ? "이 조건에 해당하는 신청이 없습니다"
                       : `${tab} 상태인 신청이 없습니다`
                   }
@@ -268,14 +272,20 @@ function RequestPanel({
       ? String(request.assigned_staff.user_id)
       : String(assignable[0]?.user_id ?? ""),
   );
-  const [meetUrl, setMeetUrl] = useState(request.meet_url ?? "");
+  // 빈 칸으로 시작한다 — 서버가 화상 스페이스를 만들기 때문이다. 기존 링크를
+  // 채워 두면 재배정할 때마다 그 값이 "직접 입력"으로 되돌아가 서버가 만든
+  // 스페이스 참조가 지워진다(backend clinic_admin.assign 순서 1·2).
+  const [conferenceUrl, setConferenceUrl] = useState("");
 
   // 모든 액션은 성공 시 true 를 돌려준다 — useApiAction 은 실패에만
   // undefined 를 주므로 void 액션은 성공/실패를 구분할 수 없다.
   const assign = useApiAction(async () => {
+    const typed = conferenceUrl.trim();
     await http.post(`/admin/clinic/requests/${request.clinic_id}/assign`, {
       assigned_staff_id: Number(staffId),
-      meet_url: meetUrl.trim(),
+      // 적었을 때만 보낸다. 안 보내면 서버가 새 스페이스를 뚫고,
+      // 이미 링크가 있으면 그대로 둔다.
+      ...(typed ? { conference_url: typed } : {}),
     });
     return true;
   });
@@ -296,7 +306,7 @@ function RequestPanel({
   const canReject = request.status === "대기";
   const canMarkAttendance = request.status === "승인배정" && request.attendance_status === null;
   const canEvaluate = request.status === "승인배정";
-  const meetReady = meetUrl.trim().length > 0 && staffId !== "";
+  const assignReady = staffId !== "";
 
   return (
     <Card
@@ -323,12 +333,12 @@ function RequestPanel({
           </dd>
           <dt>담당 조교</dt>
           <dd>{request.assigned_staff?.name ?? "아직 없음"}</dd>
-          {request.meet_url && (
+          {request.conference_url && (
             <>
               <dt>화상 링크</dt>
               <dd>
-                <a href={request.meet_url} target="_blank" rel="noreferrer">
-                  {request.meet_url}
+                <a href={request.conference_url} target="_blank" rel="noreferrer">
+                  {request.conference_url}
                 </a>
               </dd>
             </>
@@ -336,6 +346,21 @@ function RequestPanel({
           <dt>노쇼</dt>
           <dd className="num">{request.student.noshow_count}회</dd>
         </dl>
+
+        {request.supervision && (
+          <Card title="전사 요약" padding="none">
+            <div className="ui-stack ui-stack--sm cl-supervision">
+              {request.supervision.summary ? (
+                <p className="cl-supervision__body">{request.supervision.summary}</p>
+              ) : (
+                <EmptyState title="요약을 읽지 못했습니다" />
+              )}
+              <a href={request.supervision.transcript_url} target="_blank" rel="noreferrer">
+                전사 원문 열기
+              </a>
+            </div>
+          </Card>
+        )}
 
         {request.student.clinic_banned && (
           <Alert tone="danger">신청 제한 상태</Alert>
@@ -373,12 +398,12 @@ function RequestPanel({
                 </Select>
               )}
             </Field>
-            <Field label="화상 수업 링크" required>
+            <Field label="화상 링크 직접 입력">
               {(props) => (
                 <Input
                   {...props}
-                  value={meetUrl}
-                  onChange={(e) => setMeetUrl(e.target.value)}
+                  value={conferenceUrl}
+                  onChange={(e) => setConferenceUrl(e.target.value)}
                   placeholder="https://meet.google.com/abc-defg-hij"
                   inputMode="url"
                 />
@@ -387,7 +412,7 @@ function RequestPanel({
             <div className="ui-row">
               <Button
                 variant="primary"
-                disabled={!meetReady}
+                disabled={!assignReady}
                 loading={assign.pending}
                 onClick={async () => {
                   if (await assign.run()) await onDone();

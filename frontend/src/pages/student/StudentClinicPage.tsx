@@ -502,11 +502,11 @@ export default function StudentClinicPage() {
               {active.requested_time}
               {activeEnd ? ` – ${activeEnd}` : ""}
             </p>
-            {active.meet_url && (
+            {active.conference_url && (
               <div className="cl-booked__link">
                 <a
                   className="ui-btn ui-btn--primary ui-btn--sm"
-                  href={active.meet_url}
+                  href={active.conference_url}
                   target="_blank"
                   rel="noreferrer"
                 >

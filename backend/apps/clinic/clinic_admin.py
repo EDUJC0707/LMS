@@ -3,13 +3,22 @@
 규칙 강제 지점(booking.py 와 같은 구조 — ClinicError 재사용):
   ① 승인+배정: `대기`→`승인배정`. **재배정 허용**(`승인배정` 상태에서 담당·링크
      교체) — 수업 당일 현장 대응 불가 전제라 조교 사정 변경 시 수동 우회가
-     있어야 한다(key_considerations §5). meet_url 은 수동 입력(Meet API 연동
-     후순위 — 링크 재사용 금지 원칙은 입력하는 관리자가 지킨다).
+     있어야 한다(key_considerations §5). 화상 링크는 **서버가 만든다** —
+     `conferencing.get_adapter()` 로 스페이스 1개를 새로 뚫고 provider·ref·url
+     셋을 함께 저장한다(링크 재사용 금지가 사람의 손버릇이 아니라 코드가 된다).
+     관리자가 링크를 직접 넘기면 그것이 이기고 업체 호출은 없다 — 연동이
+     끊긴 날에도 배정이 성립해야 한다(§5 수동 우회).
   ② 출결 처리: `승인배정` + 미처리 건만. **재처리 400** — 결석 재처리를
      허용하면 noshow_count 가 이중 집계된다. 정정이 필요하면 대표가 unban
      으로 풀고 재집계하는 수동 절차(파괴적 정정 자동화 금지 — §5).
   ③ 노쇼: 결석 = noshow_count +1, **2회 도달 시 clinic_banned=true**
      (원천은 accounts.Student — ClinicRequest 모델 계약, 사본 금지).
+     **판정은 언제나 사람이 한다**(2026-08-04 확정). 화상 업체가 참가자
+     입·퇴장 시각을 내주므로 "시작 10분 이상 미출석"을 기계가 계산할 수는
+     있다(실측 확인). 그래도 자동으로 찍지 않는다 — 노쇼 2회면 영구제한이고
+     그건 파괴적 처분이라 사람 손을 거쳐야 한다(§5). 접속 불량·조교 지각처럼
+     기록만 봐서는 갈리지 않는 사정도 조교만 안다. 자동 판정을 넣고 싶어지면
+     **판정이 아니라 참고 표시**까지가 한계다.
   ④ 해제(unban): **대표 전용** — 노쇼 영구제한 해제는 key_considerations §2
      의 대표 전용 민감 기능 후보라서 범위 확정 전까지 가장 좁게(대표만) 연다
      (닫힘이 안전 기본값 — §5). noshow_count 는 유지 — 누적은 사실 기록이고,
@@ -30,6 +39,12 @@ from apps.notifications.models import Notification
 from apps.notifications.sending import queue as queue_notification
 
 from .booking import ClinicError
+from .conferencing import (
+    Conference,
+    PermanentConferenceError,
+    TemporaryConferenceError,
+    get_adapter,
+)
 from .models import (
     ClinicEvalCriteria,
     ClinicEvaluation,
@@ -45,16 +60,33 @@ NOSHOW_BAN_THRESHOLD = 2
 # --- 대기열 조회 ----------------------------------------------------------
 
 
-def queue_rows(status_filter=None, date_filter=None):
-    """신청 대기열 — 학생 노쇼·제한 상태 동봉(배정 판단 자료)."""
+#: `period` 값집합 — 대기열은 앞을 보고(배정할 것) 지난 목록은 뒤를 본다(결과).
+PERIOD_PAST = "지난"
+PERIOD_UPCOMING = "예정"
+PERIODS = (PERIOD_PAST, PERIOD_UPCOMING)
+
+
+def queue_rows(status_filter=None, date_filter=None, period=None):
+    """신청 대기열 — 학생 노쇼·제한 상태 동봉(배정 판단 자료).
+
+    `period` 는 오늘을 기준으로 가른다. 오늘 것은 **예정** 쪽이다 — 아직 안 끝난
+    수업을 '지난' 목록에 올리면 결과가 비어 있는 게 정상인데 빠뜨린 것처럼 보인다.
+    """
     qs = (
         ClinicRequest.objects.select_related("student__user", "assigned_staff", "slot")
+        .select_related("evaluation")
         .order_by("requested_date", "requested_time", "clinic_id")
     )
     if status_filter:
         qs = qs.filter(status=status_filter)
     if date_filter:
         qs = qs.filter(requested_date=date_filter)
+    if period == PERIOD_PAST:
+        qs = qs.filter(requested_date__lt=timezone.localdate()).order_by(
+            "-requested_date", "-requested_time", "-clinic_id"
+        )
+    elif period == PERIOD_UPCOMING:
+        qs = qs.filter(requested_date__gte=timezone.localdate())
     return [queue_row(r) for r in qs]
 
 
@@ -79,8 +111,26 @@ def queue_row(request):
             if request.assigned_staff
             else None
         ),
-        "meet_url": request.meet_url,
+        "conference_url": request.conference_url,
         "attendance_status": request.attendance_status,
+        "supervision": _supervision_block(request),
+    }
+
+
+def _supervision_block(request):
+    """수집된 감독 자료(요약·문서 링크). 아직 없으면 None.
+
+    **None 과 빈 요약은 다른 사실이다.** None 은 가져올 회의 자료가 아예 없다는
+    뜻이고(아무도 안 들어왔거나 조교가 전사가 안 되는 기기로 호스트했거나),
+    요약만 비어 있으면 문서는 있는데 잘라낼 자리를 못 찾은 것이다. 화면이 그
+    둘을 구분해 말할 수 있어야 조교가 평가를 안 한 것처럼 보이지 않는다.
+    """
+    evaluation = getattr(request, "evaluation", None)
+    if evaluation is None or not evaluation.transcript_url:
+        return None
+    return {
+        "summary": evaluation.ai_summary,
+        "transcript_url": evaluation.transcript_url,
     }
 
 
@@ -89,17 +139,64 @@ def queue_row(request):
 _ASSIGNABLE = (ClinicRequest.Status.PENDING, ClinicRequest.Status.APPROVED)
 
 
-def assign(request, staff_user, meet_url):
-    """승인+배정(①) — 담당 직원·미트 링크를 걸고 `승인배정`으로 전이."""
+def assign(request, staff_user, conference_url=None):
+    """승인+배정(①) — 담당 직원·화상 링크를 걸고 `승인배정`으로 전이.
+
+    링크가 정해지는 순서(위에서 걸리면 아래는 보지 않는다):
+      1. `conference_url` 이 들어왔다 → **그것이 이긴다**. 업체를 부르지 않고
+         provider·ref 는 비운다 — 우리가 만든 스페이스가 아니기 때문이다.
+      2. 이미 링크가 있다(재배정) → **그대로 둔다**. 클리닉 1건 = 스페이스 1개
+         (§4)이고, 조교만 바뀌는데 링크가 갈리면 학생이 이미 받은 링크가 죽는다.
+         시간이 바뀐 경우는 `booking.change_booking` 이 셋을 비워 두므로 여기서
+         새로 뚫린다.
+      3. 없다 → 화상 어댑터로 **새 스페이스 1개**를 만든다.
+
+    **실패하면 아무것도 바꾸지 않는다.** 스페이스를 먼저 만들고 그 다음에
+    필드를 건드리는 순서인 이유다 — `승인배정`인데 링크가 없는 행은 학생에게
+    빈 안내가 되고, 출결 처리까지 열려 버린다(mark_attendance 는 `승인배정`만
+    받는다).
+    """
     if request.status not in _ASSIGNABLE:
         raise ClinicError("배정할 수 없는 상태입니다.")
     if staff_user is None or staff_user.role not in STAFF_ROLES or not staff_user.is_active:
         raise ClinicError("배정 대상은 활성 직원이어야 합니다.")
+    conference = _resolve_conference(request, conference_url)
     request.status = ClinicRequest.Status.APPROVED
     request.assigned_staff = staff_user
-    request.meet_url = meet_url
-    request.save(update_fields=["status", "assigned_staff", "meet_url"])
+    request.conference_provider = conference.provider
+    request.conference_ref = conference.ref
+    request.conference_url = conference.url
+    request.save(
+        update_fields=[
+            "status",
+            "assigned_staff",
+            "conference_provider",
+            "conference_ref",
+            "conference_url",
+        ]
+    )
     return request
+
+
+def _resolve_conference(request, conference_url):
+    """배정에 쓸 화상 3열을 정한다(위 순서 1·2·3). 실패는 ClinicError."""
+    if conference_url:
+        return Conference(provider=None, ref=None, url=conference_url)
+    if request.conference_url:
+        return Conference(
+            provider=request.conference_provider,
+            ref=request.conference_ref,
+            url=request.conference_url,
+        )
+    try:
+        return get_adapter().create_space()
+    except TemporaryConferenceError as error:
+        # 다시 걸면 될 수 있다 — 관리자가 버튼을 한 번 더 누르면 되는 상황
+        raise ClinicError(str(error), http_status=503) from error
+    except PermanentConferenceError as error:
+        # 자격증명 없음·스코프 미승인 — 재시도로는 안 풀린다. 사유를 그대로
+        # 올려 보낸다: 감추면 관리자는 링크를 직접 넣어야 한다는 것도 모른다.
+        raise ClinicError(str(error)) from error
 
 
 def reject(request):

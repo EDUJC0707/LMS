@@ -181,7 +181,7 @@ def create_booking(student, exam, slot, requested_date):
 def change_booking(request, slot, requested_date):
     """시간 변경 — 같은 규칙 재검증. 승인배정이었다면 재승인 대상으로 되돌린다.
 
-    배정·링크 회수 근거: 시간이 바뀌면 기존 배정(조교·미트 링크)은 무효다 —
+    배정·링크 회수 근거: 시간이 바뀌면 기존 배정(조교·화상 링크)은 무효다 —
     링크 재사용 금지(key_considerations §4) + 관리자 재배정 흐름(PRD 3.2.4).
     """
     now = timezone.now()
@@ -205,7 +205,12 @@ def change_booking(request, slot, requested_date):
         request.requested_time = locked.start_time
         request.status = ClinicRequest.Status.PENDING
         request.assigned_staff = None
-        request.meet_url = None
+        # 화상 스페이스도 함께 버린다 — 링크 재사용 금지(key_considerations §4).
+        # 셋을 같이 비우지 않으면 ref 만 남아 "이미 스페이스가 있다"로 보여
+        # 재배정이 옛 링크를 되살린다(clinic_admin.assign 의 1건=1스페이스 판정).
+        request.conference_provider = None
+        request.conference_ref = None
+        request.conference_url = None
         request.updated_at = now
         request.save(
             update_fields=[
@@ -214,7 +219,9 @@ def change_booking(request, slot, requested_date):
                 "requested_time",
                 "status",
                 "assigned_staff",
-                "meet_url",
+                "conference_provider",
+                "conference_ref",
+                "conference_url",
                 "updated_at",
             ]
         )
@@ -393,7 +400,7 @@ def slot_block(slot):
 def request_block(request, now):
     """신청 요약 블록 — 링크는 시작 5분 전부터만 노출(PRD 3.2.4).
 
-    meet_url 은 link_active 일 때만 내린다 — 시각만 먼저 알려주고 URL 은
+    conference_url 은 link_active 일 때만 내린다 — 시각만 먼저 알려주고 URL 은
     활성화 전 미노출(2차 슬라이스 home 마감 목록과 동일 규칙).
     """
     start_at = timezone.make_aware(
@@ -416,5 +423,5 @@ def request_block(request, now):
             else None
         ),
         "link_active": link_active,
-        "meet_url": request.meet_url if link_active else None,
+        "conference_url": request.conference_url if link_active else None,
     }

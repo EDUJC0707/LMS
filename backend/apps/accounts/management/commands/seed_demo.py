@@ -674,12 +674,12 @@ class Command(BaseCommand):
         request(  # 승인배정(예정) — 미트 링크 포함
             eligible[2], at(4, 17), next_date(at(4, 17)),
             status=ClinicRequest.Status.APPROVED, assigned_staff=assistant,
-            meet_url="https://meet.google.com/demo-loz-ic01",
+            conference_url="https://meet.google.com/demo-loz-ic01",
         )
         done = request(  # 지난 클리닉 — 출석 처리 + 평가 기록
             eligible[3], at(3, 19), next_date(at(3, 19)) - datetime.timedelta(days=7),
             status=ClinicRequest.Status.APPROVED, assigned_staff=assistant,
-            meet_url="https://meet.google.com/demo-loz-ic02",
+            conference_url="https://meet.google.com/demo-loz-ic02",
             attendance_status=ClinicRequest.AttendanceStatus.PRESENT,
             attendance_marked_at=now, attendance_marked_by=staff["admin"],
         )
@@ -703,7 +703,7 @@ class Command(BaseCommand):
         noshow = request(  # 지난 클리닉 — 노쇼(결석 처리, unban 시연용)
             eligible[4], at(5, 18), next_date(at(5, 18)) - datetime.timedelta(days=7),
             status=ClinicRequest.Status.APPROVED, assigned_staff=assistant,
-            meet_url="https://meet.google.com/demo-loz-ic03",
+            conference_url="https://meet.google.com/demo-loz-ic03",
             attendance_status=ClinicRequest.AttendanceStatus.ABSENT,
             attendance_marked_at=now, attendance_marked_by=staff["admin"],
         )

@@ -411,7 +411,7 @@ export interface ClinicRequestRow {
   requested_time: string;
   cancelled_at: string | null;
   link_active: boolean;
-  meet_url: string | null;
+  conference_url: string | null;
 }
 
 /**
