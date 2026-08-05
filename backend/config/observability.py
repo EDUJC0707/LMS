@@ -47,12 +47,20 @@ def scrub_event(event, _hint):
     return event
 
 
-def init_sentry(dsn: str) -> bool:
+def init_sentry(dsn: str, *, release: str = "") -> bool:
     """DSN 이 있을 때만 Sentry 를 켠다. 켰으면 True.
 
     DSN 이 비면 아무것도 하지 않는다(로컬·테스트에서 켜지지 않는 이유).
     형식이 잘못된 DSN 에는 부팅을 세우지 않는다 — 관측 도구 시크릿 오타 하나로
     서비스가 내려가면 안 된다. 대신 경고를 남긴다("켠 줄 알았는데 안 켜짐"이 최악).
+
+    `release` 는 이 에러가 **어느 배포**에서 났는지다. 빌드가 넣어 준다
+    (`infra/Dockerfile` 의 `GIT_SHA` 빌드 인자 → `SENTRY_RELEASE`).
+
+    비어 있으면 SDK 가 **현재 폴더의 git 에서 추론**한다(2026-08-04 실측: 생략과
+    None 은 동작이 같고, 억제하려면 빈 문자열을 넘겨야 하는데 그러면 이벤트에 빈
+    release 가 붙는다). 운영 이미지에는 `.git` 이 없어 추론이 실패하므로 결과적으로
+    release 없이 뜬다 — 그래서 빌드 인자를 안 넘기면 조용히 태그가 사라진다.
     """
     if not dsn:
         return False
@@ -60,6 +68,7 @@ def init_sentry(dsn: str) -> bool:
     try:
         sentry_sdk.init(
             dsn=dsn,
+            release=release or None,
             integrations=[DjangoIntegration()],
             traces_sample_rate=0.1,
             send_default_pii=False,

@@ -12,6 +12,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy -c infra/fly.toml --remote-only
+      # GIT_SHA 는 Sentry 의 release 태그가 된다(infra/Dockerfile 3번 절).
+      # 안 넘기면 배포는 성공하지만 에러에 배포 식별자가 안 붙는다 — 조용히 실패한다.
+      - run: flyctl deploy -c infra/fly.toml --remote-only --build-arg GIT_SHA=${{ github.sha }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

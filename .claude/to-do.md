@@ -141,18 +141,15 @@
 
 - [ ] prod `SECRET_KEY` fail-fast(기본값 제거), whitenoise + collectstatic(현재 /static/ 404)
 - [ ] `infra/Dockerfile`에 `ENV UV_NO_DEV=1`(부팅 13초 지연), uv 이미지 태그 고정
-- [ ] CI `FLY_API_TOKEN` 시크릿(현재 미설정이라 자동배포 실행 자체가 안 됨)
+- [x] ~~CI `FLY_API_TOKEN` 시크릿(현재 미설정이라 자동배포 실행 자체가 안 됨)~~ →
+  **틀린 정보였다**(2026-08-04 확인). 시크릿은 **2026-07-29 부터 등록돼 있고 CI 는 계속 성공하고 있다.**
+  즉 **`main` 에 push 하면 그 순간 실서비스에 배포된다** — 최근 실행 전부 success.
+  `CLAUDE.md` §2 의 "push 는 사용자 지시가 있을 때만"이 문자 그대로인 이유다.
+  브랜치 push 는 안전하다(워크플로가 `main` 만 본다)
 - [ ] Fly `edujc-lms` 헬스체크 critical 상태 원인 확인
-- [ ] **Sentry — sentry.io 가입해서 DSN 받아오기.** 사람만 할 수 있는 건 이것 하나다.
-  절차·검증은 `infra/DEPLOY.md` **8장**에 다 적어 뒀다(가입 → 플랫폼 Django → Client Keys
-  에서 DSN 복사 → `fly secrets set SENTRY_DSN="<DSN>" -a edujc-lms` → `/sentry-debug` 로
-  실제 500 한 건 내서 대시보드에 뜨는 것까지 확인 → 확인용 토큰 회수).
-  `fly ext sentry create`는 **불가**(7/28 확인 — Fly 경유 신규 통합 중단).
-  **동기**: `fly logs`가 ~30분만 남아 "어제 왜 500났지"를 사후 추적 못 함(7/28 qbank 500 조사에서 실제로 막힘)
-  - 코드는 2026-08-04 에 마무리했다: `config/observability.py` 로 분리 + 개인정보 차단
-    (요청 본문·쿼리 값·스택 지역변수 — `send_default_pii=False` 만으로는 안 막힌다),
-    DSN 오타에 부팅 안 죽게, 계약은 `config/tests.py` 14건이 지킨다.
-    **`config/` 테스트는 `manage.py test apps` 에 안 잡힌다 — `test apps config` 로 돌릴 것**
+- [x] ~~Sentry `release` 주입~~ → **2026-08-04 완료.** `Dockerfile` 의 `ARG GIT_SHA` →
+  `ENV SENTRY_RELEASE`, CI 와 `make deploy` 가 넘긴다. **`fly deploy` 를 손으로 직접
+  치면 태그가 사라지므로 `make deploy` 를 쓸 것.** 다음 배포부터 붙는다
 - [ ] **Celery 워커 + Redis 기동 — 아직 아님**(2026-07-22 결정, 보류 유지). `@shared_task` 0건이라 할 일이 없고 워커는 auto_stop 대상이 아니라 24시간 돌며 월 ~$3.3. **해제 트리거 = 첫 `@shared_task` 작성 시점**(알림톡 발송 또는 영상 처리). 복구 3단계와 경위는 `infra/DEPLOY.md` 6장
 
 ## 외부 대기 (오는 대로 붙임 — 자리는 다 파여 있음)

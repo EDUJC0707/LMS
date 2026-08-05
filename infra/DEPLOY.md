@@ -225,7 +225,13 @@ lsof -nP -iTCP:15432 -sTCP:LISTEN     # 아무것도 안 나오면 프록시가 
 
 ---
 
-## 8. Sentry — 에러 추적 (남은 것은 DSN 하나)
+## 8. Sentry — 에러 추적 ✅ 가동 중 (2026-08-04)
+
+> **이미 붙어 있다.** 조직 EDUJC · US 리전 · Developer(무료) · 프로젝트 `edujc-lms`.
+> `SENTRY_DSN` 은 `fly secrets` 에 들어 있고, 실제 500 한 건으로 수집을 확인했다
+> (이슈 `EDUJC-LMS-1` — `RuntimeError: Sentry 수집 확인용 예외`). 확인 후
+> `SENTRY_DEBUG_TOKEN` 은 회수했고 `/sentry-debug` 는 다시 404 다.
+> 아래는 **다시 세팅할 일이 생겼을 때**(DSN 교체·재발급·다른 앱에 붙일 때) 그대로 따라갈 절차다.
 
 **왜 붙였나**: `fly logs` 는 약 30분치만 남는다. "어제 왜 500 났지"를 사후에 추적할
 수단이 없어 2026-07-28 qbank 500 조사에서 실제로 막혔다.
@@ -320,6 +326,19 @@ SDK 기본 스크러버는 `password`·`token` 류만 잡는다(이름·전화�
 
 성능 추적은 `traces_sample_rate=0.1`(요청 10건 중 1건)로 켜져 있다. 에러 한도와 별개 항목이라
 한도를 태우면 이 값을 0 으로 내린다.
+
+### 8-5. 한도·범위에 관해 같이 실측한 것 (2026-08-04)
+
+- **500 한 건 = 이벤트 1건.** Django 가 500 마다 `django.request` 로 ERROR 로그도 남기지만
+  중복 이벤트가 되지 않는다. 무료 한도(에러 5천건/월)가 반으로 줄지 않는다는 뜻이다
+- **Celery 도 이미 잡힌다.** 활성 통합에 `celery`·`redis`·`boto3` 가 자동으로 들어간다
+  (`prod.py` 는 Django 만 명시하지만 SDK 가 설치된 패키지를 감지해 붙인다). 워커를 띄우는
+  날(6장) 알림 발송 태스크 실패는 별도 작업 없이 수집된다
+- **`release` 는 빌드가 넣는다**(2026-08-04 처리). 이미지에 `.git` 이 없어 SDK 가 스스로
+  추론할 수단이 없다 → `Dockerfile` 의 `ARG GIT_SHA` → `ENV SENTRY_RELEASE`.
+  넘기는 쪽은 두 군데뿐이다: CI(`--build-arg GIT_SHA=${{ github.sha }}`)와 `make deploy`.
+  **`fly deploy` 를 손으로 직접 치면 태그가 조용히 사라진다** — 그래서 `make deploy` 가 있다.
+  로컬 도커 빌드로 실측: 인자를 넘기면 `options['release']` 가 그 값, 안 넘기면 `None`
 
 ---
 

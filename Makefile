@@ -1,5 +1,5 @@
 # 개발 편의 타깃 모음. (Windows 는 `make` 미설치일 수 있으니 README 의 명령을 직접 실행해도 됨)
-.PHONY: up down dev-backend dev-frontend migrate makemigrations test worker db-proxy
+.PHONY: up down dev-backend dev-frontend migrate makemigrations test worker db-proxy deploy
 
 # --- 로컬 인프라 (PostgreSQL + Redis) ---
 up:
@@ -37,3 +37,11 @@ worker:
 # 이 창은 켜둔 채로 유지할 것. 닫으면 터널이 끊긴다.
 db-proxy:
 	PATH="$$HOME/.fly/bin:$$PATH" fly proxy 15432:5432 -a edujc-pg
+
+# --- 손배포 (실서비스를 갈아치운다) ---
+# 평소 배포는 main push 로 CI 가 한다. 이건 CI 를 못 기다릴 때만.
+# GIT_SHA 를 반드시 함께 넘긴다 — 빠지면 배포는 성공하는데 Sentry 에서
+# "어느 배포냐"를 잃는다(infra/Dockerfile 3번 절). 손으로 치면 잊는다.
+deploy:
+	PATH="$$HOME/.fly/bin:$$PATH" fly deploy -c infra/fly.toml -a edujc-lms \
+	  --build-arg GIT_SHA="$$(git rev-parse HEAD)"
