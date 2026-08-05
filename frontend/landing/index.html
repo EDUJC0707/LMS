@@ -47,11 +47,19 @@
     --line:rgba(107,135,222,.26);     /* 테두리도 같은 색상각에서 */
     --t1:#606DA4;                     /* 헤드라인 1행 — 휘도 110 */
     --t2:#EEF1FA;                     /* 헤드라인 2행 */
-    --pad:clamp(20px, 4.5vw, 72px);
+    /* viewport-fit=cover 라 노치 폰 가로에서 좌우가 잘린다(inset 44~59px 인데
+       clamp 는 33.3px). 세이프에어리어를 패딩에 더한다 — 노치가 없으면 env 가 0 이라
+       세로·데스크탑은 값이 그대로다. */
+    --pad:calc(clamp(20px, 4.5vw, 72px) + max(env(safe-area-inset-left), env(safe-area-inset-right)));
     --nav:72px;
   }
   *{ box-sizing:border-box; margin:0 }
   html{ -webkit-text-size-adjust:100%; scroll-behavior:smooth }
+  /* 배경 애니메이션은 field.js 가 끄는데 스크롤 애니메이션은 CSS 라 그대로 남아 있었다 */
+  @media (prefers-reduced-motion: reduce){
+    html{ scroll-behavior:auto }
+    *, *::before, *::after{ animation-duration:.001ms !important; transition-duration:.001ms !important }
+  }
   body{
     background:var(--bg); color:var(--fg);
     font-family:"SUIT Variable","SUIT","Apple SD Gothic Neo",system-ui,sans-serif;
@@ -187,7 +195,8 @@
     letter-spacing:-.04em; line-height:1.05; margin-bottom:.9rem;
   }
   .sec-head p{ color:var(--dim); font-size:clamp(.95rem,1.3vw,1.05rem); line-height:1.7 }
-  .stamp{ display:block; margin-top:1rem; font-size:.8rem; color:var(--dim); opacity:.75 }
+  /* opacity:.75 를 --dim 위에 곱해 3.66:1 이었다(AA 4.5 미달). 겹친 투명도를 걷는다 */
+  .stamp{ display:block; margin-top:1rem; font-size:.8rem; color:var(--dim) }
   /* 52rem(832px) — 60rem 은 규칙선이 글보다 450px 더 가서 오른쪽이 비었다.
      한 줄 길이도 여기가 읽기 좋다(한글 45~50자). */
   .wrap{ max-width:52rem; margin:0 auto }
@@ -238,14 +247,16 @@
     width:.66rem; height:.66rem; border-radius:50%;
     background:currentColor; box-shadow:0 0 0 5px var(--sec);
   }
-  .step:nth-child(1) .step-no{ color:#9096A2 }
+  /* #9096A2 는 밝은 배경에서 2.65:1 — 대형 텍스트 문턱 3.0 에도 못 미쳤다.
+     농도 진행(01 연함 → 04 진함)은 유지하되 첫 칸을 문턱 위로 올린다. */
+  .step:nth-child(1) .step-no{ color:#7C8290 }
   .step:nth-child(2) .step-no{ color:#717785 }
   .step:nth-child(3) .step-no{ color:#3E4350 }
   .step:nth-child(4) .step-no{ color:#14151C }
   /* 마지막 단계는 속을 채워 닫는다 — 링이 아니라 점이어야 "끝" 으로 읽힌다 */
   .step:nth-child(4) .step-no::before{ width:.8rem; height:.8rem; top:.28rem; left:.23rem }
   .step h3{ font-size:1.26rem; font-weight:800; margin-bottom:.4rem; letter-spacing:-.035em }
-  .step p{ color:#2E3340; font-size:.96rem; line-height:1.6 }
+  .step p{ color:#2E3340; font-size:.96rem; line-height:1.6; word-break:keep-all }
   .badge{
     display:inline-block; margin-left:.55rem; padding:.18rem .5rem; border-radius:5px;
     font-size:.7rem; font-weight:700; letter-spacing:.02em;
@@ -268,7 +279,7 @@
   /* 커리큘럼 구조의 근거. 법적 고지는 성격이 달라 footer 로 내렸다 */
   .note{
     margin-top:3.2rem; padding-top:1.4rem; border-top:1px solid var(--line);
-    font-size:.84rem; color:var(--dim); line-height:1.7; max-width:38rem;
+    font-size:.84rem; color:var(--dim); line-height:1.7; max-width:38rem; word-break:keep-all;
   }
 
   /* 정오표 — 중간톤 */
@@ -278,14 +289,20 @@
     text-align:left; font-size:.78rem; font-weight:600; letter-spacing:.03em;
     color:var(--dim); padding:0 0 .8rem; border-bottom:1px solid var(--line);
   }
-  .tbl td{ padding:1.05rem 0; border-bottom:1px solid var(--line); vertical-align:top }
+  /* 열 사이 여백이 0 이라 360px 에서 교재명 끝과 날짜가 1.88px 까지 붙어
+     `…실전 모의26.06.22` 로 한 문자열처럼 읽혔다. 마지막 열만 오른쪽 여백을 뺀다. */
+  .tbl td{ padding:1.05rem .8rem 1.05rem 0; border-bottom:1px solid var(--line); vertical-align:top }
+  .tbl th{ padding-right:.8rem }
+  .tbl td:last-child, .tbl th:last-child{ padding-right:0 }
   /* 교재만 늘어난다. 날짜는 tabular-nums 로 폭이 고정이고, 다운로드는 버튼 하나다 */
   .tbl th:nth-child(2){ width:8rem }
   .tbl th:nth-child(3){ width:7rem }
   .tbl .num{ font-variant-numeric:tabular-nums; white-space:nowrap; color:var(--dim) }
   .title-cell{ font-weight:600 }
+  /* margin-left 가 줄바꿈 뒤에도 남아 배지가 어중간하게 들여쓰였다.
+     앞 공백을 마진 대신 여백 문자로 붙여 줄이 바뀌면 마진이 안 남게 한다. */
   .new{
-    display:inline-block; margin-left:.45rem; padding:.1rem .42rem; border-radius:4px;
+    display:inline-block; margin-left:0; padding:.1rem .42rem; border-radius:4px;
     font-size:.66rem; font-weight:700; background:#E8EAEE; color:#1C1E23; vertical-align:.14em;
   }
   /* 확장자를 그대로 라벨로 쓴다 — 무엇이 내려오는지 파일이 스스로 말한다 */
@@ -341,6 +358,19 @@
     /* 섹션 링크는 접는다 — 390px 에서 로그인 버튼을 20px 침범한다.
        아래로 내려가면 섹션이 순서대로 나오므로 이동 수단이 사라지지는 않는다. */
     .navL nav{ display:none }
+
+    /* nav 는 불투명 검정이라 히어로 맨 위 72px 을 가로로 잘라 먹는다. 먼지는
+       .navdust 가 이어 주지만 우주는 이어 주는 것이 없어서, 자율 드리프트가 위로
+       올라오면 nav 아랫변에 화면을 가로지르는 직선이 생긴다(390x844 에서 시간의
+       34.7%, 1회 중앙값 13.8초). 히어로 꼭대기에 있을 때만 아래 16px 을 연다.
+       먼지 캔버스도 **같은 램프로** 깎아야 둘을 더해 밀도가 유지된다. */
+    .nav.attop{
+      background:linear-gradient(180deg, var(--bg) 0 calc(var(--nav) - 16px), transparent var(--nav));
+    }
+    .nav.attop .navdust{
+      -webkit-mask-image:linear-gradient(180deg,#000 0 calc(var(--nav) - 16px),transparent var(--nav));
+      mask-image:linear-gradient(180deg,#000 0 calc(var(--nav) - 16px),transparent var(--nav));
+    }
     /* 세로 화면에는 데스크탑의 짝(왼쪽 글자 ↔ 오른쪽 사람)이 없다. 붙여서 하나로 만든다.
        잉크가 하나도 지나가지 않던 가로 띠가 nav 아래 214px + 헤드라인 아래 146px
        = 360px, 화면의 42.7% 였다. 데스크탑은 같은 띠가 88px(11%) 뿐인데 강사가
@@ -368,7 +398,8 @@
     h1{ font-size:min(11.7vw, 2.85rem) }   /* 2.85rem = 45.6px */
     /* 40svh 는 데스크탑(80svh)의 절반이라 머리폭이 83px — 데스크탑 157px 의 53% 였다.
        오른쪽 -12% 는 46.8px 을 잘랐는데, PNG 알파를 훑어 보면 팔짱 낀 팔꿈치가
-       인물 폭의 96.5% 까지 나간다. -3% 를 넘기면 어느 높이에서든 팔꿈치가 잘린다 —
+       인물 폭의 **99.71%** 까지 나간다(알파 전수 스캔, 임계 8). 파일이 실루엣에 딱 붙게
+       잘려 있어서 -3% 도 이미 살짝 자른다 —
        고른 값이 아니라 사진에서 나온 값이다. */
     .teacher{ height:var(--teacher-h-sm, 64svh); right:var(--teacher-right-sm, -3%); bottom:var(--teacher-bottom-sm, 0%) }
     .steps::before{ display:none }
@@ -379,7 +410,18 @@
     .tbl th:nth-child(2){ width:5.4rem }
     .tbl th:nth-child(3){ width:4.2rem }
     .scope{ padding-top:.3rem; line-height:1.8 }
-    .step-no{ padding-left:1.4rem; font-size:1.3rem }
+
+    /* 세로 패딩이 vh 기반이라 화면이 좁아질수록 글 단 대비 비율이 벌어진다 —
+       섹션 사이가 219px 로 데스크탑(208px)보다 넓은데 글 단은 350px 로
+       데스크탑 832px 의 42% 다. 좁은 화면에서는 여백도 같이 줄인다. */
+    section{ padding:clamp(56px,9vh,110px) var(--pad) }
+    /* 문의는 h2 하나 + 버튼 하나뿐인데 위가 110px, 아래가 38px 로 2.89:1 이었다 */
+    #contact{ padding-top:clamp(44px,7vh,84px) }
+    /* 레일을 숨겼으므로 노드 점과 그 자리(padding-left)도 같이 걷는다 —
+       안 걷으면 번호만 22.4px 안으로 밀려 제목·본문과 왼쪽 끝이 어긋나고
+       점은 잇는 선 없는 불릿으로 혼자 남는다. */
+    .step-no{ padding-left:0; font-size:1.3rem }
+    .step-no::before{ display:none }
 
     /* 채널톡 런처가 앉을 자리를 비운다. 런처는 화면 오른쪽 아래에 고정으로 뜨는데
        (24px 안쪽, 56px 크기 — 채널톡 번들 실측) 좁은 화면에서는 사업자 정보가
@@ -476,12 +518,13 @@
        필요 픽셀을 1029 로 계산해 srcset 으로는 도로 1.7MB PNG 를 집어간다.
        실측 1,738,120 B → 136,202 B (-92.2%), 알파 최대차 0. -->
   <picture>
-    <source media="(max-width:860px)" type="image/webp"
+    <source media="(max-width:860px), (max-height:600px)" type="image/webp"
             srcset="assets/teacher/nobg/teacher.webp">
     <img class="teacher" src="assets/teacher/nobg/teacher.png" alt="한종철 선생님">
   </picture>
 </header>
 
+<main>
 <section id="curriculum">
   <div class="wrap">
     <div class="sec-head">
@@ -490,11 +533,11 @@
     </div>
 
     <div class="tracks" role="tablist">
-      <button class="track" role="tab" aria-selected="true" data-track="naesin">고1·고2 내신</button>
-      <button class="track" role="tab" aria-selected="false" data-track="suneung">2028 수능</button>
+      <button class="track" role="tab" aria-selected="true" aria-controls="steps" data-track="naesin">고1·고2 내신</button>
+      <button class="track" role="tab" aria-selected="false" aria-controls="steps" data-track="suneung">2028 수능</button>
     </div>
 
-    <div class="steps" id="steps"></div>
+    <div class="steps" id="steps" role="tabpanel" aria-live="polite"></div>
 
     <div class="mock">
       <h3>실전 모의고사</h3>
@@ -529,6 +572,7 @@
     <button class="ch" data-chat="상담 문의">채팅으로 문의하기</button>
   </div>
 </section>
+</main>
 
 <footer>
   <div class="foot">
@@ -566,6 +610,17 @@ mountField(document.getElementById('field'), []);
   if (bg) window.__field?.space?.(bg.src, bg.zoom ?? 1);
 }
 mountNavDust(document.querySelector('.nav'));
+
+/* nav 아랫변에 우주가 잘려 생기던 직선을 없앤다(.attop). **터치에서만** 건다 —
+   우주를 nav 밑으로 밀어 올리는 것은 COARSE 의 자율 드리프트뿐이고, 데스크탑은
+   커서가 바람을 쥔다. 스크롤하면 도로 닫는다: 밝은 커리큘럼 섹션이 nav 아래로
+   비치면 제목이 유령처럼 배어 나온다. */
+if (matchMedia('(hover: none) and (pointer: coarse)').matches) {
+  const nv = document.querySelector('.nav');
+  const syncTop = () => nv.classList.toggle('attop', scrollY < 8);
+  syncTop();
+  addEventListener('scroll', syncTop, { passive: true });
+}
 
 /* 디버그 패널 — ⌘⌥D(맥) / Ctrl+Alt+D. 누르기 전에는 debug.js 를 내려받지도 않는다.
    code 로 본다(key 가 아니라) — ⌥ 조합에서 macOS 는 key 를 '∂' 로 바꿔 준다. */
@@ -641,7 +696,7 @@ if (!ERRATA.length) {
       <tbody>
         ${sorted.map(b => `
           <tr>
-            <td class="title-cell">${b.title}${fresh(b.updated) ? '<span class="new">NEW</span>' : ''}</td>
+            <td class="title-cell">${b.title}${fresh(b.updated) ? ' <span class="new">NEW</span>' : ''}</td>
             <td class="num">${b.updated}</td>
             <td>
               <a class="dl" href="${b.file}" download>

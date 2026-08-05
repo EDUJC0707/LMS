@@ -110,6 +110,16 @@ const LAYOUT_SM = [
 ];
 
 const isSmall = () => matchMedia('(max-width: 860px)').matches;
+
+/* 먼지는 개수가 아니라 **밀도**다. CFG.dust 4000 은 1200x800 에서 정한 값이고
+   (4.17개/천px²), 그대로 390x844 에 쓰면 12.15개/천px² — 데스크탑의 3.94배,
+   360x640 에서는 5.63배다. 같은 검정이 한쪽에서는 별밭, 한쪽에서는 노이즈로 읽힌다.
+   mountNavDust 는 처음부터 면적당으로 환산하고 있었다 — 히어로만 안 했다.
+   넓은 화면은 손대지 않는다(isSmall 밖에서는 CFG.dust 그대로). */
+const REF_AREA = 1200 * 800;
+const dustCount = () => isSmall()
+  ? Math.max(700, Math.round(CFG.dust * innerWidth * innerHeight / REF_AREA))
+  : CFG.dust;
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
 
@@ -226,7 +236,7 @@ export function mountField(root, units) {
       tw: rand(.25, .8), tph: rand(0, 6.28),     // 반짝임 속도·위상
     };
   });
-  let dust = makeDust(CFG.dust);
+  let dust = makeDust(dustCount());
   const bucket = Array.from({ length: CFG.buckets }, () => []);
 
   let W = 0, H = 0, R = 100, R2 = 1, FR = 56;
@@ -298,7 +308,18 @@ export function mountField(root, units) {
   });
 
   fit();
-  addEventListener('resize', fit);
+  /* 주소창이 접히고 펴질 때마다 resize 가 온다. 히어로는 100svh 라 실제 크기는
+     안 변하는데 fit() 이 캔버스를 비우고 먼지를 홈으로 스냅해, 열려 있던 바람 구멍이
+     닫혔다가 1.4초에 걸쳐 되메워졌다. 크기가 실제로 달라졌을 때만 다시 맞춘다. */
+  let lastW = 0, lastH = 0;
+  addEventListener('resize', () => {
+    const r = root.getBoundingClientRect();
+    if (Math.abs(r.width - lastW) < 1 && Math.abs(r.height - lastH) < 1) return;
+    lastW = r.width; lastH = r.height;
+    const n = dustCount();
+    if (Math.abs(n - dust.length) > dust.length * 0.2) dust = makeDust(n);
+    fit();
+  });
 
   /* ── 입력 — 이벤트에서는 기록만. 물리는 rAF 에서만 돈다 ── */
   /* over — 커서가 히어로 안에 있는가. **가만히 있다고 닫히지는 않는다**
@@ -509,7 +530,7 @@ export function mountField(root, units) {
     cfg: CFG,
     // n 을 cfg 에도 반영한다 — 안 하면 패널이 읽는 cfg.dust 와 실제 입자 수가
     // 갈라져, 초기화나 재열기 때 엉뚱한 개수로 돌아간다
-    rebuild(n) { if (n != null) CFG.dust = n; dust = makeDust(CFG.dust); fit(); statics.forEach(f => f()); },
+    rebuild(n) { if (n != null) CFG.dust = n; dust = makeDust(dustCount()); fit(); statics.forEach(f => f()); },
     refit() { fit(); statics.forEach(f => f()); },
     /* 배경 갈아 끼우기. 확장자로 사진/영상을 가른다.
        빈 값이면 우주가 없어진다(= 검정). 캔버스도 같이 지운다. */
@@ -597,7 +618,7 @@ export function mountNavDust(host) {
     ctx.fillStyle = readGlow();
 
     // 히어로가 기준으로 삼는 뷰포트 면적. 같은 밀도가 되도록 개수를 환산한다
-    const n = Math.max(8, Math.round(CFG.dust * (W * H) / (innerWidth * innerHeight)));
+    const n = Math.max(8, Math.round(dustCount() * (W * H) / (innerWidth * innerHeight)));
     for (let i = 0; i < n; i++) {
       ctx.globalAlpha = rand(CFG.aMin, CFG.aMax);
       const d = rand(CFG.dMin, CFG.dMax);
