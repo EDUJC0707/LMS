@@ -15,7 +15,7 @@ from django.utils import timezone
 from apps.accounts.models import Student, User
 from apps.grades.models import Exam
 
-from . import supervision
+from . import clinic_admin, supervision
 from .conferencing import Conference, ConferenceAdapter, Supervision
 from .models import ClinicEvaluation, ClinicRequest, ClinicSlot
 
@@ -175,3 +175,40 @@ class CollectSupervisionTests(TestCase):
         request.save(update_fields=["student"])
         supervision.collect()
         self.assertTrue(StubAdapter.filed_as[0].endswith("_1900_박지우0002"))
+
+
+class QueueSupervisionTests(CollectSupervisionTests):
+    """대기열 행이 수집한 감독 자료를 실어 내리는가 — 화면이 읽을 자리."""
+
+    def test_row_carries_the_collected_summary(self):
+        from . import clinic_admin
+
+        request = self.make_request()
+        supervision.collect()
+        row = clinic_admin.queue_row(ClinicRequest.objects.get(pk=request.pk))
+        self.assertEqual(row["supervision"]["summary"], "요약\n오답 원인 설명 충실.")
+        self.assertEqual(
+            row["supervision"]["transcript_url"],
+            "https://docs.google.com/document/d/1SPPdoc/edit",
+        )
+
+    def test_row_without_a_meeting_says_so(self):
+        # 조교가 아이패드로 호스트했거나 아무도 안 들어온 회차 — 빈 칸이 아니라
+        # "없다"가 드러나야 평가 안 한 것처럼 보이지 않는다
+        from . import clinic_admin
+
+        request = self.make_request()
+        row = clinic_admin.queue_row(request)
+        self.assertIsNone(row["supervision"])
+
+    def test_past_filter_excludes_upcoming(self):
+        past = self.make_request(days_ago=3)
+        self.make_request(days_ago=-3)
+        rows = clinic_admin.queue_rows(period="지난")
+        self.assertEqual([r["clinic_id"] for r in rows], [past.clinic_id])
+
+    def test_upcoming_filter_excludes_past(self):
+        self.make_request(days_ago=3)
+        upcoming = self.make_request(days_ago=-3)
+        rows = clinic_admin.queue_rows(period="예정")
+        self.assertEqual([r["clinic_id"] for r in rows], [upcoming.clinic_id])

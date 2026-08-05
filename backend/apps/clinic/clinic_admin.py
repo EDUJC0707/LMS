@@ -58,16 +58,33 @@ NOSHOW_BAN_THRESHOLD = 2
 # --- 대기열 조회 ----------------------------------------------------------
 
 
-def queue_rows(status_filter=None, date_filter=None):
-    """신청 대기열 — 학생 노쇼·제한 상태 동봉(배정 판단 자료)."""
+#: `period` 값집합 — 대기열은 앞을 보고(배정할 것) 지난 목록은 뒤를 본다(결과).
+PERIOD_PAST = "지난"
+PERIOD_UPCOMING = "예정"
+PERIODS = (PERIOD_PAST, PERIOD_UPCOMING)
+
+
+def queue_rows(status_filter=None, date_filter=None, period=None):
+    """신청 대기열 — 학생 노쇼·제한 상태 동봉(배정 판단 자료).
+
+    `period` 는 오늘을 기준으로 가른다. 오늘 것은 **예정** 쪽이다 — 아직 안 끝난
+    수업을 '지난' 목록에 올리면 결과가 비어 있는 게 정상인데 빠뜨린 것처럼 보인다.
+    """
     qs = (
         ClinicRequest.objects.select_related("student__user", "assigned_staff", "slot")
+        .select_related("evaluation")
         .order_by("requested_date", "requested_time", "clinic_id")
     )
     if status_filter:
         qs = qs.filter(status=status_filter)
     if date_filter:
         qs = qs.filter(requested_date=date_filter)
+    if period == PERIOD_PAST:
+        qs = qs.filter(requested_date__lt=timezone.localdate()).order_by(
+            "-requested_date", "-requested_time", "-clinic_id"
+        )
+    elif period == PERIOD_UPCOMING:
+        qs = qs.filter(requested_date__gte=timezone.localdate())
     return [queue_row(r) for r in qs]
 
 
@@ -94,6 +111,24 @@ def queue_row(request):
         ),
         "conference_url": request.conference_url,
         "attendance_status": request.attendance_status,
+        "supervision": _supervision_block(request),
+    }
+
+
+def _supervision_block(request):
+    """수집된 감독 자료(요약·문서 링크). 아직 없으면 None.
+
+    **None 과 빈 요약은 다른 사실이다.** None 은 가져올 회의 자료가 아예 없다는
+    뜻이고(아무도 안 들어왔거나 조교가 전사가 안 되는 기기로 호스트했거나),
+    요약만 비어 있으면 문서는 있는데 잘라낼 자리를 못 찾은 것이다. 화면이 그
+    둘을 구분해 말할 수 있어야 조교가 평가를 안 한 것처럼 보이지 않는다.
+    """
+    evaluation = getattr(request, "evaluation", None)
+    if evaluation is None or not evaluation.transcript_url:
+        return None
+    return {
+        "summary": evaluation.ai_summary,
+        "transcript_url": evaluation.transcript_url,
     }
 
 

@@ -728,3 +728,17 @@
   gap: var(--space-2xs);
   align-items: center;
 }
+
+/* 전사 요약 — 구글이 준 줄바꿈이 곧 문단 구분이라 그대로 살린다.
+   길면(3.5분 회의가 700자) 카드가 화면을 밀어내므로 높이를 잘라 스크롤한다. */
+.cl-supervision {
+  padding: 16px;
+}
+.cl-supervision__body {
+  margin: 0;
+  max-height: 18rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}

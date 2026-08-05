@@ -45,13 +45,16 @@ import {
 import "./manage.css";
 import type { ClinicCriteria, ClinicRequestRow, ClinicStatus, StaffMatrix } from "./types";
 
-type TabKey = "전체" | ClinicStatus;
+// `지난` 만 축이 다르다 — 나머지는 상태, 이것은 기간이다. 한 줄에 섞어 두는
+// 이유는 관리자가 하는 일이 하나라서다: 목록을 좁혀서 한 건을 고른다.
+type TabKey = "전체" | "지난" | ClinicStatus;
 const TABS: { key: TabKey; label: string }[] = [
   { key: "대기", label: "대기" },
   { key: "승인배정", label: "승인·배정" },
   { key: "미승인", label: "미승인" },
   { key: "취소", label: "취소" },
   { key: "전체", label: "전체" },
+  { key: "지난", label: "지난" },
 ];
 
 export default function ClinicManagePage() {
@@ -65,7 +68,8 @@ export default function ClinicManagePage() {
   const queue = useApi(async () => {
     const { data } = await http.get<{ requests: ClinicRequestRow[] }>("/admin/clinic/requests", {
       params: {
-        ...(tab === "전체" ? {} : { status: tab }),
+        ...(tab === "전체" || tab === "지난" ? {} : { status: tab }),
+        ...(tab === "지난" ? { period: "지난" } : {}),
         ...(date ? { date } : {}),
       },
     });
@@ -148,7 +152,7 @@ export default function ClinicManagePage() {
               empty={
                 <EmptyState
                   title={
-                    tab === "전체"
+                    tab === "전체" || tab === "지난"
                       ? "이 조건에 해당하는 신청이 없습니다"
                       : `${tab} 상태인 신청이 없습니다`
                   }
@@ -342,6 +346,21 @@ function RequestPanel({
           <dt>노쇼</dt>
           <dd className="num">{request.student.noshow_count}회</dd>
         </dl>
+
+        {request.supervision && (
+          <Card title="전사 요약" padding="none">
+            <div className="ui-stack ui-stack--sm cl-supervision">
+              {request.supervision.summary ? (
+                <p className="cl-supervision__body">{request.supervision.summary}</p>
+              ) : (
+                <EmptyState title="요약을 읽지 못했습니다" />
+              )}
+              <a href={request.supervision.transcript_url} target="_blank" rel="noreferrer">
+                전사 원문 열기
+              </a>
+            </div>
+          </Card>
+        )}
 
         {request.student.clinic_banned && (
           <Alert tone="danger">신청 제한 상태</Alert>

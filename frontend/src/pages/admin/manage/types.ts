@@ -120,6 +120,8 @@ export interface ClinicRequestRow {
   assigned_staff: { user_id: number; name: string } | null;
   conference_url: string | null;
   attendance_status: "출석" | "결석" | null;
+  /** 끝난 회의에서 거둔 감독 자료. 아직 없으면 null(수집 전이거나 회의 자체가 없었다). */
+  supervision: { summary: string | null; transcript_url: string } | null;
 }
 
 export interface ClinicCriteria {

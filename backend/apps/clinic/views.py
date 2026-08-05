@@ -269,7 +269,14 @@ class AdminClinicQueueView(APIView):
                     {"detail": "date 형식은 YYYY-MM-DD 입니다."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        return Response({"requests": clinic_admin.queue_rows(status_filter, date_filter)})
+        period = request.query_params.get("period")
+        if period and period not in clinic_admin.PERIODS:
+            return Response(
+                {"detail": "period 값이 올바르지 않습니다."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(
+            {"requests": clinic_admin.queue_rows(status_filter, date_filter, period)}
+        )
 
 
 class AdminClinicAssignView(APIView):
