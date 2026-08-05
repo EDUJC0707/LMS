@@ -47,7 +47,7 @@ RUNNER_FRACTION = 0.65
 #: 버블 반지름의 몇 할까지만 표본할지. 링에 물리면 빈칸이 칠한 것처럼 읽힌다 —
 #: 실제로 보정 전 격자가 링에 얹혔을 때 그 일이 났다.
 INTERIOR_FRACTION = 0.65
-#: 표본점 격자 — 안쪽 타원에 드는 점만 쓴다(7x7 중 약 37점).
+#: 표본점 격자 — 안쪽 타원에 드는 점만 쓴다(7x7 중 29점).
 _SAMPLE_STEPS = 7
 
 
@@ -57,19 +57,24 @@ def sample_cells(image, frame, cells, radius):
     **이미지를 통째로 펴지 않는다.** 셀마다 정규좌표를 원본 픽셀로 되짚어 그
     자리만 읽는다. 전체 워프는 리샘플링으로 농도를 뭉개는데, 우리가 재려는 것이
     바로 그 농도다.
+
+    (셀 × 표본점) 좌표를 한 번에 변환하고 픽셀도 한 번에 모은다 — 점마다 돌던
+    순수 파이썬 루프가 장당 9.6ms 로 파이프라인의 절반이었다(실물 65장 실측,
+    벡터화로 83배). 값은 루프판과 비트 단위로 같다 — test_read 가 고정한다.
     """
     height, width = image.shape
-    offsets = _interior_offsets(radius)
-    inks = {}
-    for key, (u, v) in cells:
-        total = 0.0
-        for offset_u, offset_v in offsets:
-            x, y = frame.to_source(u + offset_u, v + offset_v)
-            column = min(max(int(round(x)), 0), width - 1)
-            row = min(max(int(round(y)), 0), height - 1)
-            total += image[row, column]
-        inks[key] = 255.0 - total / len(offsets)
-    return inks
+    if not cells:
+        return {}
+    offsets = np.array(_interior_offsets(radius), dtype=np.float64)
+    keys = [key for key, _ in cells]
+    centers = np.array([center for _, center in cells], dtype=np.float64)
+    points = (centers[:, None, :] + offsets[None, :, :]).reshape(-1, 2)
+    xs, ys = frame.to_source_many(points)
+    columns = np.clip(np.rint(xs).astype(np.intp), 0, width - 1)
+    rows = np.clip(np.rint(ys).astype(np.intp), 0, height - 1)
+    samples = image[rows, columns].reshape(len(keys), -1)
+    inks = 255.0 - samples.sum(axis=1, dtype=np.float64) / len(offsets)
+    return dict(zip(keys, inks))
 
 
 def _interior_offsets(radius):

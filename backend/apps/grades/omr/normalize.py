@@ -76,6 +76,20 @@ class CardFrame:
         x, y, w = self._matrix @ np.array([u, v, 1.0], dtype=np.float64)
         return np.array([x / w, y / w])
 
+    def to_source_many(self, points):
+        """정규좌표 (N, 2) → 원본 픽셀 x (N,)·y (N,) — to_source 와 비트 단위로 같다.
+
+        곱·합을 원소별 연산으로 풀어 스칼라 경로의 내적과 같은 순서로 계산한다.
+        행렬곱(BLAS)으로 바꾸면 누적 순서가 달라져 마지막 비트가 어긋난다
+        (실측: 실물 65장 좌표 37만 개 중 9%). 등가는 test_normalize 가 고정한다.
+        """
+        m = self._matrix
+        u, v = points[:, 0], points[:, 1]
+        x = m[0, 0] * u + m[0, 1] * v + m[0, 2]
+        y = m[1, 0] * u + m[1, 1] * v + m[1, 2]
+        w = m[2, 0] * u + m[2, 1] * v + m[2, 2]
+        return x / w, y / w
+
 
 def locate_card(image):
     """스캔에서 카드 자리를 찾는다. 못 찾거나 방향을 못 가리면 None(보류).

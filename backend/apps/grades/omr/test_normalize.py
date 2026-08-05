@@ -156,3 +156,17 @@ def test_accepts_the_worst_real_trapezoid():
 
     assert corners is not None
     np.testing.assert_allclose(corners, [c for c, _ in wide_bottom], atol=1.5)
+
+
+def test_to_source_many_matches_to_source_bit_for_bit():
+    """벡터판이 스칼라판과 마지막 비트까지 같아야 표본 픽셀이 한 자리도 안 움직인다."""
+    frame = normalize.locate_card(synth_scan(angle=-3.55))
+    assert frame is not None
+    points = np.random.default_rng(65).uniform(-0.5, 1.5, size=(2000, 2))
+
+    xs, ys = frame.to_source_many(points)
+
+    for (u, v), x, y in zip(points, xs, ys):
+        expected = frame.to_source(u, v)
+        assert np.float64(x).tobytes() == np.float64(expected[0]).tobytes()
+        assert np.float64(y).tobytes() == np.float64(expected[1]).tobytes()
