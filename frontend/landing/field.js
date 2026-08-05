@@ -128,10 +128,31 @@ export function mountField(root, units) {
      전에는 마운트하자마자 자율 배회가 돌아 화면 한복판에 우주가 떠 있었다 —
      커서가 거기 있지도 않은데. 열자마자 검정이고, 손을 움직여야 열린다.
 
-     터치에는 pointermove 가 오지 않으므로 배경을 영영 못 본다. 그래서 스크롤을
-     신호로 쓴다 — 손가락으로 화면을 만졌다는 유일한 증거이고, 타이머처럼
-     "가만히 있었는데 저절로 켜지는" 일이 없다. */
-  let woke = false;
+     **이 규칙은 포인터가 있는 기기에만 적용한다**(사용자 지시 2026-08-05:
+     "just on mobile we can apply a different rule and change the rule").
+
+     규칙이 막으려던 것은 "커서가 거기 있지도 않은데 우주가 열려 있다" 였다.
+     커서가 없는 기기에는 부재할 커서가 없으므로 그 전제가 성립하지 않는다.
+     전에는 스크롤을 신호로 썼는데 스크롤은 히어로를 **떠나는** 동작이라,
+     클라이맥스가 히어로를 본 뒤에 왔다.
+
+     조사 근거(2026-08-05, 5개 각도). 커서 연출을 쓰는 곳의 압도적 다수는 터치에서
+     그냥 아무것도 안 한다 — Codrops 저장소 59개 중 53개가 touchmove 를 안 걸고
+     `pointer: coarse` 사용은 0건이다. 그러나 24 ways 가 명문화한 "호버를 터치에서
+     빼도 되는 조건"은 **호버가 아무것도 새로 공개하지 않을 때**뿐이고, 우리는
+     배경 사진 전체를 공개하므로 그 조건을 못 맞춘다.
+     제약(원판 금지·문구 금지·데스크탑 불변)을 전부 통과하면서 "영영 안 열림"을
+     실제로 푸는 패턴은 하나뿐이었다 — **앰비언트 드리프트**. trionn.com 이
+     `(1 - explodeAmt)` 스케일로 쓰고, 우리와 같은 효과를 파는 상용 컴포넌트
+     Cursor Reveal 이 "touch + idle animation" 을 기본으로 묶어 판다.
+     자이로는 iOS 가 requestPermission() 에 사용자 제스처를 요구해 탭 대상과 안내
+     문구가 필요해지므로 §8 과 충돌해 배제했다(three.js 도 PR #22654 로
+     DeviceOrientationControls 를 삭제했다).
+
+     드리프트 자체는 이미 paint() 의 else 분기에 쓰여 있었다 — woke 가 매 프레임
+     덮어써서 죽어 있었을 뿐이다. */
+  const COARSE = matchMedia('(hover: none) and (pointer: coarse)').matches;
+  let woke = COARSE;
 
   /* ── 워시 — 커서를 따라다니는 아주 옅은 빛.
      2026-07-29 사용자 지시로 절반으로 낮췄다(.070 → .034). 이건 남기되 눈에
@@ -332,7 +353,11 @@ export function mountField(root, units) {
       // 주기가 비배수라 눈이 루프를 못 찾는다
       tx = .50 + .30 * Math.sin(t * .110) + .07 * Math.sin(t * .041) + .18 * scrollP;
       ty = .46 + .20 * Math.sin(t * .170 + 1.1) + .06 * Math.sin(t * .067) + .30 * scrollP;
-      wgt = 1;
+      /* 커서 없는 기기에서는 CFG.wake 로 **열린다**. 1 로 꽂으면 첫 프레임에
+         통째로 켜져 "번쩍" 하는데, 그 감각은 2026-07-29 에 이미 버렸다
+         (사용자 원문: "all of a sudden it gets hella bigger so its like bam!").
+         데스크탑은 이 분기에 스크롤 뒤에만 들어오므로 종전대로 1 이다. */
+      wgt = COARSE ? clamp01(wgt + CFG.wake * dt) : 1;
     }
     /* 아직 아무 입력도 없었다 — 바람도 우주도 없다. **먼지는 그대로 보인다**:
        화면이 달라지는 게 아니라 아무 일도 안 일어나는 것이 맞다. */
