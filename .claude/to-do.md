@@ -28,10 +28,13 @@
   - **`POST /open/users/{userId}/events` 는 있다.** 서버에서 이벤트를 밀어 넣을 수 있고,
     스펙 설명도 *"Track user events and trigger marketing campaigns or one-time messages"*
     라 **우회로 자체는 성립한다**(LMS 이벤트 → 데스크에 만들어 둔 캠페인 발화 → 알림톡)
-  - **막는 것은 실패 처리다.** 건별 기록 `CampaignUser` 의 필드는
-    `sent`·`view`·`click`·`goal`·`revenue` — **실패 상태도 실패 사유도 없다.**
-    보냈는지는 알아도 **왜 안 갔는지를 알 수 없어** 우리 `Notification`(실패+사유)과
-    재시도·재발송이 성립하지 않는다. 게다가 폴링이라 push 도 아니다
+  - **막는 것은 실패 처리다.** 조회 필터 `CampaignUserState`·`OneTimeMsgUserState` 가
+    둘 다 `sent`·`view`·`goal`·`click` **네 개뿐이라 실패를 물어볼 수가 없다.**
+    건별 기록 `CampaignUser` 도 `sent`·`view`·`click`·`goal`·`revenue` 로 실패 사유가 없다.
+    **웹훅도 막혀 있다** — 구독 가능한 scope 9개가 전부 lead·member·대화 관련이고
+    (`leadUpserted*`·`memberUpserted*`·`messageCreatedUserChat`·`userChatOpened` 등)
+    **발송 결과 웹훅이 없다.** 즉 폴링으로도 push 로도 "왜 안 갔는지"를 알 수 없어
+    우리 `Notification`(실패+사유)·재시도·재발송이 성립하지 않는다
   - 발송 시점마다 **캠페인을 관리자 화면에서 하나씩 손으로 만들어야** 한다 —
     8-17 목록이 코드가 아니라 수작업 설정으로 들어간다
   → **알리고 유지.** 직접 발송 + 동기 결과 코드 + 실패 사유가 전부 필요하다
