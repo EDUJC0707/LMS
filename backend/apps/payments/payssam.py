@@ -6,8 +6,12 @@
 **V2 다. V1 을 보고 짜면 조용히 틀린다.** 2026-08-05 업체 안내로 개발 환경이
 `stg.paymint.co.kr` → `sandbox.paymint.co.kr` 로, API 가 V1 → V2 로 올라갔다.
 *"이전 안내드린 연동 규격서는 V1 의 개발 사항"* 이므로 V1 문서는 보지 않는다.
-두 버전은 **응답 메시지 필드 이름이 다르다** — V1 `message`, **V2 `msg`**.
-V1 쪽을 읽으면 거절 사유가 늘 비어 나가 운영에서 원인을 못 본다.
+
+**단, 응답 메시지 필드는 문서와 서버가 다르다.** 문서는 V2 가 `msg` 라고
+적어 두었는데 샌드박스 실호출은 `message` 로 답한다(2026-08-05 실측 —
+`{"code":"BILL_003","message":"청구서를 찾을 수 없습니다.","data":null}`).
+그래서 **둘 다 읽는다.** 한쪽만 믿으면 거절 사유가 비어 나가 운영에서
+원인을 못 본다. 오류 응답도 **HTTP 200** 으로 오므로 판정 근거는 `code` 다.
 
 **해시가 두 종류다.** `phone` 이 실리면 `{billId},{phone},{price}`, 아니면
 `{billId},{price}` 다. 청구서 발송은 phone 이 필수라 **3항**이고, 파기·취소는
@@ -179,11 +183,18 @@ class PayssamAdapter(PaymentAdapter):
 
 
 def _raise_for_code(payload: dict) -> None:
-    """V2 는 `msg` 다(V1 은 `message`). 모르는 코드는 영구로 떨어뜨린다."""
+    """거절 사유를 뽑아 종류별 예외로 던진다. 모르는 코드는 영구다.
+
+    **`msg` 와 `message` 를 둘 다 읽는다.** 문서(`preparation/req-res`)는 V2 가
+    `msg` 이고 `message` 는 V1 이라고 적어 두었지만, 샌드박스 실호출은 V2
+    엔드포인트에서 `message` 로 답한다(2026-08-05 실측):
+    `{"code":"BILL_003","message":"청구서를 찾을 수 없습니다.","data":null}`.
+    한쪽만 읽으면 거절 사유가 비어 나가 운영에서 원인을 못 본다.
+    """
     code = payload.get("code")
     if code == SUCCESS_CODE:
         return
-    reason = payload.get("msg") or f"코드 {code}"
+    reason = payload.get("msg") or payload.get("message") or f"코드 {code}"
     if code in _TRANSIENT_CODES:
         raise TemporaryPaymentError(f"결제선생 일시 오류: {reason}")
     raise PermanentPaymentError(f"결제선생 거절: {reason}")
