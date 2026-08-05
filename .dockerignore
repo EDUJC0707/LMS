@@ -33,4 +33,17 @@ docs/
 *.pdf
 README.md
 Makefile
-archive/
+# 2026-07-22 에 archive/ → local/
+# 세션별 worktree(CLAUDE.md §9). 각각이 완전한 체크아웃이라 node_modules·.venv 까지
+# 딸려 있어 지금 1.8G 다. gitignore 에는 있지만 빌드 컨텍스트는 별개다.
+.claude/worktrees/ 로 개명됐는데 이 줄이 안 따라왔다.
+# 그동안 local/
+# 세션별 worktree(CLAUDE.md §9). 각각이 완전한 체크아웃이라 node_modules·.venv 까지
+# 딸려 있어 지금 1.8G 다. gitignore 에는 있지만 빌드 컨텍스트는 별개다.
+.claude/worktrees/ 456M 이 매 배포마다 빌드 컨텍스트로 올라갔다 — 그 안에는
+# CLAUDE.md §5 가 커밋 금지로 지정한 마킹 OMR 스캔(지면에 실명·전화 뒷4)과
+# 회의 원본·디자인 원본이 있다. 이미지에 실리지는 않아도 전송은 된다.
+local/
+# 세션별 worktree(CLAUDE.md §9). 각각이 완전한 체크아웃이라 node_modules·.venv 까지
+# 딸려 있어 지금 1.8G 다. gitignore 에는 있지만 빌드 컨텍스트는 별개다.
+.claude/worktrees/

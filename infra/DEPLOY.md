@@ -78,6 +78,28 @@ fly secrets set \
   -a edujc-lms
 #   (SENTRY_DSN 은 8장 — 가입부터 수집 검증까지 절차가 거기 있다)
 
+# 2-6) 복습영상(Mux) — **없으면 영상이 통째로 안 나온다.**
+#   apps/videos/mux.py 는 키가 없으면 예외를 던지지 않고 서명을 건너뛴다(로컬이
+#   키 없이 돌아야 하므로). 그래서 시크릿을 빠뜨리면 토큰이 빈 채로 내려가고,
+#   signed 정책 자산은 Mux 가 전부 403 을 내는데 **서버 로그에는 아무것도 안 남는다** —
+#   화면에서 "권한 없음" 과 구분되지 않는다. 넣었는지 반드시 확인할 것.
+fly secrets set \
+  MUX_SIGNING_KEY_ID="..." \
+  MUX_SIGNING_PRIVATE_KEY="<base64 개인키>" \
+  MUX_PLAYBACK_RESTRICTION_ID="..." \
+  -a edujc-lms
+#   MUX_TOKEN_ID/SECRET 은 업로드 커맨드 전용이라 웹 프로세스에는 필요 없다.
+#   MUX_DEMO_PLAYBACK_ID 는 **운영에서 비워 둔다**(시드 대체용 개발 편의).
+#   MUX_PLAYBACK_RESTRICTION_ID 를 빠뜨리면 서명 URL 을 복사해 curl 로 스트림을
+#   받아갈 수 있다 — 규칙은 `manage.py mux_restriction --domain <운영도메인>` 으로 만든다.
+
+# 2-7) 쿠키 도메인 — 프런트와 API 가 다른 서브도메인이면 **필수**.
+#   기본값(None)이면 쿠키가 API 도메인 전용으로 발급돼 프런트에서 로그인이 유지되지 않는다.
+fly secrets set \
+  SESSION_COOKIE_DOMAIN=".hjcedu.com" \
+  CSRF_COOKIE_DOMAIN=".hjcedu.com" \
+  -a edujc-lms
+
 # 2-6) 배포 (⚠️ 레포 루트에서, 빌드 컨텍스트=루트 → -c 로 fly.toml 지정)
 cd /path/to/LMS
 fly deploy -c infra/fly.toml -a edujc-lms
@@ -154,7 +176,7 @@ class AnswerSheet(models.Model):
 
 1. **할 일이 없다** — 2026-08-04 `apps/notifications/tasks.py` 로 첫 `@shared_task`
    두 건(발송·재발송 배치)이 생겼지만 **부르는 곳이 아직 없다**: 발송 시점 목록이
-   미결(8-17)이라 태스크를 거는 트리거가 없고, 솔라피 API 키가 없어 어댑터가
+   미결(8-17)이라 태스크를 거는 트리거가 없고, 알리고 API 키가 없어 어댑터가
    `_request` 에서 막힌다. 워커를 띄워도 여전히 idle 이다.
 1. ~~**할 일이 없다** — `@shared_task` 정의 0건~~ → **2026-08-04 부터는 있다.**
    `apps/clinic/tasks.py`(클리닉 감독 자료 수집)가 첫 태스크이고 beat 일정도
@@ -183,7 +205,7 @@ Redis는 부담이 아니다 — 최소요금이 없어 요청이 없으면 사�
 
 ~~첫 `@shared_task` 를 작성하는 시점~~ → **옮김**(2026-08-04). 태스크는 이미 있고,
 있어도 부를 곳이 없어 워커는 idle 이다(위 참조). 실제 기준은 **알림을 처음 실제로
-보내는 시점** — 즉 ① 발송 시점 목록(8-17) 확정 + 알림톡 템플릿 승인 ② 솔라피
+보내는 시점** — 즉 ① 발송 시점 목록(8-17) 확정 + 알림톡 템플릿 승인 ② 알리고
 API 키 수령 **둘 다** 충족되는 날이다. 그날 아래 3단계를 함께 돌린다.
 ~~**첫 `@shared_task` 를 작성하는 시점.**~~ → **도달했다(2026-08-04)** — 클리닉 감독
 자료 수집. 그런데 **띄우지 않기로 했다**: 손으로 돌리는 우회가 성립하고(배치가
@@ -207,10 +229,12 @@ fly redis create --org EduJC --region nrt --name edujc-redis
 
 # 2) secret 주입 (base.py 는 REDIS_URL 을 읽고 CELERY_BROKER_URL 기본값으로 재사용)
 fly secrets set REDIS_URL="redis://..." -a edujc-lms
-#    알림 발송을 켜는 것이면 솔라피 자격증명도 함께(없으면 발송이 "API 키가
-#    설정되지 않았습니다" 로 실패한다 — base.py 알림 채널 절)
-fly secrets set SOLAPI_API_KEY="..." SOLAPI_API_SECRET="..." \
-                SOLAPI_SENDER_PHONE="..." SOLAPI_KAKAO_PFID="..." -a edujc-lms
+#    알림 발송을 켜는 것이면 알리고 자격증명도 함께(없으면 발송이 "API 키가
+#    설정되지 않았습니다" 로 실패한다 — base.py 알림 채널 절).
+#    업체는 2026-08-05 에 솔라피 → 알리고로 바뀌었다(docs/decisions.md §3-1).
+#    이름을 SOLAPI_* 로 넣으면 시크릿은 들어가고 발송만 조용히 실패한다.
+fly secrets set ALIGO_API_KEY="..." ALIGO_USER_ID="..." \
+                ALIGO_SENDER_PHONE="..." ALIGO_SENDER_KEY="..." -a edujc-lms
 
 # 3) 워커 기동 — fly.toml 의 [processes] worker 정의는 그대로 살아 있으므로 count 만 올리면 된다
 fly scale count worker=1 -a edujc-lms
