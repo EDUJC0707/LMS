@@ -194,3 +194,69 @@ def test_vectorised_sampling_clips_out_of_frame_points_like_the_loop():
         read.sample_cells(image, frame, cells, card.ANSWER_BUBBLE_RADIUS),
         scalar_sample_cells(image, frame, cells, card.ANSWER_BUBBLE_RADIUS),
     )
+
+
+def glyph_noise_row(index):
+    """마킹 없는 줄의 실측 잉크 모사 — 인쇄 글리프만으로 lead 7.5~18 이 남는다.
+
+    실물 빈칸 267줄의 lead 는 1.5~32.5 였고, 열마다 글리프 잉크가 달라 1등은
+    5·2 번 칸에 쏠렸다(260줄 중 5번 121회 · 2번 67회).
+    """
+    rows = (
+        row(c1=33.0, c2=36.0, c3=34.0, c4=31.0, c5=47.0),
+        row(c1=32.0, c2=41.0, c3=35.0, c4=30.0, c5=38.0),
+        row(c1=34.0, c2=37.0, c3=44.0, c4=32.0, c5=40.0),
+        row(c1=31.0, c2=35.0, c3=33.0, c4=36.0, c5=52.0),
+    )
+    return dict(rows[index % 4])
+
+
+def test_holds_a_blank_sheet_instead_of_reading_glyph_noise():
+    """빈 장은 보류다 — 잡음 중앙값을 기준 삼으면 전 문항이 답으로 읽힌다.
+
+    실측: 실물 65장을 전부 빈 장으로 만들어 넣었더니 65장 모두에서 12~16문항이
+    답으로 승격됐고, 승격된 선택지는 글리프 잉크가 무거운 순서였다.
+    """
+    inks = {question: glyph_noise_row(question) for question in range(1, 17)}
+
+    assert read.classify_answers(inks) is None
+
+
+def test_holds_a_walkout_sheet_with_two_answers():
+    """두 문항만 풀고 나간 장 — lead 중앙값이 잡음 수준으로 무너진다.
+
+    실측: 실물 65장을 2문항만 남기고 나머지를 그 장의 실제 빈 줄로 바꿨더니
+    장마다 10~14문항이 답으로 승격됐다(기준선이 잡음 lead 의 40% = 3~9 로 추락).
+    """
+    inks = {question: glyph_noise_row(question) for question in range(1, 17)}
+    inks[1] = row(c1=30.0, c2=150.0, c3=30.0, c4=30.0, c5=30.0)
+    inks[2] = row(c1=30.0, c2=30.0, c3=30.0, c4=150.0, c5=30.0)
+
+    assert read.classify_answers(inks) is None
+
+
+def test_holds_at_exactly_half_marked():
+    """마킹 8줄 = 절반은 아직 부족하다 — 16줄 중앙값에 잡음이 낀다.
+
+    실측: 실물 65장을 8문항만 남겼더니 31장에서 잡음 103건이 답으로 승격됐고,
+    그중 23장은 sheet_lead 42.6~70.0 이라 sheet_lead 하한으로는 못 거른다 —
+    그래서 하한이 아니라 마킹 줄 수로 가른다.
+    """
+    inks = {question: glyph_noise_row(question) for question in range(1, 17)}
+    for question in range(1, 9):
+        inks[question] = row(c1=30.0, c2=30.0, c3=150.0, c4=30.0, c5=30.0)
+
+    assert read.classify_answers(inks) is None
+
+
+def test_still_reads_a_sheet_when_marks_hold_the_majority():
+    """9줄이 마킹이면 중앙값은 연필 통계다 — 판정은 그대로 간다."""
+    inks = {question: glyph_noise_row(question) for question in range(1, 17)}
+    for question in range(1, 10):
+        inks[question] = row(c1=30.0, c2=30.0, c3=150.0, c4=30.0, c5=30.0)
+
+    readings = read.classify_answers(inks)
+
+    assert readings is not None
+    assert all(readings[question] == (3,) for question in range(1, 10))
+    assert all(readings[question] == () for question in range(10, 17))

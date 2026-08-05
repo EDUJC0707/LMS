@@ -44,6 +44,11 @@ LEAD_FRACTION = 0.40
 RUNNER_MIN = 50.0
 #: 2등이 장 중앙 lead 의 이 비율을 넘어도 복수 마킹 — 흐린 장을 위한 눈금.
 RUNNER_FRACTION = 0.65
+#: 연필이 닿았다고 볼 수 있는 lead 하한 — 개별 판정용이 아니라 **집계용**이다.
+#: 실물 빈칸 267줄의 lead 최대가 32.5 인데 실제 마킹 1033줄의 최소는 29.5 라
+#: 겹친다 — 그래서 이 값으로 문항 하나를 판정하지 않는다. 줄 수를 세는 데만 쓴다:
+#: 잡음(<=32.5)은 40 을 못 넘고, 실물 65장 전부가 40 이상인 줄을 13줄 넘게 가진다.
+PENCIL_LEAD_MIN = 40.0
 #: 버블 반지름의 몇 할까지만 표본할지. 링에 물리면 빈칸이 칠한 것처럼 읽힌다 —
 #: 실제로 보정 전 격자가 링에 얹혔을 때 그 일이 났다.
 INTERIOR_FRACTION = 0.65
@@ -95,11 +100,21 @@ def classify_answers(inks):
     빈 튜플은 빈칸이다. 둘 이상이면 복수 마킹 — 어느 쪽이 진짜인지는 정하지
     않는다(X 로 지운 것인지 겹쳐 칠한 것인지 기계가 못 가른다. PRD 3.1.1 의
     마킹 이상 경고로 넘어가 사람이 본다).
+
+    **None 은 장 전체 보류다.** 연필이 닿은 줄이 절반 이하면 lead 중앙값이 연필
+    통계가 아니라 인쇄 잡음 통계다 — 그 40% 를 빈칸 기준으로 삼으면 빈 줄의 글리프
+    잡음이 답으로 승격된다(실측: 빈 장을 넣으면 65장 전원이 12~16문항을 답으로
+    읽었고, 고른 선택지는 글리프 잉크가 무거운 순서였다). 잡음과 흐린 마킹은
+    절대값으로 안 갈리므로(마킹 최소 29.5 < 잡음 최대 32.5) 몇 줄만 골라 살리지
+    않고 장째 사람에게 넘긴다 — 방향을 못 가릴 때 보류하는 locate_card 와 같은 태도다.
     """
     rows = {question: _row_stats(cells) for question, cells in inks.items()}
     if not rows:
         return {}
-    sheet_lead = median(stats.lead for stats in rows.values())
+    leads = [stats.lead for stats in rows.values()]
+    if 2 * sum(lead >= PENCIL_LEAD_MIN for lead in leads) <= len(leads):
+        return None
+    sheet_lead = median(leads)
     floor_lead = LEAD_FRACTION * sheet_lead
     runner_min = min(RUNNER_MIN, RUNNER_FRACTION * sheet_lead)
     return {
