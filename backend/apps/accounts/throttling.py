@@ -20,7 +20,10 @@ from django.utils import timezone
 from .models import LoginAttempt
 
 #: 한 계정을 몇 번 틀리면 막을지. 실수로 몇 번 틀리는 것은 통과해야 한다.
-ACCOUNT_MAX_FAILURES = 5
+#: 10 은 사용자가 정한 값(2026-08-05). 창이 5분이므로 한 계정에 하루 2,880 회가
+#: 상한인데, 비밀번호 정책(AUTH_PASSWORD_VALIDATORS)을 통과한 값이라면 그 속도로는
+#: 뚫리지 않는다. 이 숫자가 실제로 지키는 것은 **약한 비밀번호**다.
+ACCOUNT_MAX_FAILURES = 10
 
 #: 한 IP 가 계정을 갈아 가며 몇 번 틀리면 막을지. 학원 공용 IP 를 감안해 넉넉히.
 IP_MAX_FAILURES = 30
