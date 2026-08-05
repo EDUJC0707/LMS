@@ -14,9 +14,3 @@
 # 더 촘촘히 돌려도 빨라지지 않는다. 할 일이 없으면 DB 조회 한 번으로 끝나고
 # 구글은 아예 부르지 않는다.
 */20 * * * * cd /app && .venv/bin/python manage.py collect_clinic_supervision
-
-# 클리닉 시작 리마인더 — 시작 6분 안쪽인 건에 알림을 건다.
-# 매분인 이유: 링크가 시작 5분 전에 열리므로 그보다 늦으면 안 된다. 6분 창을
-# 매분 훑으면 cron 이 한 번 걸러도 링크가 열리기 전에 나간다.
-# 보낼 것이 없으면 조회 한 번으로 끝난다(apps.clinic.reminders).
-* * * * * cd /app && .venv/bin/python manage.py send_clinic_reminders
