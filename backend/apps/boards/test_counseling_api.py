@@ -40,7 +40,7 @@ class CounselingFixtureMixin:
         cls.assistant = make_user("co-ast", User.Role.ASSISTANT, name="조교")
         cls.student = Student.objects.create(
             user=make_user("co-stu", User.Role.STUDENT, name="이결석"),
-            unique_id="3_2222",
+            matching_key="3_2222",
             enrollment_status=Student.EnrollmentStatus.REGISTERED,
         )
         cls.parent = Parent.objects.create(

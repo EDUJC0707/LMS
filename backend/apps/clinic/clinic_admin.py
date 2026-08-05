@@ -63,7 +63,8 @@ def queue_row(request):
         "student": {
             "student_id": student.student_id,
             "name": student.user.name if student.user else None,
-            "unique_id": student.unique_id,
+            "login_id": student.user.login_id if student.user else None,
+            "matching_key": student.matching_key,
             "noshow_count": student.noshow_count,
             "clinic_banned": student.clinic_banned,
         },

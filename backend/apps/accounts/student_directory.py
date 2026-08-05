@@ -27,7 +27,7 @@ staff_admin·attendance_admin 선례).
 
 ## 필터 계약
 
-- `q`: 이름(users.name)·원번(students.unique_id)·전화(users.phone) 부분일치 OR.
+- `q`: 이름(users.name)·원번(students.matching_key)·전화(users.phone) 부분일치 OR.
 - `enrollment_status`: 값집합(예비등록/등록/퇴원) 밖은 뷰가 400.
 - `course_id`: **활성 수강(`수강`)** 기준 — 중단·종료 수강은 그 강좌의 현재
   명부가 아니다(출결 명단 load_roster 와 같은 판정).
@@ -53,7 +53,7 @@ def build_queryset(q=None, enrollment_status=None, course_id=None, class_name=No
     if q:
         queryset = queryset.filter(
             Q(user__name__icontains=q)
-            | Q(unique_id__icontains=q)
+            | Q(matching_key__icontains=q)
             | Q(user__phone__icontains=q)
         )
     if enrollment_status:
@@ -79,7 +79,8 @@ def row(student):
     return {
         "student_id": student.student_id,
         "name": student.user.name if student.user else None,
-        "unique_id": student.unique_id,
+        "login_id": student.user.login_id if student.user else None,
+        "matching_key": student.matching_key,
         "grade": student.grade,
         "current_class": student.current_class,
         "enrollment_status": student.enrollment_status,

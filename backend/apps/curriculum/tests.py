@@ -153,7 +153,7 @@ class WeekDayPlanTests(TestCase):
 class CourseEnrollmentTests(TestCase):
     def setUp(self):
         self.course = Course.objects.create(name="로직엔제")
-        self.student = Student.objects.create(unique_id="24-001")
+        self.student = Student.objects.create(matching_key="24-001")
 
     def test_status_defaults_to_enrolled(self):
         # 설계: status NN 기본 `수강`, 한국어 TextChoices

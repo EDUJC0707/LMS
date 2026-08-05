@@ -91,7 +91,7 @@ export function ExamDetailAdminPage() {
                 <tr key={row.student_id}>
                   <td>{row.rank ?? "-"}</td>
                   <td>{row.name}</td>
-                  <td>{row.unique_id}</td>
+                  <td>{row.matching_key}</td>
                   <td>{row.current_class ?? "-"}</td>
                   <td>
                     {row.total_score ?? "-"} / {row.max_score ?? "-"}

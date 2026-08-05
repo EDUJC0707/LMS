@@ -13,8 +13,8 @@ from apps.accounts.models import Parent, Student, User
 from .models import Notification
 
 
-def make_student(unique_id="3_1234"):
-    return Student.objects.create(unique_id=unique_id)
+def make_student(matching_key="3_1234"):
+    return Student.objects.create(matching_key=matching_key)
 
 
 class NotificationSchemaTests(TestCase):

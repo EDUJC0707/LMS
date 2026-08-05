@@ -15,57 +15,57 @@ import inspect
 
 from django.test import SimpleTestCase
 
-from . import unique_id as unique_id_module
+from . import matching_key as matching_key_module
 from .login_id import LoginIdError, issue_student_login_id, person_base, student_phone_tail4
+from .matching_key import build_matching_key
 from .models import Student
-from .unique_id import build_unique_id
 
 
 class BuildUniqueIdTests(SimpleTestCase):
     def test_name_and_phone_tail(self):
-        self.assertEqual(build_unique_id("김하늘", "01012344821"), "김하늘4821")
+        self.assertEqual(build_matching_key("김하늘", "01012344821"), "김하늘4821")
 
     def test_name_normalized_like_login_id(self):
-        self.assertEqual(build_unique_id(" 김 하늘 ", "010-1234-4821"), "김하늘4821")
+        self.assertEqual(build_matching_key(" 김 하늘 ", "010-1234-4821"), "김하늘4821")
 
     def test_equals_login_id_body(self):
         # 원번 = 로그인 아이디에서 충돌 접미사를 뗀 값 — 두 규칙이 갈리지 않게 못 박는다
         self.assertEqual(
-            build_unique_id("김하늘", "01012344821"),
+            build_matching_key("김하늘", "01012344821"),
             person_base("김하늘", "01012344821"),
         )
 
     def test_equals_login_id_when_there_is_no_collision(self):
         """충돌이 없으면 원번과 로그인 아이디가 **같은 문자열**이다."""
         self.assertEqual(
-            build_unique_id("김하늘", "01012344821"),
+            build_matching_key("김하늘", "01012344821"),
             issue_student_login_id("김하늘", "01012344821", is_taken=lambda _: False),
         )
 
     def test_phoneless_student_uses_parent_tail(self):
         self.assertEqual(
-            build_unique_id("김하늘", "", parent_phone="010-9999-4821"), "김하늘4821"
+            build_matching_key("김하늘", "", parent_phone="010-9999-4821"), "김하늘4821"
         )
 
     def test_own_phone_wins_over_parent_phone(self):
         self.assertEqual(
-            build_unique_id("김하늘", "01011111111", parent_phone="01099994821"),
+            build_matching_key("김하늘", "01011111111", parent_phone="01099994821"),
             "김하늘1111",
         )
 
     def test_no_phone_at_all_rejected(self):
         with self.assertRaises(LoginIdError):
-            build_unique_id("김하늘", "", parent_phone="")
+            build_matching_key("김하늘", "", parent_phone="")
 
     def test_unusable_name_rejected(self):
         with self.assertRaises(LoginIdError):
-            build_unique_id("!!!", "01012344821")
+            build_matching_key("!!!", "01012344821")
 
     def test_longest_possible_fits_the_column(self):
-        # 이름 상한(login_id 정규화 20자)까지 쓴 원번이 students.unique_id 에 들어가야 한다
-        longest = build_unique_id("가" * 40, "01012344821")
+        # 이름 상한(login_id 정규화 20자)까지 쓴 원번이 students.matching_key 에 들어가야 한다
+        longest = build_matching_key("가" * 40, "01012344821")
         self.assertEqual(len(longest), 20 + 4)
-        column = Student._meta.get_field("unique_id")
+        column = Student._meta.get_field("matching_key")
         self.assertLessEqual(len(longest), column.max_length)
 
 
@@ -76,13 +76,13 @@ class DuplicateUniqueIdTests(SimpleTestCase):
     중복으로 떨어지고 **관리자가 고른다** — 접미사로 자동 해소하지 않는다.
     """
 
-    def test_two_students_share_one_unique_id(self):
-        first = build_unique_id("김민준", "01011111234")
-        second = build_unique_id("김민준", "01022221234")
+    def test_two_students_share_one_matching_key(self):
+        first = build_matching_key("김민준", "01011111234")
+        second = build_matching_key("김민준", "01022221234")
         self.assertEqual(first, second)
         self.assertEqual(first, "김민준1234")
 
-    def test_login_ids_split_while_unique_ids_do_not(self):
+    def test_login_ids_split_while_matching_keys_do_not(self):
         taken = set()
 
         def is_taken(candidate):
@@ -93,24 +93,24 @@ class DuplicateUniqueIdTests(SimpleTestCase):
         second = issue_student_login_id("김민준", "01022221234", is_taken=is_taken)
         self.assertEqual((first, second), ("김민준1234", "김민준1234a"))
         self.assertEqual(
-            build_unique_id("김민준", "01011111234"),
-            build_unique_id("김민준", "01022221234"),
+            build_matching_key("김민준", "01011111234"),
+            build_matching_key("김민준", "01022221234"),
         )
 
-    def test_unique_id_is_the_login_id_without_its_suffix(self):
+    def test_matching_key_is_the_login_id_without_its_suffix(self):
         login_id = issue_student_login_id(
             "김민준", "01022221234", is_taken=lambda c: c == "김민준1234"
         )
         self.assertEqual(login_id, "김민준1234a")
-        self.assertEqual(build_unique_id("김민준", "01022221234"), login_id[:-1])
+        self.assertEqual(build_matching_key("김민준", "01022221234"), login_id[:-1])
 
 
 class SharedTailRuleTests(SimpleTestCase):
     """뒷자리 추출은 login_id 모듈 것을 그대로 쓴다 — 두 곳에 흩어지면 갈린다."""
 
-    def test_unique_id_tail_is_login_id_tail(self):
+    def test_matching_key_tail_is_login_id_tail(self):
         self.assertEqual(
-            build_unique_id("김하늘", "", parent_phone="01099994821")[-4:],
+            build_matching_key("김하늘", "", parent_phone="01099994821")[-4:],
             student_phone_tail4("", "01099994821"),
         )
 
@@ -123,9 +123,9 @@ class NoGradeInUniqueIdTests(SimpleTestCase):
     """
 
     def test_signature_has_no_grade_argument(self):
-        params = list(inspect.signature(build_unique_id).parameters)
+        params = list(inspect.signature(build_matching_key).parameters)
         self.assertEqual(params, ["name", "phone", "parent_phone"])
 
     def test_module_exposes_nothing_grade_shaped(self):
         for gone in ("grade_digit", "numeric_key", "UniqueIdError"):
-            self.assertFalse(hasattr(unique_id_module, gone), gone)
+            self.assertFalse(hasattr(matching_key_module, gone), gone)

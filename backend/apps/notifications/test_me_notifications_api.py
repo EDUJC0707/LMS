@@ -35,9 +35,9 @@ class MeNotificationsTests(TestCase):
     @classmethod
     def setUpTestData(cls):
         cls.student_user = make_user("nt-stu", User.Role.STUDENT, name="학생")
-        cls.student = Student.objects.create(user=cls.student_user, unique_id="3_0001")
+        cls.student = Student.objects.create(user=cls.student_user, matching_key="3_0001")
         cls.other_student = Student.objects.create(
-            user=make_user("nt-stu2", User.Role.STUDENT, name="타학생"), unique_id="3_0002"
+            user=make_user("nt-stu2", User.Role.STUDENT, name="타학생"), matching_key="3_0002"
         )
         cls.parent_user = make_user("nt-par", User.Role.PARENT, name="학부모")
         cls.parent = Parent.objects.create(user=cls.parent_user, phone="01011119999")

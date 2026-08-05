@@ -167,10 +167,10 @@ function MatchRow({
         </a>
       </td>
       <td>
-        {row.student.name} (원번 {row.student.unique_id})
+        {row.student.name} (원번 {row.student.matching_key})
       </td>
       <td>
-        {row.recognized_unique_id ?? "-"} / {row.recognized_name ?? "-"}
+        {row.recognized_matching_key ?? "-"} / {row.recognized_name ?? "-"}
       </td>
       <td>{row.match_status ?? "대기"}</td>
       <td>{row.session ? `${row.session.session_date}` : "-"}</td>
@@ -216,7 +216,7 @@ function MatchRow({
               act(
                 () =>
                   api.patch(`/admin/workbook/${row.submission_id}/match`, {
-                    recognized_unique_id: uniqueId,
+                    recognized_matching_key: uniqueId,
                     recognized_name: name,
                   }),
                 `#${row.submission_id} 원번+이름 대조 시도 완료(결과는 상태 열 확인)`,

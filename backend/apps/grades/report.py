@@ -187,7 +187,8 @@ def _student_block(student):
     return {
         "student_id": student.student_id,
         "name": student.user.name if student.user else None,
-        "unique_id": student.unique_id,
+        "login_id": student.user.login_id if student.user else None,
+        "matching_key": student.matching_key,
         "school": student.school,
         "current_class": student.current_class,
     }

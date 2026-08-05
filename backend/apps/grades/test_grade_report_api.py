@@ -41,7 +41,7 @@ def make_student(login_id, name, **extra):
     user = make_user(login_id, User.Role.STUDENT, name=name)
     return Student.objects.create(
         user=user,
-        unique_id=f"uid-{login_id}",
+        matching_key=f"uid-{login_id}",
         enrollment_status=Student.EnrollmentStatus.REGISTERED,
         **extra,
     )
@@ -261,7 +261,8 @@ class StudentGradeListTests(GradeFixtureMixin, TestCase):
             {
                 "student_id": self.student_a.student_id,
                 "name": "김서연",
-                "unique_id": self.student_a.unique_id,
+                "login_id": self.student_a.user.login_id,
+                "matching_key": self.student_a.matching_key,
                 "school": "서연고",
                 "current_class": "고2 B반",
             },
@@ -396,7 +397,7 @@ class StudentGradeReportDetailTests(GradeFixtureMixin, TestCase):
         """학생 정보(성명·원번·학교) + 시험명·시험일·공지(PRD 3.2.1)."""
         body = self.get_detail(self.exam2)
         self.assertEqual(body["student"]["name"], "김서연")
-        self.assertEqual(body["student"]["unique_id"], self.student_a.unique_id)
+        self.assertEqual(body["student"]["matching_key"], self.student_a.matching_key)
         self.assertEqual(body["student"]["school"], "서연고")
         self.assertEqual(
             body["exam"],

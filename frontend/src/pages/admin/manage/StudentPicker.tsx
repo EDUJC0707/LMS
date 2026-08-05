@@ -60,7 +60,7 @@ export function StudentPicker({
         <p className="pm-picker__label">{label}</p>
         <div className="pm-picker__chosen">
           <span className="pm-picker__name">
-            <span className="num">{value.unique_id || "원번 없음"}</span>{" "}
+            <span className="num">{value.login_id ?? value.matching_key ?? "원번 없음"}</span>{" "}
             {value.name ?? "이름 미등록"}
           </span>
           {value.current_class && <Badge tone="outline">{value.current_class}</Badge>}
@@ -129,7 +129,7 @@ export function StudentPicker({
                       }}
                     >
                       <span className="pm-picker__name">
-                        <span className="num">{student.unique_id || "원번 없음"}</span>{" "}
+                        <span className="num">{student.login_id ?? student.matching_key ?? "원번 없음"}</span>{" "}
                         {student.name ?? "이름 미등록"}
                       </span>
                       <span className="pm-picker__meta">

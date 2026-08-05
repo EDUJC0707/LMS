@@ -49,7 +49,7 @@ class ClinicAdminFixtureMixin:
         cls.student_user = make_user("ca-stu", User.Role.STUDENT, name="박클리")
         cls.student = Student.objects.create(
             user=cls.student_user,
-            unique_id="3_1111",
+            matching_key="3_1111",
             enrollment_status=Student.EnrollmentStatus.REGISTERED,
         )
         cls.parent = Parent.objects.create(

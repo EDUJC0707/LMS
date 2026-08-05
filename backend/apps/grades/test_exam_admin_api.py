@@ -187,7 +187,7 @@ class ExamAdminDetailTests(ExamAdminFixtureMixin, TestCase):
         )
         first = students[0]
         self.assertEqual(first["name"], "이민준")
-        self.assertEqual(first["unique_id"], self.student_b.unique_id)
+        self.assertEqual(first["matching_key"], self.student_b.matching_key)
         self.assertEqual(first["max_score"], 100.0)
         self.assertTrue(first["is_taken"])
         self.assertIsNone(first["percentile"])  # 저장 전 — 표시만(계산·저장은 성적처리 슬라이스)

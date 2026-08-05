@@ -92,7 +92,8 @@ def _queue_row(card, attempts):
         "student": {
             "student_id": student.student_id,
             "name": student.user.name if student.user else None,
-            "unique_id": student.unique_id,
+            "login_id": student.user.login_id if student.user else None,
+            "matching_key": student.matching_key,
         },
         "target": card.target,
         "status": card.status,

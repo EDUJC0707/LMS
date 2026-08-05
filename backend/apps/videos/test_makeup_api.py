@@ -48,7 +48,7 @@ def make_user(login_id, role, name="사용자"):
 def make_student(login_id, name):
     user = make_user(login_id, User.Role.STUDENT, name=name)
     return Student.objects.create(
-        user=user, unique_id=f"uid-{login_id}",
+        user=user, matching_key=f"uid-{login_id}",
         enrollment_status=Student.EnrollmentStatus.REGISTERED,
     )
 

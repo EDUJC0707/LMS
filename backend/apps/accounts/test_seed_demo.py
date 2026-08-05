@@ -5,7 +5,7 @@
   전원 test1234 로그인 가능·must_change_password=False.
   아이디는 8-4 개정 규칙(login_id 모듈) 산출값과 일치해야 한다 —
   학생 `{이름}{뒷4자리}`, 학부모 `{자녀 아이디}p`, 직원 학생과 동일 축
-- 원번: unique_id 모듈 산출값과 일치(시드가 규칙을 우회하지 않는다) +
+- 원번: matching_key 모듈 산출값과 일치(시드가 규칙을 우회하지 않는다) +
   **학년이 고1·고2·고3 으로 섞여** 있어야 원번에 학년이 반영되는 것이 눈에 보인다
 - 커리큘럼: 강좌 1 + 주차 10(오늘 기준 4주차까지만 공개 — 게이팅) + Day 계획
 - 출결: 회차(수·토) + 지난 회차 출결(값 **4종 전부** 혼합 — 2026-07-29 개편) →
@@ -24,8 +24,8 @@ from django.core.management import call_command
 from django.test import TestCase
 
 from apps.accounts.login_id import person_base
+from apps.accounts.matching_key import build_matching_key
 from apps.accounts.models import Parent, ParentStudent, Student, User
-from apps.accounts.unique_id import build_unique_id
 from apps.boards.models import AbsenceCounseling, Post
 from apps.clinic.models import ClinicEligibility, ClinicRequest, ClinicSlot
 from apps.curriculum.models import Course, CourseWeek, WeekDayPlan
@@ -83,18 +83,18 @@ class SeedDemoTests(TestCase):
                 parent.user.login_id, f"{first_link.student.user.login_id}p"
             )
 
-    def test_unique_ids_follow_rule(self):
+    def test_matching_keys_follow_rule(self):
         """원번이 규칙 함수 산출값과 일치 — 시드가 규칙을 우회하지 않는다."""
         for student in Student.objects.select_related("user").order_by("student_id"):
             user = student.user
             self.assertEqual(
-                student.unique_id, build_unique_id(user.name, user.phone)
+                student.matching_key, build_matching_key(user.name, user.phone)
             )
 
-    def test_unique_id_equals_login_id(self):
+    def test_matching_key_equals_login_id(self):
         """시드에는 아이디 충돌이 없다 — 그러면 원번과 아이디가 같은 문자열이다."""
         for student in Student.objects.select_related("user").order_by("student_id"):
-            self.assertEqual(student.unique_id, student.user.login_id)
+            self.assertEqual(student.matching_key, student.user.login_id)
 
     def test_grades_are_mixed(self):
         """학년은 원번에서 빠졌지만 학생 정보로 계속 쓴다 — 한 값만 있으면 안 된다."""

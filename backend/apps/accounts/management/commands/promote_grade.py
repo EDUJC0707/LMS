@@ -1,13 +1,13 @@
 """promote_grade — 등록 학생의 학년을 한 학년씩 올린다.
 
 **바꾸는 컬럼은 `students.grade` 하나뿐이다.** 2026-07-29 재개정으로 원번에서
-학년이 빠지면서(`accounts.unique_id`) 승급이 원번을 다시 계산할 이유가 사라졌다.
+학년이 빠지면서(`accounts.matching_key`) 승급이 원번을 다시 계산할 이유가 사라졌다.
 같은 날 오전 판이 하던 원번 재계산은 걷어냈다 — 그 판의 근거였던 "학년이 원번의
 일부" 자체가 뒤집혔다.
 
 ## 불변 계약
 
-`students.unique_id`·`users.login_id`·`students.student_id` 를 **건드리지 않는다.**
+`students.matching_key`·`users.login_id`·`students.student_id` 를 **건드리지 않는다.**
 원번은 이름·휴대폰 파생값이라 승급의 관심사가 아니고, 아이디가 바뀌면 재로그인
 혼란·계정정보 재발송이 생기며, `student_id` 는 전 도메인 FK 의 대상이라 애초에
 바꿀 수 없다.

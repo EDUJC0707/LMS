@@ -54,9 +54,9 @@ class ParentStudentInline(admin.TabularInline):
 
 @admin.register(Student)
 class StudentAdmin(admin.ModelAdmin):
-    list_display = ("student_id", "unique_id", "grade", "school", "enrollment_status", "user")
+    list_display = ("student_id", "matching_key", "grade", "school", "enrollment_status", "user")
     list_filter = ("enrollment_status", "grade", "clinic_banned")
-    search_fields = ("unique_id", "school", "user__name", "user__login_id")
+    search_fields = ("matching_key", "school", "user__name", "user__login_id")
     inlines = [ParentStudentInline]
 
 

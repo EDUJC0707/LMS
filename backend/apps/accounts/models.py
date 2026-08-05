@@ -109,13 +109,14 @@ class Student(models.Model):
       시점에 users 행(role=학생, unusable password)을 함께 만들어 이름·연락처를
       담고, D-1 배치는 랜덤 비밀번호 발급·SMS 발송·credentials_sent_at 스탬프만
       담당한다. (학부모는 parents.name/phone이 있어 사람 행 선행이 그대로 성립.)
-    - unique_id(원번)는 이름과 함께 쓰는 매칭키라 단독 UNIQUE가 아니다(인덱스만).
-      **동명이인+같은 뒷4자리면 두 학생의 원번이 같다** — 접미사로 해소하지 않고
-      매칭에서 중복으로 떨어뜨려 관리자가 고른다(`unique_id.py` 중복 절).
+    - matching_key(대조키)는 **지면 대조 전용 키**다. 단독 UNIQUE가 아니다(인덱스만).
+      **원번이 아니다** — 원번은 `users.login_id` 하나로 통합됐다(2026-08-05 확정).
+      지면(OMR 답안지·워크북)에 나타날 수 있는 것은 접미사 없는 `{이름}{뒷4}`
+      뿐이라, 그 형태를 따로 저장해 대조에만 쓴다. 동명이인+같은 뒷4자리면
+      두 학생의 대조키가 같고, 접미사로 해소하지 않는다 — 매칭에서 중복으로
+      떨어뜨려 관리자가 고른다(`matching_key.py` 중복 절).
       값은 손입력이 아니라 (이름, 휴대폰)에서 계산되는 **파생값**이고 규칙은
-      `unique_id.py` 가 유일 준거다(2026-07-29 재개정 — 학년은 빠졌다).
-      학년이 빠지면서 **승급해도 원번은 바뀌지 않는다**(student_id·login_id와
-      마찬가지로 사실상 불변).
+      `matching_key.py` 가 유일 준거다. 승급해도 바뀌지 않는다.
       길이 30은 규칙의 최대치(정규화 이름 20 + 뒷4자리 4 = 24)를 담는다 — 학년
       1자가 빠져 최대치가 25→24로 줄었지만 **폭은 30 그대로 둔다.** 줄여도 얻는
       것이 없고, 축소 AlterField는 이미 저장된 구 형식 값(학년 접두사가 붙은
@@ -138,7 +139,7 @@ class Student(models.Model):
         related_name="student",
         verbose_name="로그인 계정",
     )
-    unique_id = models.CharField("원번", max_length=30, db_index=True)
+    matching_key = models.CharField("대조키", max_length=30, db_index=True)
     grade = models.CharField("학년", max_length=20, blank=True, default="")
     school = models.CharField("학교", max_length=100, blank=True, default="")
     registered_at = models.DateTimeField("등록 처리 시각", null=True, blank=True)
@@ -173,7 +174,7 @@ class Student(models.Model):
         verbose_name_plural = "학생"
 
     def __str__(self):
-        return f"학생 {self.unique_id} ({self.get_enrollment_status_display()})"
+        return f"학생 {self.matching_key} ({self.get_enrollment_status_display()})"
 
 
 class Parent(models.Model):

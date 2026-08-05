@@ -78,7 +78,7 @@ class PhoneTailTests(SimpleTestCase):
 
 
 class StudentPhoneTailTests(SimpleTestCase):
-    """학생 뒷4자리 선택 규칙 — 원번(unique_id 모듈)이 이 함수를 그대로 재사용한다."""
+    """학생 뒷4자리 선택 규칙 — 원번(matching_key 모듈)이 이 함수를 그대로 재사용한다."""
 
     def test_own_phone_used(self):
         self.assertEqual(student_phone_tail4("01012344821", "01099990000"), "4821")

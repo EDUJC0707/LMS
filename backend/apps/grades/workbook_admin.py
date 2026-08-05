@@ -20,7 +20,7 @@
   확정(자동매칭·수동확정) 전에는 소비자에 노출되지 않는다(workbook 서비스).
 - OCR 인식 엔진은 범위 밖 — 인식 결과 수용(apply_recognition)만 둔다. 엔진이
   붙거나 관리자가 수동 입력하면 원번+이름 대조로 자동 매칭을 시도한다.
-  **원번(unique_id)은 단독 UQ 가 아니다 — 이름과 함께 매칭키**(accounts 설계).
+  **원번(matching_key)은 단독 UQ 가 아니다 — 이름과 함께 매칭키**(accounts 설계).
   (원번, 이름) 정확히 1명 일치 시에만 자동매칭, 그 외(미존재·이름 불일치·
   동일 원번+동명 중복)는 불일치로 두고 관리자 수동 지정(수동확정)으로 보정.
 """
@@ -124,7 +124,7 @@ def apply_manual_match(submission, student):
     return submission
 
 
-def apply_recognition(submission, unique_id, name):
+def apply_recognition(submission, matching_key, name):
     """원번 인식 결과 수용 — 원번+이름 대조(모듈 docstring 매칭 계약).
 
     (원번, 이름) 정확히 1명 일치 시에만 학생 갱신 + 자동매칭. 그 외(미존재·
@@ -133,11 +133,11 @@ def apply_recognition(submission, unique_id, name):
     결과와 무관하게 저장한다(보정 화면의 대조 근거). 이름 없는 학생 행(user
     NULL — 계정 발급 전)은 user__name 조인에서 자연 제외된다.
     """
-    submission.recognized_unique_id = unique_id
+    submission.recognized_matching_key = matching_key
     submission.recognized_name = name
     matched = None
     if name:
-        candidates = list(Student.objects.filter(unique_id=unique_id, user__name=name)[:2])
+        candidates = list(Student.objects.filter(matching_key=matching_key, user__name=name)[:2])
         if len(candidates) == 1:
             matched = candidates[0]
     if matched is not None:
@@ -146,7 +146,7 @@ def apply_recognition(submission, unique_id, name):
     else:
         submission.match_status = _MS.MISMATCH
     submission.save(
-        update_fields=["student", "recognized_unique_id", "recognized_name", "match_status"]
+        update_fields=["student", "recognized_matching_key", "recognized_name", "match_status"]
     )
     return submission
 
@@ -170,11 +170,12 @@ def admin_row(submission):
         "student": {
             "student_id": student.pk,
             "name": student.user.name if student.user else None,
-            "unique_id": student.unique_id,
+            "login_id": student.user.login_id if student.user else None,
+            "matching_key": student.matching_key,
         },
         "session": workbook.session_block(submission.session),
         "image_url": default_storage.url(submission.image_path),
-        "recognized_unique_id": submission.recognized_unique_id,
+        "recognized_matching_key": submission.recognized_matching_key,
         "recognized_name": submission.recognized_name,
         "match_status": submission.match_status,
         "performance_grade": submission.performance_grade,

@@ -53,7 +53,7 @@ export default function ExamDetailPage() {
       if (tab === "제출" && !student.is_taken) return false;
       if (tab === "미제출" && student.is_taken) return false;
       if (!needle) return true;
-      return student.name.includes(needle) || student.unique_id.includes(needle);
+      return student.name.includes(needle) || (student.login_id ?? "").includes(needle);
     });
   }, [detail.data, tab, query]);
 
@@ -179,10 +179,10 @@ export default function ExamDetailPage() {
             },
             {
               // 원번은 이름이 섞인 값이라(2026-07-29 개정) 숫자 열이 아니다.
-              key: "unique_id",
+              key: "login_id",
               header: "원번",
-              sortValue: (row) => row.unique_id,
-              cell: (row) => row.unique_id,
+              sortValue: (row) => row.login_id ?? "",
+              cell: (row) => row.login_id ?? "—",
             },
             {
               key: "class",

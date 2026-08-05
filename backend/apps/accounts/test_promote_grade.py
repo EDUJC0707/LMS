@@ -5,7 +5,7 @@
 
 검증 축:
 - 승급: 등록 학생의 `grade` 가 한 학년 오른다(고1→고2→고3→N수, N수 정지)
-- 불변 계약: `unique_id`·`login_id`·`student_id` 를 승급이 건드리지 않는다
+- 불변 계약: `matching_key`·`login_id`·`student_id` 를 승급이 건드리지 않는다
 - 대상 한정: 예비등록·퇴원 학생은 손대지 않는다
 - 건너뜀: 승급표에 없는 표기(N수·중3 등) — 계정·번호는 더 이상 조건이 아니다
 - 출력: 학년 변화만 보인다(원번 얘기가 없다)
@@ -16,8 +16,8 @@ import io
 from django.core.management import call_command
 from django.test import TestCase
 
+from .matching_key import build_matching_key
 from .models import Student, User
-from .unique_id import build_unique_id
 
 
 def make_student(name, phone, grade, status=Student.EnrollmentStatus.REGISTERED):
@@ -31,7 +31,7 @@ def make_student(name, phone, grade, status=Student.EnrollmentStatus.REGISTERED)
     )
     return Student.objects.create(
         user=user,
-        unique_id=build_unique_id(name, phone),
+        matching_key=build_matching_key(name, phone),
         grade=grade,
         enrollment_status=status,
     )
@@ -49,14 +49,14 @@ class PromoteGradeTests(TestCase):
         promote()
         student.refresh_from_db()
         self.assertEqual(student.grade, "고2")
-        self.assertEqual(student.unique_id, "김하늘0001")
+        self.assertEqual(student.matching_key, "김하늘0001")
 
-    def test_unique_id_login_id_and_student_id_never_change(self):
+    def test_matching_key_login_id_and_student_id_never_change(self):
         """셋 다 불변이다 — 원번은 학년이 빠지면서 승급의 관심사가 아니게 됐다."""
         student = make_student("박서준", "01010000002", "고2")
         before = (
             student.student_id,
-            student.unique_id,
+            student.matching_key,
             student.user.login_id,
             student.user.user_id,
         )
@@ -66,7 +66,7 @@ class PromoteGradeTests(TestCase):
         self.assertEqual(
             (
                 student.student_id,
-                student.unique_id,
+                student.matching_key,
                 student.user.login_id,
                 student.user.user_id,
             ),
@@ -74,7 +74,7 @@ class PromoteGradeTests(TestCase):
         )
         self.assertEqual(student.grade, "고3")
 
-    def test_output_shows_the_grade_change_and_nothing_about_unique_id(self):
+    def test_output_shows_the_grade_change_and_nothing_about_matching_key(self):
         """실제 반영에서도 **바뀌기 전 학년**이 보여야 한다(반영 뒤 찍으면 둘이 같아진다)."""
         make_student("김하늘", "01010000001", "고1")
         output = promote()
@@ -121,13 +121,13 @@ class PromoteGradeTests(TestCase):
     def test_student_without_account_still_promotes(self):
         """계정은 더 이상 승급 조건이 아니다 — 학년은 학생 정보이고 원번은 안 바뀐다."""
         student = Student.objects.create(
-            unique_id="이름없음0000", grade="고1",
+            matching_key="이름없음0000", grade="고1",
             enrollment_status=Student.EnrollmentStatus.REGISTERED,
         )
         promote()
         student.refresh_from_db()
         self.assertEqual(student.grade, "고2")
-        self.assertEqual(student.unique_id, "이름없음0000")
+        self.assertEqual(student.matching_key, "이름없음0000")
 
     def test_student_without_any_phone_still_promotes(self):
         """번호도 승급 조건이 아니다 — 뒷4자리는 원번을 만들 때만 필요했다."""
@@ -136,7 +136,7 @@ class PromoteGradeTests(TestCase):
             name="무번호", role=User.Role.STUDENT, phone="",
         )
         student = Student.objects.create(
-            user=user, unique_id="", grade="고1",
+            user=user, matching_key="", grade="고1",
             enrollment_status=Student.EnrollmentStatus.REGISTERED,
         )
         promote()

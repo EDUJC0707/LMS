@@ -35,8 +35,8 @@ from apps.accounts.login_id import (
     issue_staff_login_id,
     issue_student_login_id,
 )
+from apps.accounts.matching_key import build_matching_key
 from apps.accounts.models import Parent, ParentStudent, StaffFeatureGrant, Student, User
-from apps.accounts.unique_id import build_unique_id
 from apps.boards.models import AbsenceCounseling, ParentCounselRequest, Post, PostComment
 from apps.clinic.models import (
     ClinicEligibility,
@@ -206,7 +206,7 @@ class Command(BaseCommand):
 
         아이디는 login_id 모듈 산출값 그대로 — 학생 `{이름}{뒷4자리}`,
         학부모 `{최초 연결 자녀 아이디}p`(8-4 개정). 원번도 손으로 만들지 않고
-        unique_id 모듈 산출값 그대로다 — `{이름}{뒷4자리}`(2026-07-29 재개정).
+        matching_key 모듈 산출값 그대로다 — `{이름}{뒷4자리}`(2026-07-29 재개정).
         시드는 이름·번호가 전부 달라 아이디 충돌이 없으므로 원번 == 아이디다.
         """
         students = []
@@ -227,7 +227,7 @@ class Command(BaseCommand):
             students.append(
                 Student.objects.create(
                     user=user,
-                    unique_id=build_unique_id(name, phone),
+                    matching_key=build_matching_key(name, phone),
                     grade=grade,
                     school=_SCHOOLS[(i - 1) % 5],
                     current_class="수요반" if i % 2 else "토요반",
@@ -497,8 +497,8 @@ class Command(BaseCommand):
                 sheet = AnswerSheet.objects.create(
                     exam=exam,
                     student=student,
-                    scan_image_path=f"omr/demo/{exam.round_no}/{student.unique_id}.png",
-                    recognized_unique_id=student.unique_id,
+                    scan_image_path=f"omr/demo/{exam.round_no}/{student.matching_key}.png",
+                    recognized_matching_key=student.matching_key,
                     recognized_name=student.user.name,
                     match_status=AnswerSheet.MatchStatus.MATCHED,
                 )
@@ -844,7 +844,7 @@ class Command(BaseCommand):
         for idx, match_status, grade in specs:
             student = students[idx]
             path = default_storage.save(
-                f"workbook/demo/{target_session.session_id}-{student.unique_id}.png",
+                f"workbook/demo/{target_session.session_id}-{student.matching_key}.png",
                 ContentFile(_PNG_BYTES),
             )
             WorkbookSubmission.objects.create(
@@ -852,8 +852,8 @@ class Command(BaseCommand):
                 session=target_session,
                 image_path=path,
                 performance_grade=grade,
-                recognized_unique_id=(
-                    student.unique_id if match_status is not None else None
+                recognized_matching_key=(
+                    student.matching_key if match_status is not None else None
                 ),
                 recognized_name=(
                     student.user.name

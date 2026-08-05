@@ -146,7 +146,7 @@ function QueueRow({
     <tr>
       <td>{row.clinic_id}</td>
       <td>
-        {row.student.name} (원번 {row.student.unique_id}) — 노쇼 {row.student.noshow_count}회
+        {row.student.name} (원번 {row.student.matching_key}) — 노쇼 {row.student.noshow_count}회
         {row.student.clinic_banned && <strong className="error"> · 제한 중</strong>}
         {row.student.clinic_banned && (
           <div>

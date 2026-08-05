@@ -468,7 +468,7 @@ class AdminWorkbookMatchView(APIView):
 
     두 모드 중 정확히 하나만(8-9 결정 — 매칭 계약은 workbook_admin docstring):
     - `student_id`: 관리자 수동 지정 → 수동확정
-    - `recognized_unique_id`(+`recognized_name`): 원번+이름 대조 자동 매칭
+    - `recognized_matching_key`(+`recognized_name`): 원번+이름 대조 자동 매칭
       시도 → 성공 자동매칭 / 실패 불일치. OCR 엔진(후속 슬라이스)과 관리자
       수동 입력이 같은 수용 계약을 쓴다.
     """
@@ -485,11 +485,11 @@ class AdminWorkbookMatchView(APIView):
             return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
         body = request.data if isinstance(request.data, dict) else {}
         raw_student_id = body.get("student_id")
-        raw_unique_id = body.get("recognized_unique_id")
-        unique_id = raw_unique_id.strip() if isinstance(raw_unique_id, str) else ""
-        if (raw_student_id is not None) == bool(unique_id):
+        raw_matching_key = body.get("recognized_matching_key")
+        matching_key = raw_matching_key.strip() if isinstance(raw_matching_key, str) else ""
+        if (raw_student_id is not None) == bool(matching_key):
             return Response(
-                {"detail": "student_id 또는 recognized_unique_id 중 하나만 보내야 합니다."},
+                {"detail": "student_id 또는 recognized_matching_key 중 하나만 보내야 합니다."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if raw_student_id is not None:
@@ -508,7 +508,7 @@ class AdminWorkbookMatchView(APIView):
         else:
             raw_name = body.get("recognized_name")
             name = raw_name.strip() if isinstance(raw_name, str) else ""
-            workbook_admin.apply_recognition(submission, unique_id, name or None)
+            workbook_admin.apply_recognition(submission, matching_key, name or None)
         return Response({"submission": workbook_admin.admin_row(submission)})
 
 

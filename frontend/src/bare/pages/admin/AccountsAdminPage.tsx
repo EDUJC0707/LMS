@@ -101,7 +101,7 @@ export default function AccountsAdminPage() {
                   <td>{row.index + 1}</td>
                   <td>{row.name ?? "-"}</td>
                   <td>{row.status}</td>
-                  <td>{row.unique_id ?? "-"}</td>
+                  <td>{row.matching_key ?? "-"}</td>
                   <td>{row.login_id ?? "-"}</td>
                   <td>{row.initial_password ?? "-"}</td>
                   <td>

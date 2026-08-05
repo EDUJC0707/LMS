@@ -12,7 +12,7 @@ export default function GradesView({
   return (
     <div>
       <p>
-        <strong>{data.student.name}</strong> (원번 {data.student.unique_id} ·{" "}
+        <strong>{data.student.name}</strong> (원번 {data.student.matching_key} ·{" "}
         {data.student.school || "학교 미입력"})
       </p>
       <h3>시험 목록</h3>

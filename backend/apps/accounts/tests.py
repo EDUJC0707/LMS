@@ -42,7 +42,7 @@ class UserManagerTests(TestCase):
 
 class StudentTests(TestCase):
     def test_enrollment_status_defaults_to_pre_registered(self):
-        student = Student.objects.create(unique_id="24-001")
+        student = Student.objects.create(matching_key="24-001")
         self.assertEqual(student.enrollment_status, Student.EnrollmentStatus.PRE_REGISTERED)
         self.assertIsNone(student.user)  # 명단 선입력 — 계정보다 사람 행이 먼저
 
@@ -50,7 +50,7 @@ class StudentTests(TestCase):
 class ParentStudentTests(TestCase):
     def test_duplicate_parent_student_rejected(self):
         parent = Parent.objects.create(phone="010-1234-5678")
-        student = Student.objects.create(unique_id="24-002")
+        student = Student.objects.create(matching_key="24-002")
         ParentStudent.objects.create(parent=parent, student=student, relation="모")
         with self.assertRaises(IntegrityError):
             ParentStudent.objects.create(parent=parent, student=student, relation="부")

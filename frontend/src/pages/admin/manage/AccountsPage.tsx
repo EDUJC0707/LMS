@@ -139,7 +139,7 @@ export default function AccountsPage() {
       .map((row) =>
         [
           row.name ?? "",
-          row.unique_id ?? "",
+          row.matching_key ?? "",
           row.login_id ?? "",
           row.initial_password ?? "",
         ].join("\t"),
@@ -147,7 +147,7 @@ export default function AccountsPage() {
     if (lines.length === 0) return;
     try {
       await navigator.clipboard.writeText(
-        `이름\t원번\t아이디\t초기 비밀번호\n${lines.join("\n")}`,
+        `이름\t대조키\t아이디\t초기 비밀번호\n${lines.join("\n")}`,
       );
       toast.show(`${lines.length}명의 아이디·초기 비밀번호를 복사했습니다.`);
     } catch {
@@ -289,9 +289,9 @@ export default function AccountsPage() {
                   ),
               },
               {
-                key: "unique_id",
-                header: "원번",
-                cell: (row) => row.unique_id ?? "—",
+                key: "matching_key",
+                header: "대조키",
+                cell: (row) => row.matching_key ?? "—",
               },
               {
                 key: "login_id",
@@ -476,10 +476,10 @@ function PreRegisteredPanel({
           columns={[
             { key: "name", header: "학생", cell: (row) => row.name ?? "이름 미등록" },
             {
-              key: "unique_id",
+              key: "login_id",
               header: "원번",
-              sortValue: (row) => row.unique_id,
-              cell: (row) => row.unique_id || "—",
+              sortValue: (row) => row.login_id ?? "",
+              cell: (row) => row.login_id || "—",
             },
             { key: "grade", header: "학년", cell: (row) => row.grade || "—" },
             { key: "class", header: "반", cell: (row) => row.current_class ?? "미배정" },
