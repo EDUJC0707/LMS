@@ -170,3 +170,64 @@ def test_to_source_many_matches_to_source_bit_for_bit():
         expected = frame.to_source(u, v)
         assert np.float64(x).tobytes() == np.float64(expected[0]).tobytes()
         assert np.float64(y).tobytes() == np.float64(expected[1]).tobytes()
+
+
+# --- 문턱: 톤이 밀려도 마커를 찾는다 ---------------------------------------
+
+
+def fleet_tone_scan():
+    """실측 톤의 합성 스캔 — 종이 255 · 마커 64 · 어두운 인쇄 꼬리 34.
+
+    실측(2026-08-05, 65장): 마커 성분 중앙값 58~67, 페이지 p1 = 31~37(어두운
+    인쇄·연필이 페이지의 약 2.5%), 종이 최빈값 255. **기존 합성 픽스처의 마커
+    회색 20 은 실물보다 훨씬 진해 테스트가 현실보다 관대했다** — 이 픽스처가
+    실측 톤을 고정한다. 꼬리 블록은 카드 한가운데라 마커 후보 띠 밖이다.
+    """
+    image = synth_scan()
+    image[image < 128] = 64
+    height, width = image.shape
+    tail_h, tail_w = int(height * 0.16), int(width * 0.16)  # 넓이 약 2.6%
+    y0, x0 = (height - tail_h) // 2, (width - tail_w) // 2
+    image[y0 : y0 + tail_h, x0 : x0 + tail_w] = 34
+    return image
+
+
+def test_dark_threshold_lands_at_the_validated_operating_point():
+    """실측 톤에서 문턱은 종전 고정값 100 근처다 — 실물 65장에서 98.2~102.4.
+
+    이 자리를 벗어나면 눈으로 검증한 판정(마커 중심·셀 보정)이 다시 검증돼야
+    한다. DARK_FRACTION 을 건드리면 이 테스트가 먼저 알린다.
+    """
+    threshold = normalize.dark_threshold(fleet_tone_scan())
+
+    assert 90 <= threshold <= 112
+
+
+def test_finds_marks_under_affine_tone_shifts():
+    """밝기·대비·바램이 통째로 밀려도 마커를 찾는다 — 문턱이 비율이라 따라간다.
+
+    고정 100 의 실측 한계는 밝기 +25(65장 중 1장 실패) · 바램 15% · 대비 50%
+    였다. 비율 문턱은 같은 배터리에서 밝기 +90 · 바램 90% · 대비 80% 까지 65/65.
+    """
+    base = fleet_tone_scan().astype(np.float32)
+    tone_maps = (
+        (1.0, 60.0),    # 밝기 +60 — 고정 100 은 +35 에서 전멸했다
+        (1.0, -120.0),  # 어두운 스캔
+        (0.5, 127.5),   # 바램 50%(재복사·토너 부족)
+        (0.2, 204.0),   # 바램 80%
+    )
+    for gain, offset in tone_maps:
+        toned = np.clip(base * gain + offset, 0, 255).astype(np.uint8)
+
+        corners = normalize.find_corner_marks(toned)
+
+        assert corners is not None, (gain, offset)
+        np.testing.assert_allclose(corners, CORNERS, atol=1.5)
+
+
+def test_holds_a_pageless_scan_instead_of_inventing_marks():
+    """균일한 페이지(카드 없음)면 보류다 — 문턱이 p1 로 떨어져 아무것도 안 어둡다."""
+    width, height = SCAN_SIZE
+
+    assert normalize.locate_card(np.full((height, width), 255, dtype=np.uint8)) is None
+    assert normalize.locate_card(np.full((height, width), 40, dtype=np.uint8)) is None

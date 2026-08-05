@@ -26,8 +26,26 @@
 import cv2
 import numpy as np
 
-#: 인쇄는 드롭아웃 잉크라 스캔에서 연회색으로 죽고 마커·연필 마킹만 진하게 남는다.
-DARK_MAX = 100
+#: 이진화 문턱은 **장마다 계산한다** — 페이지의 어두운 끝(p1)과 밝은 끝(p99)
+#: 사이 0.30 지점. 실측 65장에서 p1=31~37 · p99=255 라 문턱이 98.2~102.4 로
+#: 떨어져 종전 고정값 100 과 같은 기하를 유지한다(중심 이동 최대 0.15px).
+#:
+#: **"드롭아웃 잉크라 인쇄가 연회색으로 죽는다"는 전제는 실측과 다르다**
+#: (2026-08-05, 65장 2.5억 픽셀): 버블 링 선 자체가 진하고(성분 중앙값 35),
+#: 0~130 이 연속 스미어(전체의 2.5%)로 차 있어 **100 주변에 골짜기가 없다.**
+#: 검출이 서는 근거는 히스토그램 분리가 아니라 크기·채움률·자리 필터다.
+#:
+#: 고정 100 은 이 스캐너 한 대에 과적합돼 있었다:
+#: - 65/65 가 서는 고정값 구간은 [78, 246] — 100 은 아래 끝에서 22 위, 13% 지점
+#: - **마커 인쇄가 중간 회색이다**(성분 중앙값 58~67, 검은색이 아니다). 그래서
+#:   스캔이 밝아지는 쪽(재복사·토너 부족·밝기 보정)으로 **+25 만 밀려도** 깨지기
+#:   시작하고 +35 면 전부 깨진다. 바램은 15% 에서 깨진다
+#: - 비율 문턱은 affine 톤 변화에 불변이라 같은 배터리에서 밝기 +90 · 바램 90% ·
+#:   대비 80% 축소 · 감마 0.5 까지 65/65 를 지킨다
+#: Otsu 는 노이즈 σ50 에서 26/65 로 무너지고, p1/p99 중점은 판정 4건을 바꾼다.
+DARK_LOW_PERCENTILE = 1.0
+DARK_HIGH_PERCENTILE = 99.0
+DARK_FRACTION = 0.30
 #: 마커 크기 허용 범위(px @200dpi) — 실측 좌 21x18 · 우 36x18 에 여유를 둔 값.
 MARK_MIN_W, MARK_MAX_W = 15, 50
 MARK_MIN_H, MARK_MAX_H = 12, 30
@@ -125,11 +143,23 @@ def _corner_marks_with_area(image):
     return _nearest_to_page_corners(candidates, image.shape)
 
 
+def dark_threshold(image):
+    """이 장의 '어둡다' 기준 — 어두운 끝과 밝은 끝 사이의 고정 비율 지점.
+
+    절대값이 아니라 비율이므로 스캐너·토너·복사 세대가 바뀌어 밝기·대비가 통째로
+    밀려도 문턱이 따라간다. 어두운 인쇄·연필·마커가 페이지의 ~2.5% 를 차지하므로
+    p1 은 늘 그 안에 있고 p99 는 종이다. 균일한 페이지면 p1 == p99 라 아무것도
+    어둡지 않다 — 카드 없음으로 보류된다.
+    """
+    low, high = np.percentile(image, [DARK_LOW_PERCENTILE, DARK_HIGH_PERCENTILE])
+    return low + DARK_FRACTION * (high - low)
+
+
 def _mark_candidates(image):
     """마커로 볼 만한 성분의 중심 목록 — 크기·채움률·위치로 거른다."""
     height, width = image.shape
     count, _, stats, centroids = cv2.connectedComponentsWithStats(
-        (image < DARK_MAX).astype(np.uint8), connectivity=8
+        (image < dark_threshold(image)).astype(np.uint8), connectivity=8
     )
     found = []
     for index in range(1, count):
