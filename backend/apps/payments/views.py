@@ -9,8 +9,11 @@
 느슨하면 번호만 알면 남의 결제 내역이 열린다(2026-08-04 영상 트랙 사고 —
 관리 쪽이 다 서 있는데 소비를 막는 코드가 없었다).
 """
+import logging
+
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -18,9 +21,11 @@ from apps.accounts.features import FeatureKey
 from apps.accounts.models import Parent, ParentStudent, Student
 from apps.accounts.permissions import FeatureRequired, IsParent, IsStudent
 
-from . import billing, consumer, payment_admin
+from . import billing, consumer, payment_admin, sync
 from .models import Product
 from .provider import PaymentError, TemporaryPaymentError
+
+logger = logging.getLogger(__name__)
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
 
@@ -173,6 +178,40 @@ class ParentBillView(APIView):
             return error
         parent = Parent.objects.filter(user=request.user).first()
         return _bill(request, student, product, parent=parent)
+
+
+class PaymentCallbackView(APIView):
+    """POST /api/payments/callback — 업체 결제 승인 통지(PRD 3.1.5 동기화).
+
+    **인증이 없다.** 업체 서버가 부르므로 세션이 없고, 업체 문서에 서명·검증
+    수단도 없다(2026-08-05 조사). 그래서 **본문을 신뢰하지 않는다** — 여기서
+    하는 일은 "그 청구 번호를 다시 확인하라"는 신호를 받는 것뿐이고, 상태는
+    `sync.sync_order` 가 업체에게 되물어 확정한다. 본문을 그대로 반영하면
+    아무나 billId 를 찍어 결제를 완료로 만들 수 있다.
+
+    응답 계약은 업체가 정한다 — 수신 성공은 `{"code": "0000"}` 이다.
+    **처리하지 못한 것을 0000 으로 삼키지 않는다**: 모르는 청구 번호나 업체
+    조회 실패를 성공으로 답하면 장부가 어긋난 사실이 그대로 사라진다.
+    (재전달 정책은 업체 문서에 없다 — 확인 대기 중.)
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        bill_ref = (request.data or {}).get("billId")
+        if not bill_ref:
+            return Response({"code": "9001", "msg": "billId가 없습니다."})
+        try:
+            sync.sync_order(bill_ref)
+        except sync.UnknownBill:
+            logger.error("결제 콜백: 모르는 청구 번호입니다 (billId=%s)", bill_ref)
+            return Response({"code": "9002", "msg": "청구서를 찾을 수 없습니다."})
+        except PaymentError as exc:
+            # 확인을 못 했으므로 성공으로 답하지 않는다 — 다시 보내 주는 것이 낫다.
+            logger.warning("결제 콜백: 상태 확인 실패 (billId=%s): %s", bill_ref, exc)
+            return Response({"code": "9003", "msg": "상태를 확인하지 못했습니다."})
+        return Response({"code": "0000", "msg": "Success"})
 
 
 class AdminPaymentListView(APIView):
