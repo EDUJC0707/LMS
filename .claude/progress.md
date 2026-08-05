@@ -3,6 +3,47 @@
 > 완료 기록 누적. 최신이 위.
 > **확정된 규칙 자체는 여기 말고 `docs/decisions.md`** — 여기는 "무엇을 했나", 거기는 "무엇으로 정했나".
 
+## 2026-08-05 — 브랜치 6개를 main 으로 합침 (트랙 통합)
+
+세션 6개가 각자 worktree 에서 일한 것을 한 번에 합쳤다. **worktree 는 전부 유지** —
+합친 뒤 각 세션이 같은 자리에서 `git rebase origin/main` 하고 이어서 일한다.
+
+순서는 "충돌을 줄이는 쪽" 이 아니라 **"깨지면 누구 때문인지 알 수 있는 쪽"** 으로 잡았다 —
+하나씩 합치고 그때마다 전체 테스트를 돌렸다.
+video → channeltalk → cookie-domain → notifications-sending → meet → omr.
+
+### git 이 조용히 합쳐 놓고 런타임에 깨진 것 셋
+
+병합 자체보다 **"충돌 없이 합쳐졌는데 돌리면 죽는" 것**이 문제였다. 셋 다 텍스트로는
+충돌이 아니라서 git 은 성공을 보고했다.
+
+- **`CELERY_BEAT_SCHEDULE` 이 두 번 대입됐다.** meet 은 `clinic-supervision`, notifications
+  는 `retry-failed-notifications` 를 각자 **새로** 만들었다. 파일에 대입문이 둘이 되니
+  나중 것이 앞의 것을 통째로 덮어 **알림 재발송이 조용히 사라졌다**(실측: settings 를
+  읽으면 키가 `clinic-supervision` 하나뿐이었다). 한 딕셔너리로 합치고, 다음에 같은 일이
+  나지 않게 "새 대입이 아니라 키를 더한다" 를 그 자리에 적었다.
+- **`unique_id` → `matching_key` 개명이 뒤늦게 합쳐졌다.** omr 이 컬럼을 개명했는데
+  meet·notifications 는 그 전에 갈라져 나가 `unique_id=` 로 학생을 만드는 코드를
+  갖고 있었다. 줄이 달라 충돌이 안 났고, 합친 뒤 `TypeError`·`AttributeError` 가 됐다.
+  프로덕션 3곳·테스트 6파일을 고쳤다.
+- **`meet_url` → `conference_url` 도 같은 모양**이었다(seed·테스트). 다행히 이쪽은
+  자동 병합 결과가 맞았다.
+
+**교훈**: 브랜치끼리 비교해서 "충돌 없음" 을 확인한 것이 화근이었다. 실제로 봐야 할 것은
+**브랜치가 더한 것이 main 의 현재 상태와 부딪히는가** 다. 마이그레이션 번호도 마찬가지로,
+`accounts/0004` 가 main(로그인 시도 제한)과 omr(개명) 양쪽에 생겨 리프가 둘이 됐다 —
+omr 것을 `0005` 로 밀고 `grades/0006` 의 의존을 따라 고쳤다(전부 순수 RenameField 라
+데이터 위험은 없었다).
+
+### 검증
+
+전체 1070건 통과 · ruff · 프런트 typecheck·build·42건. 빈 DB 에서 migrate→seed 재현,
+학생 8화면·직원 10화면 순회 오류 0, 그리고 트랙별 대표 기능을 실제로 눌러 확인했다
+(영상 재생·워터마크 되살아남·클리닉 지난 탭·관리자 미리보기).
+
+`.env.example` 이 video 것만 담고 있어 meet·notifications 설정이 통째로 빠져 있었다 —
+새로 받은 사람이 설정을 못 만든다. 채웠다.
+
 ## 2026-08-05 — 로그인 시도 제한 · Sentry release · Cloudflare 판단
 
 **아직 push 안 함**(영상 트랙과 함께 배포하기로). 커밋 `746ab9c`·`0759904` 가 로컬 `main` 에만 있다.
