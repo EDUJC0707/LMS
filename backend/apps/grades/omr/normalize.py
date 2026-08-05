@@ -44,6 +44,14 @@ SIDE_BAND = 0.20
 #: 실측 비는 1.7배(648 대 378)이므로 1.25 는 넉넉한 하한이다.
 MARK_AREA_RATIO = 1.25
 
+#: 마커 사각형 검증 한계 — 실측 65장(2026-08-05) 분포: 대변 길이비 최대 1.0072,
+#: 모서리각 90° 이탈 최대 0.31°, 종횡비 1.4822~1.4891(빈 카드 1.4887).
+#: 한계는 실측 최악값의 6~10배 밖이다. 넘으면 마커 오인이므로 보류가 맞다.
+#: 표본이 스캐너 1대·인쇄 1회차뿐이라 여유를 넓게 남긴다 — 분포를 다시 재면 조인다.
+QUAD_MAX_OPPOSITE_RATIO = 1.05
+QUAD_MAX_ANGLE_DEV = 3.0
+QUAD_ASPECT_MIN, QUAD_ASPECT_MAX = 1.40, 1.60
+
 
 #: 카드 정규좌표의 기준 사각형 — (0,0) 좌상 마커, (1,1) 우하 마커.
 UNIT_SQUARE = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], dtype=np.float32)
@@ -146,7 +154,50 @@ def _nearest_to_page_corners(points, shape):
     if len({(round(p[0], 3), round(p[1], 3)) for p in chosen}) != 4:
         return None
     picked = np.array(chosen, dtype=np.float64)
+    if not _plausible_quad(picked[:, :2]):
+        return None
     return picked[:, :2], picked[:, 2]
+
+
+def _plausible_quad(corners):
+    """네 점이 카드 마커 사각형답게 생겼는가 — 대변비·종횡비·모서리각·볼록.
+
+    진짜 마커가 하나 빠지고 잡티가 그 모서리에 더 가까우면 nearest 선택은 잡티를
+    그대로 물고, 이후 좌표가 전부 조용히 어긋난다. 실물 재현(all-000 의 좌상 마커를
+    가리고 all-059 에서 나온 자리에 잡티를 그림): 사각형이 멀쩡히 반환됐고 카드
+    중앙이 **49.3px** 밀렸다 — 선택지 열 간격 38.9px 보다 크다. 아무 신호 없이
+    한 칸 밀린 답이 성적표로 나간다.
+
+    그 사각형은 기하가 실측 분포를 크게 벗어난다(대변비 1.146 · 각 이탈 11.1°).
+    **종횡비만으로는 못 잡는다**(그 사례가 1.5432 로 범위 안) — 대변비와 각이
+    각각 단독으로 걸러 내므로 넷을 함께 본다.
+    """
+    top, right, bottom, left = (
+        float(np.linalg.norm(corners[(i + 1) % 4] - corners[i])) for i in range(4)
+    )
+    if min(top, right, bottom, left) < 1.0:
+        return False
+    if max(top, bottom) > QUAD_MAX_OPPOSITE_RATIO * min(top, bottom):
+        return False
+    if max(left, right) > QUAD_MAX_OPPOSITE_RATIO * min(left, right):
+        return False
+    axis_a, axis_b = (left + right) / 2, (top + bottom) / 2
+    aspect = max(axis_a, axis_b) / min(axis_a, axis_b)
+    if not QUAD_ASPECT_MIN <= aspect <= QUAD_ASPECT_MAX:
+        return False
+    crosses = []
+    for index in range(4):
+        to_prev = corners[(index - 1) % 4] - corners[index]
+        to_next = corners[(index + 1) % 4] - corners[index]
+        # 2 차원 np.cross 는 numpy 2.0 에서 폐기 예정이라 수식으로 쓴다.
+        crosses.append(to_prev[0] * to_next[1] - to_prev[1] * to_next[0])
+        cosine = np.dot(to_prev, to_next) / (
+            np.linalg.norm(to_prev) * np.linalg.norm(to_next)
+        )
+        angle = np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))
+        if abs(angle - 90.0) > QUAD_MAX_ANGLE_DEV:
+            return False
+    return all(c > 0 for c in crosses) or all(c < 0 for c in crosses)
 
 
 def _roll_to_card_top_left(corners, areas):

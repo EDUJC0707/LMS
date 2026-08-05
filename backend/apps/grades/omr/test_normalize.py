@@ -115,3 +115,44 @@ def test_maps_card_corners_back_onto_a_skewed_scan():
     assert frame is not None
     mapped = [frame.to_source(u, v) for u, v in ((0, 0), (1, 0), (1, 1), (0, 1))]
     np.testing.assert_allclose(mapped, expected_corners(angle=angle)[CARD_TO_SCAN], atol=2)
+
+
+def test_rejects_the_quad_when_a_stray_blob_stands_in_for_a_missing_marker():
+    """마커가 하나 빠지고 그 모서리 띠 안에 마커 크기 잡티가 있으면 보류다.
+
+    nearest 선택은 잡티를 그대로 물고 사각형은 겉보기에 멀쩡히 반환된다 — 실물
+    재현에서 카드 중앙이 49px(선택지 한 칸 이상) 밀린 채 조용히 읽혔다. 그
+    사각형은 기하가 실측 분포를 벗어나므로(대변비 1.146 대 실측 최대 1.0072,
+    모서리각 이탈 11.1° 대 실측 최대 0.31°) 사각형 검증에서 걸린다.
+    """
+    image = synth_scan()
+    (cx, cy), (w, h) = MARKS[0]  # 스캔 좌상 마커 유실(가림·인쇄 불량)
+    image[int(cy - h) : int(cy + h), int(cx - w) : int(cx + w)] = 255
+    image[224:241, 270:294] = 20  # 좌상 띠 안의 잡티 24x17 — all-059 의 자리다
+
+    assert normalize.find_corner_marks(image) is None
+    assert normalize.locate_card(image) is None
+
+
+def test_accepts_the_worst_real_trapezoid():
+    """실측 최악 기하는 통과한다 — 아래 변이 위 변보다 10px 넓은 사다리꼴.
+
+    65장 실측에서 대변 길이비 최대 1.0072(약 10px), 모서리각 이탈 최대 0.31°.
+    검증 한계(대변비 1.05 · 각 3°)는 그 최악값의 6~10배 밖이다.
+    """
+    wide_bottom = (
+        ((115.0, 120.0), (21, 18)),
+        ((1525.0, 120.0), (36, 18)),
+        ((1530.0, 2225.0), (36, 18)),
+        ((110.0, 2225.0), (21, 18)),
+    )
+    width, height = SCAN_SIZE
+    image = np.full((height, width), 255, dtype=np.uint8)
+    for (cx, cy), (w, h) in wide_bottom:
+        x0, y0 = int(round(cx - w / 2)), int(round(cy - h / 2))
+        image[y0 : y0 + h, x0 : x0 + w] = 20
+
+    corners = normalize.find_corner_marks(image)
+
+    assert corners is not None
+    np.testing.assert_allclose(corners, [c for c, _ in wide_bottom], atol=1.5)
