@@ -30,7 +30,7 @@ card 는 순수 데이터고, read 는 잉크만 알고 뜻을 모른다. 여기
 11.6% 내려가고, 흐린 장에서 인쇄 글리프가 답으로 승격된다 — 실제로 그렇게
 유령답 3건이 났었다. 그래서 문항 수는 **호출부가 반드시 준다.**
 """
-from . import card, normalize, read
+from . import card, decode, normalize, read
 
 #: 마커를 못 찾았거나 방향을 못 가렸다 — 다시 스캔.
 CARD_NOT_FOUND = "카드 없음"
@@ -39,14 +39,24 @@ MARKS_UNTRUSTED = "판독 불가"
 
 
 class SheetReading:
-    """판독 결과. `answers` 와 `held` 중 정확히 하나만 채워진다."""
+    """판독 결과. `answers` 와 `held` 중 정확히 하나만 채워진다.
 
-    __slots__ = ("answers", "held", "frame")
+    신원 셋(`name`·`phone`·`matching_key`)은 **답과 독립으로 실패할 수 있다** —
+    답은 다 읽혔는데 전화칸을 안 쓴 학생이 실물에 있었다. 그때 장을 보류하지
+    않는다: 답은 멀쩡하고 조교는 "누구 것인지만" 골라 주면 된다.
+    """
 
-    def __init__(self, answers=None, held=None, frame=None):
+    __slots__ = ("answers", "held", "frame", "name", "phone", "matching_key")
+
+    def __init__(
+        self, answers=None, held=None, frame=None, name=None, phone=None, matching_key=None
+    ):
         self.answers = answers
         self.held = held
         self.frame = frame
+        self.name = name
+        self.phone = phone
+        self.matching_key = matching_key
 
     def __repr__(self):
         if self.held is not None:
@@ -65,10 +75,34 @@ def read_sheet(image, question_count):
     if frame is None:
         return SheetReading(held=CARD_NOT_FOUND)
     inks = read.sample_cells(image, frame, cells, card.ANSWER_BUBBLE_RADIUS)
-    readings = read.classify_answers(group_by_row(inks))
+    rows = group_by_row(inks)
+    readings = read.classify_answers(rows)
     if readings is None:
         return SheetReading(held=MARKS_UNTRUSTED, frame=frame)
-    return SheetReading(answers=readings, frame=frame)
+    name, phone = read_identity(image, frame, read.sheet_scale(rows))
+    return SheetReading(
+        answers=readings,
+        frame=frame,
+        name=name,
+        phone=phone,
+        matching_key=decode.matching_key(name, phone),
+    )
+
+
+def read_identity(image, frame, scale):
+    """성명·전화 격자 → (이름, 뒷4자리). 각각 못 읽으면 그쪽만 None.
+
+    `scale` 은 **답란에서 잰 그 장의 연필 세기**다. 성명 열은 14~19칸에 마킹이
+    하나, 전화 열은 10칸에 하나뿐이라 그 안에서는 필압의 눈금이 안 나온다 —
+    같은 연필이 쓴 답란에서 눈금을 빌려 온다.
+    """
+    name_inks = read.sample_cells(image, frame, card.name_cells(), card.NAME_BUBBLE_RADIUS)
+    phone_inks = read.sample_cells(
+        image, frame, card.phone_cells(), card.PHONE_BUBBLE_RADIUS
+    )
+    name = decode.decode_name(read.classify_fields(group_by_row(name_inks), scale))
+    phone = decode.decode_phone(read.classify_fields(group_by_row(phone_inks), scale))
+    return name, phone
 
 
 def answer_cells_for(question_count):

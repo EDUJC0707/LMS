@@ -72,6 +72,12 @@ MIN_ROW_FLOOR = 12.0
 #: 버블 반지름의 몇 할까지만 표본할지. 링에 물리면 빈칸이 칠한 것처럼 읽힌다 —
 #: 실제로 보정 전 격자가 링에 얹혔을 때 그 일이 났다.
 INTERIOR_FRACTION = 0.65
+#: 성명·전화 열에서 "칠해졌다"고 볼 높이 — **답란에서 잰 연필 세기의 비율**이다.
+#: 그 장의 필압은 답란이 제일 잘 안다(마킹이 16개 이상). 성명·전화는 한 열에
+#: 마킹이 하나뿐이라 자기 안에서는 눈금을 못 세운다.
+#: 실측(65장): 이 값에서 이름 65/65 판독, 전화는 63/65 + 거절 2건(둘 다 정당 —
+#: 한 장은 한 자리에 둘, 한 장은 전화칸을 통째로 안 씀).
+IDENTITY_FRACTION = 0.45
 #: 표본점 격자 — 안쪽 타원에 드는 점만 쓴다(11x11 중 77점).
 #: 7x7(29점)은 정답을 낼 수 있는 **최소** 밀도였고, 그때 INTERIOR_FRACTION 이
 #: 통하는 대역은 0.65~0.70 두 칸뿐이었다(9x9 는 0.7·0.9 에서 도로 깨진다 —
@@ -219,3 +225,26 @@ def _marked_choices(stats, floor_lead, runner_min):
     marked = {choice for choice, height in stats.heights.items() if height >= runner_min}
     marked.add(stats.top)
     return tuple(sorted(marked))
+
+
+def sheet_scale(rows):
+    """그 장의 연필 세기 — 답란 판정이 쓰는 것과 같은 중앙 lead."""
+    column_floors = _column_floors(rows)
+    return median(_row_stats(cells, column_floors).lead for cells in rows.values())
+
+
+def classify_fields(fields, scale, fraction=IDENTITY_FRACTION):
+    """`{열: {행: 잉크}}` → `{열: (칠해진 행, ...)}` — 성명·전화용.
+
+    답란과 규칙이 다른 이유는 **모양이 다르기 때문**이다. 답란은 한 줄 다섯 칸에
+    보통 하나가 칠해져 나머지 넷이 기준선을 준다. 성명 열은 14~19칸에 하나,
+    전화 열은 10칸에 하나라 기준선은 더 튼튼하지만(안 칠한 칸이 훨씬 많다)
+    **그 열 안에서는 필압의 눈금을 못 얻는다** — 그래서 눈금을 밖에서 받는다.
+    """
+    marked = {}
+    for field, cells in fields.items():
+        floor = median(sorted(cells.values())[:-1])
+        marked[field] = tuple(
+            sorted(row for row, ink in cells.items() if ink - floor >= fraction * scale)
+        )
+    return marked
