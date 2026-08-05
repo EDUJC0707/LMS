@@ -86,6 +86,8 @@ class PayssamAdapter(PaymentAdapter):
     기본값은 `requests.post` 이고 운영에서는 그대로 쓴다(aligo 선례).
     """
 
+    provider_value = "결제선생"
+
     def __init__(self, http_post=None):
         self._http_post = http_post or requests.post
 

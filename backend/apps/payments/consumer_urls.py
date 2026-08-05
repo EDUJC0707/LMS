@@ -12,5 +12,7 @@ app_name = "payments_consumer"
 
 urlpatterns = [
     path("student/payments", views.StudentPaymentListView.as_view(), name="student-payments"),
+    path("student/payments/bill", views.StudentBillView.as_view(), name="student-bill"),
     path("parent/payments", views.ParentPaymentListView.as_view(), name="parent-payments"),
+    path("parent/payments/bill", views.ParentBillView.as_view(), name="parent-bill"),
 ]

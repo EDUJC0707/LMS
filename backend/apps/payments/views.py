@@ -18,9 +18,55 @@ from apps.accounts.features import FeatureKey
 from apps.accounts.models import Parent, ParentStudent, Student
 from apps.accounts.permissions import FeatureRequired, IsParent, IsStudent
 
-from . import consumer, payment_admin
+from . import billing, consumer, payment_admin
+from .models import Product
+from .provider import PaymentError, TemporaryPaymentError
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
+
+
+def _resolve_product(request):
+    """요청의 product_id → 판매 중인 교재. 없거나 판매 종료면 (None, 404 응답).
+
+    판매 종료(is_active=false)와 없는 번호를 **같은 404** 로 답한다 — 갈리면
+    "그 번호의 교재는 존재한다"가 새어 나간다(§4 상태 기반 노출).
+    """
+    raw = request.data.get("product_id")
+    try:
+        product_id = int(raw)
+    except (TypeError, ValueError):
+        return None, Response(
+            {"detail": "product_id가 올바르지 않습니다."}, status=status.HTTP_400_BAD_REQUEST
+        )
+    product = Product.objects.filter(product_id=product_id, is_active=True).first()
+    if product is None:
+        return None, Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+    return product, None
+
+
+def _bill(request, student, product, parent=None):
+    """청구 개시 공통 응답 — 학생·학부모 경로가 같은 판정을 쓴다.
+
+    업체 실패는 **재시도 가능 여부로 상태 코드가 갈린다**: 일시 오류는 503
+    (잠시 뒤 다시), 영구 오류는 502(사람이 손대야 풀린다 — 포인트 부족·키
+    문제). 하나로 뭉치면 화면이 "다시 시도" 를 무한히 권한다.
+    """
+    try:
+        order, created = billing.start_billing(
+            student, product, actor=request.user, parent=parent
+        )
+    except billing.BillingError as exc:
+        return Response({"detail": exc.message}, status=status.HTTP_400_BAD_REQUEST)
+    except TemporaryPaymentError as exc:
+        return Response(
+            {"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+    except PaymentError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+    return Response(
+        {"order_id": order.order_id, "pay_url": order.pay_url, "status": order.status},
+        status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+    )
 
 
 def _my_student(request):
@@ -36,7 +82,12 @@ def _resolve_child(request):
     노출). student_id 생략 시 첫 자녀(student_id 오름차순 — /api/me children
     드롭다운 순서). grades·curriculum 의 같은 이름 헬퍼와 같은 판정이다.
     """
+    # 조회는 쿼리스트링(GET), 청구 개시는 본문(POST)으로 자녀를 고른다. 한쪽만
+    # 보면 POST 경로에서 지정이 조용히 무시되고 **첫 자녀로 떨어진다** — 소유
+    # 밖 자녀를 막으려던 검사가 통과해 버린다.
     raw_student_id = request.query_params.get("student_id")
+    if raw_student_id is None and isinstance(getattr(request, "data", None), dict):
+        raw_student_id = request.data.get("student_id")
     student_id = None
     if raw_student_id:
         try:
@@ -87,6 +138,41 @@ class ParentPaymentListView(APIView):
         if error is not None:
             return error
         return Response(consumer.build_order_list(student))
+
+
+class StudentBillView(APIView):
+    """POST /api/student/payments/bill — 버튼 클릭 한 번으로 청구 개시(PRD 3.1.5)."""
+
+    permission_classes = [IsStudent]
+
+    def post(self, request):
+        student = _my_student(request)
+        if student is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        product, error = _resolve_product(request)
+        if error is not None:
+            return error
+        return _bill(request, student, product)
+
+
+class ParentBillView(APIView):
+    """POST /api/parent/payments/bill — 학부모 경로의 청구 개시(양측 결제).
+
+    학생이 이미 눌렀으면 다시 보내지 않는다 — 중복 차단은 경로가 아니라
+    학생·교재 짝으로 판정한다(billing.start_billing).
+    """
+
+    permission_classes = [IsParent]
+
+    def post(self, request):
+        student, error = _resolve_child(request)
+        if error is not None:
+            return error
+        product, error = _resolve_product(request)
+        if error is not None:
+            return error
+        parent = Parent.objects.filter(user=request.user).first()
+        return _bill(request, student, product, parent=parent)
 
 
 class AdminPaymentListView(APIView):
