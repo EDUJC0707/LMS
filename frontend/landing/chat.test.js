@@ -51,7 +51,7 @@ test('공백뿐인 키는 키가 없는 것으로 본다', async () => {
 test('키 앞뒤 공백은 떼고 부팅한다', async () => {
   const chat = await loadChat('  pk-abc123\n');
 
-  assert.deepEqual(chat.calls(), [['boot', { pluginKey: 'pk-abc123' }]]);
+  assert.equal(chat.calls()[0][1].pluginKey, 'pk-abc123');
 });
 
 test('키가 없으면 채널톡 스크립트를 내려받지 않는다', async () => {
@@ -61,12 +61,43 @@ test('키가 없으면 채널톡 스크립트를 내려받지 않는다', async 
   assert.equal(globalThis.window.ChannelIO, undefined);
 });
 
-test('키가 있으면 그 키로 부팅한다', async () => {
+test('키가 있으면 그 키로, 한국어로 고정해 부팅한다', async () => {
   const chat = await loadChat('pk-abc123');
 
   assert.equal(chat.appended.length, 1);
   assert.equal(chat.appended[0].src, 'https://cdn.channel.io/plugin/ch-plugin-web.js');
-  assert.deepEqual(chat.calls(), [['boot', { pluginKey: 'pk-abc123' }]]);
+  // language 를 안 넘기면 채널톡은 navigator.language 를 따른다(번들 getLanguage 실측).
+  // 영어로 맞춰진 아이패드에서 한국어 페이지 위에 영어 메신저가 뜬다.
+  assert.deepEqual(chat.calls()[0].slice(0, 2), [
+    'boot',
+    { pluginKey: 'pk-abc123', language: 'ko' },
+  ]);
+});
+
+test('CDN 을 못 받으면 눌렀을 때 이유를 남긴다', async () => {
+  const chat = await loadChat('pk-abc123');
+
+  chat.appended[0].onerror();          // 스크립트 로드 실패
+  const log = capture(() => chat.openChat('상담 문의'));
+
+  // 부트 스텁이 window.ChannelIO 를 먼저 세우므로 그냥 두면 클릭이 큐에만 쌓이고
+  // 아무 로그도 남지 않는다 — 이 파일 첫 주석의 "조용히 죽지 않는다" 가 깨진다.
+  assert.deepEqual(log.error, []);
+  assert.equal(log.info.length, 1);
+  assert.deepEqual(chat.calls().slice(1), [], '실패한 뒤에는 더 부르지 않는다');
+});
+
+test('부팅이 에러를 돌려주면 눌렀을 때 이유를 남긴다', async () => {
+  const chat = await loadChat('pk-abc123');
+
+  const bootCall = chat.calls()[0];
+  assert.equal(typeof bootCall[2], 'function', 'boot 에 콜백을 넘겨야 실패를 알 수 있다');
+  bootCall[2]({ message: 'invalid plugin key' }, null);
+
+  const log = capture(() => chat.openChat('상담 문의'));
+
+  assert.deepEqual(log.error, []);
+  assert.equal(log.info.length, 1);
 });
 
 test('키가 없을 때 문의 버튼은 콘솔 에러 없이 아무 일도 하지 않는다', async () => {
