@@ -356,6 +356,16 @@
       padding-bottom:calc(var(--teacher-h-sm, 64svh) + 3.5svh);
     }
     .copy{ max-width:none }
+    /* clamp 하한 2.1rem 이 634px 밑에서 그대로 걸려(2.1rem ÷ 5.3vw = 634px)
+       320~634px 전 구간이 33.6px 로 얼어 있었다. 390px 에서 2행 잉크가 칸의 47.7%
+       뿐이고 같은 페이지 데스크탑은 57.9% 다.
+
+       **상한 45.6px 은 취향이 아니라 경계가 준다.** 861px(데스크탑 첫 픽셀)에서
+       5.3vw = 45.633px 이므로, 모바일이 이걸 넘으면 860→861 을 건널 때 화면이
+       넓어지는데 글자가 작아진다. 45.6px 은 그 아래라 경계가 증가 방향으로 이어진다.
+       넘침 검산: 한글 실효 어드밴스 0.8288em(실측), 2행 6자 = 4.9728em →
+       320px 에서 줄바꿈 없는 최대치가 56.3px 이므로 45.6px 은 안전하다. */
+    h1{ font-size:min(11.7vw, 2.85rem) }   /* 2.85rem = 45.6px */
     /* 40svh 는 데스크탑(80svh)의 절반이라 머리폭이 83px — 데스크탑 157px 의 53% 였다.
        오른쪽 -12% 는 46.8px 을 잘랐는데, PNG 알파를 훑어 보면 팔짱 낀 팔꿈치가
        인물 폭의 96.5% 까지 나간다. -3% 를 넘기면 어느 높이에서든 팔꿈치가 잘린다 —
@@ -377,14 +387,23 @@
        세이프에어리어를 더해도 겹침이 남아서 아래를 그만큼 비운다.
        600px 부터는 사업자 정보가 런처까지 닿지 않아 여기(모바일)에만 건다. */
     footer{ padding-bottom:calc(env(safe-area-inset-bottom) + 24px + 56px + 16px) }
-  }
 
-  /* 가로로 눕힌 폰. 64svh 짜리 강사 위에 헤드라인을 얹으면 nav 를 뚫는다
-     (740x360 에서 헤드라인 top 32.6px < --nav 72px). 위 배치는 세로 화면을 위한
-     것이므로 여기서는 옛 값을 그대로 쓴다. */
-  @media (max-width:860px) and (max-height:599px){
-    .hero{ align-content:center; padding-bottom:32svh }
-    .teacher{ height:40svh; right:-12% }
+    /* 탭 타깃을 HIG 최소 44 로 올린다. 전부 세로만 모자랐다 —
+         브랜드 143.8x30 · 로그인 83x39.5 · 트랙 탭 113.5x39.2 ·
+         PDF/XLSX 45.4x26.6 · 제보하기 94x40.4
+       패딩만 늘리므로 **보이는 크기는 그대로**다. 브랜드는 배경이 없어 눈에 띄는
+       변화가 아예 없고(로고 30 + 7x2 = 44), 알약 셋은 알약이 실제로 커진다. */
+    .brand{ padding-block:7px }
+    .login{ padding-block:.74rem }
+    .track{ padding-block:.78rem }
+    .btn{ padding-block:.82rem }
+    /* 표 안이라 알약을 키우면 행 높이가 밀린다. 히트 영역만 넓힌다 —
+       보이는 테두리는 그대로 두고 ::after 로 44 높이의 투명 판을 덮는다. */
+    .dl{ position:relative }
+    .dl::after{
+      content:''; position:absolute; left:0; right:0;
+      top:50%; height:44px; transform:translateY(-50%);
+    }
 
     /* 좁은 화면에서 사업자 정보를 한 줄로 흘리면 줄바꿈이 값 길이에 좌우돼
        들쭉날쭉해진다(상호+사업자등록번호가 한 줄, 대표 혼자 한 줄, 주소는 두 줄).
@@ -392,6 +411,27 @@
        display:contents 로 래퍼 div 를 걷어내 dt/dd 가 직접 격자 칸이 된다. */
     .foot dl{ display:grid; grid-template-columns:auto 1fr; gap:.4rem .8rem }
     .foot dl div{ display:contents }
+    /* 건물명이 어절 중간에서 쪼개졌다(`파크뷰오피스` / `타워 1401호`).
+       한국어 기본 줄바꿈은 글자 단위라 공백 없는 고유명사가 아무 데서나 끊긴다. */
+    .foot dd{ word-break:keep-all }
+
+    /* 라벨이 --dim(#5E6B9C) 위에 opacity:.55 를 곱해 검정 대비 **1.90:1** 이었다 —
+       법정 표시 의무 항목이 사실상 안 읽혔다. 겹친 opacity 를 걷는다(팔레트에 새 색을
+       더하지 않는다 — 색이 두 군데서 나오면 안 된다). 값도 4.06:1 이라 AA 미달이라
+       푸터 본문만 한 단계 올린다. */
+    footer{ color:#8F9ABF }
+    .foot dt{ opacity:1; color:#6E79A6 }
+  }
+
+  /* 가로로 눕힌 폰. 64svh 짜리 강사 위에 헤드라인을 얹으면 nav 를 뚫는다
+     (740x360 에서 헤드라인 top 32.6px < --nav 72px). */
+  @media (max-width:860px) and (max-height:599px){
+    .hero{ align-content:center; padding-bottom:32svh }
+    /* **-12% 를 되살리면 안 된다.** right 는 뷰포트 폭의 %인데 이미지는 높이로 재므로,
+       넓고 낮은 화면에서 -12% 가 이미지 폭보다 커진다 — 800x360 에서 이미지 폭 91px 에
+       밀어내는 양 96px 라 **가시폭 0px**, 강사가 통째로 화면 밖으로 나간다.
+       가로에서는 인물이 이미 작으니 블리드 자체가 필요 없다. */
+    .teacher{ height:46svh; right:2% }
   }
   /* prefers-reduced-motion 은 JS 가 처리한다 — 정적 1프레임만 그린다.
      CSS 로 배경을 끄면 히어로가 통째로 검게 남는다. */

@@ -325,6 +325,11 @@ export function mountField(root, units) {
   root.parentElement.addEventListener('pointerleave', e => {
     if (e.pointerType === 'touch') return;
     over = false;
+    /* 터치 기기에 펜/마우스가 한 번 들어왔다 나가면 FINE 이 켜진 채로 남아
+       자율 드리프트로 못 돌아온다 — over 는 false 이고 FINE 은 true 라 히어로가
+       영영 검게 굳는다(스타일러스 태블릿·마우스 붙인 폰에서 실제로 재현된다).
+       커서 없는 기기에서는 포인터가 떠나면 소유권도 함께 돌려준다. */
+    if (COARSE) { FINE = false; woke = true; }
   }, { passive: true });
   addEventListener('scroll', () => {
     scrollP = clamp01(scrollY / innerHeight);
@@ -530,8 +535,15 @@ export function mountField(root, units) {
         spaceEl = srcVid;
       } else {
         if (srcVid) { srcVid.pause(); srcVid.removeAttribute('src'); srcVid.load(); }
+        /* 동작 줄이기에서는 rAF 가 안 돈다. 그런데 mountField 의 paint(0,1) 은 이
+           함수보다 **먼저** 돈다(index.html 이 mountField → space 순서로 부른다) —
+           그때는 spaceEl 이 아직 null 이라 우주가 한 번도 안 그려진다.
+           사진이 도착하면 그 한 프레임을 다시 그린다. 이게 없으면 동작 줄이기를 켠
+           사용자에게는 위 주석이 막으려던 상태(먼지밭만)가 그대로 남는다. */
+        if (reduce) srcImg.onload = () => paint(0, 1);
         srcImg.src = src;
         spaceEl = srcImg;
+        if (reduce && srcImg.complete && srcImg.naturalWidth) paint(0, 1);
       }
     },
   };
