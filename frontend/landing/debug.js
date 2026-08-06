@@ -48,6 +48,10 @@ const CSSVARS = {
   h:     { v: '--teacher-h',     sm: '--teacher-h-sm',     smKey: 'hSm', unit: 'svh' },
   r:     { v: '--teacher-right', sm: '--teacher-right-sm', smKey: 'rSm', unit: '%' },
   b:     { v: '--teacher-bottom', sm: '--teacher-bottom-sm', smKey: 'bSm', unit: '%' },
+  /* 헤드라인과 강사 머리 사이. **모바일 전용이다** — 데스크탑 히어로는 2열
+     가운데정렬이라 이 개념이 없다. sm 짝을 안 두어 한 값이 두 모드로 나가지만,
+     읽는 규칙이 @media(max-width:860px) 안에만 있어 넓은 화면에서는 아무 일도 안 한다. */
+  gap:    { v: '--hero-gap', unit: 'svh' },
   h1gap:  { v: '--h1-gap', unit: 'em' },
 };
 
@@ -72,6 +76,10 @@ const GROUPS = [
     ['h',       '크기',      35, 100, 1,   'css', 0],
     ['r',       '위치',     -25,  35, 1,   'css', 0],
     ['b',       '바닥에서',    0,  20, .5,  'css', 1],
+    /* 크기 노브가 두 간격의 **합**을 정하고(강사가 클수록 남는 자리가 준다),
+       이 노브가 그 합을 위아래로 **나눈다**. 한 쌍이라 나란히 둔다.
+       모바일에서만 듣는다 — 데스크탑에서 움직여도 화면은 안 바뀐다. */
+    ['gap',     '머리 간격',   0,  25, .5,  'css', 1],
   ]],
   ['먼지', [
     ['dust',    '개수',     200, 4000, 50, 'new', 0],
@@ -173,7 +181,7 @@ export function openDebug() {
   const sm = () => matchMedia('(max-width: 860px)').matches;
 
   // index.html 에 박힌 강사 기본값. 여기와 CSS 가 어긋나면 패널을 여는 순간 화면이 튄다
-  const TEACHER0 = { h: 80, r: 5, b: 0, hSm: 58, rSm: -3, bSm: 0, h1gap: .20 };
+  const TEACHER0 = { h: 80, r: 5, b: 0, hSm: 58, rSm: -3, bSm: 0, gap: 12, h1gap: .20 };
   if (!BASE) BASE = { teacher: { ...TEACHER0 }, blue: 'royal', cfg: api ? { ...api.cfg } : {} };
 
   const st = document.createElement('style');
@@ -294,7 +302,7 @@ export function openDebug() {
        계속 이겨, 나중에 CSS 를 고쳐도 화면이 안 바뀌는 유령이 남는다. */
     for (const k of ['dim', 'accent', 'glow', 'chip', 't1', 't2', 'line',
                      'teacher-h', 'teacher-right', 'teacher-bottom',
-                     'teacher-h-sm', 'teacher-right-sm', 'teacher-bottom-sm', 'h1-gap',
+                     'teacher-h-sm', 'teacher-right-sm', 'teacher-bottom-sm', 'h1-gap', 'hero-gap',
                      'space-img'])
       rootS.removeProperty('--' + k);
     Object.assign(S, { blue: BASE.blue, ...BASE.teacher, space: '', spaceName: '', zoomOf: {} });
