@@ -124,7 +124,10 @@ try {
   for (const ex of evals) {
     try {
       const r = await send('Runtime.evaluate', {
-        expression: `(()=>{try{return JSON.stringify((${ex}))}catch(e){return 'ERR '+e.message}})()`,
+        /* async IIFE 로 감싸고 await 한다. 그냥 JSON.stringify 하면 Promise 가
+           `{}` 로 찍혀 아무것도 안 나온 것처럼 보인다 — 실제로 한 번 당했다.
+           동기 식도 await 를 통과하므로 둘 다 이 한 형태로 처리된다. */
+        expression: `(async()=>{try{return JSON.stringify(await (${ex}))}catch(e){return 'ERR '+e.message}})()`,
         returnByValue: true, awaitPromise: true,
       });
       console.log('EVAL ' + r.result.value);
