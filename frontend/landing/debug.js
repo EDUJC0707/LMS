@@ -173,7 +173,7 @@ export function openDebug() {
   const sm = () => matchMedia('(max-width: 860px)').matches;
 
   // index.html 에 박힌 강사 기본값. 여기와 CSS 가 어긋나면 패널을 여는 순간 화면이 튄다
-  const TEACHER0 = { h: 80, r: 5, b: 0, hSm: 64, rSm: -3, bSm: 0, h1gap: .20 };
+  const TEACHER0 = { h: 80, r: 5, b: 0, hSm: 58, rSm: -3, bSm: 0, h1gap: .20 };
   if (!BASE) BASE = { teacher: { ...TEACHER0 }, blue: 'royal', cfg: api ? { ...api.cfg } : {} };
 
   const st = document.createElement('style');
