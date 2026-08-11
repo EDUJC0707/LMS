@@ -12,4 +12,9 @@ app_name = "exam_admin"
 urlpatterns = [
     path("admin/exams", views.AdminExamListView.as_view(), name="exam-list"),
     path("admin/exams/<int:exam_id>", views.AdminExamDetailView.as_view(), name="exam-detail"),
+    path(
+        "admin/exams/<int:exam_id>/questions",
+        views.AdminExamQuestionsView.as_view(),
+        name="exam-questions",
+    ),
 ]

@@ -30,6 +30,7 @@ import {
   Table,
   Tabs,
 } from "../../../components";
+import AnswerKeyPanel from "./AnswerKeyPanel";
 import { score } from "./ExamsPage";
 import "./manage.css";
 import type { ExamDetail, ExamQuestionRow, ExamStudentRow } from "./types";
@@ -118,6 +119,8 @@ export default function ExamDetailPage() {
           )}
         </div>
       </Card>
+
+      <AnswerKeyPanel examId={String(examId)} />
 
       <Card title="학생별 점수" aside="석차순" padding="none">
         <div className="pm-cardpad ui-stack ui-stack--md">

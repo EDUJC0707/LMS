@@ -12,6 +12,7 @@
 우선, 없으면 집계). 학생별 백분위는 **저장값 표시만** 한다 — 학생 수 비례
 집계(N+1)를 피하고, 계산·저장은 성적처리 슬라이스의 몫.
 """
+from django.db import transaction
 from django.db.models import Avg, Count, F, Q
 
 from . import report
@@ -191,3 +192,73 @@ def _question_stat_rows(exam):
             }
         )
     return rows
+
+
+# --- 시험 만들기 · 정답 키 입력 (PRD 3.1.1 문항 정보 입력) -------------------
+
+
+def create_exam(name, exam_date, round_no=None, target_grade=None):
+    """시험 한 건. 문항은 따로 넣는다 — 시험을 먼저 만들고 키는 나중에 채운다."""
+    return Exam.objects.create(
+        name=name, exam_date=exam_date, round_no=round_no, target_grade=target_grade
+    )
+
+
+def save_questions(exam, rows):
+    """정답 키 저장 — `[{q_number, answer, points, unit_major, unit_minor}]`.
+
+    문항번호로 upsert 한다. 보내지 않은 문항은 **답안 행이 없을 때만** 지운다 —
+    이미 채점된 문항을 지우면 SheetAnswer 가 연쇄 삭제되어 판독 결과가 날아간다.
+
+    배점은 안 주면 1점. 단원은 비워도 된다(채점에 안 쓴다 — models 참조).
+    """
+    with transaction.atomic():
+        seen = []
+        for row in rows:
+            number = int(row["q_number"])
+            Question.objects.update_or_create(
+                exam=exam,
+                q_number=number,
+                defaults={
+                    "answer": str(row.get("answer") or "").strip(),
+                    "points": row.get("points") or 1,
+                    "unit_major": (row.get("unit_major") or "").strip(),
+                    "unit_minor": (row.get("unit_minor") or "").strip() or None,
+                },
+            )
+            seen.append(number)
+        stale = Question.objects.filter(exam=exam).exclude(q_number__in=seen)
+        stale.filter(sheet_answers__isnull=True).delete()
+    return question_rows(exam)
+
+
+def question_rows(exam):
+    """문항 목록 — 키 입력 화면이 그대로 쓰는 모양."""
+    return [
+        {
+            "q_number": q.q_number,
+            "answer": q.answer,
+            "points": q.points,
+            "unit_major": q.unit_major,
+            "unit_minor": q.unit_minor,
+        }
+        for q in Question.objects.filter(exam=exam).order_by("q_number")
+    ]
+
+
+def unit_options():
+    """이미 쓴 단원들 — 대단원 하나에 중단원 여럿. 별도 표를 두지 않는다.
+
+    쓸수록 채워지고, 새 단원은 그냥 입력하면 다음부터 후보로 뜬다.
+    """
+    options = {}
+    pairs = (
+        Question.objects.exclude(unit_major="")
+        .values_list("unit_major", "unit_minor")
+        .distinct()
+    )
+    for major, minor in pairs:
+        options.setdefault(major, set())
+        if minor:
+            options[major].add(minor)
+    return {major: sorted(minors) for major, minors in sorted(options.items())}

@@ -563,12 +563,81 @@ class ParentWorkbookView(APIView):
 
 
 class AdminExamListView(APIView):
-    """GET /api/admin/exams — 시험 목록(응시자 수·평균·처리 상태)."""
+    """GET·POST /api/admin/exams — 시험 목록 / 시험 만들기."""
 
     permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
 
     def get(self, request):
         return Response(exam_admin.build_exam_list())
+
+    def post(self, request):
+        name = str(request.data.get("name") or "").strip()
+        raw_date = request.data.get("exam_date")
+        if not name:
+            return Response({"detail": "시험명을 입력하세요."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            exam_date = datetime.date.fromisoformat(str(raw_date))
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "시험일 형식은 YYYY-MM-DD 입니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        exam = exam_admin.create_exam(
+            name,
+            exam_date,
+            round_no=request.data.get("round_no") or None,
+            target_grade=request.data.get("target_grade") or None,
+        )
+        return Response({"exam_id": exam.pk}, status=status.HTTP_201_CREATED)
+
+
+class AdminExamQuestionsView(APIView):
+    """GET·PUT /api/admin/exams/{exam_id}/questions — 정답 키 조회·저장."""
+
+    permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
+
+    def get(self, request, exam_id):
+        exam = exam_admin.load_exam(exam_id)
+        if exam is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return Response(
+            {"questions": exam_admin.question_rows(exam), "units": exam_admin.unit_options()}
+        )
+
+    def put(self, request, exam_id):
+        exam = exam_admin.load_exam(exam_id)
+        if exam is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        rows = request.data.get("questions")
+        error = _validate_questions(rows)
+        if error is not None:
+            return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"questions": exam_admin.save_questions(exam, rows), "units": exam_admin.unit_options()}
+        )
+
+
+def _validate_questions(rows):
+    """전량 검증 후에만 저장 — 반쯤 들어간 키는 반쯤 틀린 채점을 만든다."""
+    if not isinstance(rows, list) or not rows:
+        return "문항을 하나 이상 보내야 합니다."
+    numbers = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            return "문항 형식이 올바르지 않습니다."
+        try:
+            number = int(row.get("q_number"))
+        except (TypeError, ValueError):
+            return "문항 번호가 올바르지 않습니다."
+        if number in numbers:
+            return f"문항 번호 {number} 가 중복입니다."
+        numbers.add(number)
+        if not str(row.get("answer") or "").strip():
+            return f"{number}번 정답이 비어 있습니다."
+        points = row.get("points")
+        if points is not None and float(points) <= 0:
+            return f"{number}번 배점이 0 이하입니다."
+    return None
 
 
 class AdminExamDetailView(APIView):

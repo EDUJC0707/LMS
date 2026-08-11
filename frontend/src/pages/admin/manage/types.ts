@@ -235,3 +235,18 @@ export interface WorkbookList {
   total_count: number;
   unmatched_count: number;
 }
+
+/** 정답 키 한 줄. 단원은 채점에 안 쓰므로 비어 있어도 된다. */
+export interface QuestionKeyRow {
+  q_number: number;
+  answer: string;
+  points?: number;
+  unit_major?: string;
+  unit_minor?: string;
+}
+
+/** 정답 키 + 이미 쓴 단원 후보(대단원 하나에 중단원 여럿). */
+export interface QuestionKeyPayload {
+  questions: QuestionKeyRow[];
+  units: Record<string, string[]>;
+}

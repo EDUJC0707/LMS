@@ -9,11 +9,14 @@
 
 픽스처·검산 값은 test_grade_report_api.GradeFixtureMixin(모듈 docstring) 공용.
 """
+import json
+
 from django.test import TestCase
 
 from apps.accounts.features import FeatureKey
 from apps.accounts.models import StaffFeatureGrant, User
 
+from .models import Exam
 from .test_grade_report_api import GradeFixtureMixin, make_user
 
 ADMIN_EXAMS = "/api/admin/exams"
@@ -69,10 +72,9 @@ class ExamAdminAccessTests(ExamAdminFixtureMixin, TestCase):
         self.client.force_login(self.owner)
         self.assertEqual(self.client.get(self.detail_url(self.exam2)).status_code, 200)
 
-    def test_write_methods_not_allowed(self):
-        """조회 전용 — 성적 수정·OMR 업로드는 이번 범위 아님."""
+    def test_detail_is_read_only(self):
+        """상세는 조회 전용 — 성적 수정은 보정 화면 몫이다."""
         self.login_admin()
-        self.assertEqual(self.client.post(ADMIN_EXAMS).status_code, 405)
         self.assertEqual(self.client.put(self.detail_url(self.exam2)).status_code, 405)
 
 
@@ -240,3 +242,77 @@ class ExamAdminDetailTests(ExamAdminFixtureMixin, TestCase):
         # + 상위30 1 + 학생별 성적 1 + 문항 1 + 문항 집계 1
         with self.assertNumQueries(10):
             self.assertEqual(self.client.get(self.detail_url(self.exam2)).status_code, 200)
+
+
+class ExamCreateAndKeyTests(ExamAdminFixtureMixin, TestCase):
+    """시험 만들기 · 정답 키 입력 — 채점은 키가 있어야 성립한다(PRD 3.1.1)."""
+
+    def key_url(self, exam):
+        return f"{ADMIN_EXAMS}/{exam.pk}/questions"
+
+    def test_creates_an_exam_without_questions(self):
+        """키는 나중에 채운다 — 시험을 먼저 잡아 둘 수 있어야 한다."""
+        self.login_admin()
+
+        res = self.client.post(
+            ADMIN_EXAMS,
+            data=json.dumps({"name": "8월 미니테스트", "exam_date": "2026-08-12"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 201)
+        self.assertTrue(Exam.objects.filter(pk=res.json()["exam_id"]).exists())
+
+    def test_rejects_an_exam_without_a_date(self):
+        self.login_admin()
+
+        res = self.client.post(
+            ADMIN_EXAMS,
+            data=json.dumps({"name": "이름만"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 400)
+
+    def put_key(self, exam, questions):
+        return self.client.put(
+            self.key_url(exam),
+            data=json.dumps({"questions": questions}),
+            content_type="application/json",
+        )
+
+    def test_saves_a_key_without_units(self):
+        """단원은 채점에 안 쓴다 — 정답만으로 저장돼야 한다."""
+        self.login_admin()
+
+        res = self.put_key(self.exam2, [
+            {"q_number": 1, "answer": "4"},
+            {"q_number": 2, "answer": "2", "points": 5},
+        ])
+
+        self.assertEqual(res.status_code, 200)
+        rows = {r["q_number"]: r for r in res.json()["questions"]}
+        self.assertEqual(rows[1]["answer"], "4")
+        self.assertEqual(float(rows[2]["points"]), 5.0)
+
+    def test_rejects_a_partial_key(self):
+        """반쯤 들어간 키는 반쯤 틀린 채점을 만든다 — 전량 검증 후에만 저장."""
+        self.login_admin()
+
+        res = self.put_key(self.exam2, [
+            {"q_number": 1, "answer": "4"},
+            {"q_number": 2, "answer": ""},
+        ])
+
+        self.assertEqual(res.status_code, 400)
+
+    def test_units_already_used_come_back_as_options(self):
+        """별도 표 없이 쓰던 단원이 후보가 된다 — 대단원 하나에 중단원 여럿."""
+        self.login_admin()
+        self.put_key(self.exam2, [
+            {"q_number": 1, "answer": "1", "unit_major": "물질과 규칙성", "unit_minor": "원소"},
+        ])
+
+        units = self.client.get(self.key_url(self.exam2)).json()["units"]
+
+        self.assertIn("원소", units["물질과 규칙성"])

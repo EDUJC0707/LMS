@@ -12,15 +12,18 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { http, useApi } from "../../../api";
+import { http, useApi, useApiAction } from "../../../api";
 import {
+  Alert,
   Badge,
+  Button,
   Card,
   EmptyState,
   ErrorState,
   Field,
   Input,
   Loading,
+  Modal,
   StatusBadge,
   Table,
 } from "../../../components";
@@ -40,6 +43,17 @@ export default function ExamsPage() {
     [],
   );
   const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [examDate, setExamDate] = useState("");
+
+  const create = useApiAction(async () => {
+    const { data } = await http.post<{ exam_id: number }>("/admin/exams", {
+      name: name.trim(),
+      exam_date: examDate,
+    });
+    return data.exam_id;
+  });
 
   const rows = useMemo(() => {
     const list = exams.data ?? [];
@@ -54,7 +68,12 @@ export default function ExamsPage() {
   if (exams.error) return <ErrorState description={exams.error} onRetry={exams.reload} />;
 
   return (
-    <Card title="시험 회차" aside={`${(exams.data ?? []).length}개 회차`} padding="none">
+    <>
+    <Card
+      title="시험 회차"
+      aside={<Button onClick={() => setCreating(true)}>새 회차</Button>}
+      padding="none"
+    >
       <div className="pm-toolbar pm-cardpad">
         <Field label="회차 찾기">
           {(props) => (
@@ -146,5 +165,51 @@ export default function ExamsPage() {
         ]}
       />
     </Card>
+
+    <Modal
+      open={creating}
+      onClose={() => setCreating(false)}
+      title="새 회차"
+      footer={
+        <>
+          <Button onClick={() => setCreating(false)}>취소</Button>
+          <Button
+            variant="primary"
+            loading={create.pending}
+            disabled={!name.trim() || !examDate}
+            onClick={async () => {
+              const id = await create.run();
+              if (id === undefined) return;
+              setCreating(false);
+              setName("");
+              setExamDate("");
+              navigate(String(id));
+            }}
+          >
+            만들기
+          </Button>
+        </>
+      }
+    >
+      <div className="ui-stack ui-stack--sm">
+        {create.error && <Alert tone="danger">{create.error}</Alert>}
+        <Field label="시험명">
+          {(props) => (
+            <Input {...props} value={name} onChange={(e) => setName(e.target.value)} />
+          )}
+        </Field>
+        <Field label="시험일">
+          {(props) => (
+            <Input
+              {...props}
+              type="date"
+              value={examDate}
+              onChange={(e) => setExamDate(e.target.value)}
+            />
+          )}
+        </Field>
+      </div>
+    </Modal>
+    </>
   );
 }
