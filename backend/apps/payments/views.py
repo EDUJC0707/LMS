@@ -55,19 +55,32 @@ def _bill(request, student, product, parent=None):
     업체 실패는 **재시도 가능 여부로 상태 코드가 갈린다**: 일시 오류는 503
     (잠시 뒤 다시), 영구 오류는 502(사람이 손대야 풀린다 — 포인트 부족·키
     문제). 하나로 뭉치면 화면이 "다시 시도" 를 무한히 권한다.
+
+    **업체 사유는 로그로만 간다.** 잔액이 마르면 업체는 `POINT_001`
+    ("포인트가 부족합니다")로 거절하는데, 그 문장을 학생에게 그대로 보이면
+    ① 학생은 무슨 말인지 알 수 없고 ② 정작 충전해야 하는 관리자는 그 사실을
+    영영 모른다. 자동충전을 안 켜기로 했으므로(2026-08-11 결정) 사람이 알아야
+    풀리는 종류의 실패다 — 로그가 그 유일한 통로다.
     """
     try:
         order, created = billing.start_billing(
             student, product, actor=request.user, parent=parent
         )
     except billing.BillingError as exc:
+        # 우리 쪽 사유(연락처 없음 등)는 사용자가 고칠 수 있는 말이라 그대로 보인다.
         return Response({"detail": exc.message}, status=status.HTTP_400_BAD_REQUEST)
     except TemporaryPaymentError as exc:
+        logger.warning("청구서 발송 일시 실패 (student=%s): %s", student.student_id, exc)
         return Response(
-            {"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE
+            {"detail": "청구서를 보내지 못했습니다. 잠시 후 다시 시도해 주세요."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
     except PaymentError as exc:
-        return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        logger.error("청구서 발송 실패 (student=%s): %s", student.student_id, exc)
+        return Response(
+            {"detail": "청구서를 보내지 못했습니다."},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
     return Response(
         {"order_id": order.order_id, "pay_url": order.pay_url, "status": order.status},
         status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,

@@ -225,7 +225,8 @@ class BillingTests(TestCase):
         self.client.force_login(self.student_user)
         response = self.start()
         self.assertEqual(response.status_code, 502)
-        self.assertIn("포인트", response.json()["detail"])
+        # 사유 문장은 여기서 보지 않는다 — 업체 사유는 로그로만 간다
+        # (VendorReasonTests). 여기서 지키는 것은 플래그가 안 섰다는 사실뿐이다.
         self.assertFalse(Order.objects.filter(student=self.student, is_billed=True).exists())
 
     @override_settings(PAYMENT_PROVIDER_BACKEND=FAILING_TEMPORARY)
@@ -240,3 +241,34 @@ class BillingTests(TestCase):
         self.client.force_login(self.student_user)
         self.assertEqual(self.start().status_code, 502)
         self.assertFalse(Order.objects.filter(student=self.student).exists())
+
+
+@override_settings(PAYMENT_PROVIDER_BACKEND=FAILING_PERMANENT)
+class VendorReasonTests(TestCase):
+    """업체 실패 사유는 **운영 정보**다 — 소비자 화면에 그대로 흘리지 않는다.
+
+    쌤포인트 잔액이 마르면 업체가 `POINT_001`("포인트가 부족합니다")로 거절한다.
+    그 문장을 학생에게 그대로 보여 주면 ① 학생은 무슨 말인지 알 수 없고
+    ② **정작 충전해야 하는 관리자는 그 사실을 영영 모른다**(자동충전을 안 켜기로
+    한 2026-08-11 결정이라 사람이 알아야 풀린다).
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.product = Product.objects.create(name="로직엔제 교재 Vol.1", price=45000)
+        cls.user = make_user("vr-stu", User.Role.STUDENT, name="김하늘", phone="01012345678")
+        Student.objects.create(user=cls.user, matching_key="3_7001")
+
+    def test_vendor_reason_is_not_shown_to_the_student(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            STUDENT_URL, {"product_id": self.product.product_id}
+        )
+        self.assertEqual(response.status_code, 502)
+        self.assertNotIn("포인트", response.json()["detail"])
+
+    def test_vendor_reason_is_logged_for_the_operator(self):
+        self.client.force_login(self.user)
+        with self.assertLogs("apps.payments.views", level="ERROR") as captured:
+            self.client.post(STUDENT_URL, {"product_id": self.product.product_id})
+        self.assertTrue(any("포인트가 부족합니다" in line for line in captured.output))
