@@ -39,7 +39,7 @@ from apps.accounts.models import Parent, ParentStudent, Student, User
 from apps.accounts.permissions import FeatureRequired, IsParent, IsStudent
 from apps.videos.models import MakeupGrant
 
-from . import attendance_admin, exam_admin, report, workbook, workbook_admin
+from . import attendance_admin, exam_admin, omr_ingest, report, workbook, workbook_admin
 from .models import Attendance, ClassSession, WorkbookSubmission
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
@@ -615,6 +615,32 @@ class AdminExamQuestionsView(APIView):
         return Response(
             {"questions": exam_admin.save_questions(exam, rows), "units": exam_admin.unit_options()}
         )
+
+
+class AdminExamSheetsView(APIView):
+    """POST /api/admin/exams/{exam_id}/sheets — 스캔 PDF 한 묶음 업로드·판독."""
+
+    permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
+
+    def post(self, request, exam_id):
+        exam = exam_admin.load_exam(exam_id)
+        if exam is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        pdf = request.FILES.get("pdf")
+        if pdf is None or not pdf.name.lower().endswith(".pdf"):
+            return Response(
+                {"detail": "스캔 PDF 파일을 올려 주세요."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            question_count = int(request.data.get("question_count"))
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "문항 수를 지정해 주세요."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            return Response(omr_ingest.ingest_pdf(exam, pdf, question_count))
+        except ValueError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 def _validate_questions(rows):

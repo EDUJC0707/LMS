@@ -17,4 +17,9 @@ urlpatterns = [
         views.AdminExamQuestionsView.as_view(),
         name="exam-questions",
     ),
+    path(
+        "admin/exams/<int:exam_id>/sheets",
+        views.AdminExamSheetsView.as_view(),
+        name="exam-sheets",
+    ),
 ]

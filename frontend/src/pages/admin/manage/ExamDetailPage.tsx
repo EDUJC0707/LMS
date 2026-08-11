@@ -31,6 +31,7 @@ import {
   Tabs,
 } from "../../../components";
 import AnswerKeyPanel from "./AnswerKeyPanel";
+import SheetUploadPanel from "./SheetUploadPanel";
 import { score } from "./ExamsPage";
 import "./manage.css";
 import type { ExamDetail, ExamQuestionRow, ExamStudentRow } from "./types";
@@ -121,6 +122,12 @@ export default function ExamDetailPage() {
       </Card>
 
       <AnswerKeyPanel examId={String(examId)} />
+
+      <SheetUploadPanel
+        examId={String(examId)}
+        questionCount={questions.length}
+        onUploaded={() => void detail.reload()}
+      />
 
       <Card title="학생별 점수" aside="석차순" padding="none">
         <div className="pm-cardpad ui-stack ui-stack--md">

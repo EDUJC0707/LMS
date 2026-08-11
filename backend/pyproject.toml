@@ -23,6 +23,7 @@ dependencies = [
     # 서버에는 창이 없다. 우리가 쓰는 건 사영변환·윤곽·모폴로지뿐이다.
     "opencv-python-headless>=4.10",
     "numpy>=1.26",
+    "pypdf>=6.15.0",
 ]
 
 # 개발 전용 의존성 (uv sync --no-dev 로 운영 이미지에서는 제외)
