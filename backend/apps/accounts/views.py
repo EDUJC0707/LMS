@@ -17,6 +17,7 @@ GET /api/auth/csrf 로 쿠키를 먼저 받는다.
 게이트·입력 검증·상태 코드만 여기서, DB 쓰기·페이로드 조립은 staff_admin·
 provisioning 서비스가 담당한다(attendance_admin 선례).
 """
+from django.conf import settings
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -45,6 +46,46 @@ from .throttling import THROTTLED_MESSAGE, client_ip, is_throttled, record_failu
 # 실패 사유(계정 없음/비밀번호 오류/비활성/역할 불일치)를 구분하지 않는 단일 메시지 —
 # 경쟁사 정찰 등 계정 존재 탐색을 막는다(상태 기반 노출 원칙과 같은 방향).
 _LOGIN_FAILED_MESSAGE = "아이디 또는 비밀번호가 올바르지 않습니다."
+
+#: 랜딩(`hjcedu.com`)이 "이 사람 로그인돼 있나"를 **네트워크 호출 없이** 판단하는 표시.
+#:
+#: 세션 쿠키는 `HttpOnly` 라 JS 가 못 읽는다(그건 그대로 둔다 — 읽히면 탈취당한다).
+#: 그래서 값 없는 표시 하나를 따로 발급한다. 랜딩은 `document.cookie` 에서 이것만
+#: 보고 LMS 로 넘긴다. 서버에 물어보는 방식이면 응답을 기다리는 동안 랜딩이 한 번
+#: 번쩍이고, 그 사이 사용자가 뭔가 누를 수도 있다.
+#:
+#: **값에 아무 의미도 담지 않는다.** 있으면 로그인, 없으면 아님. 위조해서 얻는 것은
+#: LMS 로 튕겨 가는 것뿐이고, 거기엔 세션이 없으니 로그인 화면이 뜬다. 즉 이 쿠키는
+#: 권한이 아니라 **힌트**다 — 권한 판정은 서버의 세션이 한다.
+SIGNED_IN_COOKIE = "hjc_signed_in"
+
+
+def _mark_signed_in(response):
+    """로그인 표시를 켠다. 세션과 **같은 수명·같은 도메인**이어야 한다.
+
+    수명이 어긋나면 세션은 죽었는데 표시만 남아, 랜딩이 LMS 로 보내고 거기서
+    로그인 화면이 뜬다 — 사용자에겐 "눌렀더니 로그인하라네"로 보인다.
+    """
+    response.set_cookie(
+        SIGNED_IN_COOKIE,
+        "1",
+        max_age=settings.SESSION_COOKIE_AGE,
+        domain=settings.SESSION_COOKIE_DOMAIN,  # 운영은 `.hjcedu.com` — 랜딩도 읽어야 한다
+        secure=settings.SESSION_COOKIE_SECURE,
+        httponly=False,  # 랜딩 JS 가 읽어야 한다. 이 쿠키의 존재 이유가 이것이다
+        samesite="Lax",
+    )
+    return response
+
+
+def _clear_signed_in(response):
+    """로그아웃 표시. `domain` 을 발급 때와 똑같이 줘야 실제로 지워진다."""
+    response.delete_cookie(
+        SIGNED_IN_COOKIE,
+        domain=settings.SESSION_COOKIE_DOMAIN,
+        samesite="Lax",
+    )
+    return response
 
 
 class RoleLoginView(APIView):
@@ -92,7 +133,7 @@ class RoleLoginView(APIView):
         if user.role not in self.allowed_roles:
             return Response({"detail": _LOGIN_FAILED_MESSAGE}, status=status.HTTP_403_FORBIDDEN)
         login(request, user)
-        return Response(user_summary(user))
+        return _mark_signed_in(Response(user_summary(user)))
 
 
 class ConsumerLoginView(RoleLoginView):
@@ -123,7 +164,7 @@ class LogoutView(APIView):
 
     def post(self, request):
         logout(request)
-        return Response({"detail": "로그아웃되었습니다."})
+        return _clear_signed_in(Response({"detail": "로그아웃되었습니다."}))
 
 
 class PasswordChangeView(APIView):
