@@ -89,6 +89,13 @@ primary_region = "nrt"     # 도쿄
     timeout = "5s"
     grace_period = "40s"   # 첫 부팅(psycopg/celery import 등) 여유
 
+    # 헬스체크는 사설망으로 머신에 직접 붙어서 Host 가 **사설 IPv6 리터럴**이 된다.
+    # `ALLOWED_HOSTS` 를 `*` 에서 실제 도메인으로 좁히는 순간 그 Host 가 걸려
+    # Django 가 400 을 내고, 체크가 실패해 머신이 통째로 트래픽에서 빠진다.
+    # 체크에만 Host 를 박아 두면 좁힌 목록에 사설 주소를 넣지 않아도 된다.
+    [http_service.checks.headers]
+      Host = "api.hjcedu.com"
+
 [[vm]]
   size = "shared-cpu-1x"
   memory = "512mb"
