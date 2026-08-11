@@ -220,11 +220,23 @@ MUX_DEMO_PLAYBACK_ID = env("MUX_DEMO_PLAYBACK_ID", default="")
 
 # --- 오브젝트 스토리지 (Tigris/S3, django-storages) ----------------------
 # 버킷명이 있으면 S3(Tigris) 사용, 없으면 로컬 파일시스템(MEDIA_ROOT).
+#
+# **이름이 두 벌인 이유**: `fly storage create` 가 꽂아 주는 환경변수는 AWS CLI/SDK
+# 관례(`BUCKET_NAME`·`AWS_ENDPOINT_URL_S3`·`AWS_REGION`)인데, 이 설정이 채워야 할
+# django-storages 쪽 이름은 다르다(`AWS_STORAGE_BUCKET_NAME` 등). 값은 같은 것을
+# 가리키므로 **fly 가 준 이름을 먼저 읽고**, 없으면 django-storages 이름으로 떨어진다.
+# 시크릿을 두 벌 심으면 언젠가 한쪽만 바뀌어 어긋난다 — 그래서 복제하지 않는다.
 AWS_ACCESS_KEY_ID = env("AWS_ACCESS_KEY_ID", default="")
 AWS_SECRET_ACCESS_KEY = env("AWS_SECRET_ACCESS_KEY", default="")
-AWS_STORAGE_BUCKET_NAME = env("AWS_STORAGE_BUCKET_NAME", default="")
-AWS_S3_ENDPOINT_URL = env("AWS_S3_ENDPOINT_URL", default="")  # Tigris 엔드포인트
-AWS_S3_REGION_NAME = env("AWS_S3_REGION_NAME", default="auto")
+AWS_STORAGE_BUCKET_NAME = env("BUCKET_NAME", default="") or env(
+    "AWS_STORAGE_BUCKET_NAME", default=""
+)
+AWS_S3_ENDPOINT_URL = env("AWS_ENDPOINT_URL_S3", default="") or env(
+    "AWS_S3_ENDPOINT_URL", default=""
+)  # Tigris 엔드포인트
+AWS_S3_REGION_NAME = (
+    env("AWS_REGION", default="") or env("AWS_S3_REGION_NAME", default="") or "auto"
+)
 
 if AWS_STORAGE_BUCKET_NAME:
     STORAGES = {
