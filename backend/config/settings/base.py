@@ -218,6 +218,16 @@ MUX_PLAYBACK_RESTRICTION_ID = env("MUX_PLAYBACK_RESTRICTION_ID", default="")
 # 비어 있으면 대체하지 않는다(운영에는 시드 데이터가 없다).
 MUX_DEMO_PLAYBACK_ID = env("MUX_DEMO_PLAYBACK_ID", default="")
 
+# --- 손글씨 OCR (Upstage) — apps.grades.ocr 한 곳에서만 쓴다 -------------
+# 모의고사 조사 카드에서 **버블이 하나도 없는 장**의 점수만 읽는다. 마킹 판독은
+# 여전히 엔진 몫이고 OCR 을 안 부른다(decisions.md "인식 방식").
+# 키가 비면 호출 자체를 안 한다 — OCR 없이도 시스템이 그대로 돈다(닫힘 기본값).
+UPSTAGE_API_KEY = env("UPSTAGE_API_KEY", default="")
+# 0.90 은 실측이다: 정답을 아는 59장에서 이 문턱 위의 오답이 0 건이었다
+# (2026-08-11 — 틀린 두 건의 신뢰도는 0.617·0.890). 근거는 apps/grades/ocr.py.
+OMR_OCR_MIN_CONFIDENCE = env.float("OMR_OCR_MIN_CONFIDENCE", default=0.90)
+OMR_OCR_TIMEOUT = env.float("OMR_OCR_TIMEOUT", default=20.0)
+
 # --- 오브젝트 스토리지 (Tigris/S3, django-storages) ----------------------
 # 버킷명이 있으면 S3(Tigris) 사용, 없으면 로컬 파일시스템(MEDIA_ROOT).
 AWS_ACCESS_KEY_ID = env("AWS_ACCESS_KEY_ID", default="")
