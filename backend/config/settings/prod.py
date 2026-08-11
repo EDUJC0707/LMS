@@ -40,3 +40,12 @@ NOTIFICATION_CHANNEL_BACKENDS = {
     "카카오알림톡": _ALIGO,
     "문자": _ALIGO,
 }
+
+# 결제 제공자 — 실업체(결제선생). 알림 채널과 같은 축이다: **구현체 선택은
+# 설정 모듈이 정하고 `.env` 에는 자격증명만 둔다.** `.env` 에 두면 개발용
+# 파일 하나가 dev 의 Fake 를 덮어써 로컬에서 진짜 청구서가 나간다(2026-08-11
+# 실측 — 그렇게 되어 있었다).
+#
+# **연동 검수 통과 전까지는 운영 키가 없다.** 자격증명이 비면 청구가
+# `PermanentPaymentError` 로 실패한다(조용한 성공 없음).
+PAYMENT_PROVIDER_BACKEND = "apps.payments.payssam.PayssamAdapter"

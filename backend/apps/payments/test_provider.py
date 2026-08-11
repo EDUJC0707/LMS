@@ -200,3 +200,32 @@ class BalanceContractTests(SimpleTestCase):
         balance = Balance(amount=12000, charge_url="https://pay.example/charge")
         self.assertEqual(balance.amount, 12000)
         self.assertEqual(balance.charge_url, "https://pay.example/charge")
+
+
+class SettingsWiringTests(SimpleTestCase):
+    """어느 환경이 어떤 구현체를 쓰는지 — 여기서 틀리면 청구가 통째로 어긋난다.
+
+    `NOTIFICATION_CHANNEL_BACKENDS` 와 같은 축이다(notifications
+    `test_channels.SettingsWiringTests` 선례). 결제 쪽이 더 위험하다:
+    Fake 가 운영에 남으면 결제 내역에는 청구 성공만 쌓이고 학부모는 아무
+    청구서도 못 받는다.
+    """
+
+    def test_base_leaves_the_provider_closed(self):
+        # 안전 기본값은 닫힘 — 새 환경이 아무것도 안 물리면 청구가 실패한다.
+        from config.settings import base
+
+        self.assertEqual(base.PAYMENT_PROVIDER_BACKEND, "")
+
+    def test_prod_wires_the_real_vendor_not_the_fake(self):
+        from config.settings import prod
+
+        self.assertIn("payssam", prod.PAYMENT_PROVIDER_BACKEND.lower())
+        self.assertNotIn("Fake", prod.PAYMENT_PROVIDER_BACKEND)
+
+    def test_dev_wires_the_fake_so_bills_do_not_leave_the_machine(self):
+        # 시드 연락처는 진짜 번호일 수 있다 — 로컬에서 구매를 눌러 보는 것만으로
+        # 모르는 사람에게 카카오톡 청구서가 가면 안 된다.
+        from config.settings import dev
+
+        self.assertIn("Fake", dev.PAYMENT_PROVIDER_BACKEND)

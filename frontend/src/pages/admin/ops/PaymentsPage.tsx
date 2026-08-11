@@ -6,11 +6,20 @@
  *
  * 서버가 페이지네이션한다(PageNumberPagination 20건) — 필터도 서버가 해석하므로
  * 화면에서 다시 거르지 않는다. 잘못된 값은 빈 목록이 아니라 400 으로 온다.
+ *
+ * **취소 버튼은 대표에게만 보인다.** 서버가 IsOwner 로 막고 있고(§2·§5),
+ * 화면 숨김은 보조다 — 누를 수 없는 버튼을 그려 두면 눌러 보고 나서야 안다.
+ *
+ * **잔액 배너**: 자동충전을 안 켜기로 해서(2026-08-11) 잔액이 마르면 청구가
+ * 통째로 멈춘다. 로그 말고 사람이 보는 자리가 여기다.
  */
 import { useState } from "react";
 
-import { http, useApi } from "../../../api";
+import { http, useApi, useApiAction } from "../../../api";
+import { useMe } from "../../../auth";
 import {
+  Alert,
+  Button,
   Card,
   EmptyState,
   ErrorState,
@@ -48,10 +57,29 @@ function day(value: string | null): string {
   return value ? value.slice(0, 10) : "—";
 }
 
+interface BalanceInfo {
+  balance: number | null;
+  charge_url: string | null;
+}
+
+/** 이 아래로 떨어지면 배너를 띄운다 — 교재 몇 건 보내면 마르는 수준. */
+const LOW_BALANCE = 50000;
+
 export default function PaymentsPage() {
+  const { me } = useMe();
+  const isOwner = me?.role === "대표";
   const [status, setStatus] = useState("");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
+  // 어느 줄을 누르는 중인지 — 훅의 pending 은 페이지에 하나뿐이라 그것만
+  // 물리면 모든 줄의 버튼이 함께 돈다.
+  const [pendingId, setPendingId] = useState<number | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const balance = useApi(
+    async () => (await http.get<BalanceInfo>("/admin/payments/balance")).data,
+    [],
+  );
 
   const list = useApi(
     async () =>
@@ -63,14 +91,82 @@ export default function PaymentsPage() {
     [page, status],
   );
 
+  // 값은 반드시 인자로 넘긴다 — 이 훅은 첫 렌더의 클로저를 붙든다(api/useApi.ts).
+  //
+  // **갱신된 행을 반드시 돌려준다.** `run` 은 실패하면 undefined 를 주는데
+  // 액션이 아무것도 반환하지 않으면 성공도 undefined 라 둘을 구분할 수 없다 —
+  // 그러면 성공한 뒤에도 실패로 보고 목록 새로고침을 건너뛴다(실측).
+  const deliver = useApiAction(async (orderId: number) => {
+    return (await http.post<PaymentRow>(`/admin/payments/${orderId}/deliver`)).data;
+  });
+  const cancel = useApiAction(async (orderId: number, reason: string) => {
+    return (await http.post<PaymentRow>(`/admin/payments/${orderId}/cancel`, { reason })).data;
+  });
+
+  const runDeliver = async (row: PaymentRow) => {
+    setNotice(null);
+    setPendingId(row.order_id);
+    const updated = await deliver.run(row.order_id);
+    setPendingId(null);
+    if (!updated) return; // 실패 사유는 위 Alert 에 뜬다
+    setNotice(`${row.student.name} · ${row.product_name} 배부완료`);
+    await list.reload();
+  };
+
+  const runCancel = async (row: PaymentRow) => {
+    // 돈이 되돌아가는 조작이라 사유를 받는다(서버도 필수로 요구한다 — §5 이력).
+    const reason = window.prompt(`${row.student.name} 주문 취소 사유`);
+    if (reason === null) return;
+    setNotice(null);
+    setPendingId(row.order_id);
+    const updated = await cancel.run(row.order_id, reason);
+    setPendingId(null);
+    if (!updated) return;
+    setNotice(`${row.student.name} · ${row.product_name} 취소`);
+    await Promise.all([list.reload(), balance.reload()]);
+  };
+
   // 이름 검색만 화면에서 한다 — 서버 필터에 이름 축이 없다(학생 번호는 있다).
   const needle = query.trim();
   const rows = (list.data?.results ?? []).filter(
     (row) => !needle || row.student.name.includes(needle),
   );
 
+  const points = balance.data?.balance ?? null;
+
   return (
     <div className="ui-stack">
+      {points !== null && points < LOW_BALANCE && (
+        <Alert tone="warning">
+          쌤포인트 잔액 {points.toLocaleString("ko-KR")}원
+          {balance.data?.charge_url && (
+            <>
+              {" · "}
+              <a href={balance.data.charge_url} target="_blank" rel="noreferrer">
+                충전하기
+              </a>
+            </>
+          )}
+        </Alert>
+      )}
+
+      {(deliver.error || cancel.error) && (
+        <Alert
+          tone="danger"
+          onClose={() => {
+            deliver.clearError();
+            cancel.clearError();
+          }}
+        >
+          {deliver.error ?? cancel.error}
+        </Alert>
+      )}
+
+      {notice && (
+        <Alert tone="success" onClose={() => setNotice(null)}>
+          {notice}
+        </Alert>
+      )}
       <Card padding="none">
         <div className="ops-filters">
           <Field label="상태">
@@ -162,6 +258,36 @@ export default function PaymentsPage() {
                 align: "right",
                 cell: (r) => (
                   <span className="num">{r.payment?.external_ref ?? "—"}</span>
+                ),
+              },
+              {
+                key: "actions",
+                header: "",
+                align: "right",
+                width: isOwner ? "11rem" : "6rem",
+                cell: (r) => (
+                  <>
+                    {r.status === "결제완료" && (
+                      <Button
+                        size="sm"
+                        loading={pendingId === r.order_id && deliver.pending}
+                        onClick={() => runDeliver(r)}
+                      >
+                        배부완료
+                      </Button>
+                    )}
+                    {/* 취소는 대표만. 서버가 IsOwner 로 막고 화면은 감추기만 한다. */}
+                    {isOwner && r.status !== "취소" && (
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        loading={pendingId === r.order_id && cancel.pending}
+                        onClick={() => runCancel(r)}
+                      >
+                        취소
+                      </Button>
+                    )}
+                  </>
                 ),
               },
             ]}
