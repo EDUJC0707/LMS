@@ -233,6 +233,28 @@ def sheet_scale(rows):
     return median(_row_stats(cells, column_floors).lead for cells in rows.values())
 
 
+def field_scale(fields):
+    """답란 없는 지면의 연필 세기 — 필드마다 (최고 − 나머지 중앙값)의 중앙값.
+
+    `sheet_scale` 은 답란처럼 **직사각** 격자를 전제한다(열 기준선을 만든다).
+    성적 조사 카드에는 답란이 없고, 성명은 열마다 행 수가 14/19 로 달라 그
+    전제가 깨진다 — 열 기준선을 만들려 하면 없는 열에서 터진다.
+
+    대신 필드 안에서 눈금을 만든다. 필드 하나에 마킹이 하나뿐이라 "최고 −
+    나머지 바닥"이 곧 그 마킹의 lead 다.
+
+    전체 중앙값이 아니라 **위 절반의 중앙값**을 쓰는 이유: 성명 12열 중 안
+    쓰는 열이 이름 길이만큼 남는다(세 글자면 3열, 두 글자면 6열). 전체
+    중앙값은 두 글자 이름에서 마킹과 빈 열의 경계에 정확히 얹혀 눈금이 반토막
+    난다 — 위 절반만 보면 어느 길이에서도 칠해진 열만 남는다.
+    """
+    leads = sorted(
+        sorted(cells.values())[-1] - median(sorted(cells.values())[:-1])
+        for cells in fields.values()
+    )
+    return median(leads[len(leads) // 2 :])
+
+
 def classify_fields(fields, scale, fraction=IDENTITY_FRACTION):
     """`{열: {행: 잉크}}` → `{열: (칠해진 행, ...)}` — 성명·전화용.
 

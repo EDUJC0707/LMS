@@ -24,11 +24,14 @@ import {
   Input,
   Loading,
   Modal,
+  Select,
   StatusBadge,
   Table,
 } from "../../../components";
 import "./manage.css";
-import type { ExamListRow } from "./types";
+import type { ExamKind, ExamListRow } from "./types";
+
+const EXAM_KINDS: ExamKind[] = ["미니테스트", "모의고사"];
 
 /** 평균은 소수가 길게 내려오므로 한 자리로 줄여 읽는다. */
 export function score(value: number | null | undefined): string {
@@ -46,11 +49,13 @@ export default function ExamsPage() {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [examDate, setExamDate] = useState("");
+  const [kind, setKind] = useState<ExamKind>("미니테스트");
 
   const create = useApiAction(async () => {
     const { data } = await http.post<{ exam_id: number }>("/admin/exams", {
       name: name.trim(),
       exam_date: examDate,
+      kind,
     });
     return data.exam_id;
   });
@@ -183,6 +188,7 @@ export default function ExamsPage() {
               setCreating(false);
               setName("");
               setExamDate("");
+              setKind("미니테스트");
               navigate(String(id));
             }}
           >
@@ -206,6 +212,22 @@ export default function ExamsPage() {
               value={examDate}
               onChange={(e) => setExamDate(e.target.value)}
             />
+          )}
+        </Field>
+        {/* 지면이 갈린다 — 미니테스트는 답안 카드, 모의고사는 성적 조사 카드다. */}
+        <Field label="종류">
+          {(props) => (
+            <Select
+              {...props}
+              value={kind}
+              onChange={(e) => setKind(e.target.value as ExamKind)}
+            >
+              {EXAM_KINDS.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </Select>
           )}
         </Field>
       </div>

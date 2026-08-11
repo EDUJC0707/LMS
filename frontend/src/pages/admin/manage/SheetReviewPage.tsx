@@ -1,9 +1,9 @@
 /**
  * /admin/exams/:examId/sheets — 스캔 보정.
  *
- * API  GET   /api/admin/exams/{exam_id}/sheets   → {sheets[]} (손볼 장이 먼저)
+ * API  GET   /api/admin/exams/{exam_id}/sheets   → {kind, sheets[]} (손볼 장이 먼저)
  *      GET   /api/admin/sheets/{sheet_id}        → 정답 키 전량 + 그 장의 판독
- *      PATCH /api/admin/sheets/{sheet_id}        {student_id?, answers?, confirm?}
+ *      PATCH /api/admin/sheets/{sheet_id}        {student_id?, answers?, score?, confirm?}
  *      GET   /api/admin/sheets/{sheet_id}/scan   스캔 원본(인증 뒤에서만)
  *
  * 화면 설계
@@ -11,6 +11,8 @@
  *   화면에 세워 두고 스크롤을 나눈다.
  * - 마킹 칸은 판독값이 들어간 채로 열린다. 고칠 것만 고치고 저장하면 그 문항만
  *   사람 것이 되고(재판독이 못 덮는다) 총점은 서버가 다시 낸다.
+ * - 모의고사 장에는 문항이 없다. 고칠 것이 자기보고 점수 한 칸뿐이라 오른쪽이
+ *   통째로 바뀐다.
  * - 목록은 손볼 장부터 온다(서버 순서). 다음 장으로 넘어가는 것이 기본 동선이라
  *   저장하면 그 자리에 머무르지 않고 다음 장을 연다.
  */
@@ -25,13 +27,14 @@ import {
   Card,
   EmptyState,
   ErrorState,
+  Field,
   Input,
   Loading,
 } from "../../../components";
 import { StudentPicker } from "./StudentPicker";
 import type { DirectoryStudent } from "./directory";
 import "./manage.css";
-import type { SheetDetail, SheetQuestionRow, SheetRow } from "./types";
+import type { ExamKind, SheetDetail, SheetQuestionRow, SheetRow } from "./types";
 
 const RESULT_TONE: Record<string, "success" | "danger" | "warning" | "outline"> = {
   정답: "success",
@@ -43,10 +46,14 @@ const RESULT_TONE: Record<string, "success" | "danger" | "warning" | "outline"> 
 export default function SheetReviewPage() {
   const { examId } = useParams();
   const list = useApi(
-    () => http.get<{ sheets: SheetRow[] }>(`/admin/exams/${examId}/sheets`).then((r) => r.data),
+    () =>
+      http
+        .get<{ kind: ExamKind; sheets: SheetRow[] }>(`/admin/exams/${examId}/sheets`)
+        .then((r) => r.data),
     [examId],
   );
   const sheets = useMemo(() => list.data?.sheets ?? [], [list.data]);
+  const survey = list.data?.kind === "모의고사";
 
   const [index, setIndex] = useState(0);
   const current = sheets[index];
@@ -62,6 +69,7 @@ export default function SheetReviewPage() {
 
   const [marks, setMarks] = useState<Record<number, string>>({});
   const [student, setStudent] = useState<DirectoryStudent | null>(null);
+  const [score, setScore] = useState("");
 
   useEffect(() => {
     if (!detail.data) return;
@@ -69,6 +77,7 @@ export default function SheetReviewPage() {
       Object.fromEntries(detail.data.questions.map((q) => [q.q_number, q.marked ?? ""])),
     );
     setStudent(detail.data.student);
+    setScore(detail.data.recognized_score === null ? "" : String(detail.data.recognized_score));
   }, [detail.data]);
 
   const save = useApiAction(async (body: Record<string, unknown>) => {
@@ -88,6 +97,8 @@ export default function SheetReviewPage() {
       body.student_id = student?.student_id ?? null;
     }
     if (Object.keys(changed).length > 0) body.answers = changed;
+    const typed = score.trim() === "" ? null : Number(score);
+    if (survey && typed !== (detail.data?.recognized_score ?? null)) body.score = typed;
     if (confirm) body.confirm = true;
     if (Object.keys(body).length === 0) return;
     const saved = await save.run(body);
@@ -95,7 +106,10 @@ export default function SheetReviewPage() {
     // 목록은 다시 부르지 않는다 — 저장한 장이 순서에서 뒤로 밀리면 지금 보고
     // 있는 자리가 다른 장으로 바뀐다. 순서는 연 시점 그대로 두고 행만 고친다.
     detail.setData(saved);
-    list.setData({ sheets: sheets.map((row) => (row.sheet_id === saved.sheet_id ? saved : row)) });
+    list.setData({
+      kind: list.data!.kind,
+      sheets: sheets.map((row) => (row.sheet_id === saved.sheet_id ? saved : row)),
+    });
   };
 
   if (list.loading) return <Loading label="스캔 목록을 불러오는 중…" />;
@@ -157,25 +171,40 @@ export default function SheetReviewPage() {
           </Card>
 
           <Card
-            title="문항"
+            title={survey ? "점수" : "문항"}
             aside={detail.data?.total_score !== null ? `${detail.data?.total_score}점` : undefined}
           >
             {detail.loading ? (
               <Loading label="판독을 불러오는 중…" />
             ) : (
               <div className="ui-stack ui-stack--md">
-                <ul className="pm-marks">
-                  {(detail.data?.questions ?? []).map((question) => (
-                    <MarkRow
-                      key={question.q_number}
-                      question={question}
-                      value={marks[question.q_number] ?? ""}
-                      onChange={(value) =>
-                        setMarks((prev) => ({ ...prev, [question.q_number]: value }))
-                      }
-                    />
-                  ))}
-                </ul>
+                {survey ? (
+                  <Field label="자기보고 점수">
+                    {(props) => (
+                      <Input
+                        {...props}
+                        type="number"
+                        min="0"
+                        max="59"
+                        value={score}
+                        onChange={(e) => setScore(e.target.value)}
+                      />
+                    )}
+                  </Field>
+                ) : (
+                  <ul className="pm-marks">
+                    {(detail.data?.questions ?? []).map((question) => (
+                      <MarkRow
+                        key={question.q_number}
+                        question={question}
+                        value={marks[question.q_number] ?? ""}
+                        onChange={(value) =>
+                          setMarks((prev) => ({ ...prev, [question.q_number]: value }))
+                        }
+                      />
+                    ))}
+                  </ul>
+                )}
 
                 <div className="pm-actionblock pm-toolbar">
                   <div className="pm-toolbar__end">

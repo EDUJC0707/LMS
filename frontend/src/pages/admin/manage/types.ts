@@ -141,9 +141,13 @@ export interface ClinicCriteria {
 
 /* ── /api/admin/exams ─────────────────────────────────────────────── */
 
+/** 어느 카드가 들어오는지 — 미니테스트는 답안 카드, 모의고사는 성적 조사 카드. */
+export type ExamKind = "미니테스트" | "모의고사";
+
 export interface ExamListRow {
   exam_id: number;
   name: string;
+  kind: ExamKind;
   exam_date: string;
   round_no: number | null;
   target_grade: number | null;
@@ -188,6 +192,7 @@ export interface ExamDetail {
   exam: {
     exam_id: number;
     name: string;
+    kind: ExamKind;
     exam_date: string;
     round_no: number | null;
     target_grade: number | null;
@@ -264,6 +269,8 @@ export interface SheetRow {
   is_corrected: boolean;
   recognized_name: string | null;
   recognized_matching_key: string | null;
+  /** 모의고사(자기보고) 전용. 미니테스트 장에서는 언제나 null */
+  recognized_score: number | null;
   /** 명부(GET /admin/students)와 같은 행 모양 — 학생 선택기가 그대로 받는다 */
   student: DirectoryStudent | null;
 }

@@ -14,9 +14,10 @@ from django.test import TestCase
 
 from apps.accounts.models import Student
 
-from . import omr_ingest
+from . import omr_ingest, omr_store
 from .models import AnswerSheet, Exam, Question, Score
 from .omr import card, normalize
+from .omr import sheet as sheet_module
 from .test_grade_report_api import make_student
 
 CARD_CORNERS = np.array(
@@ -140,3 +141,83 @@ class BatchTaskTests(TestCase):
 
         self.assertEqual(summary["pages"], 1)
         self.assertFalse(default_storage.exists(path))
+
+
+class MockExamIngestTests(TestCase):
+    """모의고사는 지면이 다르다 — 문항이 없고 자기보고 점수만 들어온다."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.exam = Exam.objects.create(
+            name="6월 모의평가",
+            exam_date=datetime.date(2026, 6, 12),
+            kind=Exam.Kind.MOCK,
+        )
+        cls.student = make_student("stu-mock", "김서연")
+
+    def ingest(self, readings):
+        """조사 카드 판독을 갈아 끼운다 — 실물은 개인정보라 커밋할 수 없다."""
+        pages = [b"page"] * len(readings)
+        with (
+            mock.patch.object(omr_ingest, "page_images", return_value=iter(pages)),
+            mock.patch("apps.grades.omr_ingest.cv2.imdecode", return_value=None),
+            mock.patch(
+                "apps.grades.omr_ingest.sheet.read_survey", side_effect=readings
+            ),
+        ):
+            return omr_ingest.ingest_pdf(self.exam, object(), question_count=0)
+
+    def survey(self, score, name=None, phone=None):
+        reading = mock.Mock(
+            held=None,
+            score=score,
+            phone=phone,
+            matching_key=f"{name}{phone}" if name and phone else None,
+        )
+        reading.name = name  # Mock(name=...) 은 속성이 아니라 목 이름이다
+        return reading
+
+    def test_a_matched_card_becomes_a_score_without_any_questions(self):
+        """자기보고 점수가 곧 성적이다 — 셀 문항이 없다."""
+        Student.objects.filter(pk=self.student.pk).update(matching_key="김서연0001")
+
+        summary = self.ingest([self.survey(46, "김서연", "0001")])
+
+        self.assertEqual(summary["matched"], 1)
+        score = Score.objects.get(exam=self.exam, student=self.student)
+        self.assertEqual(float(score.total_score), 46.0)
+        # 만점은 조사 카드가 말하지 않는다 — 지어내지 않는다.
+        self.assertIsNone(score.max_score)
+        self.assertEqual(AnswerSheet.objects.get(exam=self.exam).recognized_score, 46)
+
+    def test_an_unmatched_card_keeps_the_score_for_the_assistant(self):
+        """주인을 못 찾아도 판독은 남는다 — 조교가 지면과 대조할 근거다."""
+        summary = self.ingest([self.survey(38, "박모름", "0002")])
+
+        self.assertEqual(summary["needs_review"], 1)
+        sheet_row = AnswerSheet.objects.get(exam=self.exam)
+        self.assertEqual(sheet_row.recognized_score, 38)
+        self.assertIsNone(sheet_row.student)
+        self.assertFalse(Score.objects.filter(exam=self.exam).exists())
+
+    def test_holds_are_counted_by_reason(self):
+        """실물 94장 중 34장이 버블을 안 칠했다 — "보류 34"가 아니라 이유가 필요하다."""
+        held = mock.Mock(held=sheet_module.CARD_UNMARKED, score=None)
+
+        summary = self.ingest([held, self.survey(44, "김서연", "0001")])
+
+        self.assertEqual(summary["held"], 1)
+        self.assertEqual(summary["holds"], {sheet_module.CARD_UNMARKED: 1})
+
+    def test_an_assistant_can_correct_the_score(self):
+        """조사 카드에서 고칠 것은 점수 한 칸뿐이다(문항이 없다)."""
+        Student.objects.filter(pk=self.student.pk).update(matching_key="김서연0001")
+        self.ingest([self.survey(46, "김서연", "0001")])
+        row = AnswerSheet.objects.get(exam=self.exam)
+
+        omr_store.correct_sheet(row, score=44)
+
+        row.refresh_from_db()
+        self.assertEqual(row.recognized_score, 44)
+        self.assertTrue(row.is_corrected)
+        self.assertEqual(float(Score.objects.get(exam=self.exam).total_score), 44.0)

@@ -79,6 +79,7 @@ export default function ExamDetailPage() {
         title={exam.name}
         aside={
           <div className="pm-review__nav">
+            <Badge tone="outline">{exam.kind}</Badge>
             <StatusBadge status={stats.processing_status} />
             <Button size="sm" onClick={() => navigate("sheets")}>
               스캔 보정
@@ -133,10 +134,12 @@ export default function ExamDetailPage() {
         </div>
       </Card>
 
-      <AnswerKeyPanel examId={String(examId)} />
+      {/* 모의고사는 학교에서 본 점수를 적어 올 뿐이라 정답 키가 없다. */}
+      {exam.kind !== "모의고사" && <AnswerKeyPanel examId={String(examId)} />}
 
       <SheetUploadPanel
         examId={String(examId)}
+        kind={exam.kind}
         questionCount={questions.length}
         onUploaded={() => void detail.reload()}
       />

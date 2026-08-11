@@ -18,6 +18,7 @@ import { useEffect, useRef, useState } from "react";
 import { http, useApiAction } from "../../../api";
 import { Alert, Button, Card, Field, Input } from "../../../components";
 import "./manage.css";
+import type { ExamKind } from "./types";
 
 interface UploadSummary {
   pages: number;
@@ -29,13 +30,17 @@ interface UploadSummary {
 
 export default function SheetUploadPanel({
   examId,
+  kind,
   questionCount,
   onUploaded,
 }: {
   examId: string;
+  kind: ExamKind;
   questionCount: number;
   onUploaded: () => void;
 }) {
+  // 모의고사 지면(성적 조사 카드)에는 문항이 없다 — 물을 것이 파일뿐이다.
+  const survey = kind === "모의고사";
   const [file, setFile] = useState<File | null>(null);
   const [count, setCount] = useState(String(questionCount || ""));
   const [summary, setSummary] = useState<UploadSummary | null>(null);
@@ -48,7 +53,7 @@ export default function SheetUploadPanel({
   const upload = useApiAction(async () => {
     const form = new FormData();
     form.append("pdf", file as File);
-    form.append("question_count", count);
+    form.append("question_count", survey ? "0" : count);
     const { data } = await http.post<{ task_id: string }>(
       `/admin/exams/${examId}/sheets`,
       form,
@@ -104,23 +109,25 @@ export default function SheetUploadPanel({
               />
             )}
           </Field>
-          <Field label="문항 수">
-            {(props) => (
-              <Input
-                {...props}
-                type="number"
-                min="1"
-                max="20"
-                value={count}
-                onChange={(e) => setCount(e.target.value)}
-              />
-            )}
-          </Field>
+          {!survey && (
+            <Field label="문항 수">
+              {(props) => (
+                <Input
+                  {...props}
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={count}
+                  onChange={(e) => setCount(e.target.value)}
+                />
+              )}
+            </Field>
+          )}
           <div className="pm-toolbar__end">
             <Button
               variant="primary"
               loading={upload.pending || taskId !== null}
-              disabled={!file || !count}
+              disabled={!file || (!survey && !count)}
               onClick={async () => {
                 setFailed(null);
                 const id = await upload.run();

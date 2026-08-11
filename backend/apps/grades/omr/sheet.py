@@ -36,6 +36,18 @@ from . import card, decode, normalize, read
 CARD_NOT_FOUND = "카드 없음"
 #: 카드는 찾았으나 그 장의 마킹을 못 믿는다 — 사람이 확인.
 MARKS_UNTRUSTED = "판독 불가"
+#: 조사 카드인데 버블에 연필이 안 닿았다 — 손글씨만 남긴 장이다(사람이 옮겨 적는다).
+CARD_UNMARKED = "마킹 없음"
+#: 조사 카드인데 점수칸을 못 읽었다. 조사 카드는 점수가 전부라 답이 없는 것과 같다.
+SCORE_UNREADABLE = "점수 판독 불가"
+
+#: 조사 카드가 "칠해졌다"고 보는 최소 눈금. 실물 94장은 **두 무리로 갈렸다** —
+#: 백지 쪽 10~19(34장), 칠한 쪽 58~160(60장). 그 사이 빈 구간에 둔다
+#: (2026-08-11 실측, `read.field_scale` 기준).
+#:
+#: 이 문턱이 없으면 백지에서 눈금이 인쇄 잡음(≈13)이 되고, 판정 문턱이 그
+#: 45% 로 내려가 **글리프가 마킹으로 승격된다** — 안 쓴 카드에서 점수가 나온다.
+SURVEY_INK_FLOOR = 35.0
 
 
 class SheetReading:
@@ -82,6 +94,67 @@ def read_sheet(image, question_count):
     name, phone = read_identity(image, frame, read.sheet_scale(rows))
     return SheetReading(
         answers=readings,
+        frame=frame,
+        name=name,
+        phone=phone,
+        matching_key=decode.matching_key(name, phone),
+    )
+
+
+class SurveyReading:
+    """성적 조사 카드 판독 결과. `score` 와 `held` 중 정확히 하나만 채워진다.
+
+    답안 카드와 달리 **점수가 전부**라 점수를 못 읽으면 보류다. 신원은 답안
+    카드와 같은 규칙으로 최선만 한다 — 이름만 읽히고 번호가 비어도 조교가
+    누구 것인지 고를 수 있다(실물에서 번호칸은 셋 중 하나만 채워져 있었다).
+    """
+
+    __slots__ = ("score", "held", "frame", "name", "phone", "matching_key")
+
+    def __init__(self, score=None, held=None, frame=None, name=None, phone=None, matching_key=None):
+        self.score = score
+        self.held = held
+        self.frame = frame
+        self.name = name
+        self.phone = phone
+        self.matching_key = matching_key
+
+    def __repr__(self):
+        if self.held is not None:
+            return f"SurveyReading(held={self.held!r})"
+        return f"SurveyReading(score={self.score})"
+
+
+def read_survey(image):
+    """성적 조사 카드 한 장 — 모의고사 자체채점 점수(PRD 3.1.1 · card 판형 주석).
+
+    답란이 없어 눈금을 답란에서 못 빌린다. 성명칸에서 만든다 —
+    `read.field_scale` 이 그 자리다.
+    """
+    frame = normalize.locate_card(image)
+    if frame is None:
+        return SurveyReading(held=CARD_NOT_FOUND)
+    name_fields = group_by_row(
+        read.sample_cells(image, frame, card.name_cells(), card.NAME_BUBBLE_RADIUS)
+    )
+    scale = read.field_scale(name_fields)
+    if scale < SURVEY_INK_FLOOR:
+        return SurveyReading(held=CARD_UNMARKED, frame=frame)
+
+    score_fields = group_by_row(
+        read.sample_cells(image, frame, card.survey_score_cells(), card.ANSWER_BUBBLE_RADIUS)
+    )
+    score = decode.decode_score(read.classify_fields(score_fields, scale))
+    if score is None:
+        return SurveyReading(held=SCORE_UNREADABLE, frame=frame)
+
+    number_fields = group_by_row(
+        read.sample_cells(image, frame, card.survey_number_cells(), card.PHONE_BUBBLE_RADIUS)
+    )
+    name = decode.decode_name(read.classify_fields(name_fields, scale))
+    phone = decode.decode_survey_number(read.classify_fields(number_fields, scale))
+    return SurveyReading(
+        score=score,
         frame=frame,
         name=name,
         phone=phone,

@@ -64,7 +64,7 @@ scores 는 여기서 만들지 않는다(집계 슬라이스 몫) — exam_admin
 """
 from django.db import transaction
 
-from .models import AnswerSheet, Question, Score, SheetAnswer
+from .models import AnswerSheet, Exam, Question, Score, SheetAnswer
 
 _MS = AnswerSheet.MatchStatus
 _R = SheetAnswer.Result
@@ -135,11 +135,59 @@ def store_sheet(
     }
 
 
+def store_survey(
+    exam,
+    scan_image_path,
+    score,
+    *,
+    student=None,
+    match_status=None,
+    recognized_matching_key=None,
+    recognized_name=None,
+):
+    """성적 조사 카드 1장 저장 — (sheet, summary). 모의고사(자기보고) 경로다.
+
+    답안 카드와 다른 점은 **담을 것이 점수 하나**라는 것뿐이다. 문항이 없으니
+    sheet_answers 도 없고, 채점도 없다 — 학생이 붙으면 그 점수가 곧 성적이다.
+
+    보류(score=None)면 답안 카드와 같이 `비정상`으로 눕힌다. 정체성·멱등·보정
+    잠금 계약은 모듈 docstring 그대로다.
+    """
+    if score is None:
+        student = None
+        match_status = _MS.INVALID
+        recognized_matching_key = None
+        recognized_name = None
+    elif match_status not in _MS.values:
+        raise ValueError("판독된 장에는 match_status(대조 6분기)가 필요합니다.")
+    with transaction.atomic():
+        sheet, created = AnswerSheet.objects.select_for_update().get_or_create(
+            exam=exam,
+            scan_image_path=scan_image_path,
+            defaults={
+                "student": student,
+                "match_status": match_status,
+                "recognized_matching_key": recognized_matching_key,
+                "recognized_name": recognized_name,
+                "recognized_score": score,
+            },
+        )
+        if not created and not sheet.is_corrected:
+            sheet.student = student
+            sheet.match_status = match_status
+            sheet.recognized_matching_key = recognized_matching_key
+            sheet.recognized_name = recognized_name
+            sheet.recognized_score = score
+            sheet.save(update_fields=[*_SHEET_MACHINE_FIELDS, "recognized_score"])
+        scored = _apply_survey_score(sheet)
+    return sheet, {"created": created, "scored": scored}
+
+
 #: '안 넘겼음' 과 '넘겼는데 None(주인 해제)' 을 가른다.
 UNSET = object()
 
 
-def correct_sheet(sheet, *, student=UNSET, answers=None, confirm=False):
+def correct_sheet(sheet, *, student=UNSET, answers=None, score=UNSET, confirm=False):
     """조교 보정 1장 — 여기서 쓴 값은 재판독이 덮지 않는다(모듈 docstring).
 
     student 를 넘기면 그 장의 주인이 확정되고 대조 상태는 `정상` 이 된다 —
@@ -148,20 +196,30 @@ def correct_sheet(sheet, *, student=UNSET, answers=None, confirm=False):
     된다. 보류 장이라 문항 행이 아예 없어도 여기서 만든다 — 카드를 못 읽은
     지면도 사람은 읽을 수 있다.
 
+    score 는 모의고사(자기보고) 장에서만 쓴다 — 조사 카드에는 문항이 없어
+    고칠 것이 점수 한 칸뿐이다.
+
     confirm 은 "기계 판독이 맞다" 는 확인이다. 값은 그대로 두고 잠금만 건다.
 
     반환: 재계산된 총점(학생·정답 키가 없어 못 내면 None).
     """
     with transaction.atomic():
-        sheet = AnswerSheet.objects.select_for_update().get(pk=sheet.pk)
+        sheet = AnswerSheet.objects.select_for_update().select_related("exam").get(pk=sheet.pk)
+        fields = []
         if student is not UNSET:
             sheet.student = student
             sheet.match_status = _MS.MATCHED if student is not None else _MS.INVALID
-        if student is not UNSET or confirm:
+            fields += ["student", "match_status"]
+        if score is not UNSET:
+            sheet.recognized_score = score
+            fields.append("recognized_score")
+        if fields or confirm:
             sheet.is_corrected = True
-            sheet.save(update_fields=["student", "match_status", "is_corrected"])
+            sheet.save(update_fields=[*fields, "is_corrected"])
         if answers:
             _write_corrections(sheet, answers)
+        if sheet.exam.kind == Exam.Kind.MOCK:
+            return _apply_survey_score(sheet)
         return _apply_score(sheet, sheet.exam)
 
 
@@ -276,3 +334,21 @@ def _apply_score(sheet, exam):
         defaults={"total_score": total, "max_score": full, "is_taken": True},
     )
     return float(total)
+
+
+def _apply_survey_score(sheet):
+    """자기보고 점수를 그대로 성적으로 올린다. 점수·학생이 없으면 None.
+
+    답안 카드처럼 다시 세지 않는다 — 셀 것이 없다. 지면에 적힌 수가 곧 점수다.
+
+    만점(`max_score`)은 비워 둔다. 조사 카드는 만점을 말하지 않고, 과목마다
+    다르다 — 50 이라고 적어 두면 기계가 지어낸 수가 실측처럼 남는다.
+    """
+    if sheet.student_id is None or sheet.recognized_score is None:
+        return None
+    Score.objects.update_or_create(
+        exam_id=sheet.exam_id,
+        student_id=sheet.student_id,
+        defaults={"total_score": sheet.recognized_score, "is_taken": True},
+    )
+    return float(sheet.recognized_score)

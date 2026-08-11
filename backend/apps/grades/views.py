@@ -50,7 +50,7 @@ from apps.accounts.permissions import FeatureRequired, IsParent, IsStudent
 from apps.videos.models import MakeupGrant
 
 from . import attendance_admin, exam_admin, omr_store, report, tasks, workbook, workbook_admin
-from .models import AnswerSheet, Attendance, ClassSession, WorkbookSubmission
+from .models import AnswerSheet, Attendance, ClassSession, Exam, WorkbookSubmission
 from .omr import card
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
@@ -593,11 +593,18 @@ class AdminExamListView(APIView):
                 {"detail": "시험일 형식은 YYYY-MM-DD 입니다."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        kind = request.data.get("kind") or Exam.Kind.MINI
+        if kind not in Exam.Kind.values:
+            return Response(
+                {"detail": f"시험 종류는 {'·'.join(Exam.Kind.values)} 중 하나입니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         exam = exam_admin.create_exam(
             name,
             exam_date,
             round_no=request.data.get("round_no") or None,
             target_grade=request.data.get("target_grade") or None,
+            kind=kind,
         )
         return Response({"exam_id": exam.pk}, status=status.HTTP_201_CREATED)
 
@@ -637,7 +644,9 @@ class AdminExamSheetsView(APIView):
         exam = exam_admin.load_exam(exam_id)
         if exam is None:
             return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
-        return Response({"sheets": exam_admin.sheet_rows(exam)})
+        # 종류를 함께 준다 — 보정 화면이 문항을 고칠지 점수를 고칠지가 여기서 갈리고,
+        # 장 하나만 봐서는 알 수 없다(보류된 조사 카드는 점수도 비어 있다).
+        return Response({"kind": exam.kind, "sheets": exam_admin.sheet_rows(exam)})
 
     def post(self, request, exam_id):
         exam = exam_admin.load_exam(exam_id)
@@ -652,9 +661,10 @@ class AdminExamSheetsView(APIView):
             question_count = int(request.data.get("question_count"))
         except (TypeError, ValueError):
             question_count = 0
-        # 카드는 20줄이다. 범위 밖을 그냥 넘기면 워커에서 ValueError 로 죽어
-        # 사용자는 "판독 실패" 만 보게 된다 — 고칠 수 있는 입력은 여기서 막는다.
-        if not 1 <= question_count <= card.ANSWER_QUESTIONS:
+        # 모의고사는 지면에 문항이 없다(성적 조사 카드) — 문항 수를 묻지 않는다.
+        # 미니테스트는 카드가 20줄이고, 범위 밖을 그냥 넘기면 워커에서 ValueError
+        # 로 죽어 사용자는 "판독 실패" 만 보게 된다 — 여기서 막는다.
+        if exam.kind != Exam.Kind.MOCK and not 1 <= question_count <= card.ANSWER_QUESTIONS:
             return Response(
                 {"detail": f"문항 수를 1~{card.ANSWER_QUESTIONS} 사이로 지정해 주세요."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -689,9 +699,9 @@ class AdminSheetView(APIView):
     """GET/PATCH /api/admin/sheets/{sheet_id} — 보정 화면 한 장.
 
     PATCH 본문은 손댄 것만 보낸다: `student_id`(장의 주인 확정 — null 이면
-    해제), `answers`({문항번호: "3"} — 무응답은 ""), `confirm`(값은 그대로 두고
-    기계 판독을 승인). 셋 다 없으면 400 — 빈 PATCH 로 보정 잠금이 걸리면
-    조교가 안 본 장이 확인된 장으로 둔갑한다.
+    해제), `answers`({문항번호: "3"} — 무응답은 ""), `score`(모의고사 자기보고
+    점수), `confirm`(값은 그대로 두고 기계 판독을 승인). 전부 없으면 400 —
+    빈 PATCH 로 보정 잠금이 걸리면 조교가 안 본 장이 확인된 장으로 둔갑한다.
     """
 
     permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
@@ -713,12 +723,23 @@ class AdminSheetView(APIView):
             student, error = _load_student(data["student_id"])
         else:
             student = omr_store.UNSET
-        if error is None and student is omr_store.UNSET and not answers and not confirm:
+        score = omr_store.UNSET
+        if error is None and "score" in data:
+            score, error = _validate_score(data["score"])
+        if (
+            error is None
+            and student is omr_store.UNSET
+            and score is omr_store.UNSET
+            and not answers
+            and not confirm
+        ):
             error = "고칠 내용을 지정해 주세요."
         if error is not None:
             return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            omr_store.correct_sheet(sheet, student=student, answers=answers, confirm=confirm)
+            omr_store.correct_sheet(
+                sheet, student=student, answers=answers, score=score, confirm=confirm
+            )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(exam_admin.sheet_detail(self._load(sheet_id)))
@@ -756,6 +777,23 @@ def _load_student(raw):
     if student is None:
         return None, "그 학생을 찾을 수 없습니다."
     return student, None
+
+
+def _validate_score(raw):
+    """PATCH 의 score → (점수|None, 에러). null 은 '점수 지움'이다.
+
+    조사 카드가 표현할 수 있는 범위는 0~59 다(10의 자리 1~5 + 1의 자리 0~9).
+    그 밖의 수는 지면에서 온 값일 수 없으므로 조교의 오타다.
+    """
+    if raw in (None, ""):
+        return None, None
+    try:
+        score = int(raw)
+    except (TypeError, ValueError):
+        return None, "점수는 숫자로 입력하세요."
+    if not 0 <= score <= 59:
+        return None, "점수는 0~59 사이입니다."
+    return score, None
 
 
 def _validate_marks(raw):

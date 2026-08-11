@@ -185,8 +185,18 @@ class Exam(models.Model):
     성적 요약). avg_score 는 클리닉 대상 판정(평균미달)에서 재사용.
     """
 
+    class Kind(models.TextChoices):
+        # 우리가 낸 문제 — OMR 답안 카드가 들어오고 우리가 채점한다.
+        MINI = "미니테스트", "미니테스트"
+        # 학교·평가원에서 보고 점수만 적어 온다 — 지면이 `성적 조사 카드`고
+        # 문항이 없다(자기보고). 무엇을 읽을지가 여기서 갈린다(omr_ingest).
+        MOCK = "모의고사", "모의고사"
+
     exam_id = models.BigAutoField(primary_key=True)
     name = models.CharField("시험명", max_length=100)
+    kind = models.CharField(
+        "시험 종류", max_length=20, choices=Kind.choices, default=Kind.MINI
+    )
     exam_date = models.DateField("시험일")
     round_no = models.SmallIntegerField("회차 번호", null=True, blank=True)
     target_grade = models.SmallIntegerField("대상 학년", null=True, blank=True)
@@ -323,6 +333,12 @@ class AnswerSheet(models.Model):
         "인식된 대조키", max_length=30, null=True, blank=True
     )
     recognized_name = models.CharField("인식된 이름", max_length=50, null=True, blank=True)  # noqa: DJ001
+    recognized_score = models.SmallIntegerField(
+        # 모의고사(자기보고) 전용 — 조사 카드에는 문항이 없고 점수 두 자리뿐이라
+        # sheet_answers 에 담을 데가 없다. 학생이 안 붙은 장에도 판독을 남겨야
+        # 조교가 보정 화면에서 지면과 대조할 수 있다(recognized_name 과 같은 축).
+        "인식된 점수", null=True, blank=True
+    )
     match_status = models.CharField("대조 상태", max_length=20, choices=MatchStatus.choices)
     is_corrected = models.BooleanField("수동 보정 완료", default=False)
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)

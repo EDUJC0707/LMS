@@ -105,6 +105,7 @@ class ExamAdminListTests(ExamAdminFixtureMixin, TestCase):
             {
                 "exam_id": self.exam3.pk,
                 "name": "오메가블랙 3회",
+                "kind": "미니테스트",
                 "exam_date": "2026-07-15",
                 "round_no": 3,
                 "target_grade": None,
@@ -158,6 +159,7 @@ class ExamAdminDetailTests(ExamAdminFixtureMixin, TestCase):
             {
                 "exam_id": self.exam2.pk,
                 "name": "오메가블랙 2회",
+                "kind": "미니테스트",
                 "exam_date": "2026-07-08",
                 "round_no": 2,
                 "target_grade": None,

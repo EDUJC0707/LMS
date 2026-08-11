@@ -35,6 +35,7 @@ def build_exam_list():
             {
                 "exam_id": exam.exam_id,
                 "name": exam.name,
+                "kind": exam.kind,
                 "exam_date": exam.exam_date.isoformat(),
                 "round_no": exam.round_no,
                 "target_grade": exam.target_grade,
@@ -64,6 +65,7 @@ def build_exam_detail(exam):
         "exam": {
             "exam_id": exam.exam_id,
             "name": exam.name,
+            "kind": exam.kind,
             "exam_date": exam.exam_date.isoformat(),
             "round_no": exam.round_no,
             "target_grade": exam.target_grade,
@@ -199,10 +201,18 @@ def _question_stat_rows(exam):
 # --- 시험 만들기 · 정답 키 입력 (PRD 3.1.1 문항 정보 입력) -------------------
 
 
-def create_exam(name, exam_date, round_no=None, target_grade=None):
-    """시험 한 건. 문항은 따로 넣는다 — 시험을 먼저 만들고 키는 나중에 채운다."""
+def create_exam(name, exam_date, round_no=None, target_grade=None, kind=None):
+    """시험 한 건. 문항은 따로 넣는다 — 시험을 먼저 만들고 키는 나중에 채운다.
+
+    kind 는 **어느 카드가 들어오는지**를 정한다(omr_ingest) — 모의고사는
+    문항 없이 자기보고 점수만 오므로 정답 키를 채울 일이 없다.
+    """
     return Exam.objects.create(
-        name=name, exam_date=exam_date, round_no=round_no, target_grade=target_grade
+        name=name,
+        exam_date=exam_date,
+        round_no=round_no,
+        target_grade=target_grade,
+        kind=kind or Exam.Kind.MINI,
     )
 
 
@@ -270,6 +280,9 @@ def sheet_detail(sheet):
 
     판독이 없는 문항도 줄을 내놓는다: 보류된 장은 행이 하나도 없고, 그때야말로
     사람이 손으로 채워 넣어야 하는 자리다.
+
+    모의고사 장은 문항이 없어 questions 가 빈 목록이다 — 고칠 것은
+    `recognized_score` 한 칸뿐이고, 화면은 그 차이로 갈린다.
     """
     marks = {row.question_id: row for row in sheet.answers.all()}
     questions = []
@@ -300,6 +313,8 @@ def _sheet_row(sheet):
         "is_corrected": sheet.is_corrected,
         "recognized_name": sheet.recognized_name,
         "recognized_matching_key": sheet.recognized_matching_key,
+        # 모의고사(자기보고) 전용. 미니테스트 장에서는 언제나 null 이다.
+        "recognized_score": sheet.recognized_score,
         # 명부와 같은 행 모양으로 낸다 — 보정 화면의 학생 선택기가 명부 API 로
         # 고르는 값과 같아야 "이미 붙은 학생"과 "지금 고른 학생"이 한 자리에 선다.
         "student": None if sheet.student is None else student_directory.row(sheet.student),
