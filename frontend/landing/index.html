@@ -27,6 +27,39 @@
     location.replace("https://lms.hjcedu.com");
   }
 </script>
+<script>
+  /* 뷰포트 높이를 얼린다(WebKit 255852 우회 — 위 --vhu 주석 참조).
+     resize 는 듣지 않는다 — 들으면 dvh 와 같아져 튐이 돌아온다.
+
+     **innerHeight 를 쓰지 않는다.** <head> 시점에는 아직 확정 전일 수 있어서
+     엉뚱한 값이 잡힌다(실측: 실제 844 인데 head 에서 2121 이 읽혔다. 그대로 얼리면
+     히어로가 2121px 이 된다). 실제 요소로 100svh 를 재면 레이아웃 엔진이 답하므로
+     그 위험이 없다.
+
+     DOMContentLoaded 에서 한 번 더 잰다 — head 측정이 틀렸을 때의 보정이고,
+     맞았으면 같은 값이라 아무 일도 안 일어난다. 그 뒤로는 회전에만 반응한다. */
+  const measureVh = () => {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:fixed;top:0;left:0;width:0;height:100svh;visibility:hidden';
+    document.documentElement.append(d);
+    const h = d.getBoundingClientRect().height;
+    d.remove();
+    return h;
+  };
+  const freezeVh = () => {
+    const h = measureVh();
+    if (h > 0) document.documentElement.style.setProperty('--vhu', h / 100 + 'px');
+  };
+  /* **터치 기기에서만 얼린다.** 데스크탑에는 접히는 주소창이 없어 이 문제가 없고,
+     거기서 얼리면 브라우저 창을 늘렸을 때 레이아웃이 안 따라온다 — 없는 병을 고치려다
+     멀쩡한 것을 망가뜨리는 쪽이다. 데스크탑은 --vhu 가 1svh 인 채로 살아 있어
+     오늘과 한 픽셀도 다르지 않다. */
+  if (matchMedia('(hover: none) and (pointer: coarse)').matches) {
+    freezeVh();
+    addEventListener('DOMContentLoaded', freezeVh, { once: true });
+    addEventListener('orientationchange', () => setTimeout(freezeVh, 250));
+  }
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>한종철 통합과학</title>
 <meta name="description" content="통합과학도 철두철미하게. 한종철 통합과학.">
@@ -91,6 +124,14 @@
     /* viewport-fit=cover 라 레이아웃 뷰포트가 상태바 밑까지 뻗는데 nav 는 top:0 이다.
        노치 폰(inset-top 59)에서 브랜드·로그인이 다이내믹 아일랜드에 100% 가린다. */
     --nav:calc(72px + env(safe-area-inset-top));
+    /* 뷰포트 높이 1% 를 하나로 모은 값. **아래 <script> 가 로드 때 한 번 재서 덮는다.**
+       카카오·인스타 인앱 웹뷰는 호스트 앱이 setMinimumViewportInset 을 안 부르면
+       svh·lvh·dvh 가 전부 현재 높이로 함께 움직인다(WebKit 255852, 미해결) — 그래서
+       스크롤로 툴바가 접힐 때마다 히어로와 섹션이 통째로 밀린다(대표 실기기 확인).
+       CSS 단위로는 못 막으므로 JS 로 얼린다. **resize 에는 일부러 반응하지 않는다** —
+       반응시키는 순간 dvh 와 같아져 튐이 돌아온다. 회전만 따로 다시 잰다.
+       여기 1svh 는 스크립트가 안 돌 때의 폴백이다. */
+    --vhu:1svh;
   }
   *{ box-sizing:border-box; margin:0 }
   /* nav 가 fixed 라 앵커로 들어오면 대상이 그 아래로 들어간다(#errata 진입 시
@@ -145,7 +186,7 @@
 
   /* ── 히어로 ────────────────────────────────────────────── */
   .hero{
-    position:relative; min-height:100svh; padding:var(--nav) var(--pad) 0;
+    position:relative; min-height:calc(100 * var(--vhu)); padding:var(--nav) var(--pad) 0;
     display:grid; grid-template-columns:1fr 1fr; align-items:center;
     overflow:hidden;
   }
@@ -209,21 +250,21 @@
      껍데기만 걷어낸다 — display:contents 여도 img 의 절대배치 기준은 .hero 그대로다. */
   .hero > picture{ display:contents }
   .teacher{
-    /* 확정: 80svh · 상한 820px · 오른쪽 5% · 바닥 0%
+    /* 확정: calc(80 * var(--vhu)) · 상한 820px · 오른쪽 5% · 바닥 0%
        (2026-07-28 확정 → 08-04 사진을 갈아 끼우고 재확인).
 
        사진을 바꿀 때 **높이 숫자가 아니라 화면에서 보이는 크기를 맞춘다.** 새 사진은
        프레임이 좁아(머리폭이 프레임의 39.1%, 예전은 39.5%) 같은 높이에서 머리가
-       예전의 85.5% 로 작아진다. 예전과 똑같이 맞추면 94svh 가 나오는데 실제로 보니
+       예전의 85.5% 로 작아진다. 예전과 똑같이 맞추면 calc(94 * var(--vhu)) 가 나오는데 실제로 보니
        커서, 80 을 그대로 쓰기로 했다 — 맞춰야 할 기준선이 아니라 출발점이었다.
 
        **투명 여백은 반드시 잘라내고 넣는다.** 원본처럼 인물이 프레임의 65% 만
-       차지하면 80svh 가 빈 공간까지 재서 인물이 52svh 로 나온다.
+       차지하면 calc(80 * var(--vhu)) 가 빈 공간까지 재서 인물이 calc(52 * var(--vhu)) 로 나온다.
 
        이 값은 debug.js 의 TEACHER0 에도 복제돼 있다 — 함께 고쳐야 패널을 여는 순간
        화면이 튀지 않는다. */
     position:absolute; right:var(--teacher-right, 5%); bottom:var(--teacher-bottom, 0%); z-index:1;
-    height:min(var(--teacher-h, 80svh), 820px); width:auto;
+    height:min(var(--teacher-h, calc(80 * var(--vhu))), 820px); width:auto;
     object-fit:contain; object-position:bottom right;
     pointer-events:none; user-select:none;
     opacity:1;
@@ -239,8 +280,8 @@
         (WebKit 255852, 2023-05 접수 후 미해결).
      즉 CSS 단위로는 못 고친다. 바꿔 봐야 모바일 여백만 10~12% 줄어든다.
      실제 원인은 캔버스 쪽이었다 — mountNavDust 의 resize 가드를 보라. */
-  section{ padding:clamp(80px,13vh,180px) var(--pad) }
-  .sec-head{ max-width:52rem; margin:0 auto clamp(32px,5vh,56px) }
+  section{ padding:clamp(80px,calc(13 * var(--vhu)),180px) var(--pad) }
+  .sec-head{ max-width:52rem; margin:0 auto clamp(32px,calc(5 * var(--vhu)),56px) }
   .sec-head h2{
     font-weight:900; font-size:clamp(2rem,4.2vw,3.2rem);
     letter-spacing:-.04em; line-height:1.05; margin-bottom:.9rem;
@@ -378,7 +419,7 @@
   /* 컨택트 — 검정으로 되돌아온다. 셋 중 혼자 가운데 정렬이라 튀었다: 왼쪽으로 맞췄다.
      세로 180px 패딩에 h2 하나 + 버튼 하나뿐이라 미완성으로 읽혀서
      footer 와 한 덩어리로 묶었다(아래 여백을 걷고 구분선으로 잇는다). */
-  #contact{ background:#000; padding-bottom:clamp(34px,4.5vh,56px) }
+  #contact{ background:#000; padding-bottom:clamp(34px,calc(4.5 * var(--vhu)),56px) }
   #contact .sec-head{ margin-bottom:1.6rem }
   .ch{
     display:inline-block; padding:.85rem 1.8rem; border-radius:999px;
@@ -386,7 +427,7 @@
     border:0; cursor:pointer; font-family:inherit;
   }
   footer{
-    padding:clamp(20px,2.6vh,30px) var(--pad) clamp(40px,5.5vh,64px); background:#000;
+    padding:clamp(20px,calc(2.6 * var(--vhu)),30px) var(--pad) clamp(40px,calc(5.5 * var(--vhu)),64px); background:#000;
     color:var(--dim); font-size:.8rem; line-height:1.8;
   }
   /* space-between 이 사업자 정보를 오른쪽 끝으로 밀어서 브랜드와 700px 떨어져
@@ -394,7 +435,7 @@
      매달렸다. 위아래로 쌓고 왼쪽에 맞춘다. */
   .foot{
     max-width:52rem; margin:0 auto;
-    padding-top:clamp(22px,3vh,30px); border-top:1px solid var(--line);
+    padding-top:clamp(22px,calc(3 * var(--vhu)),30px); border-top:1px solid var(--line);
     display:flex; flex-direction:column; gap:1.15rem;
   }
   .foot b{ color:var(--fg); font-weight:700; font-size:.86rem; letter-spacing:-.02em }
@@ -434,7 +475,7 @@
        높이의 80% 를 차지해 헤드라인이 뜬 스캔라인에도 그의 몸이 걸리기 때문이다.
        **빈 공간은 원인이 아니라 결과였다** — 강사가 절반으로 줄어서 생긴 자리다.
 
-       뒤의 상수(10svh)가 **헤드라인과 머리 사이 간격**이다. 3.5 일 때 nav 아래 153px /
+       뒤의 상수(calc(10 * var(--vhu)))가 **헤드라인과 머리 사이 간격**이다. 3.5 일 때 nav 아래 153px /
        머리 위 30px 로 5:1 이었다 — 위가 비고 아래가 붙었다. 헤드라인이 둘 사이에 있어서
        이 수 하나가 두 간격을 맞바꾼다. 10 에서 98/85 로 거의 균형이다.
        더 키우면 아래가 위보다 넓어지는데, 무거운 쪽(인물)이 글에 더 붙는 그림이라
@@ -447,7 +488,7 @@
     .hero{
       grid-template-columns:1fr;
       align-content:center;
-      padding-bottom:calc(var(--teacher-h-sm, 58svh) + var(--hero-gap, 0svh));
+      padding-bottom:calc(var(--teacher-h-sm, calc(58 * var(--vhu))) + var(--hero-gap, calc(0 * var(--vhu))));
     }
     .copy{ max-width:none }
     /* clamp 하한 2.1rem 이 634px 밑에서 그대로 걸려(2.1rem ÷ 5.3vw = 634px)
@@ -468,12 +509,12 @@
        안 일어난다(2026-08-06 에 두 번 그렇게 놓쳤다). 10%+5% 를 vw 에 건다:
        11.7 × 1.155 = 13.51vw → 390px 에서 52.7px. */
     h1{ font-size:min(13.51vw, 4.4rem) }   /* 391~599 도 vw 가 계속 이긴다 */
-    /* 40svh 는 데스크탑(80svh)의 절반이라 머리폭이 83px — 데스크탑 157px 의 53% 였다.
+    /* calc(40 * var(--vhu)) 는 데스크탑(calc(80 * var(--vhu)))의 절반이라 머리폭이 83px — 데스크탑 157px 의 53% 였다.
        오른쪽 -12% 는 46.8px 을 잘랐는데, PNG 알파를 훑어 보면 팔짱 낀 팔꿈치가
        인물 폭의 **99.71%** 까지 나간다(알파 전수 스캔, 임계 8). 파일이 실루엣에 딱 붙게
        잘려 있어서 -3% 도 이미 살짝 자른다 —
        고른 값이 아니라 사진에서 나온 값이다. */
-    .teacher{ height:var(--teacher-h-sm, 58svh); right:var(--teacher-right-sm, -3%); bottom:var(--teacher-bottom-sm, 0%) }
+    .teacher{ height:var(--teacher-h-sm, calc(58 * var(--vhu))); right:var(--teacher-right-sm, -3%); bottom:var(--teacher-bottom-sm, 0%) }
     .steps::before{ display:none }
     .step{ grid-template-columns:1fr; gap:.55rem; padding-bottom:2rem }
     /* 좁은 화면에서는 뒤 두 열이 고정폭을 그대로 붙들어 교재가 110px 만 받고
@@ -486,9 +527,9 @@
     /* 세로 패딩이 vh 기반이라 화면이 좁아질수록 글 단 대비 비율이 벌어진다 —
        섹션 사이가 219px 로 데스크탑(208px)보다 넓은데 글 단은 350px 로
        데스크탑 832px 의 42% 다. 좁은 화면에서는 여백도 같이 줄인다. */
-    section{ padding:clamp(56px,9vh,110px) var(--pad) }
+    section{ padding:clamp(56px,calc(9 * var(--vhu)),110px) var(--pad) }
     /* 문의는 h2 하나 + 버튼 하나뿐인데 위가 110px, 아래가 38px 로 2.89:1 이었다 */
-    #contact{ padding-top:clamp(44px,7vh,84px) }
+    #contact{ padding-top:clamp(44px,calc(7 * var(--vhu)),84px) }
     /* 레일을 숨겼으므로 노드 점과 그 자리(padding-left)도 같이 걷는다 —
        안 걷으면 번호만 22.4px 안으로 밀려 제목·본문과 왼쪽 끝이 어긋나고
        점은 잇는 선 없는 불릿으로 혼자 남는다. */
@@ -523,14 +564,14 @@
      헤드라인이 칸의 38% 밖에 안 차고 가운데가 242px 비었다. 둘 다 키운다. */
   @media (min-width:600px) and (max-width:860px) and (min-height:600px){
     /* 변수를 바꾼다 — .teacher{height} 만 덮으면 .hero 의 padding-bottom 이
-       58svh 폴백을 계속 읽어 헤드라인이 강사 위로 겹친다. 둘이 같은 값을 봐야 한다.
+       calc(58 * var(--vhu)) 폴백을 계속 읽어 헤드라인이 강사 위로 겹친다. 둘이 같은 값을 봐야 한다.
        디버그 패널은 :root 에 인라인으로 써서 여전히 이걸 이긴다. */
-    /* 70svh + nav + 헤드라인이 화면보다 커지면(높이 756px 미만) 남는 자리가 0 이 돼
+    /* calc(70 * var(--vhu)) + nav + 헤드라인이 화면보다 커지면(높이 756px 미만) 남는 자리가 0 이 돼
        가운데 정렬이 무력해지고 강사 발밑이 잘린다. 남는 자리로 상한을 건다. */
-    :root{ --teacher-h-sm:min(70svh, calc(100svh - 260px)) }
+    :root{ --teacher-h-sm:min(calc(70 * var(--vhu)), calc(calc(100 * var(--vhu)) - 260px)) }
     /* rem 상한이 구간 전체를 이겨 600~860 이 통째로 70.4px 로 언다.
        폭은 vw 가, 높이는 실제로 남는 띠가 정하게 한다. 2.56 = h1 높이(2.2em) ÷ 띠의 86%. */
-    h1{ font-size:min(12vw, calc((100svh - var(--nav) - var(--teacher-h-sm,70svh)) / 2.56)) }
+    h1{ font-size:min(12vw, calc((calc(100 * var(--vhu)) - var(--nav) - var(--teacher-h-sm,calc(70 * var(--vhu)))) / 2.56)) }
   }
 
   /* 아이패드 프로 세로(861~1024). 폭이 860 을 넘어 데스크탑 2열을 그대로 받는데
@@ -539,12 +580,12 @@
      상한에 걸려 화면 60% 에서 멈춰 있었다. 위 태블릿 블록과 같은 배치를 준다.
      **문은 orientation:portrait 다** — 확정된 데스크탑(가로)은 절대 안 탄다. */
   @media (min-width:861px) and (max-width:1024px) and (orientation: portrait){
-    :root{ --teacher-h-sm:min(70svh, calc(100svh - 260px)) }
+    :root{ --teacher-h-sm:min(calc(70 * var(--vhu)), calc(calc(100 * var(--vhu)) - 260px)) }
     .hero{
       grid-template-columns:1fr; align-content:center;
-      padding-bottom:calc(var(--teacher-h-sm) + var(--hero-gap, 0svh));
+      padding-bottom:calc(var(--teacher-h-sm) + var(--hero-gap, calc(0 * var(--vhu))));
     }
-    h1{ font-size:min(12vw, calc((100svh - var(--nav) - var(--teacher-h-sm,70svh)) / 2.56)) }
+    h1{ font-size:min(12vw, calc((calc(100 * var(--vhu)) - var(--nav) - var(--teacher-h-sm,calc(70 * var(--vhu)))) / 2.56)) }
     /* 상한 820px 을 벗기고 svh 로 되돌린다 — 벗기지 않으면 강사만 데스크탑 값에
        남아 헤드라인 자리(padding-bottom)와 어긋난다. */
     .teacher{ height:var(--teacher-h-sm); right:var(--teacher-right-sm, -3%); bottom:var(--teacher-bottom-sm, 0%) }
@@ -565,17 +606,17 @@
   }
 
 
-  /* 가로로 눕힌 폰. 64svh 짜리 강사 위에 헤드라인을 얹으면 nav 를 뚫는다
+  /* 가로로 눕힌 폰. calc(64 * var(--vhu)) 짜리 강사 위에 헤드라인을 얹으면 nav 를 뚫는다
      (740x360 에서 헤드라인 top 32.6px < --nav 72px). */
   @media (max-width:860px) and (max-height:599px) and (orientation: landscape){
-    .hero{ align-content:center; padding-bottom:32svh }
+    .hero{ align-content:center; padding-bottom:calc(32 * var(--vhu)) }
     /* 폰 상한(4.4rem)이 여기까지 올라오면 360px 높이에 70px 글자가 얹혀 위가 9px 남는다 */
     h1{ font-size:min(13.51vw, 3rem) }
     /* **-12% 를 되살리면 안 된다.** right 는 뷰포트 폭의 %인데 이미지는 높이로 재므로,
        넓고 낮은 화면에서 -12% 가 이미지 폭보다 커진다 — 800x360 에서 이미지 폭 91px 에
        밀어내는 양 96px 라 **가시폭 0px**, 강사가 통째로 화면 밖으로 나간다.
        가로에서는 인물이 이미 작으니 블리드 자체가 필요 없다. */
-    .teacher{ height:46svh; right:2% }
+    .teacher{ height:calc(46 * var(--vhu)); right:2% }
     /* 16px 램프는 세로에서 정한 값이다. 가로는 화면이 낮아 창이 nav 밑까지 올라오고,
        램프가 짧으면 우주가 nav 아랫변에서 잘려 화면을 가로지르는 밝은 띠가 된다
        (568x320 에서 y56 1.2 → y72 45.5, 2.65휘도/px). 40px 로 늘리면 0.71/px 다.
