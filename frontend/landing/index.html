@@ -31,11 +31,23 @@
   /* 뷰포트 높이를 얼린다(WebKit 255852 우회 — 위 --vhu 주석 참조).
      resize 는 듣지 않는다 — 들으면 dvh 와 같아져 튐이 돌아온다.
 
-     **<head> 에서는 재지 않는다**(2026-08-12, 두 번 데어 보고 정한 것).
-     body 가 아직 없어서 초기 컨테이닝 블록이 확정되지 않았고, 그 시점의 100svh 는
-     innerHeight 든 실제 요소든 똑같이 엉뚱한 값을 준다 — 844 짜리 화면에서 2120 이
-     나온다(실측 2026-08-12, 배포본). 그대로 얼리면 --vhu 가 21.2px 이 되어 강사가
-     1230px, 히어로가 2120px 이 된다.
+     **<meta name=viewport> 위에서는 재지 않는다**(2026-08-12 사고 → 같은 날 원인 정정).
+     이 스크립트는 viewport meta 보다 위에 있다. 그 위에서는 브라우저가 아직 980px
+     폴백 뷰포트를 쓰고 있어서 844 짜리 화면에서 100svh 가 2120 으로 나온다
+     (844 × 980/390 = 2120.7). 그대로 얼리면 --vhu 가 21.2px 이 되어 강사가 1230px,
+     히어로가 2120px 이 된다 — 배포까지 나간 사고다.
+
+     실측(390x844 dpr3, 같은 measureVh 본문):
+
+       재는 위치            100svh   innerHeight   clientWidth
+       meta 위               2120       2121           980
+       meta 아래              844        844           390
+       body 열림              844        844           390
+       DOMContentLoaded       844        844           390
+
+     **경계는 meta 태그다. body 유무는 무관하다.** 처음엔 "body 가 없어 초기 컨테이닝
+     블록이 확정되지 않아서" 라고 적었는데 틀린 진단이었고, 그 틀린 제약이 그대로
+     남아 다음 수정안을 한 번 더 망칠 뻔했다.
 
      한때 head 에서 재고 DOMContentLoaded 에서 보정했는데, 그러면 값이 두 번 바뀌면서
      열자마자 화면이 한 번 튄다. 그 튐을 없애겠다고 **보정 쪽을** 뺐던 것이 위의 사고다.
@@ -69,6 +81,62 @@
   }
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script>
+  /* 뷰포트 계측기. `?vh` 가 붙었을 때만 돈다. 확인이 끝나면 이 블록을 지운다.
+     카카오·인스타 인앱 브라우저에는 주소창이 없어 javascript: 를 못 넣는다. 그래서
+     페이지 안에 둔다.
+
+     **자리가 둘 다 중요하다.** viewport meta 아래여야 하고(위에서 재면 980px 폴백
+     뷰포트가 잡혀 844 화면에서 100svh 가 2120 으로 나온다), 문서 끝이 아니라 여기여야
+     한다(끝에 두면 히어로가 이미 그려진 뒤부터 기록이 시작돼 정작 봐야 할 창인
+     첫 페인트~DCL 을 통째로 놓친다 — 옛 계측기가 그랬다).
+
+     **왜 --vhu 를 찍나.** 선생님 위치는 `teacher.top = 42 × --vhu` 로 --vhu 하나에만
+     걸려 있다(실측: 42 × 8.44 = 354.48, 실제 354.484375). --vhu 가 1px 어긋나면
+     선생님이 42px 움직인다. h1 은 절반인 21× 라, 같은 움직임이 선생님에게서 두 배로 보인다.
+
+     보는 법: 카톡에서 https://hjcedu.com/?vh 를 열고 **스크롤하지 말고** 3초 뒤 캡처.
+       sv 움직임 @시각이 DCL 보다 앞  → 열리는 동안 웹뷰가 커졌다. 이게 그 버그다
+       sv 움직임 @시각이 DCL 보다 뒤  → --vhu 가 틀린 값으로 얼었다(튐 없이 계속 어긋남)
+       sv 가 한 값                    → 뷰포트는 안 움직인다. --vhu 가설은 죽는다
+       sat 이 0 이 아니고 움직임      → WebKit 191872. h1 만 29.5px 밀리고 선생님은 0px */
+  if (location.search.includes('vh')) {
+    const probe = h => {
+      const d = document.createElement('div');
+      d.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:' + h;
+      document.documentElement.append(d);
+      const v = d.getBoundingClientRect().height; d.remove();
+      return Math.round(v);
+    };
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;left:8px;top:8px;z-index:9999;background:#000C;' +
+      'color:#0f0;font:12px/1.5 ui-monospace,monospace;padding:8px 10px;border-radius:6px;' +
+      'white-space:pre;pointer-events:none';
+    const min = {}, max = {}, at = {}, n = {}, prev = {}, marks = [];
+    const mark = s => marks.push(s + ' ' + Math.round(performance.now()));
+    addEventListener('DOMContentLoaded', () => { mark('DCL'); document.body.append(box); });
+    addEventListener('load', () => mark('load'));
+    const tick = () => {
+      const t = Math.round(performance.now());
+      const v = { sv: probe('100svh'), lv: probe('100lvh'), dv: probe('100dvh'),
+                  inner: innerHeight, sat: probe('env(safe-area-inset-top)') };
+      for (const k in v) {
+        if (prev[k] === undefined) { min[k] = max[k] = v[k]; n[k] = 0; at[k] = 0; }
+        else if (v[k] !== prev[k] && !n[k]++) at[k] = t;
+        prev[k] = v[k];
+        min[k] = Math.min(min[k], v[k]); max[k] = Math.max(max[k], v[k]);
+      }
+      box.textContent = Object.keys(v)
+        .map(k => `${k.padEnd(5)} ${String(v[k]).padStart(4)}  ${min[k]}~${max[k]}` +
+                  (n[k] ? `  움직임 ${n[k]}회 @${at[k]}ms` : ''))
+        .join('\n')
+        + `\nvhu   ${getComputedStyle(document.documentElement).getPropertyValue('--vhu').trim()}`
+        + `\n${marks.join('  ')}  t=${t}`;
+      requestAnimationFrame(tick);
+    };
+    tick();
+  }
+</script>
 <title>한종철 통합과학</title>
 <meta name="description" content="통합과학도 철두철미하게. 한종철 통합과학.">
 <link rel="canonical" href="https://hjcedu.com/">
@@ -824,45 +892,6 @@
     </dl>
   </div>
 </footer>
-
-<!-- 뷰포트 계측기. `?vh` 를 붙였을 때만 뜬다 — 그 외에는 코드가 돌지도 않는다.
-     카카오·인스타 인앱 브라우저에는 주소창이 없어 javascript: 를 못 넣는다.
-     그래서 페이지 안에 둔다. 확인이 끝나면 이 블록을 지운다.
-
-     보는 법: 카톡으로 https://hjcedu.com/?vh 를 열고 **스크롤해서 주소창을 접는다.**
-       sv 가 변하면  → WebKit 255852 에 우리도 걸린 것. --vh0 고정 방식으로 간다
-       sv 가 그대로면 → 애초에 문제가 없다. 손댈 필요 없다
-     (준수 브라우저에서는 sv < lv 이고 스크롤해도 둘 다 안 변하는 것이 정상이다) -->
-<script>
-if (location.search.includes('vh')) {
-  const box = document.createElement('div');
-  box.style.cssText = 'position:fixed;left:8px;top:8px;z-index:9999;background:#000C;' +
-    'color:#0f0;font:12px/1.5 ui-monospace,monospace;padding:8px 10px;border-radius:6px;' +
-    'white-space:pre;pointer-events:none';
-  document.addEventListener('DOMContentLoaded', () => document.body.append(box));
-  const px = u => {
-    const d = document.createElement('div');
-    d.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:100' + u;
-    document.documentElement.append(d);
-    const h = d.getBoundingClientRect().height; d.remove();
-    return Math.round(h);
-  };
-  let min = {}, max = {};
-  const tick = () => {
-    const v = { sv: px('svh'), lv: px('lvh'), dv: px('dvh'), inner: innerHeight };
-    for (const k in v) {
-      min[k] = Math.min(min[k] ?? v[k], v[k]);
-      max[k] = Math.max(max[k] ?? v[k], v[k]);
-    }
-    box.textContent = Object.keys(v)
-      .map(k => `${k.padEnd(5)} ${String(v[k]).padStart(4)}   ${min[k]}~${max[k]}` +
-                (min[k] !== max[k] ? '  움직임' : ''))
-      .join('\n') + `\n\nsv 가 움직이면 → JS 고정 필요`;
-    requestAnimationFrame(tick);
-  };
-  tick();
-}
-</script>
 
 <script type="module">
 import { SPACE, CURRICULUM, ERRATA } from './data.js';
