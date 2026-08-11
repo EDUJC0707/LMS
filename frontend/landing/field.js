@@ -45,8 +45,15 @@ const CFG = {
      따로 만들면 둘이 미묘하게 어긋나 "왜 여기는 걷혔는데 안 보이지" 가 된다. */
   spaceDim: 1.0,     // 창 한복판에서의 불투명도. 확정(2026-07-29)
   spaceWin: 3.5,     // 드러나는 반경 = R × 이 값. 확정(2026-07-29) — 315px.
+  spaceWinSm: 4.4,   // 커서 없는 기기에서만. 3.5 의 +25%(2026-08-11 대표 지시).
+                     // 데스크탑 확정값은 안 건드린다 — 거기서는 커서가 창을 쥐고 있어
+                     // "지나간 자리" 가 넓어지면 걷은 자국이 뭉개진다. 자율 배회는
+                     // 스스로 도는 것이라 조금 넓어야 화면이 열린 느낌이 난다
                      // 곡선 전체가 이 안으로 압축된다(자르는 게 아니다)
   wake: 0.6,         // 초당 여는 양. 0.6 = 만개까지 1.7초. 3.0(0.33초)은 "번쩍" 이었다
+  drift: 3.0,       // 자율 배회 속도 배수(커서 없는 기기 전용). 1 이면 좌우 57초·
+                     // 상하 37초 한 바퀴. 주기가 비배수라 경로가 눈에 안 띄게 반복된다 —
+                     // 이 값을 바꿔도 그 성질은 유지된다(네 항에 같은 배수를 곱하므로)
   spaceZoom: 1.0,    // cover 배율에 곱한다. **사진마다 다르다** — data.js SPACE 의
                      // zoom 이 원본이고, 배경을 갈아 끼울 때 여기로 들어온다
 
@@ -359,8 +366,14 @@ export function mountField(root, units) {
     if (COARSE) { FINE = false; woke = true; }
   }, { passive: true });
   addEventListener('scroll', () => {
-    scrollP = clamp01(scrollY / innerHeight);
-    woke = true;                            // 터치가 화면을 만졌다는 신호
+    /* 주소창이 접히면 innerHeight 가 바뀌어 같은 스크롤 위치에서 값이 흔들린다.
+       히어로 높이(100svh)는 그 사이 고정이므로 그걸 분모로 쓴다. */
+    scrollP = clamp01(scrollY / (root.getBoundingClientRect().height || innerHeight));
+    /* **여기서 woke 를 켜지 않는다**(2026-08-11 대표 지시 "desktop 은 돌면 안 돼").
+       터치 신호로 넣었던 줄인데, 이제 COARSE 가 마운트에서 이미 켜 주므로 터치에는
+       필요가 없다. 반대로 데스크탑에서는 마우스를 안 움직이고 스크롤부터 한 사람에게
+       자율 배회가 돌아 버린다 — "커서가 거기 있지도 않은데 우주가 열려 있다",
+       2026-07-29 규칙이 막으려던 바로 그것이다(실측: 스크롤만으로 점등 0 → 124,911). */
   }, { passive: true });
 
   /* ── 렌더 ───────────────────────────────────────────────── */
@@ -383,8 +396,12 @@ export function mountField(root, units) {
       tx = fx; ty = fy;
     } else {
       // 주기가 비배수라 눈이 루프를 못 찾는다
-      tx = .50 + .30 * Math.sin(t * .110) + .07 * Math.sin(t * .041) + .18 * scrollP;
-      ty = .46 + .20 * Math.sin(t * .170 + 1.1) + .06 * Math.sin(t * .067) + .30 * scrollP;
+      /* 배회 속도는 **커서 없는 기기에만** 건다. 데스크탑도 이 분기를 탈 수 있다 —
+         마우스를 안 움직이고 스크롤부터 하면 FINE 이 아직 false 라 여기로 온다.
+         거기서는 확정값 그대로 1배여야 한다(2026-08-11 대표 지시). */
+      const td = t * (COARSE ? CFG.drift : 1);
+      tx = .50 + .30 * Math.sin(td * .110) + .07 * Math.sin(td * .041) + .18 * scrollP;
+      ty = .46 + .20 * Math.sin(td * .170 + 1.1) + .06 * Math.sin(td * .067) + .30 * scrollP;
       /* 커서 없는 기기에서는 CFG.wake 로 **열린다**. 1 로 꽂으면 첫 프레임에
          통째로 켜져 "번쩍" 하는데, 그 감각은 2026-07-29 에 이미 버렸다
          (사용자 원문: "all of a sudden it gets hella bigger so its like bam!").
@@ -420,7 +437,7 @@ export function mountField(root, units) {
          "번쩍" 으로 읽힌다. 40% 에서 시작해 100% 로 벌어지면 "펼쳐진다" 가 된다.
          smoothstep 을 먹여 시작과 끝의 가속을 눕힌다 — 선형이면 끝에서 뚝 선다. */
       const grow = wgt * wgt * (3 - 2 * wgt);
-      const win = CFG.spaceWin * R * (0.4 + 0.6 * grow), pad = 2;
+      const win = (COARSE ? CFG.spaceWinSm : CFG.spaceWin) * R * (0.4 + 0.6 * grow), pad = 2;
       const rect = [SX - win - pad, SY - win - pad, 2 * (win + pad), 2 * (win + pad)];
       if (prevSpaceRect) sctx.clearRect(...prevSpaceRect);
       sctx.clearRect(...rect);
@@ -614,10 +631,13 @@ export function mountNavDust(host) {
   host.prepend(cv);
   const ctx = cv.getContext('2d');
 
+  let lw = -1, lh = -1;
   const draw = () => {
     const r = host.getBoundingClientRect();
     const W = Math.round(r.width), H = Math.round(r.height);
     if (!W || !H) return;
+    lw = W; lh = H;              // 그린 크기를 기록한다. 밖에서만 갱신하면 최초 draw()
+                                 // 가 안 잡혀 첫 resize 가 늘 통과한다(실측으로 걸렸다)
     cv.width = W; cv.height = H;
     cv.style.width = W + 'px';
     cv.style.height = H + 'px';
@@ -634,7 +654,17 @@ export function mountNavDust(host) {
   };
 
   statics.push(draw);
-  addEventListener('resize', draw);
+  /* **크기가 실제로 바뀔 때만 다시 그린다.** draw() 는 매번 Math.random() 으로
+     좌표를 새로 뽑으므로, 크기가 그대로여도 부르면 별이 통째로 갈린다.
+     모바일 주소창이 접히고 펴질 때마다 resize 가 오는데 nav 는 높이가 고정(72px)
+     이라 그림만 흔들렸다 — 대표가 카톡에서 본 튐의 실제 원인이다.
+     히어로에는 같은 가드가 있었고 여기만 없었다(2026-08-11 실측: 크기 불변인데
+     알파 해시 836332039 → 1347149388). */
+  addEventListener('resize', () => {
+    const r = host.getBoundingClientRect();
+    if (Math.abs(r.width - lw) < 1 && Math.abs(r.height - lh) < 1) return;
+    draw();
+  });
   draw();
   return draw;
 }

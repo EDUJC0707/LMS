@@ -9,6 +9,22 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
+<script>
+  /* 로그인한 사람은 랜딩 대신 LMS 로. 표시 쿠키는 서버가 로그인 때 심는다
+     (accounts/views.py SIGNED_IN_COOKIE). 세션 쿠키는 HttpOnly 라 JS 가 못 읽는다.
+     **다른 무엇보다 먼저 둔다** — 스타일·서체가 그려진 뒤에 넘기면 로그인한 사람에게
+     랜딩이 한 번 번쩍인다.
+     첫 화면에서만 넘긴다 — /privacy 같은 곳은 로그인해도 볼 수 있어야 한다.
+     replace 라서 뒤로가기로 랜딩에 갇히지 않는다. */
+  /* 경로: Vercel 이 /index.html 을 308 없이 200 으로 서빙하므로 그것도 받는다 —
+     "/" 만 보면 그 URL 로 온 로그인 사용자는 안 넘어간다(실측).
+     쿠키: includes 는 이름 경계를 안 봐서 x_hjc_signed_in 같은 쿠키에 오탐한다
+     (실측: 그것만 심어도 리다이렉트됨). 경계를 박은 정규식으로 본다. */
+  if (/^\/(index\.html)?$/.test(location.pathname) &&
+      /(?:^|;\s*)hjc_signed_in=/.test(document.cookie)) {
+    location.replace("https://lms.hjcedu.com");
+  }
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>한종철 통합과학</title>
 <meta name="description" content="통합과학도 철두철미하게. 한종철 통합과학.">
@@ -212,6 +228,15 @@
   }
 
   /* ── 아래 섹션 — 색이 바뀐다 ──────────────────────────────── */
+  /* **vh 를 svh 로 바꿔 봤다가 되돌렸다**(2026-08-11). 카톡 인앱에서 스크롤하면
+     화면이 튄다는 제보 때문이었는데, 전제가 틀렸다 —
+     ① 준수 브라우저(iOS Safari·Chrome 108+)에서 `vh` 는 이미 `lvh` 에 고정이라
+        주소창이 접혀도 안 변한다. 움직이는 건 `dvh` 뿐이다.
+     ② 정작 튀는 WKWebView 인앱 브라우저에서는 호스트 앱이 setMinimumViewportInset
+        을 부르지 않는 한 vh·svh·lvh·dvh **넷이 전부 같이** 움직인다
+        (WebKit 255852, 2023-05 접수 후 미해결).
+     즉 CSS 단위로는 못 고친다. 바꿔 봐야 모바일 여백만 10~12% 줄어든다.
+     실제 원인은 캔버스 쪽이었다 — mountNavDust 의 resize 가드를 보라. */
   section{ padding:clamp(80px,13vh,180px) var(--pad) }
   .sec-head{ max-width:52rem; margin:0 auto clamp(32px,5vh,56px) }
   .sec-head h2{
@@ -228,8 +253,11 @@
   /* 커리큘럼 — 밝음 */
   #curriculum .sec-head{ margin-left:0; margin-right:auto }
   #curriculum{
-    background:#F4F2ED; color:#14151C; --dim:#666B7A; --line:rgba(20,21,28,.12);
-    --sec:#F4F2ED;   /* 노드가 레일을 뚫고 앉을 때 쓰는 배경색 */
+    /* 팔레트가 전부 H224 인데 여기만 베이지(#F4F2ED, H43)라 색상환 반대편이었다 —
+       그래서 이 구역만 겉돌았다. 명도(94.3%)는 그대로 두고 색상각만 224 로 옮겼다.
+       대비는 본문 15.8:1 · 보조 4.62:1 로 AA 통과(2026-08-11 확정). */
+    background:#ECEFF5; color:#14151C; --dim:#666B7A; --line:rgba(20,21,28,.12);
+    --sec:#ECEFF5;   /* 노드가 레일을 뚫고 앉을 때 쓰는 배경색 */
   }
   .tracks{ display:flex; gap:8px; margin-bottom:2.4rem; flex-wrap:wrap }
   .track{
@@ -616,7 +644,7 @@
       <a href="#contact">문의하기</a>
     </nav>
   </div>
-  <a class="login" href="/student/login">로그인</a>
+  <a class="login" href="https://lms.hjcedu.com/login">로그인</a>
 </header>
 
 <!-- banner 는 이 배경 칸이 아니라 위 상단바다. <header> 로 두면 body 직계라
@@ -662,7 +690,7 @@
   <div class="wrap">
     <div class="sec-head">
       <h2>커리큘럼</h2>
-      <p>내신과 수능을 같은 개념으로 잡습니다.</p>
+      <p id="cur-lead">내신에서 배운 개념을 수능까지 이어갑니다.</p>
     </div>
 
     <div class="tracks" role="tablist">
@@ -674,12 +702,12 @@
 
     <div class="mock">
       <h3>실전 모의고사</h3>
-      <p>시즌마다 새로 나옵니다.</p>
+      <p>한종철 통합과학 연구소에서 만든 시즌별 실전 모의고사 제공</p>
     </div>
 
     <p class="note">
-      통합과학은 2028학년도가 첫 시행이라 수능 기출이 없습니다.<br>
-      그래서 기출 분석 단계를 두지 않습니다.
+      통합과학 수능은 2028학년도에 처음 시행됩니다.<br>
+      수능 기출은 없지만 교육과정과 공개된 출제 자료를 분석해 예상 문항과 학습 자료를 준비했습니다.
     </p>
   </div>
 </section>
@@ -769,7 +797,7 @@ addEventListener('keydown', async e => {
 /* 커리큘럼 */
 const stepsEl = document.getElementById('steps');
 function renderSteps(track) {
-  stepsEl.innerHTML = CURRICULUM[track].map((s, i) => `
+  stepsEl.innerHTML = CURRICULUM[track].steps.map((s, i) => `
     <div class="step">
       <div class="step-no">${String(i + 1).padStart(2, '0')}</div>
       <div>
@@ -778,6 +806,7 @@ function renderSteps(track) {
       </div>
       ${s.units?.length ? `<div class="scope">${s.units.map(u => `<div>${u}</div>`).join('')}</div>` : '<div></div>'}
     </div>`).join('');
+  document.getElementById('cur-lead').textContent = CURRICULUM[track].lead;
   fitRail();
 }
 /* 노드 중심 = .step-no 위에서 .34rem+.33rem. rem 을 그대로 읽어 재계산한다 */
