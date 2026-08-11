@@ -332,15 +332,16 @@
 - [ ] **`seed_demo` 를 운영에서 다시 돌리지 않는다** — 이 명령은 도메인 테이블을
   **비우고 다시 만든다**. 지금은 빈 DB 라 안전했지만, 진짜 데이터가 들어간 뒤에
   누가 한 번 실행하면 그게 통째로 사라진다. 운영에서 막을 장치는 아직 없다
-- [ ] **운영에서 미디어가 통째로 안 서빙된다**(2026-08-11 확인). 버킷 시크릿이 fly 에
-  0건이라 `AWS_STORAGE_BUCKET_NAME` 이 비어 로컬 파일시스템으로 떨어지는데,
-  `config/urls.py` 는 **`DEBUG` 에서만** `MEDIA_ROOT` 를 연다 — 운영은 `DEBUG=False` 다.
-  즉 올린 파일이 컨테이너 임시 디스크에 저장되고 **아무도 못 받는다**(재배포 때 사라지기도 한다).
-  워크북 사진(PRD 3.1.1)이 이 경로다.
-  - Tigris/S3 를 붙이거나(`AWS_*` 4개), 안 붙일 거면 업로드 기능을 막아야 한다.
-    지금은 **되는 줄 알고 쓰다가 조용히 사라지는** 상태다
-  - `frontend/vercel.json` 에 `/media` rewrite 를 넣지 않은 이유가 이것이다 —
-    404 나는 곳을 가리키는 설정이 되어 문제를 가린다
+- [x] ~~운영에서 미디어가 통째로 안 서빙된다~~ → **2026-08-12 해소. Tigris 버킷
+  `edujc-lms-media` 를 붙였고 운영 컨테이너에서 쓰기·읽기·삭제를 실제로 확인했다.**
+  URL 은 `fly.storage.tigris.dev` 에 **서명이 붙어** 나간다(비공개 버킷) — 주소만 알아도
+  남의 자녀 사진이 열리지 않는다.
+  - **`frontend/vercel.json` 에 `/media` rewrite 는 여전히 필요 없다.** django-storages 가
+    버킷 절대 URL 을 만들고 프런트 `mediaUrl` 이 절대 URL 은 그대로 통과시킨다
+  - 저장소가 선 것이지 **워크북 기능이 끝난 것은 아니다** — 업로드 화면은 OMR 절의
+    "업로드 API + 보정 UI" 에 아직 열려 있다. 실사진으로 끝까지 도는 확인은 그 뒤다
+  - 요금은 사실상 0 이다(학생 1000명·주 1장·연 4커리큘럼 = 연 117GB, 월 $2.24.
+    업로드 월 4,300건은 무료 1만건 안, **egress 0원**)
 - [ ] prod `SECRET_KEY` fail-fast(기본값 제거), whitenoise + collectstatic(현재 /static/ 404)
 - [ ] **구글 미트 시크릿 3개를 운영에 올리기** — 로컬은 `backend/.env` 로 이미 돈다(2026-08-04 실계정 확인).
   `fly secrets set GOOGLE_MEET_CLIENT_ID=... GOOGLE_MEET_CLIENT_SECRET=... GOOGLE_MEET_REFRESH_TOKEN=... -a edujc-lms`
