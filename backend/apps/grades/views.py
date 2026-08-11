@@ -11,8 +11,12 @@
 - GET /api/student/grades/{exam_id}              성적표 상세 (IsStudent)
 - GET /api/parent/grades[?student_id=]           자녀 성적 목록 (IsParent, 읽기 전용)
 - GET /api/parent/grades/{exam_id}[?student_id=] 자녀 성적표 상세 (IsParent)
-- GET /api/admin/exams                           시험 목록 (성적처리)
-- GET /api/admin/exams/{exam_id}                 시험 상세 (성적처리)
+- GET  /api/admin/exams                          시험 목록 (성적처리)
+- POST /api/admin/exams                          시험 만들기 (성적처리)
+- GET  /api/admin/exams/{exam_id}                시험 상세 (성적처리)
+- GET/PUT /api/admin/exams/{exam_id}/questions   정답 키 (성적처리)
+- POST /api/admin/exams/{exam_id}/sheets         스캔 묶음 업로드 → 202 (성적처리)
+- GET  /api/admin/omr-batches/{task_id}          판독 진행 상태 (성적처리)
 
 페이로드 조립은 report(소비자)·exam_admin(관리자) 서비스가 담당 — 뷰는
 역할·기능 키 게이트, 입력 검증, 대상 학생 결정(학부모는 자녀 소유 검증 —
@@ -28,7 +32,10 @@ SSOT 쓰기·트리거·페이로드 조립은 attendance_admin 서비스가 담
 기능 키 게이트·입력 검증·상태 코드 결정만 한다(2차 슬라이스 home 선례).
 """
 import datetime
+import uuid
 
+from celery.result import AsyncResult
+from django.core.files.storage import default_storage
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -39,8 +46,9 @@ from apps.accounts.models import Parent, ParentStudent, Student, User
 from apps.accounts.permissions import FeatureRequired, IsParent, IsStudent
 from apps.videos.models import MakeupGrant
 
-from . import attendance_admin, exam_admin, omr_ingest, report, workbook, workbook_admin
+from . import attendance_admin, exam_admin, report, tasks, workbook, workbook_admin
 from .models import Attendance, ClassSession, WorkbookSubmission
+from .omr import card
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
 _STATUS_VALUES = set(Attendance.Status.values)
@@ -634,13 +642,38 @@ class AdminExamSheetsView(APIView):
         try:
             question_count = int(request.data.get("question_count"))
         except (TypeError, ValueError):
+            question_count = 0
+        # 카드는 20줄이다. 범위 밖을 그냥 넘기면 워커에서 ValueError 로 죽어
+        # 사용자는 "판독 실패" 만 보게 된다 — 고칠 수 있는 입력은 여기서 막는다.
+        if not 1 <= question_count <= card.ANSWER_QUESTIONS:
             return Response(
-                {"detail": "문항 수를 지정해 주세요."}, status=status.HTTP_400_BAD_REQUEST
+                {"detail": f"문항 수를 1~{card.ANSWER_QUESTIONS} 사이로 지정해 주세요."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-        try:
-            return Response(omr_ingest.ingest_pdf(exam, pdf, question_count))
-        except ValueError as error:
-            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+        path = default_storage.save(
+            f"omr-upload/{exam.pk}/{uuid.uuid4().hex}.pdf", pdf
+        )
+        task = tasks.ingest_omr_batch.delay(exam.pk, path, question_count)
+        return Response({"task_id": task.id}, status=status.HTTP_202_ACCEPTED)
+
+
+class AdminOmrBatchView(APIView):
+    """GET /api/admin/omr-batches/{task_id} — 판독 진행 상태.
+
+    상태는 Celery 결과 백엔드(Redis)가 들고 있다 — 진행률 테이블을 따로 두면
+    태스크 결과와 두 벌이 되어 어긋난다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
+
+    def get(self, request, task_id):
+        result = AsyncResult(task_id)
+        body = {"state": result.state}
+        if result.successful():
+            body["summary"] = result.result
+        elif result.failed():
+            body["detail"] = "판독에 실패했습니다. 파일을 확인하고 다시 올려 주세요."
+        return Response(body)
 
 
 def _validate_questions(rows):

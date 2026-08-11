@@ -5,12 +5,15 @@
 - 시험 목록: 응시자 수·평균(저장값 우선)·처리 상태(파생값 — 조회 시 계산)
 - 시험 상세: 학생별 점수 테이블(점수 내림차순·동점 공동 석차·미응시 후순위),
   문항별 정답률·결과 분포(무응답·복수마킹 — 보정 화면 근거, PRD 마킹 이상 경고)
-- 조회 전용: GET 외 메서드 차단(성적 수정·OMR 업로드는 이번 범위 아님)
+- 시험 만들기·정답 키 저장, 스캔 묶음 업로드(판독 자체는 Celery 워커의 일)
 
 픽스처·검산 값은 test_grade_report_api.GradeFixtureMixin(모듈 docstring) 공용.
 """
 import json
+from unittest import mock
 
+from django.core.files.storage import default_storage
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
 from apps.accounts.features import FeatureKey
@@ -316,3 +319,38 @@ class ExamCreateAndKeyTests(ExamAdminFixtureMixin, TestCase):
         units = self.client.get(self.key_url(self.exam2)).json()["units"]
 
         self.assertIn("원소", units["물질과 규칙성"])
+
+
+class SheetUploadTests(ExamAdminFixtureMixin, TestCase):
+    """스캔 업로드 — 뷰는 파일만 놓고 즉시 답한다(판독은 워커)."""
+
+    def post_pdf(self, exam, question_count):
+        pdf = SimpleUploadedFile("batch.pdf", b"%PDF-1.4\n", content_type="application/pdf")
+        return self.client.post(
+            f"{ADMIN_EXAMS}/{exam.pk}/sheets", {"pdf": pdf, "question_count": question_count}
+        )
+
+    def test_hands_the_batch_to_the_worker(self):
+        """판독이 요청을 붙잡으면 안 된다 — 스토리지에 놓고 경로만 넘긴다."""
+        self.login_admin()
+
+        with mock.patch("apps.grades.tasks.ingest_omr_batch.delay") as delay:
+            delay.return_value = mock.Mock(id="task-1")
+            res = self.post_pdf(self.exam2, 16)
+
+        self.assertEqual(res.status_code, 202)
+        self.assertEqual(res.json()["task_id"], "task-1")
+        exam_pk, path, count = delay.call_args.args
+        self.assertEqual((exam_pk, count), (self.exam2.pk, 16))
+        self.assertTrue(default_storage.exists(path))
+        default_storage.delete(path)
+
+    def test_rejects_a_question_count_off_the_card(self):
+        """카드는 20줄이다. 워커에서 죽으면 사용자는 "판독 실패"만 보게 된다."""
+        self.login_admin()
+
+        with mock.patch("apps.grades.tasks.ingest_omr_batch.delay") as delay:
+            res = self.post_pdf(self.exam2, 21)
+
+        self.assertEqual(res.status_code, 400)
+        delay.assert_not_called()

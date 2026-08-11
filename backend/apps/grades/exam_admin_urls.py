@@ -22,4 +22,9 @@ urlpatterns = [
         views.AdminExamSheetsView.as_view(),
         name="exam-sheets",
     ),
+    path(
+        "admin/omr-batches/<str:task_id>",
+        views.AdminOmrBatchView.as_view(),
+        name="omr-batch",
+    ),
 ]

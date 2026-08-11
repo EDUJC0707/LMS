@@ -113,3 +113,30 @@ class IngestTests(TestCase):
         self.assertEqual(summary["matched"], 1)
         score = Score.objects.get(exam=self.exam, student=self.student)
         self.assertEqual(float(score.total_score), 16.0)
+
+
+class BatchTaskTests(TestCase):
+    """업로드는 태스크로 넘어간다 — 뷰는 파일만 놓고 즉시 답한다."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.exam = Exam.objects.create(name="8월 배치", exam_date=datetime.date(2026, 8, 11))
+        Question.objects.create(exam=cls.exam, q_number=1, answer="3", points=Decimal("1.0"))
+
+    def test_task_reads_the_stored_pdf_and_cleans_it_up(self):
+        """PDF 는 스토리지에 두고 경로만 넘긴다 — 27MB 를 브로커에 싣지 않는다.
+
+        판독이 끝나면 장별 이미지가 이미 다 들어갔으므로 원본은 지운다.
+        """
+        from django.core.files.base import ContentFile
+        from django.core.files.storage import default_storage
+
+        from . import tasks
+
+        path = default_storage.save("omr-upload/t/x.pdf", ContentFile(b"%PDF-1.4\n"))
+        page = synthetic_page({1: 3})
+        with mock.patch.object(omr_ingest, "page_images", return_value=iter([page])):
+            summary = tasks.ingest_omr_batch(self.exam.pk, path, 1)
+
+        self.assertEqual(summary["pages"], 1)
+        self.assertFalse(default_storage.exists(path))
