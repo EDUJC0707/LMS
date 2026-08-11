@@ -208,7 +208,7 @@ function PostRowItem({ post, category }: { post: PostRow; category: BoardCategor
         <span className="cm-row__main">
           <span className="cm-row__title">비밀글입니다</span>
         </span>
-        <span className="cm-row__meta">작성자와 학원 직원만 볼 수 있습니다</span>
+        <span className="cm-row__meta">작성자와 직원만 볼 수 있습니다</span>
       </div>
     );
   }
@@ -379,7 +379,7 @@ function WriteDialog({
 
         {allowsSecret(category) && (
           <Checkbox
-            label="비밀글로 남기기 — 나와 학원 직원만 볼 수 있습니다"
+            label="비밀글로 남기기 — 나와 직원만 볼 수 있습니다"
             checked={secret}
             onChange={(event) => setSecret(event.target.checked)}
           />

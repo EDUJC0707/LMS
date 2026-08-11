@@ -1,7 +1,7 @@
 /**
  * 자녀 워크북 사진 — GET /api/parent/workbook?student_id=
  *
- * 학원에서 자녀 것으로 확정한 사진만 내려온다(매칭 대기·불일치는 서버가
+ * 직원이 자녀 것으로 확정한 사진만 내려온다(매칭 대기·불일치는 서버가
  * 아예 주지 않는다 — PRD 3.1.7). 없는 사진을 지어내지 않는다.
  */
 import { http, mediaUrl, useApi } from "../../api";
