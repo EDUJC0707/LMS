@@ -753,3 +753,64 @@
   border-radius: var(--radius-sm);
   background: var(--color-surface-sunken);
 }
+
+/* ═══ 스캔 보정 ═════════════════════════════════════════════════════ */
+
+/* 지면과 판독을 나란히. 조교는 둘을 번갈아 보므로 각각 따로 스크롤한다.
+   좁은 화면에서는 겹쳐 놓을 수 없어 지면이 위로 간다(먼저 봐야 하는 쪽). */
+.pm-review {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-lg);
+  align-items: start;
+}
+
+@media (min-width: 60rem) {
+  .pm-review {
+    grid-template-columns: minmax(0, 1fr) minmax(22rem, 26rem);
+  }
+}
+
+.pm-review__scan {
+  max-height: 80vh;
+  overflow: auto;
+  border: 1px solid var(--color-rule-2);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+}
+
+.pm-review__scan img {
+  display: block;
+  width: 100%;
+}
+
+.pm-review__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* 문항 줄 — 번호·정답·마킹 칸이 세로로 줄을 맞춰야 눈이 훑을 수 있다. */
+.pm-marks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.pm-marks__row {
+  display: grid;
+  grid-template-columns: 2.5rem 2.5rem 5rem auto;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) 0;
+}
+
+.pm-marks__row + .pm-marks__row {
+  border-top: 1px solid var(--color-rule-2);
+}
+
+.pm-marks__no {
+  color: var(--color-muted);
+}

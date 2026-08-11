@@ -27,4 +27,10 @@ urlpatterns = [
         views.AdminOmrBatchView.as_view(),
         name="omr-batch",
     ),
+    path("admin/sheets/<int:sheet_id>", views.AdminSheetView.as_view(), name="sheet-detail"),
+    path(
+        "admin/sheets/<int:sheet_id>/scan",
+        views.AdminSheetScanView.as_view(),
+        name="sheet-scan",
+    ),
 ]

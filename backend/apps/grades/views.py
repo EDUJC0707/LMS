@@ -15,8 +15,10 @@
 - POST /api/admin/exams                          시험 만들기 (성적처리)
 - GET  /api/admin/exams/{exam_id}                시험 상세 (성적처리)
 - GET/PUT /api/admin/exams/{exam_id}/questions   정답 키 (성적처리)
-- POST /api/admin/exams/{exam_id}/sheets         스캔 묶음 업로드 → 202 (성적처리)
+- GET/POST /api/admin/exams/{exam_id}/sheets     보정 목록 · 스캔 업로드 (성적처리)
 - GET  /api/admin/omr-batches/{task_id}          판독 진행 상태 (성적처리)
+- GET/PATCH /api/admin/sheets/{sheet_id}         보정 화면 한 장 (성적처리)
+- GET  /api/admin/sheets/{sheet_id}/scan         스캔 원본 이미지 (성적처리)
 
 페이로드 조립은 report(소비자)·exam_admin(관리자) 서비스가 담당 — 뷰는
 역할·기능 키 게이트, 입력 검증, 대상 학생 결정(학부모는 자녀 소유 검증 —
@@ -36,6 +38,7 @@ import uuid
 
 from celery.result import AsyncResult
 from django.core.files.storage import default_storage
+from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -46,8 +49,8 @@ from apps.accounts.models import Parent, ParentStudent, Student, User
 from apps.accounts.permissions import FeatureRequired, IsParent, IsStudent
 from apps.videos.models import MakeupGrant
 
-from . import attendance_admin, exam_admin, report, tasks, workbook, workbook_admin
-from .models import Attendance, ClassSession, WorkbookSubmission
+from . import attendance_admin, exam_admin, omr_store, report, tasks, workbook, workbook_admin
+from .models import AnswerSheet, Attendance, ClassSession, WorkbookSubmission
 from .omr import card
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
@@ -626,9 +629,15 @@ class AdminExamQuestionsView(APIView):
 
 
 class AdminExamSheetsView(APIView):
-    """POST /api/admin/exams/{exam_id}/sheets — 스캔 PDF 한 묶음 업로드·판독."""
+    """스캔 묶음 — GET 은 보정 화면 목록, POST 는 PDF 업로드."""
 
     permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
+
+    def get(self, request, exam_id):
+        exam = exam_admin.load_exam(exam_id)
+        if exam is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"sheets": exam_admin.sheet_rows(exam)})
 
     def post(self, request, exam_id):
         exam = exam_admin.load_exam(exam_id)
@@ -674,6 +683,99 @@ class AdminOmrBatchView(APIView):
         elif result.failed():
             body["detail"] = "판독에 실패했습니다. 파일을 확인하고 다시 올려 주세요."
         return Response(body)
+
+
+class AdminSheetView(APIView):
+    """GET/PATCH /api/admin/sheets/{sheet_id} — 보정 화면 한 장.
+
+    PATCH 본문은 손댄 것만 보낸다: `student_id`(장의 주인 확정 — null 이면
+    해제), `answers`({문항번호: "3"} — 무응답은 ""), `confirm`(값은 그대로 두고
+    기계 판독을 승인). 셋 다 없으면 400 — 빈 PATCH 로 보정 잠금이 걸리면
+    조교가 안 본 장이 확인된 장으로 둔갑한다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
+
+    def get(self, request, sheet_id):
+        sheet = self._load(sheet_id)
+        if sheet is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return Response(exam_admin.sheet_detail(sheet))
+
+    def patch(self, request, sheet_id):
+        sheet = self._load(sheet_id)
+        if sheet is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        data = request.data
+        confirm = bool(data.get("confirm"))
+        answers, error = _validate_marks(data.get("answers"))
+        if error is None and "student_id" in data:
+            student, error = _load_student(data["student_id"])
+        else:
+            student = omr_store.UNSET
+        if error is None and student is omr_store.UNSET and not answers and not confirm:
+            error = "고칠 내용을 지정해 주세요."
+        if error is not None:
+            return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            omr_store.correct_sheet(sheet, student=student, answers=answers, confirm=confirm)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(exam_admin.sheet_detail(self._load(sheet_id)))
+
+    def _load(self, sheet_id):
+        return (
+            AnswerSheet.objects.filter(pk=sheet_id)
+            .select_related("student__user", "exam")
+            .first()
+        )
+
+
+class AdminSheetScanView(APIView):
+    """GET /api/admin/sheets/{sheet_id}/scan — 스캔 원본 이미지.
+
+    스토리지 URL 을 그대로 내주지 않는다. 지면에는 **실명과 전화번호 뒷자리**가
+    찍혀 있어(개인정보) 링크 하나가 곧 유출 경로다 — 성적처리 키를 통과한
+    요청에만 바이트를 흘린다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
+
+    def get(self, request, sheet_id):
+        sheet = AnswerSheet.objects.filter(pk=sheet_id).first()
+        if sheet is None or not default_storage.exists(sheet.scan_image_path):
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return FileResponse(default_storage.open(sheet.scan_image_path, "rb"))
+
+
+def _load_student(raw):
+    """PATCH 의 student_id → (Student|None, 에러). null 은 '주인 해제'다."""
+    if raw in (None, ""):
+        return None, None
+    student = Student.objects.filter(pk=raw).first()
+    if student is None:
+        return None, "그 학생을 찾을 수 없습니다."
+    return student, None
+
+
+def _validate_marks(raw):
+    """PATCH 의 answers → ({문항번호: 마킹}, 에러). 카드 밖 값은 여기서 막는다."""
+    if not raw:
+        return {}, None
+    if not isinstance(raw, dict):
+        return {}, "answers 는 {문항번호: 마킹} 이어야 합니다."
+    marks = {}
+    for key, value in raw.items():
+        try:
+            q_number = int(key)
+        except (TypeError, ValueError):
+            return {}, "문항번호가 올바르지 않습니다."
+        text = str(value or "").strip()
+        choices = [part.strip() for part in text.split(",") if part.strip()]
+        if any(not part.isdigit() or not 1 <= int(part) <= card.ANSWER_CHOICES for part in choices):
+            return {}, f"{q_number}번 마킹은 1~{card.ANSWER_CHOICES} 중에서 고릅니다."
+        marks[q_number] = ",".join(choices)
+    return marks, None
 
 
 def _validate_questions(rows):

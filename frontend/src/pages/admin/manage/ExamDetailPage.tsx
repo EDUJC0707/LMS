@@ -15,11 +15,12 @@
  *   40% 미만에는 표시를 남긴다(기준은 색이 아니라 라벨로도 읽힌다).
  */
 import { useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 import { http, useApi } from "../../../api";
 import {
   Badge,
+  Button,
   Card,
   EmptyState,
   ErrorState,
@@ -40,6 +41,7 @@ type TakenTab = "제출" | "미제출" | "전체";
 
 export default function ExamDetailPage() {
   const { examId } = useParams();
+  const navigate = useNavigate();
   const detail = useApi(
     () => http.get<ExamDetail>(`/admin/exams/${examId}`).then((r) => r.data),
     [examId],
@@ -73,7 +75,17 @@ export default function ExamDetailPage() {
   return (
     <div className="ui-stack">
       {/* 상단바는 "시험·성적"까지만 말한다 — 어느 회차인지는 첫 카드가 든다. */}
-      <Card title={exam.name} aside={<StatusBadge status={stats.processing_status} />}>
+      <Card
+        title={exam.name}
+        aside={
+          <div className="pm-review__nav">
+            <StatusBadge status={stats.processing_status} />
+            <Button size="sm" onClick={() => navigate("sheets")}>
+              스캔 보정
+            </Button>
+          </div>
+        }
+      >
         <div className="ui-stack ui-stack--md">
           <p className="pm-meta">
             <span className="num">{exam.exam_date}</span>

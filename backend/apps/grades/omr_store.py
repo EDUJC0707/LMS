@@ -135,7 +135,57 @@ def store_sheet(
     }
 
 
+#: '안 넘겼음' 과 '넘겼는데 None(주인 해제)' 을 가른다.
+UNSET = object()
+
+
+def correct_sheet(sheet, *, student=UNSET, answers=None, confirm=False):
+    """조교 보정 1장 — 여기서 쓴 값은 재판독이 덮지 않는다(모듈 docstring).
+
+    student 를 넘기면 그 장의 주인이 확정되고 대조 상태는 `정상` 이 된다 —
+    기계가 못 고른 것을 사람이 골랐으므로 6분기를 더 볼 것이 없다. answers 는
+    `{문항번호: "3"}`(무응답은 "", 복수는 "1,3") 이고, 손댄 문항만 보내면
+    된다. 보류 장이라 문항 행이 아예 없어도 여기서 만든다 — 카드를 못 읽은
+    지면도 사람은 읽을 수 있다.
+
+    confirm 은 "기계 판독이 맞다" 는 확인이다. 값은 그대로 두고 잠금만 건다.
+
+    반환: 재계산된 총점(학생·정답 키가 없어 못 내면 None).
+    """
+    with transaction.atomic():
+        sheet = AnswerSheet.objects.select_for_update().get(pk=sheet.pk)
+        if student is not UNSET:
+            sheet.student = student
+            sheet.match_status = _MS.MATCHED if student is not None else _MS.INVALID
+        if student is not UNSET or confirm:
+            sheet.is_corrected = True
+            sheet.save(update_fields=["student", "match_status", "is_corrected"])
+        if answers:
+            _write_corrections(sheet, answers)
+        return _apply_score(sheet, sheet.exam)
+
+
 # --- 내부 부품 -----------------------------------------------------------
+
+
+def _write_corrections(sheet, answers):
+    """사람이 적은 문항 값을 잠금(is_corrected)과 함께 올린다."""
+    questions = {q.q_number: q for q in Question.objects.filter(exam_id=sheet.exam_id)}
+    rows = {row.question_id: row for row in sheet.answers.select_for_update()}
+    for q_number, marked in answers.items():
+        question = questions.get(q_number)
+        if question is None:
+            raise ValueError(f"{q_number}번 문항이 이 시험에 없습니다.")
+        choices = tuple(int(part) for part in str(marked).split(",") if part.strip())
+        value, result = _verdict(choices, question.answer)
+        row = rows.get(question.question_id)
+        if row is None:
+            SheetAnswer.objects.create(
+                sheet=sheet, question=question, marked=value, result=result, is_corrected=True
+            )
+        else:
+            row.marked, row.result, row.is_corrected = value, result, True
+            row.save(update_fields=["marked", "result", "is_corrected"])
 
 
 def _apply_answers(sheet, exam, readings, created):

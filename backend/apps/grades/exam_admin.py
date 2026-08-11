@@ -15,6 +15,8 @@
 from django.db import transaction
 from django.db.models import Avg, Count, F, Q
 
+from apps.accounts import student_directory
+
 from . import report
 from .models import AnswerSheet, Exam, Question, Score, SheetAnswer
 
@@ -244,6 +246,64 @@ def question_rows(exam):
         }
         for q in Question.objects.filter(exam=exam).order_by("q_number")
     ]
+
+
+def sheet_rows(exam):
+    """보정 화면 목록 — 손봐야 할 장이 먼저 온다.
+
+    `정상`이면서 이미 확정된 장은 볼 일이 없으므로 뒤로 민다. 그 안에서는
+    스캔 순서(sheet_id)를 지킨다 — 조교는 종이 묶음을 옆에 두고 넘긴다.
+    """
+    sheets = (
+        AnswerSheet.objects.filter(exam=exam)
+        .select_related("student__user")
+        .annotate(
+            settled=Q(is_corrected=True) & Q(match_status=AnswerSheet.MatchStatus.MATCHED)
+        )
+        .order_by("settled", "sheet_id")
+    )
+    return [_sheet_row(sheet) for sheet in sheets]
+
+
+def sheet_detail(sheet):
+    """장 1건 — 문항은 정답 키 전량에 그 장의 판독을 붙인다.
+
+    판독이 없는 문항도 줄을 내놓는다: 보류된 장은 행이 하나도 없고, 그때야말로
+    사람이 손으로 채워 넣어야 하는 자리다.
+    """
+    marks = {row.question_id: row for row in sheet.answers.all()}
+    questions = []
+    for question in Question.objects.filter(exam_id=sheet.exam_id).order_by("q_number"):
+        row = marks.get(question.question_id)
+        questions.append(
+            {
+                "q_number": question.q_number,
+                "answer": question.answer,
+                "points": question.points,
+                "marked": row.marked if row else None,
+                "result": row.result if row else None,
+                "is_corrected": bool(row and row.is_corrected),
+            }
+        )
+    score = Score.objects.filter(exam_id=sheet.exam_id, student_id=sheet.student_id).first()
+    return {
+        **_sheet_row(sheet),
+        "questions": questions,
+        "total_score": float(score.total_score) if score else None,
+    }
+
+
+def _sheet_row(sheet):
+    return {
+        "sheet_id": sheet.sheet_id,
+        "match_status": sheet.match_status,
+        "is_corrected": sheet.is_corrected,
+        "recognized_name": sheet.recognized_name,
+        "recognized_matching_key": sheet.recognized_matching_key,
+        # 명부와 같은 행 모양으로 낸다 — 보정 화면의 학생 선택기가 명부 API 로
+        # 고르는 값과 같아야 "이미 붙은 학생"과 "지금 고른 학생"이 한 자리에 선다.
+        "student": None if sheet.student is None else student_directory.row(sheet.student),
+    }
 
 
 def unit_options():
