@@ -64,7 +64,7 @@ scores 는 여기서 만들지 않는다(집계 슬라이스 몫) — exam_admin
 """
 from django.db import transaction
 
-from .models import AnswerSheet, Question, SheetAnswer
+from .models import AnswerSheet, Question, Score, SheetAnswer
 
 _MS = AnswerSheet.MatchStatus
 _R = SheetAnswer.Result
@@ -124,7 +124,9 @@ def store_sheet(
             sheet.recognized_name = recognized_name
             sheet.save(update_fields=_SHEET_MACHINE_FIELDS)
         written, kept, removed, missing = _apply_answers(sheet, exam, readings, created)
+        scored = _apply_score(sheet, exam)
     return sheet, {
+        "scored": scored,
         "created": created,
         "answers_written": written,
         "answers_kept": kept,
@@ -199,3 +201,28 @@ def _verdict(choices, answer):
         return ",".join(str(choice) for choice in sorted(choices)), _R.MULTI
     marked = str(choices[0])
     return marked, _R.CORRECT if marked == answer.strip() else _R.WRONG
+
+
+def _apply_score(sheet, exam):
+    """문항 행에서 총점을 다시 계산해 올린다. 점수를 낼 수 없으면 None.
+
+    저장값이 아니라 **파생값**이라 매번 다시 센다 — 조교가 한 문항을 고치면
+    총점도 따라와야 하고, 두 벌로 두면 반드시 어긋난다(설계 §6 사본 금지).
+
+    학생이 안 붙은 장은 점수를 만들지 않는다. 누구 것인지 모르는 점수는
+    성적표에 쓸 데가 없고, 조교가 확정한 뒤 재저장하면 그때 생긴다.
+    """
+    if sheet.student_id is None:
+        return None
+    rows = SheetAnswer.objects.filter(sheet=sheet).select_related("question")
+    graded = [row for row in rows if row.question.answer]
+    if not graded:
+        return None
+    total = sum(row.question.points for row in graded if row.result == SheetAnswer.Result.CORRECT)
+    full = sum(question.points for question in Question.objects.filter(exam=exam))
+    Score.objects.update_or_create(
+        exam=exam,
+        student_id=sheet.student_id,
+        defaults={"total_score": total, "max_score": full, "is_taken": True},
+    )
+    return float(total)

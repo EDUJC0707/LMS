@@ -64,6 +64,7 @@ class StoreVerdictTests(OmrStoreFixtureMixin, TestCase):
             "answers_kept": 0,
             "answers_removed": 0,
             "missing_questions": [],
+            "scored": 5.0,
         })
         self.assertEqual(sheet.exam_id, self.exam.pk)
         self.assertEqual(sheet.student_id, self.student.pk)
@@ -269,7 +270,12 @@ class ProcessingStatusDerivationTests(OmrStoreFixtureMixin, TestCase):
         return next(row for row in rows if row["exam_id"] == self.exam.pk)
 
     def test_store_never_advances_processing_status(self):
-        """저장은 scores 를 만들지 않는다 — 보류 장이 있어도 채점 전은 채점전."""
+        """정답 키가 없으면 점수가 안 생기고, 그래서 여전히 채점전이다.
+
+        저장 순서가 뒤집혀도(문항 입력 전에 batch 를 스캔) 상태가 거짓말하지
+        않는다 — 읽기는 했지만 채점할 기준이 없으면 채점된 것이 아니다.
+        """
+        Question.objects.filter(exam=self.exam).update(answer="")
         self.store(READINGS)
         hold, _ = self.store(None, path="omr/5/held.png")
 

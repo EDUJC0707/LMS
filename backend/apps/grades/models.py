@@ -242,7 +242,9 @@ class Question(models.Model):
     q_number = models.SmallIntegerField("문항 번호")
     answer = models.CharField("정답", max_length=10)
     points = models.DecimalField("배점", max_digits=4, decimal_places=1)
-    unit_major = models.CharField("대단원", max_length=50)
+    # 채점에는 필요 없다 — 정답만 있으면 점수가 나온다. 약점체크(PRD 3.1.8)의
+    # 집계축이라 나중에 채운다. 비워 두지 못하면 정답 입력이 단원 입력에 막힌다.
+    unit_major = models.CharField("대단원", max_length=50, blank=True, default="")
     unit_minor = models.CharField("중단원", max_length=50, null=True, blank=True)  # noqa: DJ001
     wrong_rate = models.DecimalField(
         "오답률", max_digits=5, decimal_places=2, null=True, blank=True
