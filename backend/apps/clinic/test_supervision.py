@@ -212,3 +212,29 @@ class QueueSupervisionTests(CollectSupervisionTests):
         upcoming = self.make_request(days_ago=-3)
         rows = clinic_admin.queue_rows(period="예정")
         self.assertEqual([r["clinic_id"] for r in rows], [upcoming.clinic_id])
+
+
+class CollectionWindowTests(CollectSupervisionTests):
+    """시각까지 본다 — 날짜만 보면 저녁 수업이 다음 날 새벽까지 안 잡힌다."""
+
+    def at(self, **delta):
+        start = timezone.make_aware(datetime.datetime(2026, 8, 12, 19, 0))
+        return start + datetime.timedelta(**delta)
+
+    def evening_clinic(self):
+        request = self.make_request(days_ago=0)
+        request.requested_date = datetime.date(2026, 8, 12)
+        request.requested_time = datetime.time(19, 0)
+        request.save(update_fields=["requested_date", "requested_time"])
+        return request
+
+    def test_collected_thirty_minutes_after_it_started(self):
+        # 19:00 수업이면 19:30 에 잡혀야 한다 — 다음 날이 아니라
+        request = self.evening_clinic()
+        supervision.collect(now=self.at(minutes=31))
+        self.assertEqual(StubAdapter.asked, [request.conference_ref])
+
+    def test_not_collected_while_it_is_still_running(self):
+        self.evening_clinic()
+        supervision.collect(now=self.at(minutes=10))
+        self.assertEqual(StubAdapter.asked, [])

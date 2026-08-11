@@ -315,8 +315,24 @@
   margin-left: auto;
 }
 
+/* 버튼도 같은 줄에 둔다 — 상태·날짜·시각·버튼이 전부 짧아서 카드 한 줄, 버튼
+   한 줄로 나눌 만큼 길지 않다. */
+.cl-done {
+  flex-direction: row;
+  align-items: center;
+}
+
+.cl-done .cl-booked__card {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* 좁은 폭에서는 눕히지 않고 원래대로 쌓는다. */
 @media (max-width: 40rem) {
+  .cl-done {
+    flex-direction: column;
+    align-items: stretch;
+  }
   .cl-done .cl-booked__card {
     flex-direction: column;
     align-items: flex-start;
@@ -385,6 +401,7 @@
   flex: 1 1 0;
   min-width: 0;
 }
+
 
 /* ═══ 재조회 중 ══════════════════════════════════════════════════════
    달 이동은 화면을 로딩으로 갈지 않는다 — 바뀌는 면만 잠깐 물러난다. */

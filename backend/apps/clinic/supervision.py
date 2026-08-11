@@ -44,18 +44,28 @@ def pending(now):
     **우리가 만든 스페이스만** 대상이다. 관리자가 링크를 손으로 넣은 건은
     `conference_ref` 가 비어 있고, 남의 회의라 가져올 자료가 없다.
     """
-    cutoff_new = timezone.localdate(now - COLLECT_DELAY)
-    cutoff_old = timezone.localdate(now - RECORD_LIFETIME)
-    return (
+    candidates = (
         ClinicRequest.objects.filter(
             status=ClinicRequest.Status.APPROVED,
             conference_ref__isnull=False,
-            requested_date__lte=cutoff_new,
-            requested_date__gte=cutoff_old,
+            requested_date__lte=timezone.localdate(now),
+            requested_date__gte=timezone.localdate(now - RECORD_LIFETIME),
         )
         .exclude(evaluation__transcript_url__isnull=False)
         .select_related("student__user")
         .order_by("clinic_id")
+    )
+    # 날짜로만 거르면 **저녁 수업이 다음 날 새벽까지 안 잡힌다** — 19:00 수업의
+    # 대기 만료는 19:30 인데, 날짜 비교는 그날이 통째로 지나야 참이 되기 때문이다.
+    # DB 는 날짜로 크게 자르고(인덱스), 시각 판정은 여기서 한다. 후보가 하루치라
+    # 비용이 없다.
+    return [r for r in candidates if starts_at(r) + COLLECT_DELAY <= now]
+
+
+def starts_at(request):
+    """클리닉 시작 시각. 날짜·시각 두 칸을 합치는 유일한 자리."""
+    return timezone.make_aware(
+        datetime.datetime.combine(request.requested_date, request.requested_time)
     )
 
 
