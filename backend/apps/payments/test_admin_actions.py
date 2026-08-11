@@ -15,7 +15,7 @@
 from django.test import TestCase, override_settings
 
 from apps.accounts.features import FeatureKey
-from apps.accounts.models import StaffFeatureGrant, Student, User
+from apps.accounts.models import Parent, StaffFeatureGrant, Student, User
 
 from .models import Order, Payment, Product
 from .provider import Bill, BillState, PaymentAdapter, Receipt
@@ -206,3 +206,91 @@ class AdminActionTests(TestCase):
     def test_unknown_order_is_404(self):
         self.client.force_login(self.admin)
         self.assertEqual(self.client.post("/api/admin/payments/999999/deliver").status_code, 404)
+
+
+@override_settings(PAYMENT_PROVIDER_BACKEND=RECORDING)
+class CancelNotificationTests(TestCase):
+    """취소하면 **우리가** 알린다 — 업체는 취소를 안 알려 준다(2026-08-11 실측).
+
+    `/bill/cancel` 요청에는 `sendType`·`message` 같은 통지 항목이 아예 없다.
+    결제선생은 **청구할 때만** 알림톡을 보낸다. 그래서 학부모 입장에서는 돈이
+    조용히 돌아오거나(환불) 청구서가 조용히 사라진다(파기).
+
+    **8-17 대기 중이다.** 알림톡 템플릿이 아직 승인 전이라 발송은
+    "승인된 알림톡 템플릿 코드가 없습니다: 결제" 로 실패한다 — 행과 사유는
+    남는다(조용한 성공 금지). 템플릿이 오면 이 자리는 안 고쳐도 된다.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.owner = make_user("cn-own", User.Role.OWNER, name="대표")
+        cls.product = Product.objects.create(name="로직엔제 교재 Vol.1", price=45000)
+        cls.student = Student.objects.create(
+            user=make_user("cn-stu", User.Role.STUDENT, name="김하늘"),
+            matching_key="3_0001",
+        )
+        cls.parent = Parent.objects.create(
+            user=make_user("cn-par", User.Role.PARENT, name="김학부"), phone="01099998888"
+        )
+
+    def setUp(self):
+        RecordingAdapter.calls.clear()
+        self.client.force_login(self.owner)
+
+    def order(self, **kwargs):
+        kwargs.setdefault("status", Order.Status.PAID)
+        kwargs.setdefault("is_billed", True)
+        order = Order.objects.create(
+            student=self.student, product=self.product, amount=45000, **kwargs
+        )
+        Payment.objects.create(
+            order=order,
+            provider=Payment.Provider.PAYSSAM,
+            status=Payment.Status.COMPLETED,
+            amount=45000,
+        )
+        return order
+
+    def cancel(self, order, reason="학부모 요청"):
+        return self.client.post(
+            f"/api/admin/payments/{order.order_id}/cancel", {"reason": reason}
+        )
+
+    def test_cancelling_a_paid_order_notifies(self):
+        from apps.notifications.models import Notification
+
+        self.cancel(self.order())
+        notification = Notification.objects.get(type=Notification.Type.PAYMENT)
+        self.assertEqual(notification.student, self.student)
+        self.assertIn("환불", notification.body)
+
+    def test_the_bill_recipient_is_the_one_told(self):
+        # 청구서를 받은 것이 학부모면 취소도 학부모가 알아야 한다.
+        from apps.notifications.models import Notification
+
+        self.cancel(self.order(billed_to_parent=self.parent))
+        notification = Notification.objects.get(type=Notification.Type.PAYMENT)
+        self.assertEqual(notification.parent, self.parent)
+        self.assertIsNone(notification.student)
+
+    def test_voiding_an_unpaid_bill_says_it_was_cancelled_not_refunded(self):
+        # 낸 적이 없으면 돌려받을 것도 없다 — 환불이라고 하면 돈을 기다린다.
+        from apps.notifications.models import Notification
+
+        order = Order.objects.create(
+            student=self.student, product=self.product, amount=45000, is_billed=True
+        )
+        self.cancel(order)
+        notification = Notification.objects.get(type=Notification.Type.PAYMENT)
+        self.assertNotIn("환불", notification.body)
+        self.assertIn("취소", notification.body)
+
+    def test_a_bill_never_sent_notifies_nobody(self):
+        # 학부모는 청구서를 받은 적이 없다 — 취소를 알릴 이유가 없다.
+        from apps.notifications.models import Notification
+
+        order = Order.objects.create(
+            student=self.student, product=self.product, amount=45000, is_billed=False
+        )
+        self.cancel(order)
+        self.assertFalse(Notification.objects.filter(type=Notification.Type.PAYMENT).exists())

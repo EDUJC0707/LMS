@@ -152,6 +152,7 @@ def cancel_order(order, *, reason, now=None):
     elif order.is_billed:
         get_adapter().destroy_bill(bill_ref, amount=order.amount)
 
+    was_paid = order.status in (Order.Status.PAID, Order.Status.DELIVERED)
     with transaction.atomic():
         order.status = Order.Status.CANCELLED
         order.save(update_fields=["status"])
@@ -159,7 +160,42 @@ def cancel_order(order, *, reason, now=None):
         order.payments.exclude(status=Payment.Status.CANCELLED).update(
             status=Payment.Status.CANCELLED, synced_at=now
         )
+        _notify_cancelled(order, was_paid=was_paid)
     return order
+
+
+def _notify_cancelled(order, *, was_paid):
+    """취소를 청구서 받은 사람에게 알린다 — **업체는 알려 주지 않는다.**
+
+    결제선생은 청구할 때만 알림톡을 보낸다(`/bill/cancel` 에는 통지 항목이
+    아예 없다 — 2026-08-11 확인). 그대로 두면 학부모 입장에서 돈이 조용히
+    돌아오거나 청구서가 조용히 사라진다.
+
+    **청구서를 보낸 적이 없으면 알리지 않는다** — 받은 적 없는 청구의 취소는
+    학부모에게 아무 의미가 없다(오등록 정리가 그 사람 알림함에 쌓일 뿐).
+
+    받는 사람은 **청구서를 받은 쪽**이다(`billed_to_parent`). 학생이 자기
+    번호로 받았으면 학생에게 간다.
+
+    **8-17 대기 중**: 알림톡 템플릿이 승인 전이라 발송 자체는 실패하고 사유가
+    남는다. 행은 남으므로 승인 뒤에 사람이 되짚을 수 있다(조용한 성공 금지).
+    """
+    if not order.is_billed:
+        return
+    from apps.notifications.models import Notification
+    from apps.notifications.sending import queue
+
+    what = "환불되었습니다" if was_paid else "취소되었습니다"
+    queue(
+        type=Notification.Type.PAYMENT,
+        channel=Notification.Channel.KAKAO,
+        student=None if order.billed_to_parent_id else order.student,
+        parent=order.billed_to_parent,
+        title="교재 결제",
+        body=f"{order.product.name} {order.amount:,}원 결제가 {what}.",
+        ref_type="orders",
+        ref_id=order.order_id,
+    )
 
 
 def mark_delivered(order, *, now=None):
