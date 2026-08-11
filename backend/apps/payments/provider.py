@@ -115,6 +115,18 @@ class Receipt:
     paid_at: datetime | None = None
 
 
+@dataclass(frozen=True)
+class Balance:
+    """선불 잔액 — 자동충전을 안 켜기로 했으므로(2026-08-11) 사람이 봐야 한다.
+
+    `charge_url` 이 같이 오는 것이 중요하다. 잔액만 보여 주면 관리자는 그걸
+    보고 **다른 화면을 찾아 나가야** 하고, 그 사이 청구가 멈춰 있다.
+    """
+
+    amount: int
+    charge_url: str | None = None
+
+
 class PaymentAdapter(ABC):
     """청구서를 실제로 보내고, 상태를 읽고, 취소·파기하는 구현체.
 
@@ -142,6 +154,15 @@ class PaymentAdapter(ABC):
     @abstractmethod
     def destroy_bill(self, bill_ref: str, *, amount: int) -> None:
         """**승인 전** 청구서를 없앤다. 결제된 건은 PermanentPaymentError."""
+
+    def read_balance(self) -> "Balance | None":
+        """선불 잔액. **선택 구현** — 잔액 개념이 없는 제공자는 None 을 돌려준다.
+
+        추상 메서드로 두지 않는 이유: 잔액은 결제선생의 선불 모델에서 오는
+        것이고, 후불 정산형 PG 로 바꾸면 해당 개념 자체가 없다. 필수로 걸면
+        그때 구현체가 빈 메서드를 억지로 채우게 된다.
+        """
+        return None
 
 
 class FakePaymentAdapter(PaymentAdapter):

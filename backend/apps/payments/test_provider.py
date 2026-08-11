@@ -9,6 +9,7 @@ import datetime
 from django.test import SimpleTestCase, override_settings
 
 from .provider import (
+    Balance,
     Bill,
     BillRequest,
     BillState,
@@ -178,3 +179,24 @@ class ReceiptTests(SimpleTestCase):
         receipt = Receipt(bill_ref="1", state=BillState.PENDING, amount=45000)
         self.assertIsNone(receipt.external_ref)
         self.assertIsNone(receipt.paid_at)
+
+
+class BalanceContractTests(SimpleTestCase):
+    """선불 잔액 조회 — 자동충전을 안 켜기로 해서(2026-08-11) 사람이 봐야 한다.
+
+    잔액은 업체 고유 개념처럼 보이지만 "선불 잔액"은 어느 제공자에게나 있을 수
+    있어 중립 계약에 둔다. **다만 필수는 아니다** — 잔액 개념이 없는 PG 로
+    바꿔도 구현체가 안 깨지도록 기본 구현은 None 을 돌려준다.
+    """
+
+    def test_balance_is_optional_for_a_provider(self):
+        class Minimal(RecordingAdapter):
+            pass
+
+        self.assertIsNone(Minimal().read_balance())
+
+    def test_balance_carries_amount_and_a_charge_link(self):
+        # 충전 링크가 같이 와야 관리자가 잔액을 보고 **그 자리에서** 채운다.
+        balance = Balance(amount=12000, charge_url="https://pay.example/charge")
+        self.assertEqual(balance.amount, 12000)
+        self.assertEqual(balance.charge_url, "https://pay.example/charge")

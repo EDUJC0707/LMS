@@ -37,6 +37,7 @@ import requests
 from django.conf import settings
 
 from .provider import (
+    Balance,
     Bill,
     BillRequest,
     BillState,
@@ -152,18 +153,37 @@ class PayssamAdapter(PaymentAdapter):
             {"billId": bill_ref, "price": str(amount), "hash": _hash(bill_ref, amount)},
         )
 
+    def read_balance(self) -> Balance | None:
+        """쌤포인트 잔액 — **하위사업장(학원) 것**을 읽는다.
+
+        청구서를 태우는 포인트는 발송 주체인 하위사업장 잔액이므로 파트너
+        자기 잔액(`/read/remain_count`)이 아니라 이쪽이다.
+
+        `chargeUrl` 을 함께 돌려주는 것이 요점이다 — 관리자가 잔액을 보고
+        **그 자리에서** 충전할 수 있어야 한다(자동충전 미사용 결정 2026-08-11).
+        """
+        data = self._call("/read/merchant/remain_count", None)
+        return Balance(
+            amount=_to_int(data.get("balance")), charge_url=data.get("chargeUrl") or None
+        )
+
     # -- 전송·해석 ---------------------------------------------------------
 
-    def _call(self, path: str, bill: dict) -> dict:
-        """유일한 HTTP 지점. 자격증명 3종은 봉투 맨 위, 청구 정보는 `bill` 안이다."""
+    def _call(self, path: str, bill: dict | None) -> dict:
+        """유일한 HTTP 지점. 자격증명 3종은 봉투 맨 위, 청구 정보는 `bill` 안이다.
+
+        `bill=None` 은 **청구서가 없는 요청**(잔액 조회)이다. 빈 `bill` 을
+        붙여 보내면 업체가 형식 오류로 거절한다.
+        """
         body = {
             "apiKey": _required("PAYSSAM_API_KEY", "결제선생 API 키가 설정되지 않았습니다."),
             "member": _required("PAYSSAM_MEMBER_ID", "결제선생 member 가 설정되지 않았습니다."),
             "merchant": _required(
                 "PAYSSAM_MERCHANT_ID", "결제선생 merchant 가 설정되지 않았습니다."
             ),
-            "bill": bill,
         }
+        if bill is not None:
+            body["bill"] = bill
         url = _base_url() + path
         try:
             response = self._http_post(url, json=body, timeout=REQUEST_TIMEOUT_SECONDS)

@@ -327,3 +327,42 @@ class ConfigurationTests(SimpleTestCase):
     def test_missing_base_url_is_permanent_error(self):
         with self.assertRaises(PermanentPaymentError):
             PayssamAdapter(http_post=recorder()).send_bill(bill_request())
+
+
+@override_settings(**CONFIGURED)
+class BalanceTests(SimpleTestCase):
+    """쌤포인트 잔액 — 자동충전을 안 켜기로 해서 관리자가 봐야 한다(2026-08-11)."""
+
+    def test_reads_the_sub_merchant_balance(self):
+        # 우리는 파트너이고 학원이 하위사업장이다 — 청구서를 태우는 잔액은
+        # 하위사업장 것이므로 /read/merchant/remain_count 를 쓴다.
+        post = recorder(ok({"balance": 12000, "chargeUrl": "https://pay.ssam/charge"}))
+        balance = PayssamAdapter(http_post=post).read_balance()
+        self.assertEqual(
+            post.calls[0]["url"], "https://sandbox.example/partner/read/merchant/remain_count"
+        )
+        self.assertEqual(balance.amount, 12000)
+        self.assertEqual(balance.charge_url, "https://pay.ssam/charge")
+
+    def test_balance_request_carries_the_merchant_codes(self):
+        post = recorder(ok({"balance": 0}))
+        PayssamAdapter(http_post=post).read_balance()
+        body = post.calls[0]["json"]
+        self.assertEqual(body["apiKey"], "테스트키")
+        self.assertEqual(body["member"], "테스트멤버")
+        self.assertEqual(body["merchant"], "테스트상점")
+        # 잔액 조회에는 청구서가 없다 — bill 봉투를 붙이면 업체가 거절한다.
+        self.assertNotIn("bill", body)
+
+    def test_zero_balance_is_a_real_answer_not_a_failure(self):
+        # 0 을 None 으로 뭉개면 "조회 실패" 와 "잔액 없음" 이 같아 보인다 —
+        # 정작 충전이 필요한 순간에 경고가 안 뜬다.
+        post = recorder(ok({"balance": 0, "chargeUrl": "https://pay.ssam/charge"}))
+        balance = PayssamAdapter(http_post=post).read_balance()
+        self.assertIsNotNone(balance)
+        self.assertEqual(balance.amount, 0)
+
+    def test_vendor_rejection_raises(self):
+        post = recorder(FakeResponse({"code": "PARTNER_001", "message": "계약 없음"}))
+        with self.assertRaises(PermanentPaymentError):
+            PayssamAdapter(http_post=post).read_balance()

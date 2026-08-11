@@ -14,9 +14,11 @@ clinic_admin 선례). 값집합 밖 입력은 빈 목록이 아니라 **오류**
 """
 import datetime
 
+from django.db import transaction
 from django.utils import timezone
 
-from .models import Order
+from .models import Order, Payment
+from .provider import get_adapter
 
 
 class PaymentQueryError(Exception):
@@ -120,6 +122,64 @@ def _latest_payment(order):
         "paid_at": _localized(payment.paid_at),
         "synced_at": _localized(payment.synced_at),
     }
+
+
+def cancel_order(order, *, reason, now=None):
+    """주문을 취소한다 — 업체에 무엇을 부를지는 **상태가 정한다**.
+
+    | 주문 상태 | 업체 호출 | 이유 |
+    |---|---|---|
+    | 결제완료·배부완료 | `/bill/cancel` | 승인된 건은 승인취소다 |
+    | 미결제 + 청구서 발송됨 | `/bill/destroy` | 승인 전이라 취소가 안 먹는다(파기) |
+    | 미결제 + 미발송 | 없음 | 업체에 청구서가 존재한 적이 없다 |
+
+    마지막 줄이 중요하다 — 없는 청구서에 파기를 걸면 `BILL_003` 으로 실패하고,
+    그러면 **우리 쪽 오등록 주문을 영영 못 지운다.**
+
+    업체 호출은 트랜잭션 밖이다(billing 과 같은 이유). 업체가 성공한 뒤에야
+    우리 행을 접는다 — 반대 순서면 우리는 취소인데 업체는 살아 있는 상태가 난다.
+    """
+    now = now or timezone.now()
+    if order.status == Order.Status.CANCELLED:
+        raise PaymentQueryError("이미 취소된 주문입니다.")
+    if not reason or not str(reason).strip():
+        # §5: 파괴적 작업은 이력이 남아야 한다. 사유 없는 환불은 받지 않는다.
+        raise PaymentQueryError("취소 사유를 입력해 주세요.")
+
+    bill_ref = str(order.order_id)
+    if order.status in (Order.Status.PAID, Order.Status.DELIVERED):
+        get_adapter().cancel_bill(bill_ref, amount=order.amount, reason=str(reason))
+    elif order.is_billed:
+        get_adapter().destroy_bill(bill_ref, amount=order.amount)
+
+    with transaction.atomic():
+        order.status = Order.Status.CANCELLED
+        order.save(update_fields=["status"])
+        # 결제 트랜잭션도 함께 접는다 — 주문만 취소하면 대사에서 완료 건이 남는다.
+        order.payments.exclude(status=Payment.Status.CANCELLED).update(
+            status=Payment.Status.CANCELLED, synced_at=now
+        )
+    return order
+
+
+def mark_delivered(order, *, now=None):
+    """교재 배부완료 처리(PRD 3.1.5 as-is "결제내역 확인 후 배부").
+
+    **결제완료 건만** 넘어간다. 미결제를 배부완료로 올리면 무료로 나간 교재가
+    장부에서 사라진다.
+
+    이미 배부완료면 **시각을 덮지 않는다** — 실제로 배부한 때가 기록이고,
+    두 번 누른 때가 아니다.
+    """
+    now = now or timezone.now()
+    if order.status == Order.Status.DELIVERED:
+        return order
+    if order.status != Order.Status.PAID:
+        raise PaymentQueryError("결제완료된 주문만 배부할 수 있습니다.")
+    order.status = Order.Status.DELIVERED
+    order.delivered_at = now
+    order.save(update_fields=["status", "delivered_at"])
+    return order
 
 
 def _parse_id(raw, label):

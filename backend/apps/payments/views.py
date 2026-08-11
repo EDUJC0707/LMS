@@ -19,11 +19,11 @@ from rest_framework.views import APIView
 
 from apps.accounts.features import FeatureKey
 from apps.accounts.models import Parent, ParentStudent, Student
-from apps.accounts.permissions import FeatureRequired, IsParent, IsStudent
+from apps.accounts.permissions import FeatureRequired, IsOwner, IsParent, IsStudent
 
 from . import billing, consumer, payment_admin, sync
-from .models import Product
-from .provider import PaymentError, TemporaryPaymentError
+from .models import Order, Product
+from .provider import PaymentError, TemporaryPaymentError, get_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -268,3 +268,82 @@ class AdminPaymentListView(APIView):
         return paginator.get_paginated_response(
             [payment_admin.build_row(order) for order in page]
         )
+
+
+def _order_or_404(order_id):
+    return Order.objects.select_related("student__user", "product").filter(pk=order_id).first()
+
+
+class AdminPaymentCancelView(APIView):
+    """POST /api/admin/payments/{order_id}/cancel — 취소·환불(PRD 3.1.5).
+
+    **대표 전용이다.** 돈이 되돌아가는 파괴적 조작이라 기능 키가 아니라 역할
+    게이트로 잠근다(key_considerations §2 가 대표 전용 후보로 꼽아 둔 항목,
+    §5 "파괴적 작업은 관리자 수동 + 이력"). `결제확인` 을 delta 로 받은
+    관리자도 여기는 못 연다 — 권한 매트릭스(IsOwner) 와 같은 축이다.
+    """
+
+    permission_classes = [IsOwner]
+
+    def post(self, request, order_id):
+        order = _order_or_404(order_id)
+        if order is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            order = payment_admin.cancel_order(order, reason=request.data.get("reason"))
+        except payment_admin.PaymentQueryError as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_400_BAD_REQUEST)
+        except TemporaryPaymentError as exc:
+            logger.warning("결제 취소 일시 실패 (order=%s): %s", order_id, exc)
+            return Response(
+                {"detail": "취소하지 못했습니다. 잠시 후 다시 시도해 주세요."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except PaymentError as exc:
+            logger.error("결제 취소 실패 (order=%s): %s", order_id, exc)
+            return Response(
+                {"detail": "취소하지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY
+            )
+        return Response(payment_admin.build_row(order))
+
+
+class AdminPaymentDeliverView(APIView):
+    """POST /api/admin/payments/{order_id}/deliver — 배부완료 처리(PRD 3.1.5).
+
+    취소와 달리 **일상 운영**이라 기능 키(`결제확인`)로 연다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.PAYMENT_CHECK)]
+
+    def post(self, request, order_id):
+        order = _order_or_404(order_id)
+        if order is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            order = payment_admin.mark_delivered(order)
+        except payment_admin.PaymentQueryError as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(payment_admin.build_row(order))
+
+
+class AdminPaymentBalanceView(APIView):
+    """GET /api/admin/payments/balance — 선불 잔액(쌤포인트).
+
+    **자동충전을 안 켜기로 했으므로**(2026-08-11) 사람이 보는 자리가 있어야
+    한다. 잔액이 마르면 청구가 통째로 멈추는데 지금은 로그 말고 알 길이 없다.
+
+    조회 실패를 500 으로 올리지 않는다 — 잔액을 못 읽는 것과 결제 화면이
+    통째로 죽는 것은 다른 일이다. `balance: null` 로 내리고 화면이 그 자리만 비운다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.PAYMENT_CHECK)]
+
+    def get(self, request):
+        try:
+            balance = get_adapter().read_balance()
+        except PaymentError as exc:
+            logger.warning("잔액 조회 실패: %s", exc)
+            return Response({"balance": None, "charge_url": None})
+        if balance is None:
+            return Response({"balance": None, "charge_url": None})
+        return Response({"balance": balance.amount, "charge_url": balance.charge_url})
