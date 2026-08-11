@@ -754,6 +754,45 @@
   </div>
 </footer>
 
+<!-- 뷰포트 계측기. `?vh` 를 붙였을 때만 뜬다 — 그 외에는 코드가 돌지도 않는다.
+     카카오·인스타 인앱 브라우저에는 주소창이 없어 javascript: 를 못 넣는다.
+     그래서 페이지 안에 둔다. 확인이 끝나면 이 블록을 지운다.
+
+     보는 법: 카톡으로 https://hjcedu.com/?vh 를 열고 **스크롤해서 주소창을 접는다.**
+       sv 가 변하면  → WebKit 255852 에 우리도 걸린 것. --vh0 고정 방식으로 간다
+       sv 가 그대로면 → 애초에 문제가 없다. 손댈 필요 없다
+     (준수 브라우저에서는 sv < lv 이고 스크롤해도 둘 다 안 변하는 것이 정상이다) -->
+<script>
+if (location.search.includes('vh')) {
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed;left:8px;top:8px;z-index:9999;background:#000C;' +
+    'color:#0f0;font:12px/1.5 ui-monospace,monospace;padding:8px 10px;border-radius:6px;' +
+    'white-space:pre;pointer-events:none';
+  document.addEventListener('DOMContentLoaded', () => document.body.append(box));
+  const px = u => {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:100' + u;
+    document.documentElement.append(d);
+    const h = d.getBoundingClientRect().height; d.remove();
+    return Math.round(h);
+  };
+  let min = {}, max = {};
+  const tick = () => {
+    const v = { sv: px('svh'), lv: px('lvh'), dv: px('dvh'), inner: innerHeight };
+    for (const k in v) {
+      min[k] = Math.min(min[k] ?? v[k], v[k]);
+      max[k] = Math.max(max[k] ?? v[k], v[k]);
+    }
+    box.textContent = Object.keys(v)
+      .map(k => `${k.padEnd(5)} ${String(v[k]).padStart(4)}   ${min[k]}~${max[k]}` +
+                (min[k] !== max[k] ? '  움직임' : ''))
+      .join('\n') + `\n\nsv 가 움직이면 → JS 고정 필요`;
+    requestAnimationFrame(tick);
+  };
+  tick();
+}
+</script>
+
 <script type="module">
 import { SPACE, CURRICULUM, ERRATA } from './data.js';
 import { mountField, mountNavDust } from './field.js';
