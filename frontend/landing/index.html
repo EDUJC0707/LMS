@@ -51,7 +51,9 @@
        clamp 는 33.3px). 세이프에어리어를 패딩에 더한다 — 노치가 없으면 env 가 0 이라
        세로·데스크탑은 값이 그대로다. */
     --pad:calc(clamp(20px, 4.5vw, 72px) + max(env(safe-area-inset-left), env(safe-area-inset-right)));
-    --nav:72px;
+    /* viewport-fit=cover 라 레이아웃 뷰포트가 상태바 밑까지 뻗는데 nav 는 top:0 이다.
+       노치 폰(inset-top 59)에서 브랜드·로그인이 다이내믹 아일랜드에 100% 가린다. */
+    --nav:calc(72px + env(safe-area-inset-top));
   }
   *{ box-sizing:border-box; margin:0 }
   html{ -webkit-text-size-adjust:100%; scroll-behavior:smooth }
@@ -298,7 +300,7 @@
   .tbl th:nth-child(2){ width:8rem }
   .tbl th:nth-child(3){ width:7rem }
   .tbl .num{ font-variant-numeric:tabular-nums; white-space:nowrap; color:var(--dim) }
-  .title-cell{ font-weight:600 }
+  .title-cell{ font-weight:600; word-break:keep-all }
   /* margin-left 가 줄바꿈 뒤에도 남아 배지가 어중간하게 들여쓰였다.
      앞 공백을 마진 대신 여백 문자로 붙여 줄이 바뀌면 마진이 안 남게 한다. */
   .new{
@@ -389,8 +391,8 @@
        강사 높이를 만져도 둘이 다시 갈라지지 않는다. */
     .hero{
       grid-template-columns:1fr;
-      align-content:end;
-      padding-bottom:calc(var(--teacher-h-sm, 58svh) + var(--hero-gap, 12svh));
+      align-content:center;
+      padding-bottom:calc(var(--teacher-h-sm, 58svh) + var(--hero-gap, 0svh));
     }
     .copy{ max-width:none }
     /* clamp 하한 2.1rem 이 634px 밑에서 그대로 걸려(2.1rem ÷ 5.3vw = 634px)
@@ -410,7 +412,7 @@
        3.30rem(52.8px)은 451px 부터야 걸린다 — 상한만 올리면 폰에서는 아무 일도
        안 일어난다(2026-08-06 에 두 번 그렇게 놓쳤다). 10%+5% 를 vw 에 건다:
        11.7 × 1.155 = 13.51vw → 390px 에서 52.7px. */
-    h1{ font-size:min(13.51vw, 3.30rem) }   /* 390px 에서 52.7px */
+    h1{ font-size:min(13.51vw, 4.4rem) }   /* 391~599 도 vw 가 계속 이긴다 */
     /* 40svh 는 데스크탑(80svh)의 절반이라 머리폭이 83px — 데스크탑 157px 의 53% 였다.
        오른쪽 -12% 는 46.8px 을 잘랐는데, PNG 알파를 훑어 보면 팔짱 낀 팔꿈치가
        인물 폭의 **99.71%** 까지 나간다(알파 전수 스캔, 임계 8). 파일이 실루엣에 딱 붙게
@@ -444,7 +446,6 @@
        세이프에어리어를 더해도 겹침이 남아서 아래를 그만큼 비운다.
        600px 부터는 사업자 정보가 런처까지 닿지 않아 여기(모바일)에만 건다. */
     footer{ padding-bottom:calc(env(safe-area-inset-bottom) + 24px + 56px + 16px) }
-
     /* 탭 타깃을 HIG 최소 44 로 올린다. 전부 세로만 모자랐다 —
          브랜드 143.8x30 · 로그인 83x39.5 · 트랙 탭 113.5x39.2 ·
          PDF/XLSX 45.4x26.6 · 제보하기 94x40.4
@@ -480,10 +481,27 @@
     .foot dt{ opacity:1; color:#6E79A6 }
   }
 
+  /* 아이패드 세로(600~860). 폰 값이 그대로 올라오면 화면만 커지고 내용은 그대로라
+     헤드라인이 칸의 38% 밖에 안 차고 가운데가 242px 비었다. 둘 다 키운다. */
+  @media (min-width:600px) and (max-width:860px) and (min-height:600px){
+    /* 변수를 바꾼다 — .teacher{height} 만 덮으면 .hero 의 padding-bottom 이
+       58svh 폴백을 계속 읽어 헤드라인이 강사 위로 겹친다. 둘이 같은 값을 봐야 한다.
+       디버그 패널은 :root 에 인라인으로 써서 여전히 이걸 이긴다. */
+    /* 70svh + nav + 헤드라인이 화면보다 커지면(높이 756px 미만) 남는 자리가 0 이 돼
+       가운데 정렬이 무력해지고 강사 발밑이 잘린다. 남는 자리로 상한을 건다. */
+    :root{ --teacher-h-sm:min(70svh, calc(100svh - 260px)) }
+    /* rem 상한이 구간 전체를 이겨 600~860 이 통째로 70.4px 로 언다.
+       폭은 vw 가, 높이는 실제로 남는 띠가 정하게 한다. 2.56 = h1 높이(2.2em) ÷ 띠의 86%. */
+    h1{ font-size:min(12vw, calc((100svh - var(--nav) - var(--teacher-h-sm,70svh)) / 2.56)) }
+  }
+
+
   /* 가로로 눕힌 폰. 64svh 짜리 강사 위에 헤드라인을 얹으면 nav 를 뚫는다
      (740x360 에서 헤드라인 top 32.6px < --nav 72px). */
-  @media (max-width:860px) and (max-height:599px){
+  @media (max-width:860px) and (max-height:599px) and (orientation: landscape){
     .hero{ align-content:center; padding-bottom:32svh }
+    /* 폰 상한(4.4rem)이 여기까지 올라오면 360px 높이에 70px 글자가 얹혀 위가 9px 남는다 */
+    h1{ font-size:min(13.51vw, 3rem) }
     /* **-12% 를 되살리면 안 된다.** right 는 뷰포트 폭의 %인데 이미지는 높이로 재므로,
        넓고 낮은 화면에서 -12% 가 이미지 폭보다 커진다 — 800x360 에서 이미지 폭 91px 에
        밀어내는 양 96px 라 **가시폭 0px**, 강사가 통째로 화면 밖으로 나간다.
