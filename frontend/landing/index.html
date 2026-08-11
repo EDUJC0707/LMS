@@ -36,8 +36,16 @@
      히어로가 2121px 이 된다). 실제 요소로 100svh 를 재면 레이아웃 엔진이 답하므로
      그 위험이 없다.
 
-     DOMContentLoaded 에서 한 번 더 잰다 — head 측정이 틀렸을 때의 보정이고,
-     맞았으면 같은 값이라 아무 일도 안 일어난다. 그 뒤로는 회전에만 반응한다. */
+     **DOMContentLoaded 에서 다시 재지 않는다**(2026-08-12). 재던 이유는 "head 측정이
+     틀렸을 때의 보정" 이었고, 전제는 "맞았으면 같은 값이라 아무 일도 안 일어난다" 였다.
+     카톡에서 그 전제가 깨진다 — 인앱 브라우저는 창이 올라오는 애니메이션 중에 페이지를
+     파싱하므로 두 측정이 서로 다른 높이를 읽고, 두 번째가 --vhu 를 갈아치우는 순간
+     그 변수로 잡힌 전부가 다시 그려진다. 스크롤 튐을 없애면서 **열 때의 튐을 새로
+     만든 것**이다(대표 실측: 스크롤 튐은 사라졌고 여는 순간 한 번 남았다).
+
+     보정이 진짜 필요한 경우는 첫 측정이 **아예 실패한** 때 하나뿐이므로(h<=0 이면
+     --vhu 가 안 걸리고 1svh 폴백으로 남아 원래 버그가 그대로 돌아온다) 거기에만 건다.
+     회전은 뷰포트가 실제로 바뀌는 것이라 계속 듣는다. */
   const measureVh = () => {
     const d = document.createElement('div');
     d.style.cssText = 'position:fixed;top:0;left:0;width:0;height:100svh;visibility:hidden';
@@ -56,7 +64,9 @@
      오늘과 한 픽셀도 다르지 않다. */
   if (matchMedia('(hover: none) and (pointer: coarse)').matches) {
     freezeVh();
-    addEventListener('DOMContentLoaded', freezeVh, { once: true });
+    addEventListener('DOMContentLoaded', () => {
+      if (!document.documentElement.style.getPropertyValue('--vhu')) freezeVh();
+    }, { once: true });
     addEventListener('orientationchange', () => setTimeout(freezeVh, 250));
   }
 </script>
