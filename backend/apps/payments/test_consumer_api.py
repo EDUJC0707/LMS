@@ -166,3 +166,38 @@ class ConsumerPaymentsTests(TestCase):
         bare = make_user("pay-bare-par", User.Role.PARENT)
         self.client.force_login(bare)
         self.assertEqual(self.client.get(PARENT_URL).status_code, 404)
+
+
+class ProductListTests(TestCase):
+    """GET /api/payments/products — 살 수 있는 교재 목록.
+
+    청구 개시가 `product_id` 를 받는데 그 번호를 소비자에게 알려 주는 자리가
+    없었다 — 목록이 없으면 구매 버튼을 그릴 수 없다(videos 목록 선례).
+    학생·학부모가 같은 목록을 본다(교재는 학생별로 다르지 않다).
+    """
+
+    URL = "/api/payments/products"
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.live = Product.objects.create(name="로직엔제 교재 Vol.1", price=45000)
+        cls.retired = Product.objects.create(name="폐기 교재", price=1000, is_active=False)
+        cls.student_user = make_user("prod-stu", User.Role.STUDENT)
+        Student.objects.create(user=cls.student_user, matching_key="3_9001")
+        cls.parent_user = make_user("prod-par", User.Role.PARENT)
+        Parent.objects.create(user=cls.parent_user, phone="01055556666")
+
+    def test_anonymous_is_blocked(self):
+        self.assertEqual(self.client.get(self.URL).status_code, 403)
+
+    def test_student_sees_only_products_on_sale(self):
+        self.client.force_login(self.student_user)
+        rows = self.client.get(self.URL).json()
+        self.assertEqual([r["product_id"] for r in rows], [self.live.product_id])
+        self.assertEqual(rows[0]["name"], "로직엔제 교재 Vol.1")
+        self.assertEqual(rows[0]["price"], 45000)
+
+    def test_parent_sees_the_same_list(self):
+        self.client.force_login(self.parent_user)
+        rows = self.client.get(self.URL).json()
+        self.assertEqual([r["product_id"] for r in rows], [self.live.product_id])

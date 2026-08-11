@@ -145,6 +145,28 @@ class ParentPaymentListView(APIView):
         return Response(consumer.build_order_list(student))
 
 
+class ProductListView(APIView):
+    """GET /api/payments/products — 살 수 있는 교재 목록(PRD 3.2.5).
+
+    청구 개시가 `product_id` 를 받는데 그 번호를 소비자에게 알려 주는 자리가
+    없었다 — 목록이 없으면 구매 버튼을 그릴 자리 자체가 없다(videos 목록 선례).
+
+    학생·학부모가 **같은 목록**을 본다. 교재는 학생별로 다르지 않다.
+    이미 산 것을 걸러 내지 않는다 — 화면이 자기 주문 목록과 맞춰 본다.
+    """
+
+    permission_classes = [IsStudent | IsParent]
+
+    def get(self, request):
+        products = Product.objects.filter(is_active=True).order_by("product_id")
+        return Response(
+            [
+                {"product_id": p.product_id, "name": p.name, "price": p.price}
+                for p in products
+            ]
+        )
+
+
 class StudentBillView(APIView):
     """POST /api/student/payments/bill — 버튼 클릭 한 번으로 청구 개시(PRD 3.1.5)."""
 

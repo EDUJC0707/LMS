@@ -15,5 +15,7 @@ router = DefaultRouter()
 
 urlpatterns = [
     path("callback", views.PaymentCallbackView.as_view(), name="callback"),
+    # 교재 목록은 학생·학부모가 같은 것을 보므로 역할 경로로 가르지 않는다.
+    path("products", views.ProductListView.as_view(), name="products"),
     *router.urls,
 ]
