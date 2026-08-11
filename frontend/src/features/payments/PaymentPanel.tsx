@@ -4,9 +4,14 @@
  * 두 화면이 각자 표를 그리면 같은 주문이 한쪽에만 보이는 식으로 갈린다.
  * 다른 것은 **어느 경로로 청구를 개시하느냐** 뿐이라 그것만 prop 으로 받는다.
  *
- * 결제창은 모달 안 iframe 이다 — PRD 3.2.5 *"외부 사이트로 완전히 이탈하지 않고
- * LMS 흐름 내 진행"*. 다만 결제 페이지가 프레이밍을 막을 수 있어(X-Frame-Options)
- * 새 창 링크를 함께 둔다. 링크가 없으면 막혔을 때 **빈 사각형만 남는다**.
+ * **결제창은 새 창이다. iframe 이 아니다.** PRD 3.2.5 는 *"외부 사이트로 완전히
+ * 이탈하지 않고"* 를 요구하지만 업체가 **iframe 임베드를 지원하지 않는다**
+ * (2026-08-11 개발자센터 확인 — "보안 정책상 iframe 내부로 제공할 수 없다").
+ * 프레이밍을 시도하면 X-Frame-Options·CSP 에 막혀 **빈 사각형**이 남는다.
+ * 그래서 새 창으로 열고 LMS 는 원래 탭에 그대로 둔다.
+ *
+ * 미결제 주문 줄에도 같은 링크를 둔다 — 새 창을 닫은 학생이 자기 청구서로
+ * 돌아갈 유일한 길이라(업체 조회 API 는 이 URL 을 돌려주지 않는다).
  */
 import { useState } from "react";
 
@@ -31,6 +36,8 @@ export interface PaymentOrder {
   ordered_at: string | null;
   paid_at: string | null;
   delivered_at: string | null;
+  /** 미결제 주문의 결제 링크. 청구서를 아직 안 보냈으면 null. */
+  pay_url: string | null;
 }
 
 export interface PurchasableProduct {
@@ -192,23 +199,35 @@ export function PaymentPanel({ ordersPath, billPath, studentId }: PaymentPanelPr
                 numeric: true,
                 cell: (row) => day(row.paid_at),
               },
+              {
+                key: "pay",
+                header: "",
+                align: "right",
+                width: "7rem",
+                cell: (row) =>
+                  row.status === "미결제" && row.pay_url ? (
+                    <a href={row.pay_url} target="_blank" rel="noreferrer">
+                      결제하기
+                    </a>
+                  ) : null,
+              },
             ]}
           />
         )}
       </Card>
 
       {payUrl && (
-        <Modal open title="교재 결제" wide onClose={() => setPayUrl(null)}>
-          <iframe
-            src={payUrl}
-            title="교재 결제"
-            style={{ width: "100%", height: "70vh", border: 0 }}
-          />
-          <p style={{ marginTop: "var(--space-md)" }}>
-            <a href={payUrl} target="_blank" rel="noreferrer">
-              새 창에서 열기
+        <Modal
+          open
+          title="교재 결제"
+          onClose={() => setPayUrl(null)}
+          footer={
+            <a className="ui-button ui-button--primary" href={payUrl} target="_blank" rel="noreferrer">
+              결제하기
             </a>
-          </p>
+          }
+        >
+          <p>청구서를 보냈습니다.</p>
         </Modal>
       )}
     </div>

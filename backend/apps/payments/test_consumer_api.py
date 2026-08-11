@@ -201,3 +201,38 @@ class ProductListTests(TestCase):
         self.client.force_login(self.parent_user)
         rows = self.client.get(self.URL).json()
         self.assertEqual([r["product_id"] for r in rows], [self.live.product_id])
+
+
+class PayUrlExposureTests(TestCase):
+    """미결제 주문은 **결제 링크를 다시 꺼낼 수 있어야** 한다.
+
+    업체는 iframe 임베드를 지원하지 않는다(2026-08-11 문서 확인 — "보안 정책상
+    iframe 내부로 제공할 수 없다"). 결제는 새 창으로 열 수밖에 없고, 그러면
+    학생이 창을 닫는 순간 자기 청구서로 돌아갈 방법이 사라진다.
+    `Order.pay_url` 은 그러라고 저장해 둔 값이므로 목록에 실어 내린다.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.product = Product.objects.create(name="로직엔제 교재 Vol.1", price=45000)
+        cls.user = make_user("pu-stu", User.Role.STUDENT)
+        cls.student = Student.objects.create(user=cls.user, matching_key="3_8001")
+
+    def test_unpaid_order_carries_its_pay_url(self):
+        Order.objects.create(
+            student=self.student,
+            product=self.product,
+            amount=45000,
+            is_billed=True,
+            pay_url="https://bill.paymint.co.kr/abc",
+        )
+        self.client.force_login(self.user)
+        self.assertEqual(
+            self.client.get(STUDENT_URL).json()[0]["pay_url"],
+            "https://bill.paymint.co.kr/abc",
+        )
+
+    def test_unbilled_order_has_no_pay_url(self):
+        Order.objects.create(student=self.student, product=self.product, amount=45000)
+        self.client.force_login(self.user)
+        self.assertIsNone(self.client.get(STUDENT_URL).json()[0]["pay_url"])

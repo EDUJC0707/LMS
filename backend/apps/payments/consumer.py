@@ -41,6 +41,10 @@ def build_order_list(student):
             "ordered_at": _iso(order.ordered_at),
             "paid_at": _iso(order.paid_at),
             "delivered_at": _iso(order.delivered_at),
+            # 업체가 **iframe 임베드를 지원하지 않는다**(2026-08-11 문서 확인) —
+            # 결제는 새 창으로만 열 수 있고, 그러면 창을 닫은 학생이 자기
+            # 청구서로 돌아갈 길이 필요하다. 그게 이 값이다.
+            "pay_url": order.pay_url or None,
         }
         for order in orders
     ]
