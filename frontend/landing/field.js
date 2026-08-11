@@ -31,6 +31,8 @@ const CFG = {
 
   /* 바람 — 걷히는 범위. 손전등보다 넓다 */
   R: 0.10,           // 창 반경 = min(W,H) × 이 값
+  Rsm: 0.122,        // 좁은 화면은 sqrt(W*H) × 이 값. 0.122 는 390x844 에서 정확히
+                     // 70 이 나오는 수 — 폰 값을 건드리지 않으려고 거기 맞췄다
   Rmin: 70, Rmax: 130,
   push: 0.85,        // 밀어내는 거리 = R × 이 값
   sweep: 0.16,       // 커서 속도를 얼마나 물고 가는가(진행 방향 쓸림)
@@ -117,7 +119,7 @@ const isSmall = () => matchMedia('(max-width: 860px)').matches;
    mountNavDust 는 처음부터 면적당으로 환산하고 있었다 — 히어로만 안 했다.
    넓은 화면은 손대지 않는다(isSmall 밖에서는 CFG.dust 그대로). */
 const REF_AREA = 1200 * 800;
-const dustCount = () => isSmall()
+const dustCount = () => (isSmall() || innerHeight > innerWidth)
   ? Math.max(700, Math.round(CFG.dust * innerWidth * innerHeight / REF_AREA))
   : CFG.dust;
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -276,7 +278,11 @@ export function mountField(root, units) {
     // 창 반경. 화면이 좁으면 같이 좁아진다 — vw 로 고정하면 모바일에서 화면
     // 절반이 통째로 걷힌다
     const m = Math.min(W, H);
-    R = Math.max(CFG.Rmin, Math.min(CFG.Rmax, CFG.R * m));
+    /* 짧은 변으로 재면 세로 태블릿은 짧은 변이 폭이라 창이 안 큰다 — 820x1180 은
+       폰보다 면적이 2.9배인데 R 은 70→82(17%)뿐이었고 점유율이 절반이었다.
+       면적의 제곱근으로 재면 두 변이 다 들어온다. 넓은 화면은 종전대로 짧은 변이다. */
+    R = Math.max(CFG.Rmin, Math.min(CFG.Rmax,
+      isSmall() ? CFG.Rsm * Math.sqrt(W * H) : CFG.R * m));
     R2 = 2 * R * R;
     FR = Math.max(CFG.flashMin, Math.min(CFG.flashMax, CFG.flash * m));
 

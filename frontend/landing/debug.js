@@ -178,10 +178,24 @@ export function openDebug() {
   if (document.querySelector('.dbg')) return null;   // 이미 열려 있다
   const api = window.__field;
   const rootS = document.documentElement.style;
-  const sm = () => matchMedia('(max-width: 860px)').matches;
+  const sm = () => matchMedia('(max-width: 860px), (max-width: 1024px) and (orientation: portrait)').matches;
 
   // index.html 에 박힌 강사 기본값. 여기와 CSS 가 어긋나면 패널을 여는 순간 화면이 튄다
   const TEACHER0 = { h: 80, r: 5, b: 0, hSm: 58, rSm: -3, bSm: 0, gap: 0, h1gap: .20 };
+  /* hSm 리터럴은 폰 값이다. 태블릿(600~860)에서는 :root 가
+     --teacher-h-sm:min(70svh, calc(100svh - 260px)) 로 덮고 가로 폰은 46svh 다 —
+     58 을 그대로 쓰면 패널을 여는 순간 강사가 튄다(768x1024 에서 717→594px).
+     지금 그려져 있는 높이를 되읽는다. 100svh 는 innerHeight 와 다를 수 있어서
+     (주소창) 탐침 요소로 잰다. */
+  if (sm()) {
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:absolute;top:0;width:0;height:100svh;visibility:hidden';
+    document.body.append(probe);
+    const svh = probe.getBoundingClientRect().height / 100;
+    probe.remove();
+    const now = document.querySelector('.teacher')?.getBoundingClientRect().height;
+    if (svh && now) TEACHER0.hSm = Math.round(now / svh * 10) / 10;
+  }
   if (!BASE) BASE = { teacher: { ...TEACHER0 }, blue: 'royal', cfg: api ? { ...api.cfg } : {} };
 
   const st = document.createElement('style');

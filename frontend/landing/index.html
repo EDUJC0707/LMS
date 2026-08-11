@@ -12,6 +12,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>한종철 통합과학</title>
 <meta name="description" content="통합과학도 철두철미하게. 한종철 통합과학.">
+<link rel="canonical" href="https://hjcedu.com/">
+<!-- 카톡·문자로 퍼지는 페이지다. 카드가 없으면 앱마다 제목·이미지를 제멋대로 집어간다.
+     **og:image 는 절대 URL 이어야 한다** — 카카오/트위터 크롤러는 상대경로를 풀지 않는다.
+     twitter:title/description/image 는 안 적는다: 없으면 og:* 를 그대로 읽는다. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="한종철 통합과학">
+<meta property="og:url" content="https://hjcedu.com/">
+<meta property="og:title" content="한종철 통합과학">
+<meta property="og:description" content="통합과학도 철두철미하게.">
+<meta property="og:image" content="https://hjcedu.com/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="ko_KR">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/logo/atom-32.png">
 <link rel="icon" type="image/png" sizes="512x512" href="assets/logo/atom-512.png">
 <link rel="apple-touch-icon" href="assets/logo/atom-180.png">
@@ -26,10 +40,15 @@
 <script>window.__CHANNEL_TALK_KEY__ = '346bbc40-aad0-4f5f-a95b-90fc47bc9f48';</script>
 <!-- SUIT 가변 — 본체 앱(frontend/index.html)과 같은 서체로 간다.
      가변이라 100~900을 한 파일로 쓰고, 헤드라인은 900까지 밀어붙인다. -->
-<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-<link rel="stylesheet"
-      href="https://cdn.jsdelivr.net/gh/sun-typeface/SUIT@2/fonts/variable/woff2/SUIT-Variable.css">
 <style>
+  /* 이 페이지가 쓰는 글자만 구운 SUIT. 11,172 자를 통째로 받던 CDN 판은 624,536 B 였다.
+     굽는 법: pyftsubset SUIT-Variable.woff2 --flavor=woff2 --no-hinting --desubroutinize
+              --text-file=assets/fonts/subset-charset.txt --output-file=assets/fonts/SUIT-subset.woff2
+     문구를 새로 넣으면 목록에 없는 글자만 시스템 서체로 떨어진다 — 목록을 고쳐 다시 굽는다. */
+  @font-face{
+    font-family:"SUIT Variable"; font-weight:100 900; font-display:swap;
+    src:url("assets/fonts/SUIT-subset.woff2") format("woff2-variations");
+  }
   /* 팔레트는 배경 모티프에서 뽑았다 — 화면의 색이 두 군데서 나오면 안 된다.
      전체 평균을 쓰면 유리 하이라이트에 끌려 흰색으로 씻겨나간다. 그래서 각 에셋의
      **채도 높고 어두운** 픽셀(원자 링 음영·시냅스 소포 코어·은하 외곽)만 뽑았고,
@@ -56,7 +75,10 @@
     --nav:calc(72px + env(safe-area-inset-top));
   }
   *{ box-sizing:border-box; margin:0 }
-  html{ -webkit-text-size-adjust:100%; scroll-behavior:smooth }
+  /* nav 가 fixed 라 앵커로 들어오면 대상이 그 아래로 들어간다(#errata 진입 시
+     섹션 위 66px 이 nav 뒤로 숨었다). 요소마다 scroll-margin 을 거는 대신
+     스크롤 컨테이너에 한 번 건다 — 키보드 포커스 이동도 같이 걸린다. */
+  html{ -webkit-text-size-adjust:100%; scroll-behavior:smooth; scroll-padding-top:var(--nav) }
   /* 배경 애니메이션은 field.js 가 끄는데 스크롤 애니메이션은 CSS 라 그대로 남아 있었다 */
   @media (prefers-reduced-motion: reduce){
     html{ scroll-behavior:auto }
@@ -370,11 +392,11 @@
        34.7%, 1회 중앙값 13.8초). 히어로 꼭대기에 있을 때만 아래 16px 을 연다.
        먼지 캔버스도 **같은 램프로** 깎아야 둘을 더해 밀도가 유지된다. */
     .nav.attop{
-      background:linear-gradient(180deg, var(--bg) 0 calc(var(--nav) - 16px), transparent var(--nav));
+      background:linear-gradient(180deg, var(--bg) 0 calc(var(--nav) - var(--nav-ramp,16px)), transparent var(--nav));
     }
     .nav.attop .navdust{
-      -webkit-mask-image:linear-gradient(180deg,#000 0 calc(var(--nav) - 16px),transparent var(--nav));
-      mask-image:linear-gradient(180deg,#000 0 calc(var(--nav) - 16px),transparent var(--nav));
+      -webkit-mask-image:linear-gradient(180deg,#000 0 calc(var(--nav) - var(--nav-ramp,16px)),transparent var(--nav));
+      mask-image:linear-gradient(180deg,#000 0 calc(var(--nav) - var(--nav-ramp,16px)),transparent var(--nav));
     }
     /* 세로 화면에는 데스크탑의 짝(왼쪽 글자 ↔ 오른쪽 사람)이 없다. 붙여서 하나로 만든다.
        잉크가 하나도 지나가지 않던 가로 띠가 nav 아래 214px + 헤드라인 아래 146px
@@ -449,23 +471,6 @@
        세이프에어리어를 더해도 겹침이 남아서 아래를 그만큼 비운다.
        600px 부터는 사업자 정보가 런처까지 닿지 않아 여기(모바일)에만 건다. */
     footer{ padding-bottom:calc(env(safe-area-inset-bottom) + 24px + 56px + 16px) }
-    /* 탭 타깃을 HIG 최소 44 로 올린다. 전부 세로만 모자랐다 —
-         브랜드 143.8x30 · 로그인 83x39.5 · 트랙 탭 113.5x39.2 ·
-         PDF/XLSX 45.4x26.6 · 제보하기 94x40.4
-       패딩만 늘리므로 **보이는 크기는 그대로**다. 브랜드는 배경이 없어 눈에 띄는
-       변화가 아예 없고(로고 30 + 7x2 = 44), 알약 셋은 알약이 실제로 커진다. */
-    .brand{ padding-block:7px }
-    .login{ padding-block:.74rem }
-    .track{ padding-block:.78rem }
-    .btn{ padding-block:.82rem }
-    /* 표 안이라 알약을 키우면 행 높이가 밀린다. 히트 영역만 넓힌다 —
-       보이는 테두리는 그대로 두고 ::after 로 44 높이의 투명 판을 덮는다. */
-    .dl{ position:relative }
-    .dl::after{
-      content:''; position:absolute; left:0; right:0;
-      top:50%; height:44px; transform:translateY(-50%);
-    }
-
     /* 좁은 화면에서 사업자 정보를 한 줄로 흘리면 줄바꿈이 값 길이에 좌우돼
        들쭉날쭉해진다(상호+사업자등록번호가 한 줄, 대표 혼자 한 줄, 주소는 두 줄).
        라벨 열·값 열로 세워 한 쌍이 한 행을 갖게 한다.
@@ -498,6 +503,37 @@
     h1{ font-size:min(12vw, calc((100svh - var(--nav) - var(--teacher-h-sm,70svh)) / 2.56)) }
   }
 
+  /* 아이패드 프로 세로(861~1024). 폭이 860 을 넘어 데스크탑 2열을 그대로 받는데
+     세로 화면에는 그 짝(왼쪽 글자 ↔ 오른쪽 사람)이 없다 — nav 아래 587px(화면의
+     43%)이 통짜 검정이고, 헤드라인 잉크가 폭의 26%(768 은 50%), 강사는 820px
+     상한에 걸려 화면 60% 에서 멈춰 있었다. 위 태블릿 블록과 같은 배치를 준다.
+     **문은 orientation:portrait 다** — 확정된 데스크탑(가로)은 절대 안 탄다. */
+  @media (min-width:861px) and (max-width:1024px) and (orientation: portrait){
+    :root{ --teacher-h-sm:min(70svh, calc(100svh - 260px)) }
+    .hero{
+      grid-template-columns:1fr; align-content:center;
+      padding-bottom:calc(var(--teacher-h-sm) + var(--hero-gap, 0svh));
+    }
+    h1{ font-size:min(12vw, calc((100svh - var(--nav) - var(--teacher-h-sm,70svh)) / 2.56)) }
+    /* 상한 820px 을 벗기고 svh 로 되돌린다 — 벗기지 않으면 강사만 데스크탑 값에
+       남아 헤드라인 자리(padding-bottom)와 어긋난다. */
+    .teacher{ height:var(--teacher-h-sm); right:var(--teacher-right-sm, -3%); bottom:var(--teacher-bottom-sm, 0%) }
+
+    /* 커리큘럼 3열을 되살린다 — 접는 조건이 max-width:860 하나뿐이라 600~860 이
+       폰에 딸려 들어갔다. 768px 에서 범위 한 줄이 칸의 13.6%, 제목이 22~48% 다.
+       범위 열만 12.5rem → 11rem 이다. 데스크탑 값 그대로면 600~609px 에서 내용 열이
+       239px 밑으로 떨어져 `로직N제 — …` 이 51.8% 짜리 두 줄로 접힌다(실측).
+       11rem 은 582px 까지 한 줄을 지키고, 가장 긴 범위(`시스템과 상호작용` 95px)도
+       176px 안에 든다 — 잘림 없음. */
+    .step{ grid-template-columns:4rem minmax(0,1fr) 11rem; gap:1.4rem 1.6rem; padding-bottom:2.4rem }
+    /* 열이 돌아오면 레일도 돌아온다 — 번호 열이 있어야 점이 걸릴 자리가 있다.
+       높이는 fitRail() 이 resize 마다 다시 잰다(리스너는 폭 조건 없이 상시). */
+    .steps::before{ display:block }
+    .step-no{ padding-left:1.7rem; font-size:1.5rem }
+    .step-no::before{ display:block }
+    .scope{ padding-top:.42rem; line-height:1.95 }
+  }
+
 
   /* 가로로 눕힌 폰. 64svh 짜리 강사 위에 헤드라인을 얹으면 nav 를 뚫는다
      (740x360 에서 헤드라인 top 32.6px < --nav 72px). */
@@ -510,16 +546,65 @@
        밀어내는 양 96px 라 **가시폭 0px**, 강사가 통째로 화면 밖으로 나간다.
        가로에서는 인물이 이미 작으니 블리드 자체가 필요 없다. */
     .teacher{ height:46svh; right:2% }
+    /* 16px 램프는 세로에서 정한 값이다. 가로는 화면이 낮아 창이 nav 밑까지 올라오고,
+       램프가 짧으면 우주가 nav 아랫변에서 잘려 화면을 가로지르는 밝은 띠가 된다
+       (568x320 에서 y56 1.2 → y72 45.5, 2.65휘도/px). 40px 로 늘리면 0.71/px 다.
+       램프 안(y32~72)에 브랜드 글자가 걸리지만 그 자리 배경은 p70 11→16 로 거의
+       그대로다 — 창을 nav 안(110,40)에 못 박고 잰 최악값. */
+    :root{ --nav-ramp:40px }
+    /* 성운이 헤드라인 1행(--t1 #606DA4, 휘도 110)을 이긴다. 히어로 16px 블록평균
+       피크가 740x360 177 · 568x320 181 이었다. 창은 그대로 두고 층만 눕힌다 —
+       R 을 줄이면 폰 세로(Rmin 70)까지 따라 움직인다. .55 에서 둘 다 99. */
+    .space{ opacity:.55 }
   }
   /* prefers-reduced-motion 은 JS 가 처리한다 — 정적 1프레임만 그린다.
      CSS 로 배경을 끄면 히어로가 통째로 검게 남는다. */
+
+  /* ── 인쇄 ──────────────────────────────────────────────────
+     브라우저는 배경을 안 찍는다. 검정이 빠진 흰 종이 위에 본문은 그대로 #F0F0F4 라
+     대비 1.14:1 — 글이 통째로 사라진다. 검정을 쓰는 네 면만 뒤집는다.
+     #curriculum 은 원래 밝은 배경에 어두운 글이라 손댈 것이 없다. */
+  @media print{
+    :root{ --fg:#111; --t2:#111 }
+    body, footer, #errata, #contact{ background:#fff; color:#111 }
+    #errata{ --dim:#4A4F63; --line:#BBB }
+    /* 배경 캔버스·인물 사진·고정 nav·채널톡 런처는 종이에서 할 일이 없다 */
+    .nav, .field, .teacher, #ch-plugin{ display:none }
+    /* 그림자는 배경과 달리 인쇄된다 — 흰 종이에 검은 얼룩으로 남는다 */
+    h1{ text-shadow:none }
+    /* svh 기반 여백이 남으면 빈 종이가 한 장 더 나온다 */
+    .hero{ min-height:0; padding:0 0 28px }
+    section{ padding:0 0 28px }
+    footer{ padding-bottom:0 }
+    .foot dt{ color:#555 }
+    /* 흰 글자를 검정 면에 얹은 자리 — 면이 빠지면 흰 종이에 흰 글자만 남는다 */
+    .track[aria-selected="true"]{ background:none; color:#111; border-color:#111 }
+  }
+  /* 탭 타깃 HIG 44. **폭이 아니라 포인터로 건다** — 손가락 크기는 화면 크기와
+     무관하다. `max-width:860px` 안에 있을 때는 아이패드 프로(1024)가 통째로 빠져
+     44 미만이 12개였다. 전부 세로만 모자랐다(브랜드 143.8x30 · 로그인 83x39.5 ·
+     트랙 탭 113.5x39.2 · PDF/XLSX 45.4x26.6 · 제보하기 94x40.4).
+     패딩만 늘리므로 **보이는 크기는 그대로**다. */
+  @media (pointer: coarse){
+    .brand{ padding-block:7px }
+    .login{ padding-block:.74rem }
+    .track{ padding-block:.78rem }
+    .btn{ padding-block:.82rem }
+    /* 표 안이라 알약을 키우면 행 높이가 밀린다. 히트 영역만 넓힌다 —
+       보이는 테두리는 그대로 두고 ::after 로 44 높이의 투명 판을 덮는다. */
+    .dl{ position:relative }
+    .dl::after{
+      content:''; position:absolute; left:0; right:0;
+      top:50%; height:44px; transform:translateY(-50%);
+    }
+  }
 </style>
 </head>
 <body>
 
 <!-- 로그인 전에는 "LMS"를 걸지 않는다(사용자 지시 2026-07-28) — 비로그인 방문자에게
      LMS 는 제품 내부 명칭이고, 여기서 파는 것은 강의다. -->
-<div class="nav">
+<header class="nav">
   <div class="navL">
     <a class="brand" href="/">
       <img src="assets/logo/atom-180.png" alt="">
@@ -532,9 +617,11 @@
     </nav>
   </div>
   <a class="login" href="/student/login">로그인</a>
-</div>
+</header>
 
-<header class="hero">
+<!-- banner 는 이 배경 칸이 아니라 위 상단바다. <header> 로 두면 body 직계라
+     role=banner 가 여기 붙어 스크린리더가 nav·로그인 대신 먼지밭을 랜드마크로 읽는다. -->
+<div class="hero">
   <!-- 우주 사진(정적) → 먼지밭. 커서가 지나가면 먼지가 걷히고 우주가 드러난다 -->
   <div class="field" id="field" aria-hidden="true">
     <canvas class="space"></canvas>
@@ -549,16 +636,26 @@
     </h1>
   </div>
 
-  <!-- 모바일만 갈아 끼운다. 데스크탑은 <img src> 로 PNG 를 그대로 받아 바이트도
+  <!-- 터치 기기만 갈아 끼운다. 데스크탑은 <img src> 로 PNG 를 그대로 받아 바이트도
        픽셀도 오늘과 같다. srcset+sizes 가 아니라 media 를 쓰는 이유: DPR3 폰은
        필요 픽셀을 1029 로 계산해 srcset 으로는 도로 1.7MB PNG 를 집어간다.
-       실측 1,738,120 B → 136,202 B (-92.2%), 알파 최대차 0. -->
+       실측 1,738,120 B → 266,230 B (-84.7%), 알파 최대차 0.
+
+       **pointer:coarse 가 아이패드를 잡는다.** 폭·높이로는 못 가른다 — 아이패드
+       가로(1366x1024·1180x820·1024x768)와 12.9" 세로(1024x1366)가 860/600 을
+       둘 다 넘어 1.7MB 를 집어갔는데, 1180x820 은 데스크탑 1200x800 과 20px
+       차이라 폭으로 자르면 데스크탑이 같이 걸린다.
+       높이 임계는 아래 가로 블록과 같은 599 에 둔다 — 600 이면 1024x600↔601 에서
+       레이아웃은 그대로인데 전송만 6.5배 뛴다. -->
   <picture>
-    <source media="(max-width:860px), (max-height:600px)" type="image/webp"
+    <source media="(pointer:coarse), (max-width:860px), (max-height:599px)" type="image/webp"
             srcset="assets/teacher/nobg/teacher.webp">
-    <img class="teacher" src="assets/teacher/nobg/teacher.png" alt="한종철 선생님">
+    <!-- 260KB webp 가 400kbps 에서 11.6초 걸리는데 크롬은 도착한 줄까지만 그린다 —
+         그동안 상반신이 가로로 잘려 보였다(실측). 다 온 뒤에 켠다. -->
+    <img class="teacher" style="opacity:0;transition:opacity .4s" onload="this.style.opacity=1"
+         src="assets/teacher/nobg/teacher.png" alt="한종철 선생님">
   </picture>
-</header>
+</div>
 
 <main>
 <section id="curriculum">
