@@ -346,6 +346,9 @@
     display:flex; flex-direction:column; gap:1.15rem;
   }
   .foot b{ color:var(--fg); font-weight:700; font-size:.86rem; letter-spacing:-.02em }
+  /* 법정 링크. 눈에 띄지 않되 찾으면 있어야 한다 */
+  .foot .pp{ margin-left:.7rem; color:var(--dim); text-decoration:none; border-bottom:1px solid var(--line) }
+  .foot .pp:hover{ color:var(--fg) }
   /* 라벨-값이 한 줄로 흐른다(국내 푸터 관행). 세로 dt/dd 격자는 값이 넷뿐이라
      빈 칸이 더 눈에 띄었다. */
   .foot dl{ display:flex; flex-wrap:wrap; gap:.3rem 1.5rem; margin:0; font-size:.78rem }
@@ -611,6 +614,7 @@
   <div class="foot">
     <div>
       <b>한종철 통합과학</b> © 2026
+      <a class="pp" href="/privacy.html">개인정보처리방침</a>
     </div>
     <!-- 사업자 정보(2026-08-05 수령). 교육 서비스는 전자상거래법상 표시 의무가 있다.
          **통신판매업신고 줄은 일부러 뺐다** — 신고번호를 아직 못 받았고, 정부 신고번호는

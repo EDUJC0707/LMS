@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>개인정보처리방침 — 한종철 통합과학</title>
+<meta name="description" content="한종철 통합과학 개인정보처리방침">
+<link rel="icon" href="assets/logo/atom-32.png">
+<!--
+  개인정보처리방침.
+
+  **표준 양식으로 내가 초안을 썼다**(2026-08-11 대표 지시). 수집 항목은 지어내지 않고
+  `backend/apps/accounts/models.py` 의 실제 필드에서 뽑았다 — User(login_id·name·phone)
+  와 Student(matching_key·grade·school·current_class·enrollment_status). 그 밖의 것은
+  PRD 1장에 적힌 서비스 범위(OMR 성적·출결·영상 시청·상담 기록·결제)에서 왔다.
+
+  **표준 관행값으로 전부 채웠다**(2026-08-11 대표 지시 "그냥 standard대로").
+  법정 보존기간은 법이 정한 값이고(전자상거래법 5/3/6개월·통신비밀보호법 3개월),
+  회원·성적 보유기간은 학원업 통상값인 **퇴원 후 1년**을 썼다.
+  수탁자 둘은 지어내지 않고 PRD·to-do 에 실제로 적힌 업체다(결제선생·솔라피).
+
+  **전화·이메일은 넣지 않았다** — 없는 번호를 적으면 그 자체가 허위 표시이고,
+  정보주체가 권리를 행사할 창구가 막힌다. 대신 실제로 열려 있는 채팅 상담과
+  사업장 주소를 적었다. 전용 번호·메일이 생기면 9장 표에 한 줄씩 넣으면 된다.
+
+  대표가 바꿀 만한 값: 보유기간 1년, 시행일.
+
+  랜딩과 CSS 를 공유하지 않는다 — 이 페이지는 글만 있고, 히어로의 캔버스·먼지·폰트가
+  전혀 필요 없다. 한 파일로 두는 편이 가볍고 고칠 때도 여기만 보면 된다.
+-->
+<style>
+  :root{
+    --bg:#0B0C12; --fg:#E7E8F0; --dim:#8F9ABF; --line:rgba(120,126,215,.22);
+    --accent:#6B87DE;
+    --pad:calc(clamp(20px, 4.5vw, 72px) + max(env(safe-area-inset-left), env(safe-area-inset-right)));
+  }
+  *{ box-sizing:border-box }
+  html{ -webkit-text-size-adjust:100% }
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family:"SUIT Variable","Apple SD Gothic Neo",system-ui,sans-serif;
+    font-size:.95rem; line-height:1.8; word-break:keep-all;
+  }
+  .wrap{ max-width:52rem; margin:0 auto; padding:clamp(40px,7vh,88px) var(--pad) }
+  a{ color:var(--accent) }
+  .back{ display:inline-block; margin-bottom:2.5rem; font-size:.86rem; text-decoration:none }
+  .back:hover{ text-decoration:underline }
+  h1{ font-size:clamp(1.6rem,4.5vw,2.4rem); font-weight:800; letter-spacing:-.03em; margin:0 0 .6rem }
+  .stamp{ color:var(--dim); font-size:.82rem; margin:0 0 3rem }
+  h2{
+    font-size:1.06rem; font-weight:800; letter-spacing:-.02em;
+    margin:2.8rem 0 .8rem; padding-top:1.4rem; border-top:1px solid var(--line);
+  }
+  p, li{ color:#C9CEE4 }
+  ul{ padding-left:1.1rem; margin:.6rem 0 }
+  li{ margin:.3rem 0 }
+  table{ width:100%; border-collapse:collapse; font-size:.88rem; margin:.8rem 0 }
+  th, td{ text-align:left; padding:.7rem .8rem .7rem 0; border-bottom:1px solid var(--line); vertical-align:top }
+  th{ color:var(--dim); font-weight:600; white-space:nowrap }
+  td:last-child, th:last-child{ padding-right:0 }
+  footer{ margin-top:4rem; padding-top:1.6rem; border-top:1px solid var(--line); color:var(--dim); font-size:.82rem }
+  @media print{
+    :root{ --bg:#fff; --fg:#111; --dim:#555; --line:#ccc }
+    p, li{ color:#111 }
+    .back{ display:none }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<a class="back" href="/">← 한종철 통합과학</a>
+
+<h1>개인정보처리방침</h1>
+<p class="stamp">시행일 2026년 8월 11일</p>
+
+<p>
+  (주)에듀제이씨(이하 "회사")는 「개인정보 보호법」에 따라 이용자의 개인정보를 보호하고
+  이와 관련한 고충을 신속하게 처리할 수 있도록 다음과 같이 개인정보처리방침을 수립·공개합니다.
+</p>
+
+<h2>1. 수집하는 개인정보 항목과 수집 방법</h2>
+<table>
+  <tr><th>학생</th><td>이름, 휴대전화번호, 학년, 학교, 반, 로그인 아이디, 비밀번호</td></tr>
+  <tr><th>학부모</th><td>이름, 휴대전화번호, 로그인 아이디, 비밀번호, 자녀와의 연결 정보</td></tr>
+  <tr><th>서비스 이용 중 생성</th><td>성적 및 답안(OMR 스캔본 포함), 출결 기록, 복습영상 시청 기록, 클리닉 신청·참석 기록, 과제물 제출 사진, 상담 기록, 교재 구매 및 결제 내역, 문의 내용</td></tr>
+  <tr><th>자동 수집</th><td>접속 일시, 접속 IP, 로그인 시도 기록, 브라우저·기기 정보</td></tr>
+</table>
+<p>
+  개인정보는 학원 등록 시 서면 또는 대면으로 수집하며, 서비스 이용 과정에서 자동으로
+  생성·수집될 수 있습니다. 회사는 만 14세 미만 아동의 개인정보를 수집하는 경우
+  법정대리인의 동의를 받습니다.
+</p>
+
+<h2>2. 개인정보의 처리 목적</h2>
+<ul>
+  <li>수강생 관리 — 등록·반 배정·출결 관리, 계정 발급 및 본인 확인</li>
+  <li>학습 관리 — 성적 처리 및 분석, 복습영상 제공, 클리닉 운영, 과제 검사</li>
+  <li>보호자 안내 — 자녀의 성적·출결·결제 상태 조회 제공, 상담</li>
+  <li>거래 이행 — 교재 구매 및 결제, 환불 처리</li>
+  <li>민원 처리 — 문의 접수 및 답변, 분쟁 조정</li>
+  <li>서비스 보호 — 부정 이용 방지, 접속 기록 보관</li>
+</ul>
+
+<h2>3. 개인정보의 보유 및 이용 기간</h2>
+<p>
+  회사는 원칙적으로 개인정보 처리 목적이 달성되면 지체 없이 파기합니다.
+  다만 다음의 정보는 아래 기간 동안 보관합니다.
+</p>
+<table>
+  <tr><th>회원 정보</th><td>퇴원 후 1년</td></tr>
+  <tr><th>성적·출결 기록</th><td>퇴원 후 1년</td></tr>
+  <tr><th>계약 또는 청약철회 기록</th><td>5년 (전자상거래법)</td></tr>
+  <tr><th>대금 결제 및 재화 공급 기록</th><td>5년 (전자상거래법)</td></tr>
+  <tr><th>소비자 불만 또는 분쟁 처리 기록</th><td>3년 (전자상거래법)</td></tr>
+  <tr><th>표시·광고에 관한 기록</th><td>6개월 (전자상거래법)</td></tr>
+  <tr><th>접속 기록</th><td>3개월 (통신비밀보호법)</td></tr>
+</table>
+
+<h2>4. 개인정보 처리의 위탁</h2>
+<p>회사는 원활한 서비스 제공을 위해 다음과 같이 개인정보 처리 업무를 위탁하고 있습니다.</p>
+<table>
+  <tr><th>수탁자</th><th>위탁 업무</th></tr>
+  <tr><td>주식회사 채널코퍼레이션</td><td>고객센터 운영 및 고객 상담</td></tr>
+  <tr><td>결제선생</td><td>교재 대금 결제 및 환불 처리</td></tr>
+  <tr><td>솔라피(주식회사 뉴스레터)</td><td>안내 문자 발송</td></tr>
+</table>
+<p>
+  회사는 위탁계약 체결 시 개인정보가 안전하게 관리될 수 있도록 필요한 사항을 규정하고
+  수탁자를 감독하고 있으며, 위탁 업무의 내용이나 수탁자가 변경될 경우 지체 없이
+  본 방침을 통해 공개합니다.
+</p>
+
+<h2>5. 개인정보의 제3자 제공</h2>
+<p>
+  회사는 이용자의 개인정보를 제2조에 명시한 범위 내에서만 처리하며, 이용자의 사전 동의 없이는
+  제3자에게 제공하지 않습니다. 다만 법령에 특별한 규정이 있거나 수사기관이 법령에 정해진
+  절차와 방법에 따라 요구하는 경우는 예외로 합니다.
+</p>
+
+<h2>6. 개인정보의 파기</h2>
+<p>
+  보유 기간이 지나거나 처리 목적이 달성되어 개인정보가 불필요하게 되었을 때에는
+  지체 없이 파기합니다. 전자적 파일 형태의 정보는 복구할 수 없는 기술적 방법으로 삭제하고,
+  종이에 출력된 정보(OMR 답안지 등)는 분쇄하거나 소각합니다.
+</p>
+
+<h2>7. 정보주체의 권리와 행사 방법</h2>
+<p>
+  이용자와 법정대리인은 언제든지 자신의 개인정보에 대한 열람·정정·삭제·처리정지를
+  요구할 수 있습니다. 제9조의 창구로 요청하시면 지체 없이 조치하겠습니다.
+</p>
+<p>
+  만 14세 미만 아동의 경우 법정대리인이 아동의 개인정보에 대한 권리를 행사할 수 있습니다.
+</p>
+
+<h2>8. 개인정보의 안전성 확보 조치</h2>
+<ul>
+  <li>비밀번호는 복호화할 수 없는 방식으로 암호화하여 저장합니다</li>
+  <li>개인정보에 접근할 수 있는 담당자를 최소한으로 제한하고 접근 권한을 관리합니다</li>
+  <li>개인정보 처리 시스템에 대한 접속 기록을 보관하고 위조·변조를 방지합니다</li>
+  <li>개인정보가 포함된 자료는 잠금장치가 있는 장소에 보관합니다</li>
+</ul>
+
+<h2>9. 개인정보 보호책임자</h2>
+<table>
+  <tr><th>책임자</th><td>한종철</td></tr>
+  <tr><th>문의</th><td>홈페이지 우측 하단 채팅 상담</td></tr>
+  <tr><th>주소</th><td>경기 성남시 분당구 정자일로 248 (정자동, 파크뷰) 파크뷰오피스타워 1401호</td></tr>
+</table>
+<p>
+  개인정보 침해에 대한 신고나 상담이 필요하신 경우 아래 기관에 문의하실 수 있습니다.
+</p>
+<ul>
+  <li>개인정보침해신고센터 (privacy.kisa.or.kr / 국번없이 118)</li>
+  <li>개인정보 분쟁조정위원회 (kopico.go.kr / 1833-6972)</li>
+  <li>대검찰청 사이버수사과 (spo.go.kr / 국번없이 1301)</li>
+  <li>경찰청 사이버수사국 (ecrm.police.go.kr / 국번없이 182)</li>
+</ul>
+
+<h2>10. 개인정보처리방침의 변경</h2>
+<p>
+  본 방침의 내용에 추가, 삭제 및 수정이 있을 경우 시행 7일 전부터 홈페이지를 통해
+  변경 사유와 내용을 공지합니다.
+</p>
+
+<footer>
+  (주)에듀제이씨 · 사업자등록번호 261-81-13583 · 대표 한종철<br>
+  경기 성남시 분당구 정자일로 248 (정자동, 파크뷰) 파크뷰오피스타워 1401호
+</footer>
+
+</div>
+</body>
+</html>
