@@ -31,21 +31,22 @@
   /* 뷰포트 높이를 얼린다(WebKit 255852 우회 — 위 --vhu 주석 참조).
      resize 는 듣지 않는다 — 들으면 dvh 와 같아져 튐이 돌아온다.
 
-     **innerHeight 를 쓰지 않는다.** <head> 시점에는 아직 확정 전일 수 있어서
-     엉뚱한 값이 잡힌다(실측: 실제 844 인데 head 에서 2121 이 읽혔다. 그대로 얼리면
-     히어로가 2121px 이 된다). 실제 요소로 100svh 를 재면 레이아웃 엔진이 답하므로
-     그 위험이 없다.
+     **<head> 에서는 재지 않는다**(2026-08-12, 두 번 데어 보고 정한 것).
+     body 가 아직 없어서 초기 컨테이닝 블록이 확정되지 않았고, 그 시점의 100svh 는
+     innerHeight 든 실제 요소든 똑같이 엉뚱한 값을 준다 — 844 짜리 화면에서 2120 이
+     나온다(실측 2026-08-12, 배포본). 그대로 얼리면 --vhu 가 21.2px 이 되어 강사가
+     1230px, 히어로가 2120px 이 된다.
 
-     **DOMContentLoaded 에서 다시 재지 않는다**(2026-08-12). 재던 이유는 "head 측정이
-     틀렸을 때의 보정" 이었고, 전제는 "맞았으면 같은 값이라 아무 일도 안 일어난다" 였다.
-     카톡에서 그 전제가 깨진다 — 인앱 브라우저는 창이 올라오는 애니메이션 중에 페이지를
-     파싱하므로 두 측정이 서로 다른 높이를 읽고, 두 번째가 --vhu 를 갈아치우는 순간
-     그 변수로 잡힌 전부가 다시 그려진다. 스크롤 튐을 없애면서 **열 때의 튐을 새로
-     만든 것**이다(대표 실측: 스크롤 튐은 사라졌고 여는 순간 한 번 남았다).
+     한때 head 에서 재고 DOMContentLoaded 에서 보정했는데, 그러면 값이 두 번 바뀌면서
+     열자마자 화면이 한 번 튄다. 그 튐을 없애겠다고 **보정 쪽을** 뺐던 것이 위의 사고다.
+     뺄 것은 보정이 아니라 **틀린 첫 측정**이었다.
 
-     보정이 진짜 필요한 경우는 첫 측정이 **아예 실패한** 때 하나뿐이므로(h<=0 이면
-     --vhu 가 안 걸리고 1svh 폴백으로 남아 원래 버그가 그대로 돌아온다) 거기에만 건다.
-     회전은 뷰포트가 실제로 바뀌는 것이라 계속 듣는다. */
+     DOMContentLoaded 한 번만 재면 둘 다 해결된다. 그전까지는 --vhu 가 폴백인 1svh 라
+     히어로가 제 크기로 그려지고, DCL 에서 넣는 값은 **바로 그 순간의 svh 를 px 로 굳힌
+     것**이라 숫자가 같다 — 값이 안 바뀌니 다시 그릴 일도 없다. 그 뒤로 주소창이 접혀
+     svh 가 움직여도 --vhu 는 px 이라 꿈쩍하지 않는다.
+
+     회전은 뷰포트가 진짜로 바뀌는 것이라 계속 듣는다. */
   const measureVh = () => {
     const d = document.createElement('div');
     d.style.cssText = 'position:fixed;top:0;left:0;width:0;height:100svh;visibility:hidden';
@@ -63,10 +64,7 @@
      멀쩡한 것을 망가뜨리는 쪽이다. 데스크탑은 --vhu 가 1svh 인 채로 살아 있어
      오늘과 한 픽셀도 다르지 않다. */
   if (matchMedia('(hover: none) and (pointer: coarse)').matches) {
-    freezeVh();
-    addEventListener('DOMContentLoaded', () => {
-      if (!document.documentElement.style.getPropertyValue('--vhu')) freezeVh();
-    }, { once: true });
+    addEventListener('DOMContentLoaded', freezeVh, { once: true });
     addEventListener('orientationchange', () => setTimeout(freezeVh, 250));
   }
 </script>
