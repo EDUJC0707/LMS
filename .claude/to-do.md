@@ -342,32 +342,23 @@
 
 - [ ] **Carbon MCP 인바이트** — IBM 승인 대기(7/22 요청). 코드 오면 `claude mcp add-json carbon-mcp ...` → 세션 재시작. **단 현재 디자인은 hallmark 네이비로 확정됐으므로 참고용으로 격하**
 
-## 클리닉 화상 (`meet` — 실서비스 가동 중)
+## 클리닉 화상 — **끝났다** (2026-08-11, `meet` 브랜치 닫음)
 
-배정→방 생성→전사·요약 수집이 프로덕션에서 돈다(v25, 20분 주기 supercronic).
-경위·결정 근거는 `progress.md` 2026-08-05.
+배정→방 생성→전사·요약 수집이 **실서비스에서 돌고, 실제 클리닉 1건으로 끝까지
+확인됐다**(2026-08-11). 20분 주기 supercronic(`infra/crontab`), 머신 월 $2.02.
+경위·결정 근거는 `progress.md`.
 
-- [ ] **실제 클리닉 1건으로 확인** — 지금까지 확인한 회의는 전부 만들어 본 것이다.
-  진짜로 한 번 돌면 셋이 확인된다: 조교가 컴퓨터 브라우저로 호스트했는지
-  (**아이패드면 전사가 통째로 안 남고 오류도 안 난다** — PRD 6-3),
-  요약이 20분 안에 붙는지, 관리자 화면 `지난` 탭에 뜨는지
+**다른 트랙이 알아야 할 것**
+- `ClinicRequest.meet_url` 은 없다 → `conference_provider`/`conference_ref`/`conference_url`
+- `ClinicEvaluation.recording_path` 도 없다 → `transcript_ref`/`transcript_url`.
+  **녹음 파일은 영원히 안 생긴다**(녹화 OFF · 미트에 오디오 전용 녹음 없음)
+- `clinic_admin.assign(request, staff, conference_url=None)` — 링크를 안 주면
+  서버가 미트 방을 만든다. 주면 그것이 이긴다
+- 조교는 **컴퓨터 브라우저**로 호스트해야 한다(아이패드면 전사가 통째로 안 남고
+  오류도 안 난다 — PRD 6-3)
+
 - [ ] **평가 UI** — 지난 클리닉 화면은 요약·링크까지다. 조교 평가표(항목별 판단·
-  종합 판정)는 나중(2026-08-05 사용자: *"평가는 나중에"*)
-
-- [ ] **`backend/apps/clinic/google_meet 2.py` 를 지운다**(2026-08-05 사용자: "will delete soon").
-  macOS 가 이름 충돌 때 만드는 사본이다 — 빈 `@types/react 2` 폴더가 프런트 빌드를
-  깨뜨린 것과 같은 물건이고, `f9d31f3` 에 묻어 들어갔다.
-  - **지워도 잃을 것이 없다**(2026-08-05 확인). 진짜 `google_meet.py` 에 없는 줄이
-    **0 줄**인 순수 부분집합이다(15.5KB vs 23.5KB). 사본에는 `ConferenceError`·
-    `Supervision`·`_bare()`·회의기록/드라이브 엔드포인트가 없다 — 약 140줄이 빠져 있다
-  - **아무도 import 하지 않고, 할 수도 없다** — 이름에 공백이 있어
-    `from .google_meet 2 import` 는 문법 오류다. 실행되지 않는 코드다
-  - 리터럴 시크릿은 없다(진짜 파일과 같이 settings 에서 읽는다)
-  - **위험은 사람이 읽는 것이다.** `apps/clinic/` 을 grep 한 에이전트가 낡은 쪽에
-    걸리면 `ConferenceError`·`Supervision` 이 없다고 판단한다
-  - **`main` + `channeltalk`·`meet`·`notif`·`omr`·`payment` 에 있다**(`video` 에는 없다).
-    브랜치마다 `git rm "backend/apps/clinic/google_meet 2.py"` — `.claude/CLAUDE 2.md` 를
-    2026-08-05 에 지운 것과 같은 절차다(`365473c` 외 5건)
+  종합 판정)는 나중(2026-08-05 사용자: *"평가는 나중에"*). **이것만 남았다**
 
 > 리마인더·알림톡은 **알림 트랙 소관**이다(2026-08-05). 클리닉 쪽에는 아무것도 없다 —
 > 임시로 만들었던 6분 전 크론은 지웠다(예약 발송으로 가기로 한 결정과 어긋났다).
