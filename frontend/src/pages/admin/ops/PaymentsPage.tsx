@@ -23,7 +23,6 @@ import {
   Card,
   EmptyState,
   ErrorState,
-  Field,
   Input,
   Loading,
   Pagination,
@@ -168,35 +167,30 @@ export default function PaymentsPage() {
         </Alert>
       )}
       <Card padding="none">
-        <div className="ops-filters">
-          <Field label="상태">
-            {(field) => (
-              <Select
-                {...field}
-                value={status}
-                onChange={(event) => {
-                  setStatus(event.target.value);
-                  setPage(1);
-                }}
-              >
-                <option value="">전체</option>
-                {STATUSES.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </Select>
-            )}
-          </Field>
-          <Field label="학생">
-            {(field) => (
-              <Input
-                {...field}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            )}
-          </Field>
+        {/* 필터 줄은 다른 운영 화면과 같은 부품을 쓴다(`ops-toolbar ops-cardbar`) —
+            좌우 여백·간격·라벨 크기가 거기 한 곳에 있다. AttendancePage 선례. */}
+        <div className="ops-toolbar ops-cardbar">
+          <label className="ops-toolbar__field">
+            <span className="ops-toolbar__label">상태</span>
+            <Select
+              value={status}
+              onChange={(event) => {
+                setStatus(event.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">전체</option>
+              {STATUSES.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <label className="ops-toolbar__field">
+            <span className="ops-toolbar__label">학생</span>
+            <Input value={query} onChange={(event) => setQuery(event.target.value)} />
+          </label>
         </div>
 
         {list.initialLoading ? (

@@ -222,7 +222,7 @@ export function PaymentPanel({ ordersPath, billPath, studentId }: PaymentPanelPr
           title="교재 결제"
           onClose={() => setPayUrl(null)}
           footer={
-            <a className="ui-button ui-button--primary" href={payUrl} target="_blank" rel="noreferrer">
+            <a className="ui-btn ui-btn--primary" href={payUrl} target="_blank" rel="noreferrer">
               결제하기
             </a>
           }
