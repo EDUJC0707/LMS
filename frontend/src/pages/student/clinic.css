@@ -310,8 +310,9 @@
   gap: var(--space-lg);
 }
 
-/* 뱃지·날짜·시각은 왼쪽에 붙어 한 문장처럼 읽힌다. 미트 링크만 오른쪽 끝. */
-.cl-done .cl-booked__link {
+/* 뱃지·날짜·시각은 왼쪽에 붙어 한 문장처럼 읽힌다. 미트 링크·대기 문구만 오른쪽 끝. */
+.cl-done .cl-booked__link,
+.cl-done .cl-booked__soon {
   margin-left: auto;
 }
 
@@ -442,4 +443,43 @@
   .cl-time:active:not(:disabled) {
     transform: none;
   }
+}
+
+/* 링크가 열리기 전 — 남은 분. 자리는 `클리닉 입장` 버튼과 같은 곳이다. */
+.cl-booked__soon {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+}
+
+/* ═══ 지난 내역 ══════════════════════════════════════════════════════
+   회차 선택을 없앤 자리다 — 회차명이 줄마다 붙어 어느 것인지 스스로 말한다. */
+
+.cl-past {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cl-past__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+}
+
+.cl-past__row + .cl-past__row {
+  border-top: 1px solid var(--color-rule-2);
+}
+
+.cl-past__when {
+  font-size: var(--text-sm);
+  color: var(--color-ink-2);
+}
+
+/* 회차명은 오른쪽 끝으로 — 상태·일시가 왼쪽에서 한 문장으로 읽힌다. */
+.cl-past__exam {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--color-muted);
 }

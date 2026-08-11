@@ -793,3 +793,48 @@ class ClinicBookingRaceTests(TransactionTestCase):
         )
         self.assertEqual(sorted(results), ["마감", "성공"])
         self.assertEqual(self.booked_count(), 1)
+
+
+class ClinicHistoryTests(ClinicFixtureMixin, TestCase):
+    """지난 내역 — 회차를 고르지 않아도 한 목록으로 내려온다.
+
+    화면에서 `대상 시험 선택` 드롭다운을 뺐다(2026-08-11 사용자 결정). 신청은
+    지금 열린 회차 하나로만 하고, 지난 것은 회차 구분 없이 아래에 쌓인다.
+    그러려면 응답이 **그 회차 것만** 담아서는 안 된다.
+    """
+
+    def setUp(self):
+        self.client.force_login(self.s_target.user)
+
+    def make(self, exam, date):
+        return ClinicRequest.objects.create(
+            student=self.s_target,
+            exam=exam,
+            slot=self.slot_wed,
+            requested_date=date,
+            requested_time=self.slot_wed.start_time,
+        )
+
+    def older_exam(self):
+        return Exam.objects.create(name="6월 모의고사", exam_date=datetime.date(2026, 6, 10))
+
+    def history(self):
+        return self.client.get(
+            CLINIC_URL, {"exam_id": self.exam.exam_id}
+        ).json()["history"]
+
+    def test_spans_other_exams(self):
+        older = self.older_exam()
+        self.make(older, datetime.date(2026, 6, 17))
+        self.assertIn(older.exam_id, {row["exam_id"] for row in self.history()})
+
+    def test_newest_first(self):
+        self.make(self.older_exam(), datetime.date(2026, 6, 17))
+        self.make(self.exam, datetime.date(2026, 7, 29))
+        dates = [row["requested_date"] for row in self.history()]
+        self.assertEqual(dates, sorted(dates, reverse=True))
+
+    def test_carries_the_exam_name(self):
+        # 회차 선택이 사라졌으니 어느 회차 것인지는 줄마다 붙어야 한다
+        self.make(self.exam, datetime.date(2026, 7, 29))
+        self.assertEqual(self.history()[0]["exam_name"], self.exam.name)

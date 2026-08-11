@@ -35,8 +35,6 @@ import {
   ErrorState,
   Loading,
   Modal,
-  ScopeBar,
-  Select,
   StatusBadge,
 } from "../../components";
 import {
@@ -60,6 +58,9 @@ import "./clinic.css";
 
 /** 변경·취소가 가능한 상태(백엔드 ACTIVE_STATUSES 와 동일). */
 const ACTIVE = ["대기", "승인배정"];
+
+/** 링크가 열리는 시점 — 시작 5분 전(서버 `booking.CLINIC_LINK_LEAD` 와 같은 값). */
+const LINK_LEAD_MS = 5 * 60_000;
 
 /** 로컬 오늘(UTC 파싱으로 하루 밀리지 않게 직접 만든다). */
 function todayIso(): string {
@@ -285,7 +286,9 @@ function TimeColumn({
 /* ═══ 화면 ═══════════════════════════════════════════════════════════ */
 
 export default function StudentClinicPage() {
-  const [examId, setExamId] = useState<number | null>(null);
+  // 회차는 고르지 않는다 — 가장 최근 회차 하나로 신청하고, 지난 것은
+  // `history` 로 내려온다(2026-08-11 드롭다운 제거).
+  const examId: number | null = null;
   /** null = 아직 학생이 달을 넘기지 않았다 → 고를 게 있는 첫 달을 연다. */
   const [month, setMonth] = useState<string | null>(null);
   const [day, setDay] = useState<string | null>(null);
@@ -317,6 +320,37 @@ export default function StudentClinicPage() {
   // 자격이 없거나 노쇼 제한이면 availability 는 403 이다 — 부르지 않는다.
   const canBook = Boolean(judged && judged.eligibility.is_target && !judged.clinic_banned);
   const active = judged?.my_requests.find((row) => ACTIVE.includes(row.status)) ?? null;
+
+  // 링크는 시작 5분 전에 서버가 내려 준다. 그전에는 "언제 열리는가"를 학생이
+  // 알 길이 없어(화면에 단서가 없다) 남은 분을 적는다. 1분마다 다시 세고, 열릴
+  // 때가 되면 스스로 다시 불러온다 — 새로고침하라고 시키지 않는다.
+  const past = (judged?.history ?? []).filter((row) => row.clinic_id !== active?.clinic_id);
+
+  const [tick, setTick] = useState(0);
+  const opensIn =
+    active && active.status === "승인배정" && !active.conference_url
+      ? Math.max(
+          0,
+          Math.ceil(
+            (new Date(`${active.requested_date}T${active.requested_time}`).getTime() -
+              LINK_LEAD_MS -
+              Date.now()) /
+              60_000,
+          ),
+        )
+      : null;
+
+  useEffect(() => {
+    if (opensIn === null) return;
+    // 0 이 됐다고 멈추지 않는다 — 서버 시계가 몇 초 뒤면 링크가 아직 안 오고,
+    // 거기서 타이머를 끊으면 `0분 후` 에 붙박이가 된다. 링크가 실제로 올 때까지
+    // 계속 다시 묻는다(그때 opensIn 이 null 이 되면서 이 effect 가 꺼진다).
+    if (opensIn === 0) void clinic.reload();
+    const id = setTimeout(() => setTick((n) => n + 1), 30_000);
+    return () => clearTimeout(id);
+    // tick 이 바뀔 때마다 다시 세는 것이 이 effect 의 목적이다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opensIn, tick]);
 
   // from·to 를 보내지 않는다 — 서버가 창구 전체(내일~시험 주 다음 월요일)를
   // 돌려주고, 그 한 번의 응답에 달력이 걸칠 수 있는 달이 전부 들어 있다.
@@ -502,7 +536,7 @@ export default function StudentClinicPage() {
               {active.requested_time}
               {activeEnd ? ` – ${activeEnd}` : ""}
             </p>
-            {active.conference_url && (
+            {active.conference_url ? (
               <div className="cl-booked__link">
                 <a
                   className="ui-btn ui-btn--primary ui-btn--sm"
@@ -513,6 +547,10 @@ export default function StudentClinicPage() {
                   클리닉 입장
                 </a>
               </div>
+            ) : (
+              opensIn !== null && (
+                <p className="cl-booked__soon">{opensIn}분 후 입장할 수 있습니다</p>
+              )
             )}
           </div>
           <div className="cl-booked__acts">
@@ -579,27 +617,6 @@ export default function StudentClinicPage() {
 
   return (
     <>
-      {exams.length > 1 && (
-        <ScopeBar>
-          <Select
-            aria-label="대상 시험 선택"
-            value={effectiveExamId ?? ""}
-            onChange={(event) => {
-              setExamId(Number(event.target.value));
-              setChanging(false);
-              setPicked(null);
-              setDone(null);
-            }}
-          >
-            {exams.map((exam) => (
-              <option key={exam.exam_id} value={exam.exam_id}>
-                {exam.name}
-              </option>
-            ))}
-          </Select>
-        </ScopeBar>
-      )}
-
       <div className="ui-stack">
         {judged?.clinic_banned && <Alert tone="warning">클리닉 신청이 제한된 계정입니다</Alert>}
 
@@ -622,11 +639,30 @@ export default function StudentClinicPage() {
         )}
 
         {!blocked && (
-          // 선택 상자가 있으면 회차명은 거기 있다 — 카드 머리가 같은 문장을
-          // 반복하지 않는다. 회차가 하나뿐이면 여기가 유일한 이름 자리다.
+          // 회차 선택 상자를 뺐으므로(2026-08-11) 회차명 자리는 여기 하나다.
           // 시험일(aside)은 예약하는 데 쓰이지 않아 뺐다.
-          <Card title={exams.length > 1 ? undefined : chosen?.name} padding="none">
+          <Card title={chosen?.name} padding="none">
             {body()}
+          </Card>
+        )}
+
+        {/* 지난 내역 — 회차를 가리지 않고 한 목록으로 쌓인다. 지금 잡혀 있는
+            건은 위 카드가 이미 말하므로 여기서 뺀다(같은 줄이 두 번 보이면
+            어느 쪽이 진짜인지 헷갈린다). */}
+        {past.length > 0 && (
+          <Card title="지난 클리닉" padding="none">
+            <ul className="cl-past">
+              {past.map((row) => (
+                <li className="cl-past__row" key={row.clinic_id}>
+                  <StatusBadge status={row.status} />
+                  <span className="cl-past__when">
+                    {dayLabel(row.requested_date)}{" "}
+                    <span className="num">{row.requested_time}</span>
+                  </span>
+                  <span className="cl-past__exam">{row.exam_name}</span>
+                </li>
+              ))}
+            </ul>
           </Card>
         )}
       </div>

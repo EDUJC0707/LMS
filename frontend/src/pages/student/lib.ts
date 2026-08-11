@@ -427,6 +427,9 @@ export interface ClinicPayload {
   eligibility: { is_target: boolean; reason: string | null };
   clinic_banned: boolean;
   my_requests: ClinicRequestRow[];
+  /** 지난 신청 전부 — **회차를 가리지 않는다**(최신 먼저). 회차 선택 드롭다운을
+   *  뺐기 때문에(2026-08-11) 줄마다 `exam_name` 이 붙어 온다. */
+  history: (ClinicRequestRow & { exam_name: string | null })[];
 }
 
 /* ── /api/student/workbook ────────────────────────────────────────── */
