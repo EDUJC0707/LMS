@@ -91,20 +91,25 @@
   계좌이체는 최소 50만원·평일 수동이라 주말에 마르면 월요일까지 청구가 멈춘다
 - **부분 환불은 문서에 없다** — 취소는 전액만(운영 규칙 보류 중)
 - **취소는 학부모에게 업체가 알리지 않는다** — 우리가 알린다(위 환불 알림 항목)
-- [ ] **`lms.hjcedu.com` 연결 — Squarespace 에서 CNAME 한 줄**(2026-08-05 확정).
-  `lms` → `edujc-lms.fly.dev`. **네임서버는 건드리지 않는다** — 회사 메일
-  (`hjcedu@hjcedu.com`)과 기존 사이트가 그 도메인에 매달려 있어 위험 대비 얻는 게 없다
-  (Cloudflare 보류 판단은 `progress.md` 2026-08-05).
-  레코드가 서면 내가 이어받는다: `fly certs add` → **`ALLOWED_HOSTS` 가 지금 `*` 다(고쳐야 함)**
-  → `CSRF_TRUSTED_ORIGINS`·`CORS_ALLOWED_ORIGINS`(운영인데 `localhost:5173` 로 떨어져 있다) 정리
-  - **루트는 이미 Vercel 이다**(2026-08-05 랜딩 이전). 네임서버는 그대로 Squarespace 라
-    거기서 레코드만 추가하면 된다. 옛 프리셋은 이미 걷어냈다
-  - **바꾸기 하루 전에 TTL 을 5분으로 낮춰 둘 것.** 지금 4시간이라 잘못 넣으면 그만큼 갇힌다.
-    TTL 낮추는 것도 옛 TTL 만큼 퍼지는 데 걸려 미리 해야 한다
-  - **확인은 권위 네임서버로** — `dig @nsc1.squarespacedns.com lms.hjcedu.com`.
-    리졸버(KT·구글) 응답은 캐시라 여러 개가 일치해도 증거가 못 된다(8/5 에 두 번 헛짚었다)
-  - 프런트가 Vercel, API 가 Fly 로 갈리면 **`SESSION_COOKIE_DOMAIN=.hjcedu.com`** 이 필요하다.
-    스위치는 이미 `prod.py` 에 있다(env 기본값 None) — 값만 주입하면 된다
+- [x] ~~`lms.hjcedu.com` 연결~~ → **2026-08-11 완료. 세 주소가 다 섰다.**
+  - `hjcedu.com` 랜딩(Vercel) · `lms.hjcedu.com` LMS(Vercel) · `api.hjcedu.com` API(Fly)
+  - **CNAME 목표가 계획과 달라졌다.** `lms` → `edujc-lms.fly.dev` 로 적어 뒀는데,
+    **Fly 이미지는 백엔드만 굽는다**(`COPY backend/` 뿐, npm 단계 없음) — 그리로 보냈으면
+    SPA 가 아니라 Django 가 떴다. 실제 값은 Vercel 이 프로젝트마다 발급한다
+    (`a5412f3815754b95.vercel-dns-017.com`). `api` 는 `56led0w.edujc-lms.fly.dev`
+  - **Vercel 프로젝트는 둘이다** — 랜딩은 무빌드(`frontend/landing`), LMS 는 Vite
+    빌드(`frontend`). 한 프로젝트가 Root Directory·빌드설정을 하나씩만 가져서 못 합친다.
+    같은 레포를 보므로 `main` push 하나로 양쪽이 배포된다
+  - **`VITE_API_URL` 을 쓰지 않는다.** 앱은 `/api` 상대경로로 부르고(`src/api/http.ts`),
+    운영에서는 `frontend/vercel.json` 의 rewrite 가 `api.hjcedu.com` 으로 넘긴다 —
+    브라우저에는 오리진이 하나로 보인다. 절대 주소를 박으면 크로스사이트가 되어
+    쿠키에 `SameSite=None` 이 필요해지고 **iOS Safari 가 그걸 차단**한다(PRD §4 1순위 기기)
+  - `SESSION_COOKIE_DOMAIN=.hjcedu.com` 주입 완료. `ALLOWED_HOSTS` 는 `*` 에서 실제
+    도메인으로 좁혔다(그전엔 `Host: evil.example.com` 도 302 였다 — 실측)
+  - **헬스체크에 `Host` 를 박아야 했다**(`infra/fly.toml`). Fly 는 사설망으로 머신에
+    직접 붙어 Host 가 사설 IPv6 리터럴이라, 좁힌 `ALLOWED_HOSTS` 에 걸려 400 이 나고
+    머신이 트래픽에서 빠진다. **실제로 한 번 죽였다** — 시크릿만 라이브로 올리고
+    fly.toml 수정은 로컬에 두었더니, 다른 세션의 push 로 CI 가 그 없는 버전을 배포했다
 - [x] ~~Sentry Spike Protection 알림 켜기~~ → **2026-08-05 완료. Sentry 트랙 종료.**
   병합 뒤 배포 컨테이너에서 재확인(`active` · `release`=main HEAD · `body=never` · `locals=False`)
 
@@ -318,6 +323,15 @@
 
 ## 배포 전 (반나절 거리, 첫 실배포 직전 일괄)
 
+- [ ] **운영 DB 의 데모 데이터를 걷어낸다**(2026-08-11 에 심었다. 사용자: *"테스트 하면서
+  나중에 지울거야"*). `seed_demo` 를 운영에 돌려 계정 43개·학생 30명이 들어가 있다 —
+  전부 가짜지만 **이름·전화 형태의 데이터**이고, **비밀번호가 전량 `test1234`** 다.
+  대표 계정 `한종철0001` 도 그 비밀번호로 열려 있다. 지금은 주소를 아는 사람이
+  없어서 버티는 것뿐이고, **랜딩이 공개된 순간부터는 `lms.hjcedu.com` 도 같이 알려진다.**
+  - 진짜 원생을 넣기 전에 지울 것. 순서가 반대면 다음 줄 때문에 되돌릴 수 없다
+- [ ] **`seed_demo` 를 운영에서 다시 돌리지 않는다** — 이 명령은 도메인 테이블을
+  **비우고 다시 만든다**. 지금은 빈 DB 라 안전했지만, 진짜 데이터가 들어간 뒤에
+  누가 한 번 실행하면 그게 통째로 사라진다. 운영에서 막을 장치는 아직 없다
 - [ ] prod `SECRET_KEY` fail-fast(기본값 제거), whitenoise + collectstatic(현재 /static/ 404)
 - [ ] **구글 미트 시크릿 3개를 운영에 올리기** — 로컬은 `backend/.env` 로 이미 돈다(2026-08-04 실계정 확인).
   `fly secrets set GOOGLE_MEET_CLIENT_ID=... GOOGLE_MEET_CLIENT_SECRET=... GOOGLE_MEET_REFRESH_TOKEN=... -a edujc-lms`
