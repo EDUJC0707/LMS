@@ -172,7 +172,14 @@ export default function SheetReviewPage() {
 
           <Card
             title={survey ? "점수" : "문항"}
-            aside={detail.data?.total_score !== null ? `${detail.data?.total_score}점` : undefined}
+            aside={
+              // 손글씨에서 읽은 점수는 결정적이지 않다 — 조교가 지면과 대조해야 한다.
+              detail.data?.score_from_handwriting ? (
+                <Badge tone="warning">손글씨</Badge>
+              ) : detail.data?.total_score !== null ? (
+                `${detail.data?.total_score}점`
+              ) : undefined
+            }
           >
             {detail.loading ? (
               <Loading label="판독을 불러오는 중…" />

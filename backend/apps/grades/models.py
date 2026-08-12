@@ -339,6 +339,13 @@ class AnswerSheet(models.Model):
         # 조교가 보정 화면에서 지면과 대조할 수 있다(recognized_name 과 같은 축).
         "인식된 점수", null=True, blank=True
     )
+    score_from_handwriting = models.BooleanField(
+        # 버블이 아니라 **손글씨 OCR** 에서 온 점수다. 마킹 판독은 결정적이지만
+        # OCR 은 아니라, 조교가 어느 쪽인지 알고 봐야 한다 — 보정 화면이 이 값으로
+        # 표시를 가른다. 그 자체로 점수를 막지는 않는다(막는 것은 학생이 없다는
+        # 사실이다 — 학생이 붙기 전에는 scores 행이 생기지 않는다).
+        "손글씨에서 읽음", default=False
+    )
     match_status = models.CharField("대조 상태", max_length=20, choices=MatchStatus.choices)
     is_corrected = models.BooleanField("수동 보정 완료", default=False)
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)

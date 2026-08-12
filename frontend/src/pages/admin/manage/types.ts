@@ -271,6 +271,8 @@ export interface SheetRow {
   recognized_matching_key: string | null;
   /** 모의고사(자기보고) 전용. 미니테스트 장에서는 언제나 null */
   recognized_score: number | null;
+  /** 버블이 아니라 손글씨 OCR 에서 온 점수 — 조교가 눈으로 대조해야 한다 */
+  score_from_handwriting: boolean;
   /** 명부(GET /admin/students)와 같은 행 모양 — 학생 선택기가 그대로 받는다 */
   student: DirectoryStudent | null;
 }

@@ -144,6 +144,7 @@ def store_survey(
     match_status=None,
     recognized_matching_key=None,
     recognized_name=None,
+    from_handwriting=False,
 ):
     """성적 조사 카드 1장 저장 — (sheet, summary). 모의고사(자기보고) 경로다.
 
@@ -152,6 +153,9 @@ def store_survey(
 
     보류(score=None)면 답안 카드와 같이 `비정상`으로 눕힌다. 정체성·멱등·보정
     잠금 계약은 모듈 docstring 그대로다.
+
+    `from_handwriting` 은 그 점수가 버블이 아니라 OCR 에서 왔다는 표시다 —
+    조교가 어느 쪽인지 알고 봐야 한다(보정 화면이 이 값으로 표시를 가른다).
     """
     if score is None:
         student = None
@@ -170,6 +174,7 @@ def store_survey(
                 "recognized_matching_key": recognized_matching_key,
                 "recognized_name": recognized_name,
                 "recognized_score": score,
+                "score_from_handwriting": from_handwriting,
             },
         )
         if not created and not sheet.is_corrected:
@@ -178,7 +183,12 @@ def store_survey(
             sheet.recognized_matching_key = recognized_matching_key
             sheet.recognized_name = recognized_name
             sheet.recognized_score = score
-            sheet.save(update_fields=[*_SHEET_MACHINE_FIELDS, "recognized_score"])
+            sheet.score_from_handwriting = from_handwriting
+            sheet.save(
+                update_fields=[
+                    *_SHEET_MACHINE_FIELDS, "recognized_score", "score_from_handwriting"
+                ]
+            )
         scored = _apply_survey_score(sheet)
     return sheet, {"created": created, "scored": scored}
 
@@ -212,7 +222,9 @@ def correct_sheet(sheet, *, student=UNSET, answers=None, score=UNSET, confirm=Fa
             fields += ["student", "match_status"]
         if score is not UNSET:
             sheet.recognized_score = score
-            fields.append("recognized_score")
+            # 사람이 적은 값이므로 더 이상 "손글씨에서 읽음"이 아니다.
+            sheet.score_from_handwriting = False
+            fields += ["recognized_score", "score_from_handwriting"]
         if fields or confirm:
             sheet.is_corrected = True
             sheet.save(update_fields=[*fields, "is_corrected"])
