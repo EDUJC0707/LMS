@@ -87,8 +87,12 @@ SPACE_CONFIG = {
     "accessType": "TRUSTED",
     "artifactConfig": {
         "recordingConfig": {"autoRecordingGeneration": "OFF"},
-        "transcriptionConfig": {"autoTranscriptionGeneration": "ON"},
-        "smartNotesConfig": {"autoSmartNotesGeneration": "ON"},
+        # ~~ON~~ → **OFF**(2026-08-12 전면 교체). 감독 자료는 Fireflies 봇이
+        # 만든다. 구글까지 켜 두면 안 쓰는 회의록이 클리닉마다 드라이브에
+        # 쌓이고, 학생에게 녹취 안내가 두 번 뜬다. 되살리려면 이 두 줄이다 —
+        # 어댑터 토글(`CLINIC_CONFERENCE_BACKEND`)과는 별개 스위치다.
+        "transcriptionConfig": {"autoTranscriptionGeneration": "OFF"},
+        "smartNotesConfig": {"autoSmartNotesGeneration": "OFF"},
     },
 }
 
@@ -105,6 +109,11 @@ SPACE_CONFIG = {
 SCOPES = (
     "https://www.googleapis.com/auth/meetings.space.created",
     "https://www.googleapis.com/auth/drive",
+    # 감독 봇을 일정에 걸어 두기 위해서다(2026-08-12). 봇을 우리가 시작 시각에
+    # 밀어 넣는 대신 캘린더에 클리닉을 올려 두면 업체가 알아서 들어온다.
+    # `calendar` 가 아니라 `calendar.events` — 일정 하나를 만들고 고치고 지울 뿐
+    # 달력 자체를 만들거나 남의 달력 설정을 건드릴 일이 없다.
+    "https://www.googleapis.com/auth/calendar.events",
 )
 
 #: 끝난 회의 조회. 스페이스 하나에 회의가 여러 번 열릴 수 있다(모두 나갔다가

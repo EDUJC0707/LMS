@@ -16,6 +16,26 @@ urlpatterns = [
         name="counseling-queue",
     ),
     path(
+        "admin/counseling",
+        views.CounselingOpenView.as_view(),
+        name="counseling-open",
+    ),
+    path(
+        "admin/counseling/<int:counsel_id>/calls",
+        views.CounselingCallsView.as_view(),
+        name="counseling-calls",
+    ),
+    path(
+        "admin/counseling/<int:counsel_id>/transcript",
+        views.CounselingTranscriptView.as_view(),
+        name="counseling-transcript",
+    ),
+    path(
+        "admin/counseling/<int:counsel_id>/notify",
+        views.CounselingNotifyView.as_view(),
+        name="counseling-notify",
+    ),
+    path(
         "admin/counseling/<int:counsel_id>",
         views.CounselingRecordView.as_view(),
         name="counseling-record",

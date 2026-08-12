@@ -22,7 +22,7 @@ from rest_framework.views import APIView
 from apps.accounts.features import FeatureKey
 from apps.accounts.permissions import FeatureRequired
 
-from . import board, counseling
+from . import board, channeltalk, counseling
 from .models import AbsenceCounseling, Post
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
@@ -252,11 +252,12 @@ class CounselingRecordView(APIView):
             return _not_found()
         body = request.data if isinstance(request.data, dict) else {}
         result = body.get("result")
-        if result not in ("연결", "미연결"):
-            return _bad_request("result는 연결 또는 미연결이어야 합니다.")
+        # 결과 없이 횟수만 저장할 수 있다 — 조교가 아직 거는 중인 상태다.
+        if result is not None and result not in ("연결", "미연결", "종결"):
+            return _bad_request("result는 연결·미연결·종결 중 하나여야 합니다.")
         if "makeup_requested" in body and not isinstance(body["makeup_requested"], bool):
             return _bad_request("makeup_requested는 true/false여야 합니다.")
-        for name in ("absence_reason", "call_memo", "follow_up_action"):
+        for name in ("absence_reason", "call_memo", "follow_up_action", "provider_ref"):
             if name in body and not isinstance(body[name], str):
                 return _bad_request(f"{name}은 문자열이어야 합니다.")
         try:
@@ -271,7 +272,104 @@ class CounselingRecordView(APIView):
                 "status": card.status,
                 "attempts": attempts,
                 "next_counsel_id": next_card.counsel_id if next_card else None,
-                "closed_by_sms": closed,
+                "closed": closed,
                 "makeup_requested": card.makeup_requested,
             }
         )
+
+
+class CounselingOpenView(APIView):
+    """POST /api/admin/counseling — 통화 카드를 연다 (학생 2차, 8-18)."""
+
+    permission_classes = [FeatureRequired(FeatureKey.COUNSEL_RECORD)]
+
+    def post(self, request):
+        body = request.data if isinstance(request.data, dict) else {}
+        target = body.get("target")
+        if target not in AbsenceCounseling.Target.values:
+            return _bad_request("target은 학부모 또는 학생이어야 합니다.")
+        # 같은 결석의 다른 대상으로 연다 — 화면이 이미 들고 있는 카드를 기준점으로
+        # 삼으면 결석 회차 id 를 응답에 실어 내보내지 않아도 된다.
+        source = AbsenceCounseling.objects.filter(pk=body.get("from_counsel_id")).first()
+        if source is None:
+            return _bad_request("기준 상담 카드를 찾을 수 없습니다.")
+        try:
+            card = counseling.open_card(source.student, source.attendance, target)
+        except counseling.CounselingError as error:
+            return _bad_request(error.message)
+        return Response(
+            {"counsel_id": card.counsel_id, "target": card.target, "status": card.status},
+            status=201,
+        )
+
+
+class CounselingCallsView(APIView):
+    """GET /api/admin/counseling/{counsel_id}/calls — 이 카드로 건 최근 통화.
+
+    화면이 `안 받음/통화함` 버튼을 미리 채우는 재료다. **번호는 응답에 싣지
+    않는다** — 서버가 카드에서 꺼내 조회하고 결과만 준다(명부 API 와 같은 이유:
+    응답으로 연락처를 역추적할 수 있으면 안 된다).
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.COUNSEL_RECORD)]
+
+    def get(self, request, counsel_id):
+        card = (
+            AbsenceCounseling.objects.select_related("student__user")
+            .filter(pk=counsel_id)
+            .first()
+        )
+        if card is None:
+            return _not_found()
+        return Response({"calls": channeltalk.recent_calls(counseling.phone_for(card))})
+
+
+class CounselingTranscriptView(APIView):
+    """GET /api/admin/counseling/{counsel_id}/transcript — 전사 + 녹음 링크.
+
+    **자동으로 메모를 채우지 않는다** — 조교가 읽고 확정한다(2026-08-12).
+    녹음 링크는 만료되는 서명 URL 이라 저장하지 않고 볼 때마다 새로 받는다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.COUNSEL_RECORD)]
+
+    def get(self, request, counsel_id):
+        card = AbsenceCounseling.objects.filter(pk=counsel_id).first()
+        if card is None:
+            return _not_found()
+        # 목록에서 아직 안 고른 통화를 펼쳐 보는 경우 — 저장된 게 없으니 받아 온다.
+        asked = request.query_params.get("user_chat_id")
+        if asked:
+            lines = channeltalk.transcript(asked)
+            return Response(
+                {
+                    "transcript": "\n".join(f"{x['speaker']}: {x['said']}" for x in lines),
+                    "recording_url": channeltalk.recording_url(asked),
+                }
+            )
+        if not card.provider_ref:
+            return Response({"transcript": "", "recording_url": None})
+        return Response(
+            {
+                # 확정된 통화는 저장분을 쓴다 — 채널톡은 90일까지만 되돌려 준다.
+                "transcript": card.call_transcript,
+                # 녹음은 매번 새로 받는다 — 서명 URL 이라 저장하면 죽는다.
+                "recording_url": channeltalk.recording_url(card.provider_ref),
+            }
+        )
+
+
+class CounselingNotifyView(APIView):
+    """POST /api/admin/counseling/{counsel_id}/notify — 결석 안내 발송 (버튼)."""
+
+    permission_classes = [FeatureRequired(FeatureKey.COUNSEL_RECORD)]
+
+    def post(self, request, counsel_id):
+        card = AbsenceCounseling.objects.filter(pk=counsel_id).first()
+        if card is None:
+            return _not_found()
+        try:
+            sent = counseling.notify(card)
+        except counseling.CounselingError as error:
+            return _bad_request(error.message)
+        return Response({"counsel_id": card.counsel_id, "sent": sent})

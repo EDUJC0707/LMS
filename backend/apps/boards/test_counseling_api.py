@@ -11,8 +11,9 @@
 """
 import datetime
 import json
+from unittest.mock import patch
 
-from django.test import TestCase, override_settings
+from django.test import TestCase
 
 from apps.accounts.features import FeatureKey
 from apps.accounts.models import Parent, ParentStudent, StaffFeatureGrant, Student, User
@@ -21,6 +22,8 @@ from apps.notifications.models import Notification
 from apps.videos.models import MakeupGrant
 from config.celery import app as celery_app
 
+from . import channeltalk
+from .counseling import MAX_CALL_ATTEMPTS as MAX_ATTEMPTS
 from .models import AbsenceCounseling
 
 FAKE_CHANNEL = "apps.notifications.channels.FakeChannelAdapter"
@@ -144,63 +147,20 @@ class CounselingPatchTests(CounselingFixtureMixin, TestCase):
         # 완료됐으니 재시도 카드 없음.
         self.assertEqual(AbsenceCounseling.objects.count(), 1)
 
-    def test_unreached_call_creates_retry_card(self):
-        res = self.patch_card(self.card.counsel_id, {"result": "미연결"})
-        self.assertEqual(res.status_code, 200)
-        body = res.json()
-        self.assertEqual(body["attempts"], 1)
-        self.assertFalse(body["closed_by_sms"])
-        self.assertIsNotNone(body["next_counsel_id"])
-        self.card.refresh_from_db()
-        self.assertEqual(self.card.status, AbsenceCounseling.Status.UNREACHED)
-        retry = AbsenceCounseling.objects.get(pk=body["next_counsel_id"])
-        self.assertEqual(retry.status, AbsenceCounseling.Status.PENDING)
-        self.assertEqual(retry.attendance, self.attendance)
-        self.assertEqual(retry.target, AbsenceCounseling.Target.PARENT)
-        # 대기열의 새 카드는 시도 1회를 표시한다.
-        row = self.client.get(QUEUE_URL).json()["queue"][0]
-        self.assertEqual(row["counsel_id"], retry.counsel_id)
-        self.assertEqual(row["attempts"], 1)
-
-    def test_third_unreached_closes_with_sms_record_only(self):
-        card = self.card
-        for attempt in (1, 2):
-            body = self.patch_card(card.counsel_id, {"result": "미연결"}).json()
-            self.assertEqual(body["attempts"], attempt)
-            card = AbsenceCounseling.objects.get(pk=body["next_counsel_id"])
-        body = self.patch_card(card.counsel_id, {"result": "미연결"}).json()
-        self.assertEqual(body["attempts"], 3)
-        self.assertTrue(body["closed_by_sms"])
-        self.assertIsNone(body["next_counsel_id"])
-        # 재시도 카드 미생성 — 대기열 비움(8-18 종결).
-        self.assertEqual(
-            AbsenceCounseling.objects.filter(
-                status=AbsenceCounseling.Status.PENDING
-            ).count(),
-            0,
-        )
-        # 종결 알림은 학부모 대상. 발송은 커밋 뒤라 이 시점엔 아직 대기다.
-        notif = Notification.objects.get(type=Notification.Type.ABSENCE_COUNSEL)
-        self.assertEqual(notif.parent, self.parent)
-        self.assertEqual(notif.status, Notification.Status.PENDING)
-
-    @override_settings(NOTIFICATION_CHANNEL_BACKENDS={"카카오알림톡": FAKE_CHANNEL})
-    def test_sms_closure_is_dispatched_on_commit(self):
-        # 3회 미연결 종결은 학부모에게 **실제로 나가야** 끝난 것이다 —
-        # 행만 남기면 재발송 배치가 집을 때까지 결석 안내가 밀린다.
+    def test_notify_button_dispatches_on_commit(self):
+        # 결석 안내는 학부모에게 **실제로 나가야** 끝난 것이다 — 행만 남기면
+        # 재발송 배치가 집을 때까지 밀린다. 다만 시점은 3회가 아니라 버튼이다.
         eager = celery_app.conf.task_always_eager
         celery_app.conf.task_always_eager = True
         self.addCleanup(setattr, celery_app.conf, "task_always_eager", eager)
-        card = self.card
-        for _ in (1, 2):
-            body = self.patch_card(card.counsel_id, {"result": "미연결"}).json()
-            card = AbsenceCounseling.objects.get(pk=body["next_counsel_id"])
+        self.patch_card(self.card.counsel_id, {"attempts": 3, "result": "종결"})
 
         with self.captureOnCommitCallbacks(execute=True):
-            self.assertTrue(
-                self.patch_card(card.counsel_id, {"result": "미연결"}).json()["closed_by_sms"]
+            res = self.client.post(
+                f"/api/admin/counseling/{self.card.counsel_id}/notify"
             )
 
+        self.assertEqual(res.status_code, 200)
         notif = Notification.objects.get(type=Notification.Type.ABSENCE_COUNSEL)
         self.assertEqual(notif.status, Notification.Status.SUCCESS)
 
@@ -222,3 +182,391 @@ class CounselingPatchTests(CounselingFixtureMixin, TestCase):
 
     def test_unknown_card_404(self):
         self.assertEqual(self.patch_card(999999, {"result": "연결"}).status_code, 404)
+
+
+class CounselingManualCloseTests(CounselingFixtureMixin, TestCase):
+    """닫는 것도 보내는 것도 사람이 누른다 (2026-08-12 확정).
+
+    3회는 "닫아도 된다"는 신호일 뿐 자동 종결이 아니다. 조교가 창을 넘겨
+    계속 걸 수도 있고, 3회 전에 판단해서 닫을 수도 있다.
+    """
+
+    def setUp(self):
+        self.login()
+        self.card = self.make_card()
+
+    def test_assistant_can_close_before_three_attempts(self):
+        res = self.patch_card(self.card.counsel_id, {"result": "종결"})
+
+        self.assertEqual(res.status_code, 200)
+        self.card.refresh_from_db()
+        self.assertEqual(self.card.status, AbsenceCounseling.Status.UNREACHED)
+        self.assertEqual(
+            AbsenceCounseling.objects.filter(
+                status=AbsenceCounseling.Status.PENDING
+            ).count(),
+            0,
+            "강제 종결은 재시도 카드를 만들지 않는다",
+        )
+
+    def test_notify_sends_to_parent_on_a_closed_card(self):
+        self.patch_card(self.card.counsel_id, {"attempts": 3, "result": "종결"})
+
+        res = self.client.post(f"/api/admin/counseling/{self.card.counsel_id}/notify")
+
+        self.assertEqual(res.status_code, 200)
+        notif = Notification.objects.get(type=Notification.Type.ABSENCE_COUNSEL)
+        self.assertEqual(notif.parent, self.parent)
+
+    def test_notify_refuses_a_card_still_being_called(self):
+        res = self.client.post(f"/api/admin/counseling/{self.card.counsel_id}/notify")
+
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(Notification.objects.exists())
+
+
+class CounselingStudentCallTests(CounselingFixtureMixin, TestCase):
+    """학생 2차는 조교가 버튼으로 연다 (8-18 "학부모 선에서 해결 안 될 때")."""
+
+    def setUp(self):
+        self.login()
+        self.parent_card = self.make_card()
+
+    def test_creates_a_student_card_for_the_same_absence(self):
+        res = self.client.post(
+            "/api/admin/counseling",
+            data=json.dumps({"from_counsel_id": self.parent_card.counsel_id, "target": "학생"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 201)
+        card = AbsenceCounseling.objects.get(pk=res.json()["counsel_id"])
+        self.assertEqual(card.target, AbsenceCounseling.Target.STUDENT)
+        self.assertEqual(card.status, AbsenceCounseling.Status.PENDING)
+
+    def test_student_attempts_are_counted_separately_from_parent(self):
+        self.patch_card(self.parent_card.counsel_id, {"attempts": 2})
+
+        res = self.client.post(
+            "/api/admin/counseling",
+            data=json.dumps({"from_counsel_id": self.parent_card.counsel_id, "target": "학생"}),
+            content_type="application/json",
+        )
+        body = self.patch_card(res.json()["counsel_id"], {"attempts": 1}).json()
+
+        self.assertEqual(body["attempts"], 1, "학부모 시도가 학생 카운트에 섞이면 안 된다")
+
+
+class CounselingClosedStayVisibleTests(CounselingFixtureMixin, TestCase):
+    """닫힌 카드는 알림을 보낼 때까지 화면에 남는다.
+
+    발송이 버튼이 된 이상 닫자마자 목록에서 사라지면 누를 자리가 없어지고,
+    학부모는 아무 연락도 못 받은 채 끝난다.
+    """
+
+    def setUp(self):
+        self.login()
+        self.card = self.make_card()
+
+    def test_closed_card_awaits_notification_in_queue(self):
+        self.patch_card(self.card.counsel_id, {"result": "종결"})
+
+        rows = self.client.get(QUEUE_URL).json()["queue"]
+
+        self.assertEqual([r["counsel_id"] for r in rows], [self.card.counsel_id])
+        self.assertTrue(rows[0]["awaiting_notice"])
+
+    def test_connected_card_never_awaits_notification(self):
+        self.patch_card(self.card.counsel_id, {"result": "연결"})
+
+        self.assertEqual(self.client.get(QUEUE_URL).json()["queue"], [])
+
+
+class CounselingCallLookupTests(CounselingFixtureMixin, TestCase):
+    """조교가 건 통화를 찾아 버튼을 미리 채운다 (2026-08-12 확정 흐름 2단계).
+
+    번호는 **응답에 싣지 않는다** — 명부 API 와 같은 이유(역방향 조회 방지).
+    서버가 카드에서 번호를 꺼내 조회하고 결과만 돌려준다.
+    """
+
+    def setUp(self):
+        self.login()
+        self.card = self.make_card()
+
+    def test_looks_up_by_the_parents_number(self):
+        with patch.object(channeltalk, "recent_calls", return_value=[]) as looked:
+            self.client.get(f"/api/admin/counseling/{self.card.counsel_id}/calls")
+
+        looked.assert_called_once()
+        self.assertEqual(looked.call_args.args[0], self.parent.phone)
+
+    def test_returns_what_the_adapter_found(self):
+        found = [{"connected": False, "missed_reason": "ringTimeOver"}]
+        with patch.object(channeltalk, "recent_calls", return_value=found):
+            res = self.client.get(f"/api/admin/counseling/{self.card.counsel_id}/calls")
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["calls"], found)
+
+    def test_response_never_carries_the_phone_number(self):
+        with patch.object(channeltalk, "recent_calls", return_value=[]):
+            res = self.client.get(f"/api/admin/counseling/{self.card.counsel_id}/calls")
+
+        self.assertNotIn(self.parent.phone, res.content.decode())
+
+    def test_student_card_looks_up_the_students_own_number(self):
+        card = AbsenceCounseling.objects.create(
+            student=self.student,
+            attendance=self.attendance,
+            target=AbsenceCounseling.Target.STUDENT,
+            status=AbsenceCounseling.Status.PENDING,
+        )
+        self.student.user.phone = "01055556666"
+        self.student.user.save()
+
+        with patch.object(channeltalk, "recent_calls", return_value=[]) as looked:
+            self.client.get(f"/api/admin/counseling/{card.counsel_id}/calls")
+
+        self.assertEqual(looked.call_args.args[0], "01055556666")
+
+
+class CounselingCallLinkTests(CounselingFixtureMixin, TestCase):
+    """조교가 확인한 통화는 카드에 남는다 (decisions.md §6 "전화 이력만 끌어온다").
+
+    로그 전체를 복사하지는 않는다 — 통화 ID 가 없어서 중복 제거가 추측이 된다.
+    사람이 하나로 확정해 준 건만 저장하면 그 문제가 사라지고, 90일이 지나
+    채널톡에서 못 가져오게 돼도 우리 쪽에 근거가 남는다.
+    """
+
+    def setUp(self):
+        self.login()
+        self.card = self.make_card()
+
+    def test_confirmed_call_is_stored_on_the_card(self):
+        self.patch_card(
+            self.card.counsel_id,
+            {"result": "연결", "provider_ref": "6a7bf735aaba03d98dde"},
+        )
+
+        self.card.refresh_from_db()
+        self.assertEqual(self.card.provider, AbsenceCounseling.Provider.CHANNELTALK)
+        self.assertEqual(self.card.provider_ref, "6a7bf735aaba03d98dde")
+
+    def test_a_call_made_outside_channel_talk_leaves_no_reference(self):
+        # 조교가 개인 전화로 걸면 로그가 없다 — 그래도 기록은 되어야 한다.
+        self.patch_card(self.card.counsel_id, {"result": "연결"})
+
+        self.card.refresh_from_db()
+        self.assertEqual(self.card.provider, "")
+        self.assertEqual(self.card.provider_ref, "")
+
+    def test_reference_is_kept_when_the_call_was_not_answered(self):
+        # 안 받은 통화도 채널톡에 남는다 — 3회 근거가 되는 쪽이라 더 중요하다.
+        self.patch_card(
+            self.card.counsel_id,
+            {"result": "미연결", "provider_ref": "aa11bb22cc33"},
+        )
+
+        self.card.refresh_from_db()
+        self.assertEqual(self.card.provider_ref, "aa11bb22cc33")
+
+
+class CounselingTranscriptTests(CounselingFixtureMixin, TestCase):
+    """통화 내용은 **보여주기만** 한다 — 메모 확정은 조교 몫(2026-08-12)."""
+
+    def setUp(self):
+        self.login()
+        self.card = self.make_card()
+
+    def test_shows_the_transcript_we_saved_not_a_fresh_fetch(self):
+        # 저장분을 쓰는 이유: 채널톡은 90일까지만 되돌려 준다.
+        lines = [{"speaker": "고객", "said": "아파서 못 갔어요"}]
+        with patch.object(channeltalk, "transcript", return_value=lines):
+            self.patch_card(
+                self.card.counsel_id, {"result": "연결", "provider_ref": "chat-1"}
+            )
+
+        with patch.object(channeltalk, "transcript") as refetch, patch.object(
+            channeltalk, "recording_url", return_value="https://x/y.mp4"
+        ):
+            res = self.client.get(
+                f"/api/admin/counseling/{self.card.counsel_id}/transcript"
+            )
+
+        refetch.assert_not_called()
+        self.assertIn("아파서 못 갔어요", res.json()["transcript"])
+        # 녹음만 매번 새로 받는다 — 서명 URL 이 만료되므로 저장할 수 없다.
+        self.assertEqual(res.json()["recording_url"], "https://x/y.mp4")
+
+    def test_card_without_a_stored_call_has_nothing_to_show(self):
+        res = self.client.get(f"/api/admin/counseling/{self.card.counsel_id}/transcript")
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json(), {"transcript": "", "recording_url": None})
+
+
+class CounselingTranscriptStoredTests(CounselingFixtureMixin, TestCase):
+    """전사는 자동으로 들어간다 — 메모는 조교가 따로 쓰는 칸이다.
+
+    채널톡은 90일까지만 되돌려 주므로 읽어서 보여주기만 하면 그 뒤엔 근거가
+    사라진다. 녹음은 반대로 저장하지 않는다 — 서명 URL 이라 만료된다.
+    """
+
+    def setUp(self):
+        self.login()
+        self.card = self.make_card()
+
+    def test_transcript_is_saved_with_the_call(self):
+        lines = [
+            {"speaker": "상담원", "said": "안녕하세요"},
+            {"speaker": "고객", "said": "아파서 못 갔어요"},
+        ]
+        with patch.object(channeltalk, "transcript", return_value=lines):
+            self.patch_card(
+                self.card.counsel_id, {"result": "연결", "provider_ref": "chat-1"}
+            )
+
+        self.card.refresh_from_db()
+        self.assertIn("아파서 못 갔어요", self.card.call_transcript)
+        self.assertIn("상담원", self.card.call_transcript)
+
+    def test_memo_is_the_assistants_own_and_is_not_overwritten(self):
+        said = [{"speaker": "고객", "said": "네"}]
+        with patch.object(channeltalk, "transcript", return_value=said):
+            self.patch_card(
+                self.card.counsel_id,
+                {"result": "연결", "provider_ref": "chat-1", "call_memo": "동보 안내함"},
+            )
+
+        self.card.refresh_from_db()
+        self.assertEqual(self.card.call_memo, "동보 안내함")
+
+    def test_a_failing_fetch_never_blocks_the_record(self):
+        # 채널톡이 느리거나 죽어도 통화 기록 자체는 저장돼야 한다.
+        with patch.object(channeltalk, "transcript", side_effect=RuntimeError("boom")):
+            res = self.patch_card(
+                self.card.counsel_id, {"result": "연결", "provider_ref": "chat-1"}
+            )
+
+        self.assertEqual(res.status_code, 200)
+        self.card.refresh_from_db()
+        self.assertEqual(self.card.status, AbsenceCounseling.Status.COMPLETED)
+        self.assertEqual(self.card.call_transcript, "")
+
+
+class CounselingAttemptCountTests(CounselingFixtureMixin, TestCase):
+    """시도 횟수는 조교가 넣는 숫자다 (2026-08-12 확정).
+
+    행 수로 세던 것을 바꾼 이유: 화면이 채널톡 통화 목록을 그대로 보여주고
+    조교가 그중 몇 건이 우리 시도인지 확정한다. 기계가 세면 조교가 본 것과
+    어긋나고, 어긋나는 순간 어느 쪽이 맞는지 아무도 모른다.
+    """
+
+    def setUp(self):
+        self.login()
+        self.card = self.make_card()
+
+    def test_saving_a_count_stores_it(self):
+        res = self.patch_card(self.card.counsel_id, {"attempts": 2})
+
+        self.assertEqual(res.status_code, 200)
+        self.card.refresh_from_db()
+        self.assertEqual(self.card.attempts, 2)
+
+    def test_saving_a_count_does_not_make_another_card(self):
+        self.patch_card(self.card.counsel_id, {"attempts": 2})
+
+        self.assertEqual(AbsenceCounseling.objects.count(), 1)
+
+    def test_the_card_stays_open_while_they_are_still_calling(self):
+        self.patch_card(self.card.counsel_id, {"attempts": 2})
+
+        self.card.refresh_from_db()
+        self.assertEqual(self.card.status, AbsenceCounseling.Status.PENDING)
+        rows = self.client.get(QUEUE_URL).json()["queue"]
+        self.assertEqual(rows[0]["attempts"], 2)
+
+    def test_a_negative_count_is_refused(self):
+        res = self.patch_card(self.card.counsel_id, {"attempts": -1})
+
+        self.assertEqual(res.status_code, 400)
+
+    def test_reaching_the_limit_does_not_close_it_by_itself(self):
+        # 3회는 "문자 보내도 된다"는 신호일 뿐이다 — 4번째도 걸 수 있다.
+        self.patch_card(self.card.counsel_id, {"attempts": MAX_ATTEMPTS})
+
+        self.card.refresh_from_db()
+        self.assertEqual(self.card.status, AbsenceCounseling.Status.PENDING)
+
+    def test_the_count_can_go_past_the_limit(self):
+        self.patch_card(self.card.counsel_id, {"attempts": MAX_ATTEMPTS + 1})
+
+        self.card.refresh_from_db()
+        self.assertEqual(self.card.attempts, MAX_ATTEMPTS + 1)
+
+
+class CounselingNoticeOnceTests(CounselingFixtureMixin, TestCase):
+    """문자는 3회부터, 한 번만. 보낸 뒤에도 통화는 더 걸 수 있다 (2026-08-12)."""
+
+    def setUp(self):
+        self.login()
+        self.card = self.make_card()
+
+    def notify(self):
+        return self.client.post(f"/api/admin/counseling/{self.card.counsel_id}/notify")
+
+    def test_cannot_send_before_the_limit(self):
+        self.patch_card(self.card.counsel_id, {"attempts": MAX_ATTEMPTS - 1})
+
+        self.assertEqual(self.notify().status_code, 400)
+        self.assertFalse(Notification.objects.exists())
+
+    def test_can_send_at_the_limit(self):
+        self.patch_card(self.card.counsel_id, {"attempts": MAX_ATTEMPTS})
+
+        self.assertEqual(self.notify().status_code, 200)
+        self.assertEqual(Notification.objects.count(), 1)
+
+    def test_cannot_send_twice(self):
+        self.patch_card(self.card.counsel_id, {"attempts": MAX_ATTEMPTS})
+        self.notify()
+
+        self.assertEqual(self.notify().status_code, 400)
+        self.assertEqual(Notification.objects.count(), 1)
+
+    def test_calls_can_continue_after_the_notice(self):
+        self.patch_card(self.card.counsel_id, {"attempts": MAX_ATTEMPTS})
+        self.notify()
+
+        self.patch_card(self.card.counsel_id, {"attempts": MAX_ATTEMPTS + 1})
+
+        self.card.refresh_from_db()
+        self.assertEqual(self.card.attempts, MAX_ATTEMPTS + 1)
+        self.assertEqual(self.card.status, AbsenceCounseling.Status.PENDING)
+        rows = self.client.get(QUEUE_URL).json()["queue"]
+        self.assertEqual(rows[0]["counsel_id"], self.card.counsel_id)
+        self.assertTrue(rows[0]["notified"], "보냈다는 것이 화면에 보여야 버튼이 꺼진다")
+
+
+class CounselingPerCallTranscriptTests(CounselingFixtureMixin, TestCase):
+    """목록에서 통화 하나를 펼치면 그 통화의 전사를 읽는다.
+
+    저장된 것은 조교가 확정한 한 건뿐이라, 아직 안 고른 통화는 그때그때 받아야 한다.
+    """
+
+    def setUp(self):
+        self.login()
+        self.card = self.make_card()
+
+    def test_named_call_is_read_live(self):
+        lines = [{"speaker": "고객", "said": "네"}]
+        with patch.object(channeltalk, "transcript", return_value=lines) as read, patch.object(
+            channeltalk, "recording_url", return_value="https://x/y.mp4"
+        ):
+            res = self.client.get(
+                f"/api/admin/counseling/{self.card.counsel_id}/transcript",
+                {"user_chat_id": "other-chat"},
+            )
+
+        self.assertEqual(read.call_args.args[0], "other-chat")
+        self.assertIn("네", res.json()["transcript"])

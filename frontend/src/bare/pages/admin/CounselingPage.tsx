@@ -94,7 +94,7 @@ function RecordForm({ card, onDone }: { card: any; onDone: () => void }) {
       setOk(
         `기록 완료 — 상태 ${data.status} · 시도 ${data.attempts}회` +
           (data.next_counsel_id ? ` · 재시도 카드 #${data.next_counsel_id} 생성` : "") +
-          (data.closed_by_sms ? " · 3회 미연결 → 알림톡 종결 기록" : "") +
+          (data.closed ? " · 종결 — 알림톡은 버튼으로" : "") +
           (data.makeup_requested
             ? " · 동보 희망 체크됨(지급은 출결 화면의 동보 체크 API로)"
             : ""),

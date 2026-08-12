@@ -130,8 +130,12 @@ export interface CounselCard {
   };
   target: string;
   status: string;
-  /** 이미 수행한 통화 시도 수(0부터). 3회째 미연결이면 알림톡으로 종결된다. */
+  /** 이미 수행한 통화 시도 수(0부터). 3회는 "닫아도 된다"는 신호이고 발송은 버튼이다. */
   attempts: number;
+  /** 닫혔는데 결석 안내가 아직 안 나갔다 */
+  awaiting_notice: boolean;
+  /** 문자는 한 번만 — 보냈으면 버튼이 꺼진다 */
+  notified: boolean;
   absence_date: string | null;
   created_at: string;
 }
@@ -141,7 +145,8 @@ export interface CounselRecordResult {
   status: string;
   attempts: number;
   next_counsel_id: number | null;
-  closed_by_sms: boolean;
+  /** 더 이상 재시도 카드를 만들지 않는다 — 3회 소진 또는 강제 종결 */
+  closed: boolean;
   makeup_requested: boolean;
 }
 
@@ -156,4 +161,22 @@ export interface ClinicRequestRow {
 export interface WorkbookListResponse {
   total_count: number;
   unmatched_count: number;
+}
+
+/** 채널톡에서 읽어 온 통화 1건 — 저장하는 것은 조교가 고른 하나뿐이다. */
+export interface CounselCall {
+  direction: string;
+  called_at: string | null;
+  connected: boolean;
+  missed_reason: string | null;
+  /** 통화 ID 가 없어 이것이 유일한 참조. 녹음·STT 도 이 값으로 찾는다 */
+  user_chat_id: string | null;
+}
+
+/** 통화 전사 한 줄 — 자동으로 메모에 들어가지 않는다. 조교가 읽고 확정한다. */
+export interface CounselTranscript {
+  /** 저장된 전사 — 채널톡은 90일까지만 되돌려 주므로 우리가 갖는다 */
+  transcript: string;
+  /** 만료되는 서명 URL — 저장하지 않고 볼 때마다 받는다 */
+  recording_url: string | null;
 }

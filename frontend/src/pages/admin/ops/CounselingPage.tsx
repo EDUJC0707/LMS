@@ -4,8 +4,13 @@
  * 호출: GET   /api/admin/counseling/queue
  *      · PATCH /api/admin/counseling/{counsel_id}
  *
- * 3회 정책을 화면에 드러낸다: 미연결로 기록하면 재시도 카드가 생기고,
- * 3회째 미연결이면 알림톡 안내로 종결된다(백엔드 MAX_CALL_ATTEMPTS=3).
+ * 화면 흐름(2026-08-12 확정):
+ *   ① 채널톡 통화 기록을 며칠치 보여준다 — 누르면 그 통화의 전사가 열린다
+ *   ② 조교가 **시도 횟수를 직접 넣는다**(− N +). 기계가 세지 않는 이유는
+ *      화면이 보여준 목록과 어긋나면 어느 쪽이 맞는지 알 수 없기 때문이다
+ *   ③ 3회부터 `결석 안내 보내기` 가 켜진다. **한 번만** 나가고, 보낸 뒤에도
+ *      통화는 더 걸 수 있다(4회째도 가능) — 3회는 마감이 아니라 신호다
+ * **문자는 자동으로 안 나간다.** 닫는 것도 보내는 것도 사람이 누른다.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -28,10 +33,15 @@ import {
 import type { Column } from "../../../components";
 import { shortDate, stamp } from "./format";
 import "./ops.css";
-import type { CounselCard, CounselRecordResult } from "./types";
+import type {
+  CounselCall,
+  CounselCard,
+  CounselRecordResult,
+  CounselTranscript,
+} from "./types";
 import { MAX_CALL_ATTEMPTS } from "./types";
 
-type CallResult = "연결" | "미연결";
+type CallResult = "연결" | "미연결" | "종결";
 
 export default function CounselingPage() {
   const [dateFilter, setDateFilter] = useState("");
@@ -45,6 +55,26 @@ export default function CounselingPage() {
   );
 
   const all = useMemo(() => queue.data ?? [], [queue.data]);
+
+  // 발송·학생 2차는 표에서 바로 누른다 — 통화 결과 폼을 열 필요가 없는 동작이다.
+  const notify = useApiAction(async (id: number) => {
+    await http.post(`/admin/counseling/${id}/notify`);
+  });
+  const openStudent = useApiAction(async (id: number) => {
+    await http.post("/admin/counseling", { from_counsel_id: id, target: "학생" });
+  });
+
+  const send = async (card: CounselCard) => {
+    if (!(await notify.run(card.counsel_id))) return;
+    setNotice(`${card.student.name ?? "학생"} 학부모에게 결석 안내를 보냈습니다`);
+    void queue.reload();
+  };
+
+  const toStudent = async (card: CounselCard) => {
+    if (!(await openStudent.run(card.counsel_id))) return;
+    setNotice(`${card.student.name ?? "학생"} 학생 통화 카드를 열었습니다`);
+    void queue.reload();
+  };
 
   const dates = useMemo(() => {
     const seen = new Set<string>();
@@ -101,7 +131,7 @@ export default function CounselingPage() {
           {r.attempts === 0 ? (
             <span className="ops-sub">첫 통화</span>
           ) : r.attempts >= MAX_CALL_ATTEMPTS - 1 ? (
-            <Badge tone="warning">이번에 안 되면 문자 종결</Badge>
+            <Badge tone="warning">3회 — 닫아도 됩니다</Badge>
           ) : (
             <span className="ops-sub">재시도</span>
           )}
@@ -120,11 +150,28 @@ export default function CounselingPage() {
       header: "기록",
       align: "right",
       width: "10rem",
-      cell: (r) => (
-        <Button size="sm" onClick={() => setTarget(r)}>
-          통화 결과 입력
-        </Button>
-      ),
+      cell: (r) =>
+        r.attempts >= MAX_CALL_ATTEMPTS && !r.notified ? (
+          <Button
+            size="sm"
+            variant="primary"
+            loading={notify.pending}
+            onClick={() => void send(r)}
+          >
+            결석 안내 보내기
+          </Button>
+        ) : (
+          <span className="ui-row">
+            <Button size="sm" onClick={() => setTarget(r)}>
+              통화 결과 입력
+            </Button>
+            {r.target === "학부모" && (
+              <Button size="sm" variant="ghost" loading={openStudent.pending} onClick={() => void toStudent(r)}>
+                학생에게
+              </Button>
+            )}
+          </span>
+        ),
     },
   ];
 
@@ -234,6 +281,40 @@ function RecordPanel({
     anchor.current?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, []);
 
+  // 조교가 방금 건 통화를 채널톡에서 찾아 결과를 미리 채운다. 못 찾아도
+  // 폼은 그대로 쓴다 — 개인 전화로 걸었거나 로그가 아직 안 올라온 것뿐이다.
+  const calls = useApi(
+    async () =>
+      (
+        await http.get<{ calls: CounselCall[] }>(
+          `/admin/counseling/${card.counsel_id}/calls`,
+        )
+      ).data.calls,
+    [card.counsel_id],
+  );
+  const found = calls.data?.[0] ?? null;
+
+  useEffect(() => {
+    if (found) setResult(found.connected ? "연결" : "미연결");
+  }, [found]);
+
+  // 목록에서 펼친 통화의 전사. 안 고르면 카드에 저장된 것(확정분)을 보여준다.
+  // **메모에 자동으로 넣지 않는다** — 무엇을 남길지는 조교가 정한다(2026-08-12).
+  const [openCall, setOpenCall] = useState<string | null>(null);
+  const talk = useApi(
+    async () =>
+      (
+        await http.get<CounselTranscript>(
+          `/admin/counseling/${card.counsel_id}/transcript`,
+          { params: openCall ? { user_chat_id: openCall } : {} },
+        )
+      ).data,
+    [card.counsel_id, openCall],
+  );
+
+  // 시도 횟수는 조교가 넣는다 — 화면이 보여준 통화 목록과 어긋나지 않게.
+  const [attempts, setAttempts] = useState(card.attempts);
+
   const record = useApiAction(async () => {
     const { data } = await http.patch<CounselRecordResult>(`/admin/counseling/${card.counsel_id}`, {
       result,
@@ -241,6 +322,8 @@ function RecordPanel({
       call_memo: memo,
       follow_up_action: result === "연결" ? followUp : "",
       makeup_requested: result === "연결" ? makeupRequested : false,
+      attempts,
+      provider_ref: openCall ?? found?.user_chat_id ?? "",
     });
     return data;
   });
@@ -249,10 +332,8 @@ function RecordPanel({
     const data = await record.run();
     if (!data) return;
     const name = card.student.name ?? "학생";
-    if (data.closed_by_sms) {
-      onDone(
-        `${name} 학부모 통화 ${data.attempts}회 시도 — 알림톡 종결`,
-      );
+    if (data.closed) {
+      onDone(`${name} ${card.target} 통화 ${data.attempts}회 — 종결`);
       return;
     }
     if (data.next_counsel_id) {
@@ -277,6 +358,48 @@ function RecordPanel({
         {/* 아래 Field 들과 같은 위계의 칸이다 — 라벨 조판도 같은 것을 쓴다.
             툴바 라벨(11px 대문자 자간)이었을 때는 같은 폼 안에서 이 칸만
             다른 크기·색으로 떠 위계가 하나 더 있는 것처럼 읽혔다. */}
+        {(calls.data?.length ?? 0) > 0 && (
+          <div className="ui-field">
+            <span className="ui-field__label">채널톡 통화 기록</span>
+            <div className="ui-stack ui-stack--sm">
+              {calls.data?.map((c) => (
+                <Button
+                  key={c.user_chat_id ?? c.called_at ?? ""}
+                  size="sm"
+                  variant={openCall === c.user_chat_id ? "primary" : "ghost"}
+                  onClick={() => setOpenCall(openCall === c.user_chat_id ? null : c.user_chat_id)}
+                >
+                  {`${stamp(c.called_at ?? "")} · ${c.connected ? "받음" : "안 받음"}`}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {(talk.data?.transcript || talk.data?.recording_url) && (
+          <div className="ui-field">
+            <span className="ui-field__label">통화 내용</span>
+            <div className="ui-stack ui-stack--sm">
+              {talk.data?.recording_url && (
+                <a href={talk.data.recording_url} target="_blank" rel="noreferrer">
+                  녹음 듣기
+                </a>
+              )}
+              {talk.data?.transcript && (
+                <pre className="ops-sub" style={{ whiteSpace: "pre-wrap", margin: 0 }}>
+                  {talk.data.transcript}
+                </pre>
+              )}
+            </div>
+          </div>
+        )}
+
+        {found && (
+          <Alert tone="info">
+            {`채널톡 통화 기록을 찾았습니다 — ${found.connected ? "연결됨" : "받지 않음"}`}
+          </Alert>
+        )}
+
         <div className="ui-field">
           <span className="ui-field__label">통화 결과</span>
           <div className="ui-row">
@@ -291,6 +414,12 @@ function RecordPanel({
               label="연결되지 않았습니다"
               checked={result === "미연결"}
               onChange={() => setResult("미연결")}
+            />
+            <Radio
+              name={`call-${card.counsel_id}`}
+              label="그만 겁니다"
+              checked={result === "종결"}
+              onChange={() => setResult("종결")}
             />
           </div>
         </div>
@@ -353,6 +482,19 @@ function RecordPanel({
             </Alert>
           </>
         )}
+
+        <div className="ui-field">
+          <span className="ui-field__label">시도 횟수</span>
+          <div className="ui-row">
+            <Button size="sm" onClick={() => setAttempts(Math.max(0, attempts - 1))}>
+              −
+            </Button>
+            <span className="num">{attempts}</span>
+            <Button size="sm" onClick={() => setAttempts(attempts + 1)}>
+              +
+            </Button>
+          </div>
+        </div>
 
         <div className="ui-row" style={{ justifyContent: "flex-end" }}>
           <Button variant="ghost" onClick={onClose}>

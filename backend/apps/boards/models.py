@@ -132,6 +132,16 @@ class AbsenceCounseling(models.Model):
         COMPLETED = "완료", "완료"
         UNREACHED = "미연결", "미연결"
 
+    class Provider(models.TextChoices):
+        """통화가 어디를 거쳤나 — 업체 이름은 **값**이지 컬럼이 아니다.
+
+        업체 종속 컬럼(`channeltalk_call_id` 등)을 만들지 않는 이유는
+        key_considerations §4 와 같다: 업체를 바꾸면 스키마가 따라 움직인다.
+        `provider` + 중립 참조 하나면 어댑터만 갈아 끼우면 된다.
+        """
+
+        CHANNELTALK = "채널톡", "채널톡"
+
     counsel_id = models.BigAutoField(primary_key=True)
     student = models.ForeignKey(
         "accounts.Student",
@@ -167,6 +177,22 @@ class AbsenceCounseling(models.Model):
         related_name="absence_counselings",
         verbose_name="결석 담당자",
     )
+    # 조교가 "이 통화가 이 시도다" 라고 확정한 것만 저장한다. 로그 전체를
+    # 복사하지 않는 이유: 업체 응답에 통화 ID 가 없어 중복 제거를
+    # (시각·번호·방향) 복합키로 추측해야 하고, 그 추측이 곧 계약이 된다.
+    provider = models.CharField(
+        "통화 경로", max_length=10, choices=Provider.choices, blank=True, default=""
+    )
+    # 채널톡은 통화 ID 를 안 준다 — 유일한 안정 참조가 userChatId 다.
+    # 녹음·STT 도 이 값으로 찾는다.
+    provider_ref = models.CharField("통화 참조", max_length=64, blank=True, default="")
+    # 전사는 **우리가 갖는다**. 채널톡은 90일까지만 되돌려 주므로 읽어서 보여주기만
+    # 하면 그 뒤엔 근거가 사라진다. 녹음은 반대로 저장하지 않는다 — 서명 URL 이라
+    # 만료된다(provider_ref 로 볼 때마다 새로 받는다).
+    call_transcript = models.TextField("통화 전사", blank=True, default="")
+    # 시도 횟수는 **조교가 넣는 숫자**다(2026-08-12). 행 수로 세면 화면이 보여준
+    # 채널톡 통화 목록과 어긋날 수 있고, 어긋나면 어느 쪽이 맞는지 알 수 없다.
+    attempts = models.PositiveSmallIntegerField("통화 시도 횟수", default=0)
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)
 
     class Meta:

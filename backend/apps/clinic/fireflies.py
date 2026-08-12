@@ -42,9 +42,9 @@ _RETRYABLE_STATUSES = frozenset({408, 429})
 #: `duration` 이 받는 범위. 밖으로 나가면 요청 전체가 거절된다.
 MIN_MINUTES, MAX_MINUTES = 15, 120
 
-#: 수집 때 훑는 최근 전사 개수. 20분 주기로 도는데 클리닉은 한 타임에 하나라
-#: 넉넉하다 — 이보다 밀릴 정도면 수집이 멈춰 있었다는 뜻이고 그건 다른 문제다.
-RECENT_LIMIT = 50
+#: 같은 제목이 몇 개까지 나올 수 있나. 정상은 1이고 2를 넘길 이유가 없다
+#: (아래 `fetch_supervision` 의 중복 설명) — 넉넉히 잡아도 이 정도면 충분하다.
+TITLE_MATCH_LIMIT = 10
 
 _DISPATCH = """
 mutation($link: String!, $title: String, $language: String, $minutes: Int) {
@@ -57,11 +57,15 @@ mutation($link: String!, $title: String, $language: String, $minutes: Int) {
 }
 """
 
-_RECENT = """
-query($limit: Int) {
-  transcripts(limit: $limit) {
+#: 제목으로 **서버에서** 거른다. 최근 목록을 끌어와 파이썬에서 훑으면 수집이
+#: 며칠 밀렸을 때 그 클리닉이 목록 끝 밖으로 떨어져 나가 영영 못 찾는다.
+_BY_TITLE = """
+query($title: String, $limit: Int) {
+  transcripts(title: $title, limit: $limit) {
     id
     title
+    duration
+    is_live
     transcript_url
     summary { overview }
   }
@@ -102,17 +106,35 @@ class FirefliesAdapter(ConferenceAdapter):
         """
         if not file_as:
             return None
-        data = self._call(_RECENT, {"limit": RECENT_LIMIT}, "감독 자료를 가져오지 못했습니다")
-        for row in data.get("transcripts") or []:
-            if row.get("title") != file_as:
-                continue
-            return Supervision(
-                transcript_ref=row.get("id") or "",
-                transcript_url=row.get("transcript_url") or "",
-                # 요약이 비면 None 이되 링크는 남긴다 — 사람이 열어 보면 된다.
-                summary=((row.get("summary") or {}).get("overview") or "").strip() or None,
-            )
-        return None
+        # **경로를 통째로 보내면 안 된다.** 업체 필터는 정확 일치가 아니라 단어
+        # 검색이고 `/` 는 색인에 없다 — 전체 경로로 물으면 있는 것도 0건으로
+        # 돌아온다(2026-08-12 실측). 마지막 조각은 날짜+시각+원번이라 이미
+        # 유일하므로 그걸로 좁히고, 전체 제목 확정은 아래에서 우리가 한다.
+        data = self._call(
+            _BY_TITLE,
+            {"title": file_as.rsplit("/", 1)[-1], "limit": TITLE_MATCH_LIMIT},
+            "감독 자료를 가져오지 못했습니다",
+        )
+        rows = [
+            r
+            for r in data.get("transcripts") or []
+            # 서버는 좁히기만 하고 확정은 우리가 한다 — 부분 일치가 남의 요약을
+            # 이 학생 평가에 붙이는 것보다 한 차례 더 기다리는 편이 낫다.
+            if r.get("title") == file_as and not r.get("is_live")
+        ]
+        if not rows:
+            return None
+        # 같은 제목이 둘 나올 수 있다: 학생이 **같은 날 같은 시각**으로 취소하고
+        # 다시 잡으면 `artifact_path` 가 글자 그대로 같아진다. 그때는 **가장 긴
+        # 것**이 수업이다 — 짧은 쪽은 봇이 들어갔다 튕긴 자국이다(구글 경로가
+        # 여러 회의 기록 중 가장 오래 이어진 것을 고르는 것과 같은 규칙).
+        row = max(rows, key=lambda r: r.get("duration") or 0)
+        return Supervision(
+            transcript_ref=row.get("id") or "",
+            transcript_url=row.get("transcript_url") or "",
+            # 요약이 비면 None 이되 링크는 남긴다 — 사람이 열어 보면 된다.
+            summary=((row.get("summary") or {}).get("overview") or "").strip() or None,
+        )
 
     # -- HTTP -------------------------------------------------------------
 
