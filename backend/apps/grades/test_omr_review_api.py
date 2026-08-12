@@ -18,6 +18,7 @@ from django.test import TestCase
 from apps.accounts.features import FeatureKey
 from apps.accounts.models import StaffFeatureGrant, User
 
+from . import exam_admin, scoring
 from .models import AnswerSheet, Exam, Question, Score, SheetAnswer
 from .test_grade_report_api import make_student, make_user
 
@@ -199,3 +200,69 @@ class SettledSheetEditTests(SheetReviewTests):
         self.assertEqual(res.status_code, 200)
         row = SheetAnswer.objects.get(sheet=self.settled, question=self.q1)
         self.assertEqual(row.marked, "2")
+
+
+class AnonymousConfirmTests(TestCase):
+    """조교가 "주인 없이 이대로" 확정하는 길 — 그 점수가 평균에 든다."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = make_user("adm-anon", User.Role.ADMIN, name="관리자")
+        cls.exam = Exam.objects.create(
+            name="6월 모의평가", exam_date=datetime.date(2026, 6, 12), kind=Exam.Kind.MOCK
+        )
+        cls.sheet = AnswerSheet.objects.create(
+            exam=cls.exam,
+            scan_image_path="omr/scans/anon.jpg",
+            match_status=_MS.INVALID,
+            recognized_score=44,
+        )
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def test_confirming_without_a_student_makes_it_anonymous(self):
+        """학생을 안 고르고 확인 = 익명 확정. 화면 버튼이 `익명으로 확정` 인 자리다."""
+        res = self.client.patch(
+            f"/api/admin/sheets/{self.sheet.pk}",
+            data=json.dumps({"confirm": True}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 200)
+        self.sheet.refresh_from_db()
+        self.assertTrue(self.sheet.is_corrected)
+        self.assertIsNone(self.sheet.student)
+        self.assertEqual(scoring.anonymous_totals(self.exam), [44])
+
+    def test_it_leaves_the_correction_queue(self):
+        """확정한 장을 계속 물고 있으면 조교가 같은 장을 매번 다시 본다."""
+        before = exam_admin.build_exam_detail(exam_admin.load_exam(self.exam.pk))
+
+        self.client.patch(
+            f"/api/admin/sheets/{self.sheet.pk}",
+            data=json.dumps({"confirm": True}),
+            content_type="application/json",
+        )
+
+        after = exam_admin.build_exam_detail(exam_admin.load_exam(self.exam.pk))
+        self.assertEqual(before["stats"]["pending_sheet_count"], 1)
+        self.assertEqual(after["stats"]["pending_sheet_count"], 0)
+
+    def test_naming_a_student_later_takes_it_out_of_the_anonymous_pool(self):
+        """익명 확정은 되돌릴 수 있다 — 나중에 주인을 찾으면 그 학생 것이 된다."""
+        student = make_student("stu-late", "김서연")
+        self.client.patch(
+            f"/api/admin/sheets/{self.sheet.pk}",
+            data=json.dumps({"confirm": True}),
+            content_type="application/json",
+        )
+
+        self.client.patch(
+            f"/api/admin/sheets/{self.sheet.pk}",
+            data=json.dumps({"student_id": student.pk}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(scoring.anonymous_totals(self.exam), [])
+        self.assertEqual(float(Score.objects.get(exam=self.exam).total_score), 44.0)

@@ -13,6 +13,8 @@
  *   사람 것이 되고(재판독이 못 덮는다) 총점은 서버가 다시 낸다.
  * - 모의고사 장에는 문항이 없다. 고칠 것이 자기보고 점수 한 칸뿐이라 오른쪽이
  *   통째로 바뀐다.
+ * - 주인을 못 고른 채 확정하면 그 점수는 **익명으로 평균에 든다**(decisions.md
+ *   「익명 점수」). 되돌릴 수 있지만 버튼 이름이 그렇다고 말해 줘야 한다.
  * - 목록은 손볼 장부터 온다(서버 순서). 다음 장으로 넘어가는 것이 기본 동선이라
  *   저장하면 그 자리에 머무르지 않고 다음 장을 연다.
  */
@@ -72,6 +74,10 @@ export default function SheetReviewPage() {
   const [marks, setMarks] = useState<Record<number, string>>({});
   const [student, setStudent] = useState<DirectoryStudent | null>(null);
   const [score, setScore] = useState("");
+
+  // 주인 없이 확정하면 그 점수는 **익명으로 평균에 든다.** 같은 버튼이 두 가지
+  // 뜻을 갖게 되므로 이름을 가른다(문구를 덧붙이지 말고 이름을 고친다 — §8).
+  const anonymous = survey && student === null;
 
   useEffect(() => {
     if (!detail.data) return;
@@ -221,7 +227,7 @@ export default function SheetReviewPage() {
                 <div className="pm-actionblock pm-toolbar">
                   <div className="pm-toolbar__end">
                     <Button variant="ghost" loading={save.pending} onClick={() => submit(true)}>
-                      확인
+                      {anonymous ? "익명으로 확정" : "확인"}
                     </Button>
                     <Button variant="primary" loading={save.pending} onClick={() => submit(false)}>
                       저장
