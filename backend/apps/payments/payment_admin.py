@@ -13,12 +13,18 @@ clinic_admin 선례). 값집합 밖 입력은 빈 목록이 아니라 **오류**
 필터에 쓰면 정작 찾아야 할 미결제 건이 통째로 빠진다.
 """
 import datetime
+import logging
 
 from django.db import transaction
 from django.utils import timezone
 
+from apps.notifications.models import Notification
+from apps.notifications.sending import queue
+
 from .models import Order, Payment
 from .provider import get_adapter
+
+logger = logging.getLogger(__name__)
 
 
 class PaymentQueryError(Exception):
@@ -182,20 +188,27 @@ def _notify_cancelled(order, *, was_paid):
     """
     if not order.is_billed:
         return
-    from apps.notifications.models import Notification
-    from apps.notifications.sending import queue
-
     what = "환불되었습니다" if was_paid else "취소되었습니다"
-    queue(
-        type=Notification.Type.PAYMENT,
-        channel=Notification.Channel.KAKAO,
-        student=None if order.billed_to_parent_id else order.student,
-        parent=order.billed_to_parent,
-        title="교재 결제",
-        body=f"{order.product.name} {order.amount:,}원 결제가 {what}.",
-        ref_type="orders",
-        ref_id=order.order_id,
-    )
+    try:
+        queue(
+            type=Notification.Type.PAYMENT,
+            channel=Notification.Channel.KAKAO,
+            student=None if order.billed_to_parent_id else order.student,
+            parent=order.billed_to_parent,
+            title="교재 결제",
+            body=f"{order.product.name} {order.amount:,}원 결제가 {what}.",
+            ref_type="orders",
+            ref_id=order.order_id,
+        )
+    except Exception:
+        # **알림 실패가 환불을 뒤엎지 못하게 한다.** 2026-08-12 운영 실측:
+        # 취소가 업체·DB 에 다 반영된 뒤 디스패치가 Celery 브로커를 못 찾아
+        # 터졌고(운영에 워커가 아직 없다), 트랜잭션은 이미 커밋된 뒤라
+        # **돈은 돌아갔는데 화면에는 실패**가 떴다.
+        #
+        # 삼켜도 조용한 실패가 아니다 — `queue` 는 디스패치 **전에** 알림 행을
+        # 만들므로 그 행이 남고 재발송 배치가 집어 간다. 여기서는 사유만 남긴다.
+        logger.exception("결제 취소 알림을 걸지 못했습니다 (order=%s)", order.order_id)
 
 
 def mark_delivered(order, *, now=None):
