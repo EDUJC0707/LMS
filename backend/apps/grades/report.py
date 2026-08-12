@@ -35,9 +35,11 @@
 """
 import math
 from collections import defaultdict
+from decimal import Decimal
 
-from django.db.models import Avg, Count, Max, Min, Q, StdDev, Sum
+from django.db.models import Count, Max, Min, Q, Sum
 
+from . import scoring
 from .models import AnswerSheet, Score, SheetAnswer
 
 
@@ -152,14 +154,16 @@ def summary_stats(exam):
     if not missing:
         return stats
     taken = exam.scores.filter(is_taken=True, total_score__isnull=False)
-    computed = taken.aggregate(
-        average=Avg("total_score"),
-        stddev=StdDev("total_score"),  # 모표준편차(기본값)
-        highest_score=Max("total_score"),
-        taker_count=Count("pk"),
+    # 익명 장(점수만 주고 신원을 안 밝힌 학생)도 같은 시험을 본 사람이다 —
+    # 빼면 평균이 그 학생들 없이 나온다(scoring.anonymous_totals).
+    totals = sorted(
+        [row.total_score for row in taken]
+        + [Decimal(value) for value in scoring.anonymous_totals(exam)],
+        reverse=True,
     )
+    computed = _distribution(totals)
     if "top30_score" in missing:
-        computed["top30_score"] = _top30_score(taken, computed["taker_count"])
+        computed["top30_score"] = _cut_at_top30(totals)
     for key in missing:
         stats[key] = computed.get(key)
     return stats
@@ -170,15 +174,28 @@ def rate(numerator, denominator):
     return round(numerator / denominator * 100, 1) if denominator else None
 
 
-def _top30_score(taken, taker_count):
-    """상위 30% 점수 = ceil(n×0.3)번째(내림차순) — ORDER BY+OFFSET 1건 조회."""
-    if not taker_count:
+def _distribution(totals):
+    """평균·모표준편차·최고점·응시 인원 — 익명 장까지 담은 목록에서 낸다."""
+    if not totals:
+        return {"average": None, "stddev": None, "highest_score": None, "taker_count": 0}
+    size = len(totals)
+    mean = sum(totals) / size
+    variance = sum((value - mean) ** 2 for value in totals) / size
+    return {
+        "average": mean,
+        "stddev": Decimal(variance).sqrt(),
+        "highest_score": max(totals),
+        "taker_count": size,
+    }
+
+
+def _cut_at_top30(totals):
+    """상위 30% 컷 — 내림차순 목록의 ceil(N x 0.3) 번째 점수."""
+    if not totals:
         return None
-    nth = math.ceil(taker_count * 0.3)
-    return taken.order_by("-total_score").values_list("total_score", flat=True)[nth - 1]
+    position = math.ceil(len(totals) * Decimal("0.3"))
+    return totals[max(int(position), 1) - 1]
 
-
-# --- 블록별 조립 ---------------------------------------------------------
 
 
 def _student_block(student):

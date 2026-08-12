@@ -409,3 +409,48 @@ class UndecodablePageTests(TestCase):
         self.assertEqual(summary["held"], 1)
         self.assertEqual(summary["read"], 1)
         self.assertEqual(AnswerSheet.objects.filter(exam=self.exam).count(), 2)
+
+
+class ShortExamTests(TestCase):
+    """카드는 20줄이지만 시험이 5문항일 수 있다 — 안 쓴 줄이 답으로 새면 안 된다."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.exam = Exam.objects.create(name="5문항 미니", exam_date=datetime.date(2026, 8, 12))
+        for number in range(1, 6):
+            Question.objects.create(
+                exam=cls.exam, q_number=number, answer="3", points=Decimal("2.0")
+            )
+        cls.student = make_student("stu-short", "김서연")
+
+    def test_only_the_questions_the_exam_has_are_stored(self):
+        """6~20 번 줄은 학생이 안 칠했을 뿐 아니라 **문항 자체가 없다**."""
+        page = synthetic_page({q: 3 for q in range(1, 6)})
+
+        with mock.patch.object(omr_ingest, "page_images", return_value=iter([page])):
+            summary = omr_ingest.ingest_pdf(self.exam, object(), question_count=5)
+
+        self.assertEqual(summary["read"], 1)
+        rows = SheetAnswer.objects.filter(sheet__exam=self.exam)
+        self.assertEqual(rows.count(), 5)
+        self.assertEqual(
+            sorted(rows.values_list("question__q_number", flat=True)), [1, 2, 3, 4, 5]
+        )
+
+    def test_the_unused_rows_do_not_become_answers(self):
+        """빈 줄에도 인쇄 글리프 잉크가 있다 — 판정에 넣으면 답으로 승격된다."""
+        page = synthetic_page({q: 3 for q in range(1, 6)})
+
+        with mock.patch.object(omr_ingest, "page_images", return_value=iter([page])):
+            omr_ingest.ingest_pdf(self.exam, object(), question_count=5)
+
+        marked = SheetAnswer.objects.filter(sheet__exam=self.exam).values_list(
+            "marked", flat=True
+        )
+        self.assertEqual(sorted(marked), ["3"] * 5)
+
+    def test_a_count_the_card_cannot_hold_is_refused(self):
+        from .omr import sheet as sheet_module
+
+        with self.assertRaises(ValueError):
+            sheet_module.answer_cells_for(21)

@@ -13,7 +13,7 @@
 집계(N+1)를 피하고, 계산·저장은 성적처리 슬라이스의 몫.
 """
 from django.db import transaction
-from django.db.models import Avg, Count, F, Q
+from django.db.models import Count, F, Q, Sum
 
 from apps.accounts import student_directory
 
@@ -27,9 +27,14 @@ def load_exam(exam_id):
 
 
 def build_exam_list():
-    """목록 — 응시자 수·평균·처리 상태(최근 시험 우선)."""
+    """목록 — 응시자 수·평균·처리 상태(최근 시험 우선).
+
+    응시자 수·평균은 `report.summary_stats` 와 **같은 계약**이다 — 익명 장까지
+    담는다. 목록만 학생 수로 세면 상세와 다른 수가 나온다.
+    """
     exams = list(_exam_queryset().order_by("-exam_date", "-exam_id"))
     pending = _pending_sheet_counts()
+    anonymous = _anonymous_stats([exam.exam_id for exam in exams])
     return {
         "exams": [
             {
@@ -39,9 +44,9 @@ def build_exam_list():
                 "exam_date": exam.exam_date.isoformat(),
                 "round_no": exam.round_no,
                 "target_grade": exam.target_grade,
-                "taker_count": exam.taker_count,
+                "taker_count": exam.taker_count + anonymous.get(exam.exam_id, (0, 0))[0],
                 "score_count": exam.score_count,
-                "average": exam.avg_score if exam.avg_score is not None else exam.computed_avg,
+                "average": _average(exam, anonymous.get(exam.exam_id, (0, 0))),
                 "processing_status": _processing_status(
                     exam.score_count, pending.get(exam.exam_id, 0)
                 ),
@@ -56,6 +61,7 @@ def build_exam_detail(exam):
     """상세 — 학생별 점수 테이블(정렬·석차) + 문항별 정답률(보정 화면 근거)."""
     pending_count = _pending_sheet_counts([exam.exam_id]).get(exam.exam_id, 0)
     stats = report.summary_stats(exam)
+    stats.setdefault("taker_count", exam.taker_count)
     scores = list(
         Score.objects.filter(exam=exam)
         .select_related("student__user")
@@ -73,7 +79,7 @@ def build_exam_detail(exam):
             "notice": exam.notice,
         },
         "stats": {
-            "taker_count": exam.taker_count,
+            "taker_count": stats["taker_count"],
             "score_count": exam.score_count,
             "average": stats["average"],
             "stddev": stats["stddev"],
@@ -92,11 +98,32 @@ def build_exam_detail(exam):
 
 def _exam_queryset():
     """시험 + 성적 집계 annotate — 목록·상세 공용(scores 단일 조인, 곱 증식 없음)."""
+    taken = Q(scores__is_taken=True, scores__total_score__isnull=False)
     return Exam.objects.annotate(
-        taker_count=Count("scores", filter=Q(scores__is_taken=True)),
+        taker_count=Count("scores", filter=taken),
         score_count=Count("scores"),
-        computed_avg=Avg("scores__total_score", filter=Q(scores__is_taken=True)),
+        taken_sum=Sum("scores__total_score", filter=taken),
     )
+
+
+def _anonymous_stats(exam_ids):
+    """시험별 익명 확정 장의 (수, 합) — 목록의 응시자 수·평균에 함께 든다.
+
+    시험마다 `report.summary_stats` 를 부르면 목록이 시험 수만큼 쿼리를 낸다.
+    목록에 필요한 것은 수와 합뿐이라 **한 쿼리로** 끌어온다(계약은 같다 —
+    상세와 목록의 평균이 달라지면 안 된다).
+    """
+    rows = (
+        AnswerSheet.objects.filter(
+            exam_id__in=exam_ids,
+            student=None,
+            is_corrected=True,
+            recognized_score__isnull=False,
+        )
+        .values("exam_id")
+        .annotate(count=Count("pk"), total=Sum("recognized_score"))
+    )
+    return {row["exam_id"]: (row["count"], row["total"] or 0) for row in rows}
 
 
 def _pending_sheet_counts(exam_ids=None):
@@ -122,6 +149,14 @@ def _pending_sheet_counts(exam_ids=None):
         row["exam_id"]: row["pending"]
         for row in sheets.values("exam_id").annotate(pending=Count("pk"))
     }
+
+
+def _average(exam, anonymous):
+    """저장 캐시 우선, 없으면 응시 점수 + 익명 점수로 낸다(summary_stats 와 같은 축)."""
+    if exam.avg_score is not None:
+        return exam.avg_score
+    count, total = exam.taker_count + anonymous[0], (exam.taken_sum or 0) + anonymous[1]
+    return total / count if count else None
 
 
 def _processing_status(score_count, pending_count):

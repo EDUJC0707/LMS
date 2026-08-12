@@ -17,6 +17,20 @@
 명단은 **그 시험을 본 회차의 출결**에서 온다(`class_sessions.exam`). 회차가
 안 매여 있으면 명단을 알 수 없으므로 아무것도 만들지 않는다 — 지어내지 않는다.
 
+## 익명 점수 — 누군지는 안 알려주고 점수만 준 학생
+
+조사 카드에 **점수만 있고 성명·번호가 비어 있는 장**이 온다. 학생 입장에서
+"평균 내는 데는 보태겠는데 내가 누군지는 알리기 싫다"는 것이고, 자기보고
+지면이라 그럴 수 있다.
+
+그 장은 **집계에는 들어가되 학생에게는 안 붙는다.** `scores` 행은 학생 FK 가
+NOT NULL 이라 만들 수 없으므로, 평균·백분위의 모집단을 낼 때 **답안지 쪽에서
+따로 끌어온다.**
+
+**조교가 확정한 장만 센다**(`is_corrected=True` + 학생 없음). 아직 안 본 장까지
+세면 평균이 먼저 나갔다가 조교가 주인을 찾는 순간 바뀐다 — 성적표가 두 번
+다른 말을 한다. 확정은 보정 화면의 `확인` 이고, 그러면 보정 대기에서도 빠진다.
+
 ## 백분위는 저장값이지만 파생값이다
 
 `report`·`exam_admin` 은 저장된 백분위를 **표시만** 한다(N+1 회피). 그 값을
@@ -30,6 +44,19 @@ from apps.accounts.models import Student
 from .models import AnswerSheet, ClassSession, Score
 
 _CENT = Decimal("0.01")
+
+
+def anonymous_totals(exam):
+    """익명 확정 장의 점수들 — 평균·백분위의 모집단에 함께 들어간다.
+
+    조교가 "주인 없이 이대로" 확정한 장만이다. 미확정 장은 아직 주인이 나올 수
+    있으므로 세지 않는다.
+    """
+    return list(
+        AnswerSheet.objects.filter(
+            exam=exam, student=None, is_corrected=True, recognized_score__isnull=False
+        ).values_list("recognized_score", flat=True)
+    )
 
 
 def finalize_exam(exam):
@@ -79,7 +106,13 @@ def rank(exam):
     )
     if not scores:
         return 0
-    totals = sorted((score.total_score for score in scores), reverse=True)
+    # 익명 장도 **같은 시험을 본 사람**이다. 모집단에서 빼면 남은 학생들의
+    # 백분위가 실제보다 높게 나온다.
+    totals = sorted(
+        [score.total_score for score in scores]
+        + [Decimal(total) for total in anonymous_totals(exam)],
+        reverse=True,
+    )
     size = len(totals)
     changed = []
     for score in scores:

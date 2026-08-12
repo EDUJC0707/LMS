@@ -135,3 +135,62 @@ class RankTests(TestCase):
 
         self.assertEqual(float(rows["a"].percentile), 87.5)  # 미만 3 + 동점 1/2 = 3.5/4
         self.assertEqual(float(rows["a"].rank_top_pct), 25.0)
+
+
+class AnonymousScoreTests(TestCase):
+    """누군지는 안 알리고 점수만 준 학생 — 평균에는 들고 학생에는 안 붙는다.
+
+    자기보고 지면(성적 조사 카드)이라 성명·번호를 비운 채 점수만 적어 내는 장이
+    실제로 온다. 그 점수를 버리면 평균이 그 학생들 없이 나간다.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.exam = Exam.objects.create(
+            name="6월 모의평가", exam_date=datetime.date(2026, 6, 12), kind=Exam.Kind.MOCK
+        )
+        cls.student = make_student("stu-anon", "김서연")
+        Score.objects.create(
+            exam=cls.exam, student=cls.student, total_score=Decimal("40"), is_taken=True
+        )
+
+    def anonymous_sheet(self, score, confirmed):
+        return AnswerSheet.objects.create(
+            exam=self.exam,
+            student=None,
+            scan_image_path=f"omr/scans/{self.exam.pk}/{score}.jpg",
+            match_status=AnswerSheet.MatchStatus.INVALID,
+            recognized_score=score,
+            is_corrected=confirmed,
+        )
+
+    def test_a_confirmed_anonymous_sheet_joins_the_population(self):
+        self.anonymous_sheet(50, confirmed=True)
+
+        self.assertEqual(scoring.anonymous_totals(self.exam), [50])
+
+    def test_an_unconfirmed_one_does_not(self):
+        """조교가 아직 안 본 장은 주인이 나올 수 있다 — 세면 평균이 나중에 바뀐다."""
+        self.anonymous_sheet(50, confirmed=False)
+
+        self.assertEqual(scoring.anonymous_totals(self.exam), [])
+
+    def test_it_pushes_a_student_percentile_down(self):
+        """익명 장을 빼면 남은 학생 백분위가 실제보다 높게 나온다."""
+        scoring.rank(self.exam)
+        alone = Score.objects.get(exam=self.exam, student=self.student).percentile
+
+        self.anonymous_sheet(50, confirmed=True)
+        scoring.rank(self.exam)
+
+        joined = Score.objects.get(exam=self.exam, student=self.student).percentile
+        self.assertEqual(float(alone), 50.0)  # 혼자면 (0 + 1/2)/1
+        self.assertEqual(float(joined), 25.0)  # 50점이 위에 있다 → (0 + 1/2)/2
+        self.assertLess(joined, alone)
+
+    def test_it_never_becomes_a_score_row(self):
+        """붙일 학생이 없다 — scores.student 는 NOT NULL 이고 그게 맞다."""
+        self.anonymous_sheet(50, confirmed=True)
+        scoring.finalize_exam(self.exam)
+
+        self.assertEqual(Score.objects.filter(exam=self.exam).count(), 1)
