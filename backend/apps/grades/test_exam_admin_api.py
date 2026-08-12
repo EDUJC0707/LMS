@@ -162,6 +162,7 @@ class ExamAdminDetailTests(ExamAdminFixtureMixin, TestCase):
                 "exam_id": self.exam2.pk,
                 "name": "오메가블랙 2회",
                 "kind": "미니테스트",
+                "full_score": None,  # 미니테스트는 문항 배점의 합이라 안 쓴다
                 "exam_date": "2026-07-08",
                 "round_no": 2,
                 "target_grade": None,

@@ -183,6 +183,9 @@ class Exam(models.Model):
 
     avg_score/stddev/max_score/top30_score 는 채점 후 계산 캐시(PRD 3.2.1
     성적 요약). avg_score 는 클리닉 대상 판정(평균미달)에서 재사용.
+
+    `max_score` 는 **최고점**(누가 제일 잘 봤나)이고 `full_score` 는 **만점**이다 —
+    이름이 비슷해 섞기 쉬우니 주의.
     """
 
     class Kind(models.TextChoices):
@@ -198,6 +201,12 @@ class Exam(models.Model):
         "시험 종류", max_length=20, choices=Kind.choices, default=Kind.MINI
     )
     exam_date = models.DateField("시험일")
+    full_score = models.DecimalField(
+        # **만점.** 미니테스트는 문항 배점의 합이라 안 쓴다(파생값이 진실이다).
+        # 모의고사는 문항이 없고 조사 카드도 만점을 말하지 않아 여기서만 온다 —
+        # 비어 있으면 성적표가 `44 / —` 로 나간다.
+        "만점", max_digits=6, decimal_places=2, null=True, blank=True
+    )
     round_no = models.SmallIntegerField("회차 번호", null=True, blank=True)
     target_grade = models.SmallIntegerField("대상 학년", null=True, blank=True)
     notice = models.TextField("성적표 공지사항", null=True, blank=True)  # noqa: DJ001

@@ -157,10 +157,11 @@ class MockExamIngestTests(TestCase):
 
     def ingest(self, readings):
         """조사 카드 판독을 갈아 끼운다 — 실물은 개인정보라 커밋할 수 없다."""
-        pages = [b"page"] * len(readings)
+        # 실제 이미지를 넘긴다 — imdecode 를 None 으로 막아 두면 "이미지로 안
+        # 풀리는 장" 경로가 테스트에 가려진다(실제로 가려져 있었다).
+        pages = [synthetic_page({}) for _ in readings]
         with (
             mock.patch.object(omr_ingest, "page_images", return_value=iter(pages)),
-            mock.patch("apps.grades.omr_ingest.cv2.imdecode", return_value=None),
             mock.patch(
                 "apps.grades.omr_ingest.sheet.read_survey", side_effect=readings
             ),
@@ -388,3 +389,23 @@ class RereadTests(TestCase):
         omr_ingest.reread_exam(self.exam, question_count=1)
 
         self.assertEqual(AnswerSheet.objects.filter(exam=self.exam).count(), 1)
+
+
+class UndecodablePageTests(TestCase):
+    """이미지로 안 풀리는 장 하나 때문에 묶음 전체가 죽으면 안 된다."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.exam = Exam.objects.create(name="8월 깨짐", exam_date=datetime.date(2026, 8, 12))
+        Question.objects.create(exam=cls.exam, q_number=1, answer="3", points=Decimal("1.0"))
+
+    def test_a_broken_page_is_held_and_the_rest_survive(self):
+        pages = [b"not an image at all", synthetic_page({1: 3})]
+
+        with mock.patch.object(omr_ingest, "page_images", return_value=iter(pages)):
+            summary = omr_ingest.ingest_pdf(self.exam, object(), question_count=1)
+
+        self.assertEqual(summary["pages"], 2)
+        self.assertEqual(summary["held"], 1)
+        self.assertEqual(summary["read"], 1)
+        self.assertEqual(AnswerSheet.objects.filter(exam=self.exam).count(), 2)

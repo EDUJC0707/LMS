@@ -66,6 +66,7 @@ def build_exam_detail(exam):
             "exam_id": exam.exam_id,
             "name": exam.name,
             "kind": exam.kind,
+            "full_score": exam.full_score,
             "exam_date": exam.exam_date.isoformat(),
             "round_no": exam.round_no,
             "target_grade": exam.target_grade,
@@ -216,7 +217,7 @@ def _question_stat_rows(exam):
 # --- 시험 만들기 · 정답 키 입력 (PRD 3.1.1 문항 정보 입력) -------------------
 
 
-def create_exam(name, exam_date, round_no=None, target_grade=None, kind=None):
+def create_exam(name, exam_date, round_no=None, target_grade=None, kind=None, full_score=None):
     """시험 한 건. 문항은 따로 넣는다 — 시험을 먼저 만들고 키는 나중에 채운다.
 
     kind 는 **어느 카드가 들어오는지**를 정한다(omr_ingest) — 모의고사는
@@ -228,6 +229,8 @@ def create_exam(name, exam_date, round_no=None, target_grade=None, kind=None):
         round_no=round_no,
         target_grade=target_grade,
         kind=kind or Exam.Kind.MINI,
+        # 만점은 모의고사에만 필요하다 — 미니테스트는 문항 배점의 합이다.
+        full_score=full_score,
     )
 
 

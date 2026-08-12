@@ -64,6 +64,7 @@ scores 는 여기서 만들지 않는다(집계 슬라이스 몫) — exam_admin
 """
 from django.db import transaction
 
+from . import scoring
 from .models import AnswerSheet, Exam, Question, Score, SheetAnswer
 
 _MS = AnswerSheet.MatchStatus
@@ -227,6 +228,7 @@ def regrade_exam(exam):
     for sheet in AnswerSheet.objects.filter(exam=exam).exclude(student=None):
         if _apply_score(sheet, exam) is not None:
             scored += 1
+    scoring.finalize_exam(exam)
     return len(changed), scored
 
 
@@ -274,9 +276,14 @@ def correct_sheet(sheet, *, student=UNSET, answers=None, score=UNSET, confirm=Fa
             sheet.save(update_fields=[*fields, "is_corrected"])
         if answers:
             _write_corrections(sheet, answers)
-        if sheet.exam.kind == Exam.Kind.MOCK:
-            return _apply_survey_score(sheet)
-        return _apply_score(sheet, sheet.exam)
+        total = (
+            _apply_survey_score(sheet)
+            if sheet.exam.kind == Exam.Kind.MOCK
+            else _apply_score(sheet, sheet.exam)
+        )
+    # 한 장의 점수가 바뀌면 전원의 백분위가 흔들린다 — 트랜잭션 밖에서 다시 낸다.
+    scoring.finalize_exam(sheet.exam)
+    return total
 
 
 # --- 내부 부품 -----------------------------------------------------------
@@ -409,14 +416,18 @@ def _apply_survey_score(sheet):
 
     답안 카드처럼 다시 세지 않는다 — 셀 것이 없다. 지면에 적힌 수가 곧 점수다.
 
-    만점(`max_score`)은 비워 둔다. 조사 카드는 만점을 말하지 않고, 과목마다
-    다르다 — 50 이라고 적어 두면 기계가 지어낸 수가 실측처럼 남는다.
+    만점은 조사 카드가 말하지 않으므로 **시험에 적어 둔 값**(`exam.full_score`)을
+    쓴다. 안 적혀 있으면 비운다 — 50 이라고 지어내면 기계가 만든 수가 실측처럼 남는다.
     """
     if sheet.student_id is None or sheet.recognized_score is None:
         return None
     Score.objects.update_or_create(
         exam_id=sheet.exam_id,
         student_id=sheet.student_id,
-        defaults={"total_score": sheet.recognized_score, "is_taken": True},
+        defaults={
+            "total_score": sheet.recognized_score,
+            "max_score": sheet.exam.full_score,
+            "is_taken": True,
+        },
     )
     return float(sheet.recognized_score)

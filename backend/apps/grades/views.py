@@ -606,6 +606,7 @@ class AdminExamListView(APIView):
             round_no=request.data.get("round_no") or None,
             target_grade=request.data.get("target_grade") or None,
             kind=kind,
+            full_score=request.data.get("full_score") or None,
         )
         return Response({"exam_id": exam.pk}, status=status.HTTP_201_CREATED)
 

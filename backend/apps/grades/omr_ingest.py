@@ -39,9 +39,9 @@ from django.core.files.storage import default_storage
 
 from apps.accounts.models import Student
 
-from . import ocr, omr_match, omr_store
+from . import ocr, omr_match, omr_store, scoring
 from .models import AnswerSheet, Exam
-from .omr import sheet
+from .omr import drift, sheet
 
 
 def ingest_pdf(exam, pdf, question_count):
@@ -57,11 +57,21 @@ def ingest_pdf(exam, pdf, question_count):
     summary = {"pages": 0, "read": 0, "held": 0, "matched": 0, "needs_review": 0, "holds": {}}
     survey = exam.kind == Exam.Kind.MOCK
     sheets = []
+    # 이 배치의 격자가 card.py 가 말하는 자리에 있나 — 회차마다 재 둔다.
+    calibration = drift.Accumulator()
     for page_no, image_bytes in enumerate(page_images(pdf), start=1):
         path = _store_scan(exam, image_bytes)
         image = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_GRAYSCALE)
+        if image is None:
+            # 이미지로 안 풀리는 스트림. 한 장 때문에 묶음 전체가 죽으면 안 된다 —
+            # 조교가 할 일은 "다시 스캔"으로 카드를 못 찾은 장과 같다.
+            _hold_page(exam, path, survey, summary, sheets, page_no)
+            continue
+        calibration.add(image)
         _read_one(exam, path, image, question_count, survey, roster, summary, sheets, page_no)
     summary["sheets"] = sheets
+    summary["drift"] = calibration.result()
+    summary["missing"], _ = scoring.finalize_exam(exam)
     return summary
 
 
@@ -89,12 +99,30 @@ def reread_exam(exam, question_count):
         with default_storage.open(row.scan_image_path, "rb") as handle:
             raw = handle.read()
         image = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_GRAYSCALE)
+        if image is None:
+            _hold_page(exam, row.scan_image_path, survey, summary, sheets, page_no)
+            continue
         _read_one(
             exam, row.scan_image_path, image, question_count,
             survey, roster, summary, sheets, page_no,
         )
     summary["sheets"] = sheets
+    summary["missing"], _ = scoring.finalize_exam(exam)
     return summary
+
+
+def _hold_page(exam, path, survey, summary, sheets, page_no):
+    """판독 자체를 시도할 수 없는 장 — 보류 행만 남긴다."""
+    summary["pages"] += 1
+    summary["held"] += 1
+    reason = sheet.CARD_NOT_FOUND
+    summary["holds"][reason] = summary["holds"].get(reason, 0) + 1
+    row, _ = (
+        omr_store.store_survey(exam, path, None)
+        if survey
+        else omr_store.store_sheet(exam, path, None)
+    )
+    sheets.append({"page": page_no, "sheet_id": row.pk, "held": reason})
 
 
 def _read_one(exam, path, image, question_count, survey, roster, summary, sheets, page_no):

@@ -195,6 +195,8 @@ export interface ExamDetail {
     exam_id: number;
     name: string;
     kind: ExamKind;
+    /** 만점. 모의고사에만 쓴다 — 미니테스트는 문항 배점의 합이다 */
+    full_score: number | null;
     exam_date: string;
     round_no: number | null;
     target_grade: number | null;

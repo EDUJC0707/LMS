@@ -50,12 +50,14 @@ export default function ExamsPage() {
   const [name, setName] = useState("");
   const [examDate, setExamDate] = useState("");
   const [kind, setKind] = useState<ExamKind>("미니테스트");
+  const [fullScore, setFullScore] = useState("");
 
   const create = useApiAction(async () => {
     const { data } = await http.post<{ exam_id: number }>("/admin/exams", {
       name: name.trim(),
       exam_date: examDate,
       kind,
+      full_score: fullScore || null,
     });
     return data.exam_id;
   });
@@ -189,6 +191,7 @@ export default function ExamsPage() {
               setName("");
               setExamDate("");
               setKind("미니테스트");
+              setFullScore("");
               navigate(String(id));
             }}
           >
@@ -230,6 +233,20 @@ export default function ExamsPage() {
             </Select>
           )}
         </Field>
+        {/* 모의고사는 문항이 없어 만점을 딴 데서 못 구한다. */}
+        {kind === "모의고사" && (
+          <Field label="만점">
+            {(props) => (
+              <Input
+                {...props}
+                type="number"
+                min="1"
+                value={fullScore}
+                onChange={(e) => setFullScore(e.target.value)}
+              />
+            )}
+          </Field>
+        )}
       </div>
     </Modal>
     </>
