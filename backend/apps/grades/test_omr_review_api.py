@@ -80,6 +80,23 @@ class SheetReviewTests(TestCase):
         ids = [row["sheet_id"] for row in res.json()["sheets"]]
         self.assertEqual(ids, [self.orphan.pk, self.settled.pk])
 
+    def test_the_payload_says_where_a_score_came_from(self):
+        """배지가 이 값으로 갈린다 — 페이로드에 안 실리면 화면에서 조용히 안 뜬다."""
+        AnswerSheet.objects.filter(pk=self.orphan.pk).update(
+            recognized_score=38, score_from_handwriting=True
+        )
+
+        row = next(
+            r
+            for r in self.client.get(f"/api/admin/exams/{self.exam.pk}/sheets").json()["sheets"]
+            if r["sheet_id"] == self.orphan.pk
+        )
+        detail = self.client.get(self.sheet_url(self.orphan)).json()
+
+        self.assertTrue(row["score_from_handwriting"])
+        self.assertTrue(detail["score_from_handwriting"])
+        self.assertEqual(detail["recognized_score"], 38)
+
     def test_detail_lists_every_question_even_without_a_reading(self):
         """보류 장은 행이 하나도 없다 — 그때야말로 손으로 채울 줄이 필요하다."""
         res = self.client.get(self.sheet_url(self.settled))

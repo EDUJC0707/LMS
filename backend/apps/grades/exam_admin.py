@@ -315,6 +315,9 @@ def _sheet_row(sheet):
         "recognized_matching_key": sheet.recognized_matching_key,
         # 모의고사(자기보고) 전용. 미니테스트 장에서는 언제나 null 이다.
         "recognized_score": sheet.recognized_score,
+        # 그 점수가 버블이 아니라 손글씨 OCR 에서 왔다는 표시. 값만 보면 구분이
+        # 안 되므로 화면이 이걸로 배지를 가른다.
+        "score_from_handwriting": sheet.score_from_handwriting,
         # 명부와 같은 행 모양으로 낸다 — 보정 화면의 학생 선택기가 명부 API 로
         # 고르는 값과 같아야 "이미 붙은 학생"과 "지금 고른 학생"이 한 자리에 선다.
         "student": None if sheet.student is None else student_directory.row(sheet.student),
