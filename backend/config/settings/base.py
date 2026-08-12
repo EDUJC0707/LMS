@@ -139,6 +139,11 @@ NOTIFICATION_RETRY_BATCH_SIZE = env.int("NOTIFICATION_RETRY_BATCH_SIZE", default
 # 알리고 자격증명 — **아직 없다**(대표 전달 대기, docs/decisions.md §3-1).
 # 업체 이름이 나오는 것은 이 층까지고 DB 스키마에는 새지 않는다
 # (apps/notifications/models.py 채널 추상화 계약).
+# 채널톡 Open API — 통화 로그 조회(PRD 9.2). 랜딩 위젯의 플러그인 키와 다른
+# 물건이고 **이쪽은 시크릿이다**(위젯 키는 페이지 소스에 그대로 노출된다).
+CHANNELTALK_ACCESS_KEY = env("CHANNELTALK_ACCESS_KEY", default="")
+CHANNELTALK_ACCESS_SECRET = env("CHANNELTALK_ACCESS_SECRET", default="")
+
 ALIGO_API_KEY = env("ALIGO_API_KEY", default="")
 ALIGO_USER_ID = env("ALIGO_USER_ID", default="")
 ALIGO_SENDER_PHONE = env("ALIGO_SENDER_PHONE", default="")  # 사전 등록된 발신번호

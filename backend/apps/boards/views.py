@@ -22,7 +22,7 @@ from rest_framework.views import APIView
 from apps.accounts.features import FeatureKey
 from apps.accounts.permissions import FeatureRequired
 
-from . import board, counseling
+from . import board, channeltalk, counseling
 from .models import AbsenceCounseling, Post
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
@@ -300,6 +300,27 @@ class CounselingOpenView(APIView):
             {"counsel_id": card.counsel_id, "target": card.target, "status": card.status},
             status=201,
         )
+
+
+class CounselingCallsView(APIView):
+    """GET /api/admin/counseling/{counsel_id}/calls — 이 카드로 건 최근 통화.
+
+    화면이 `안 받음/통화함` 버튼을 미리 채우는 재료다. **번호는 응답에 싣지
+    않는다** — 서버가 카드에서 꺼내 조회하고 결과만 준다(명부 API 와 같은 이유:
+    응답으로 연락처를 역추적할 수 있으면 안 된다).
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.COUNSEL_RECORD)]
+
+    def get(self, request, counsel_id):
+        card = (
+            AbsenceCounseling.objects.select_related("student__user")
+            .filter(pk=counsel_id)
+            .first()
+        )
+        if card is None:
+            return _not_found()
+        return Response({"calls": channeltalk.recent_calls(counseling.phone_for(card))})
 
 
 class CounselingNotifyView(APIView):

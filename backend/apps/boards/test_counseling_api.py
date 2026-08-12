@@ -11,6 +11,7 @@
 """
 import datetime
 import json
+from unittest.mock import patch
 
 from django.test import TestCase, override_settings
 
@@ -21,6 +22,7 @@ from apps.notifications.models import Notification
 from apps.videos.models import MakeupGrant
 from config.celery import app as celery_app
 
+from . import channeltalk
 from .models import AbsenceCounseling
 
 FAKE_CHANNEL = "apps.notifications.channels.FakeChannelAdapter"
@@ -343,3 +345,51 @@ class CounselingClosedStayVisibleTests(CounselingFixtureMixin, TestCase):
         self.patch_card(self.card.counsel_id, {"result": "연결"})
 
         self.assertEqual(self.client.get(QUEUE_URL).json()["queue"], [])
+
+
+class CounselingCallLookupTests(CounselingFixtureMixin, TestCase):
+    """조교가 건 통화를 찾아 버튼을 미리 채운다 (2026-08-12 확정 흐름 2단계).
+
+    번호는 **응답에 싣지 않는다** — 명부 API 와 같은 이유(역방향 조회 방지).
+    서버가 카드에서 번호를 꺼내 조회하고 결과만 돌려준다.
+    """
+
+    def setUp(self):
+        self.login()
+        self.card = self.make_card()
+
+    def test_looks_up_by_the_parents_number(self):
+        with patch.object(channeltalk, "recent_calls", return_value=[]) as looked:
+            self.client.get(f"/api/admin/counseling/{self.card.counsel_id}/calls")
+
+        looked.assert_called_once()
+        self.assertEqual(looked.call_args.args[0], self.parent.phone)
+
+    def test_returns_what_the_adapter_found(self):
+        found = [{"connected": False, "missed_reason": "ringTimeOver"}]
+        with patch.object(channeltalk, "recent_calls", return_value=found):
+            res = self.client.get(f"/api/admin/counseling/{self.card.counsel_id}/calls")
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["calls"], found)
+
+    def test_response_never_carries_the_phone_number(self):
+        with patch.object(channeltalk, "recent_calls", return_value=[]):
+            res = self.client.get(f"/api/admin/counseling/{self.card.counsel_id}/calls")
+
+        self.assertNotIn(self.parent.phone, res.content.decode())
+
+    def test_student_card_looks_up_the_students_own_number(self):
+        card = AbsenceCounseling.objects.create(
+            student=self.student,
+            attendance=self.attendance,
+            target=AbsenceCounseling.Target.STUDENT,
+            status=AbsenceCounseling.Status.PENDING,
+        )
+        self.student.user.phone = "01055556666"
+        self.student.user.save()
+
+        with patch.object(channeltalk, "recent_calls", return_value=[]) as looked:
+            self.client.get(f"/api/admin/counseling/{card.counsel_id}/calls")
+
+        self.assertEqual(looked.call_args.args[0], "01055556666")

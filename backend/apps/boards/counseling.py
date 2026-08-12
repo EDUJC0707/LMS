@@ -214,6 +214,19 @@ def open_card(student, attendance, target):
     )
 
 
+def phone_for(card):
+    """이 카드로 걸어야 할 번호 — 대상에 따라 학부모/학생.
+
+    학생 번호는 `users.phone` 에 있다(students 에는 연락처 컬럼이 없다).
+    학부모가 여럿이면 첫 연결을 쓴다 — 채널톡 로그는 번호로만 맞출 수 있어서
+    어차피 같은 번호면 같은 결과다.
+    """
+    if card.target == AbsenceCounseling.Target.STUDENT:
+        return card.student.user.phone if card.student.user else ""
+    link = ParentStudent.objects.filter(student=card.student).select_related("parent").first()
+    return link.parent.phone if link else ""
+
+
 def notify(card):
     """닫힌 카드에서 결석 안내(+동보 신청 링크)를 보낸다 — 버튼이 부른다."""
     if card.status != AbsenceCounseling.Status.UNREACHED:

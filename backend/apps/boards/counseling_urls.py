@@ -21,6 +21,11 @@ urlpatterns = [
         name="counseling-open",
     ),
     path(
+        "admin/counseling/<int:counsel_id>/calls",
+        views.CounselingCallsView.as_view(),
+        name="counseling-calls",
+    ),
+    path(
         "admin/counseling/<int:counsel_id>/notify",
         views.CounselingNotifyView.as_view(),
         name="counseling-notify",
