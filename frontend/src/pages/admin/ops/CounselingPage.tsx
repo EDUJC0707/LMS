@@ -30,7 +30,7 @@ import {
 import type { Column } from "../../../components";
 import { shortDate, stamp } from "./format";
 import "./ops.css";
-import type { CounselCard, CounselRecordResult } from "./types";
+import type { CounselCall, CounselCard, CounselRecordResult } from "./types";
 import { MAX_CALL_ATTEMPTS } from "./types";
 
 type CallResult = "연결" | "미연결" | "종결";
@@ -273,6 +273,23 @@ function RecordPanel({
     anchor.current?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, []);
 
+  // 조교가 방금 건 통화를 채널톡에서 찾아 결과를 미리 채운다. 못 찾아도
+  // 폼은 그대로 쓴다 — 개인 전화로 걸었거나 로그가 아직 안 올라온 것뿐이다.
+  const calls = useApi(
+    async () =>
+      (
+        await http.get<{ calls: CounselCall[] }>(
+          `/admin/counseling/${card.counsel_id}/calls`,
+        )
+      ).data.calls,
+    [card.counsel_id],
+  );
+  const found = calls.data?.[0] ?? null;
+
+  useEffect(() => {
+    if (found) setResult(found.connected ? "연결" : "미연결");
+  }, [found]);
+
   const record = useApiAction(async () => {
     const { data } = await http.patch<CounselRecordResult>(`/admin/counseling/${card.counsel_id}`, {
       result,
@@ -280,6 +297,7 @@ function RecordPanel({
       call_memo: memo,
       follow_up_action: result === "연결" ? followUp : "",
       makeup_requested: result === "연결" ? makeupRequested : false,
+      provider_ref: found?.user_chat_id ?? "",
     });
     return data;
   });
@@ -314,6 +332,12 @@ function RecordPanel({
         {/* 아래 Field 들과 같은 위계의 칸이다 — 라벨 조판도 같은 것을 쓴다.
             툴바 라벨(11px 대문자 자간)이었을 때는 같은 폼 안에서 이 칸만
             다른 크기·색으로 떠 위계가 하나 더 있는 것처럼 읽혔다. */}
+        {found && (
+          <Alert tone="info">
+            {`채널톡 통화 기록을 찾았습니다 — ${found.connected ? "연결됨" : "받지 않음"}`}
+          </Alert>
+        )}
+
         <div className="ui-field">
           <span className="ui-field__label">통화 결과</span>
           <div className="ui-row">

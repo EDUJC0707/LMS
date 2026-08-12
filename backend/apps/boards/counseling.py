@@ -171,6 +171,12 @@ def record_call(card, result, fields, actor):
                 setattr(card, name, fields[name])
         if "makeup_requested" in fields:
             card.makeup_requested = fields["makeup_requested"]
+        # 조교가 화면에서 고른 통화 — 있을 때만 박는다. 개인 전화로 걸었으면
+        # 채널톡에 로그가 없고, 그래도 시도 기록 자체는 남아야 한다.
+        ref = (fields.get("provider_ref") or "").strip()
+        if ref:
+            card.provider = AbsenceCounseling.Provider.CHANNELTALK
+            card.provider_ref = ref
         connected = result == "연결"
         card.status = (
             AbsenceCounseling.Status.COMPLETED

@@ -393,3 +393,44 @@ class CounselingCallLookupTests(CounselingFixtureMixin, TestCase):
             self.client.get(f"/api/admin/counseling/{card.counsel_id}/calls")
 
         self.assertEqual(looked.call_args.args[0], "01055556666")
+
+
+class CounselingCallLinkTests(CounselingFixtureMixin, TestCase):
+    """조교가 확인한 통화는 카드에 남는다 (decisions.md §6 "전화 이력만 끌어온다").
+
+    로그 전체를 복사하지는 않는다 — 통화 ID 가 없어서 중복 제거가 추측이 된다.
+    사람이 하나로 확정해 준 건만 저장하면 그 문제가 사라지고, 90일이 지나
+    채널톡에서 못 가져오게 돼도 우리 쪽에 근거가 남는다.
+    """
+
+    def setUp(self):
+        self.login()
+        self.card = self.make_card()
+
+    def test_confirmed_call_is_stored_on_the_card(self):
+        self.patch_card(
+            self.card.counsel_id,
+            {"result": "연결", "provider_ref": "6a7bf735aaba03d98dde"},
+        )
+
+        self.card.refresh_from_db()
+        self.assertEqual(self.card.provider, AbsenceCounseling.Provider.CHANNELTALK)
+        self.assertEqual(self.card.provider_ref, "6a7bf735aaba03d98dde")
+
+    def test_a_call_made_outside_channel_talk_leaves_no_reference(self):
+        # 조교가 개인 전화로 걸면 로그가 없다 — 그래도 기록은 되어야 한다.
+        self.patch_card(self.card.counsel_id, {"result": "연결"})
+
+        self.card.refresh_from_db()
+        self.assertEqual(self.card.provider, "")
+        self.assertEqual(self.card.provider_ref, "")
+
+    def test_reference_is_kept_when_the_call_was_not_answered(self):
+        # 안 받은 통화도 채널톡에 남는다 — 3회 근거가 되는 쪽이라 더 중요하다.
+        self.patch_card(
+            self.card.counsel_id,
+            {"result": "미연결", "provider_ref": "aa11bb22cc33"},
+        )
+
+        self.card.refresh_from_db()
+        self.assertEqual(self.card.provider_ref, "aa11bb22cc33")

@@ -160,3 +160,13 @@ export interface WorkbookListResponse {
   total_count: number;
   unmatched_count: number;
 }
+
+/** 채널톡에서 읽어 온 통화 1건 — 저장하는 것은 조교가 고른 하나뿐이다. */
+export interface CounselCall {
+  direction: string;
+  called_at: string | null;
+  connected: boolean;
+  missed_reason: string | null;
+  /** 통화 ID 가 없어 이것이 유일한 참조. 녹음·STT 도 이 값으로 찾는다 */
+  user_chat_id: string | null;
+}

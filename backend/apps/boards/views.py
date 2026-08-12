@@ -256,7 +256,7 @@ class CounselingRecordView(APIView):
             return _bad_request("result는 연결·미연결·종결 중 하나여야 합니다.")
         if "makeup_requested" in body and not isinstance(body["makeup_requested"], bool):
             return _bad_request("makeup_requested는 true/false여야 합니다.")
-        for name in ("absence_reason", "call_memo", "follow_up_action"):
+        for name in ("absence_reason", "call_memo", "follow_up_action", "provider_ref"):
             if name in body and not isinstance(body[name], str):
                 return _bad_request(f"{name}은 문자열이어야 합니다.")
         try:
