@@ -81,8 +81,19 @@
   }
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+<!-- ↓↓↓ 재워 둔 계측기. 되살리려면 이 줄과 맨 아래 닫는 줄만 지운다 ↓↓↓
+     (2026-08-12 대표 지시 "test로 뒀던 것들 comment로 빼 삭제는 말고").
+     카톡에서 열자마자 나던 튐은 **못 고쳤다.** 헤드리스로는 끝내 재현이 안 됐고
+     — 0/150/400/900ms 어디서 재도 좌표가 같고 0ms 스크린샷에 이미 전부 그려져 있다 —
+     실기기 트레이스를 못 받은 채로 접었다. 다시 볼 때 여기서 이어가면 된다.
+     같이 확정된 것: 폰트 스왑은 무관(폴백 강제해도 좌표 동일), --nav/safe-area 는
+     h1 만 29.5px 밀고 선생님은 0.00px, 선생님은 오직 --vhu 에만 걸려 있다(42배).
+
+     Cmd+Alt+D 디버그 패널(debug.js)은 건드리지 않았다 — 그건 계측기가 아니라 도구다.
+
 <script>
-  /* 뷰포트 계측기. `?vh` 가 붙었을 때만 돈다. 확인이 끝나면 이 블록을 지운다.
+  /* 뷰포트 계측기. `?vh` 가 붙었을 때만 돈다.
      카카오·인스타 인앱 브라우저에는 주소창이 없어 javascript: 를 못 넣는다. 그래서
      페이지 안에 둔다.
 
@@ -145,6 +156,8 @@
     tick();
   }
 </script>
+     ↑↑↑ 재워 둔 계측기 끝 ↑↑↑ -->
+
 <title>한종철 통합과학</title>
 <meta name="description" content="통합과학도 철두철미하게. 한종철 통합과학.">
 <link rel="canonical" href="https://hjcedu.com/">
