@@ -5,11 +5,9 @@
  * 밀어낸다 — 지나가는 자리의 먼지가 밖으로 밀려나고 동시에 옅어지면서 빈 자리가
  * 생기고, 커서가 떠나면 서서히 되메워진다. 강사 뒤도 지난다(금지구역 없음).
  *
- * **모티프판은 2026-07-29 에 걷어냈다** — 배경이 우주 사진으로 바뀌었다.
- * index.html 이 mountField 에 빈 목록을 넘기므로 아래 LAYOUT·TONE·bake·손전등은
- * 돌지 않는다. 에셋과 패커는 local/landing-motif-board/ 로 옮겼으므로 **이 코드를
- * 그냥 켜면 이미지가 404 다** — 되살리는 절차는 그 폴더의 README.
- * 왜 걷어냈고 무엇을 배웠는지는 SPEC.md §4-옛.
+ * **모티프판(손전등에 드러나던 10종)은 2026-07-29 에 걷어냈고, 죽어 있던 코드도
+ * 2026-08-12 에 지웠다.** 왜 있었고 무엇을 배웠는지는 SPEC.md §4-옛, 되살리는
+ * 절차는 local/landing-motif-board/README — 에셋·패커·배치 계산기가 다 거기 있다.
  *
  * 밀릴 때(k 9.0)와 되메워질 때(k 1.6)의 **비대칭이 "걷힌다"를 만든다.**
  * 접선 성분(swirl)이 없으면 구멍이 정확한 원이 되고, 옅어짐(fade)이 없으면 밀린
@@ -56,13 +54,6 @@ const CFG = {
                      // 이 값을 바꿔도 그 성질은 유지된다(네 항에 같은 배수를 곱하므로)
   spaceZoom: 1.0,    // cover 배율에 곱한다. **사진마다 다르다** — data.js SPACE 의
                      // zoom 이 원본이고, 배경을 갈아 끼울 때 여기로 들어온다
-
-  /* 손전등 — 모티프가 드러나는 범위. 아주 작다 */
-  flash: 0.062,      // 반경 = min(W,H) × 이 값 (900 → 56px)
-  flashMin: 34, flashMax: 92,
-  soft: 0.42,        // 이 비율까지는 온전히 밝고, 그 밖은 가장자리로 사그라든다
-  ink: 0.62,         // 손전등 한복판 모티프 불투명도. 피크 렌더휘도 ≈68
-  lag: 11,           // 손전등이 커서를 따라붙는 속도. 붙으면 UI, 뒤처지면 물질
 };
 
 /* 먼지·워시 색. 에셋 심부 청색(H236)에서 조금 더 차가운 H224 '로열' 로 확정.
@@ -80,44 +71,6 @@ const rgb = hex => [1, 3, 5].map(i => parseInt(hex.substr(i, 2), 16));
    따로 두면 히어로만 바뀌어 이어짐이 깨진다. */
 const statics = [];
 
-/* 에셋별 톤. 중간휘도를 실측해 피크 렌더휘도를 전부 ≈68 로 맞춘 계수.
-   element·tectonics 는 원래 어두워서(134·146) 계수가 높다. data.js UNITS 순서. */
-const TONE = [0.61, 0.53, 0.61, 0.63, 0.58, 0.59, 0.61, 0.84, 0.78, 0.61];
-
-/* 배치는 pack-layout.py 가 계산한다 — 손으로 잡지 않는다.
-   존을 먼저 정하고 그 안에서 흔든다. 순수 난수는 고르게 흩어져 평평하고,
-   군집 선호만 주면 한쪽으로 쏠린다. 순서는 data.js 의 UNITS 와 1:1.
-
-   **크기는 전부 같고 자리는 고정이다**(데스크탑 15vw / 모바일 16vw). 리듬은
-   자리와 회전에서만 나온다 — 회전은 난수가 아니라 사다리(±33°, 0° 근처는 빔)를
-   섞어 좌우 균형과 분산을 강제한다. 난수로 뽑으면 뭉친다(실측: 10개 중 5개가 16~17°).
-   강사와 그 오른쪽은 금지구역이라 데스크탑 좌표가 전부 좌측 절반에 모인다. */
-const LAYOUT = [
-  { x: 46, y: 21, size: 15, rot: 24,  dim: 1 },   // atom
-  { x: 32, y: 64, size: 15, rot: -5,  dim: 1 },   // dna
-  { x: 9,  y: 22, size: 15, rot: -20, dim: 1 },   // chromosome
-  { x: 22, y: 20, size: 15, rot: -31, dim: 1 },   // mitochondria
-  { x: 35, y: 38, size: 15, rot: 13,  dim: 1 },   // chloroplast
-  { x: 48, y: 47, size: 15, rot: -24, dim: 1 },   // synapse
-  { x: 14, y: 45, size: 15, rot: 5,   dim: 1 },   // population
-  { x: 25, y: 83, size: 15, rot: -11, dim: 1 },   // element
-  { x: 43, y: 81, size: 15, rot: 19,  dim: 1 },   // tectonics
-  { x: 10, y: 84, size: 15, rot: 33,  dim: 1 },   // universe
-];
-
-const LAYOUT_SM = [
-  { x: 18, y: 20, size: 16, rot: 5,   dim: 1 },   // atom
-  { x: 23, y: 41, size: 16, rot: 21,  dim: 1 },   // dna
-  { x: 15, y: 73, size: 16, rot: -29, dim: 1 },   // chromosome
-  { x: 34, y: 85, size: 16, rot: 9,   dim: 1 },   // mitochondria
-  { x: 20, y: 59, size: 16, rot: -14, dim: 1 },   // chloroplast
-  { x: 15, y: 80, size: 16, rot: -33, dim: 1 },   // synapse
-  { x: 34, y: 72, size: 16, rot: -17, dim: 1 },   // population
-  { x: 34, y: 34, size: 16, rot: -6,  dim: 1 },   // element
-  { x: 15, y: 30, size: 16, rot: 30,  dim: 1 },   // tectonics
-  { x: 19, y: 92, size: 16, rot: 27,  dim: 1 },   // universe
-];
-
 const isSmall = () => matchMedia('(max-width: 860px)').matches;
 
 /* 먼지는 개수가 아니라 **밀도**다. CFG.dust 4000 은 1200x800 에서 정한 값이고
@@ -132,7 +85,7 @@ const dustCount = () => (isSmall() || innerHeight > innerWidth)
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
 
-export function mountField(root, units) {
+export function mountField(root) {
   const GLOW = readGlow();
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -192,18 +145,6 @@ export function mountField(root, units) {
     wctx.fillRect(0, 0, 256, 256);
   }
 
-  /* ── 모티프 — 캔버스 두 장.
-     ink 는 오프스크린이고 한 번만 굽는다(자리가 고정이라 다시 구울 일이 없다).
-     lit 은 화면에 붙어 매 프레임 손전등 모양으로 ink 를 찍어낸다. */
-  const lit = document.createElement('canvas');
-  lit.className = 'motifs';
-  root.append(lit);
-  const lctx = lit.getContext('2d');
-  const ink = document.createElement('canvas');
-  const ictx = ink.getContext('2d');
-  const imgs = [];
-  let baked = false;
-
   /* ── 우주 — 커서 자리에서만 오려낸다 ──────────────────────
      원본(img/video)은 화면에 안 나오고 여기서 읽어 가기만 한다. cover 로 맞추는
      계산을 직접 한다 — object-fit 은 요소에만 걸리고 캔버스에는 안 걸린다. */
@@ -248,35 +189,7 @@ export function mountField(root, units) {
   let dust = makeDust(dustCount());
   const bucket = Array.from({ length: CFG.buckets }, () => []);
 
-  let W = 0, H = 0, R = 100, R2 = 1, FR = 56;
-
-  /* 모티프를 오프스크린에 굽는다. 자리가 고정이므로 resize 때만 다시 굽는다.
-     톤은 canvas filter 로 미리 태운다 — 매 프레임 filter 를 거는 것과 달리
-     한 번만 래스터되므로 프레임 비용이 0 이다. */
-  const bake = () => {
-    if (!imgs.length || !W || !H) return;
-    const L = isSmall() ? LAYOUT_SM : LAYOUT;
-    ink.width = Math.round(W);
-    ink.height = Math.round(H);
-    ictx.setTransform(1, 0, 0, 1, 0, 0);
-    ictx.clearRect(0, 0, W, H);
-    const canFilter = 'filter' in ictx;
-    L.forEach((p, i) => {
-      const img = imgs[i];
-      if (!img || !img.naturalWidth) return;
-      const s = p.size / 100 * W;
-      const tone = TONE[i] * p.dim;
-      ictx.save();
-      ictx.translate(p.x / 100 * W, p.y / 100 * H);
-      ictx.rotate(p.rot * Math.PI / 180);
-      if (canFilter) ictx.filter = `saturate(1.35) brightness(${tone})`;
-      else ictx.globalAlpha = tone;      // filter 미지원 — 어두워지는 결과는 같다
-      ictx.drawImage(img, -s / 2, -s / 2, s, s);
-      ictx.restore();
-    });
-    ictx.filter = 'none';
-    baked = true;
-  };
+  let W = 0, H = 0, R = 100, R2 = 1;
 
   const fit = () => {
     const r = root.getBoundingClientRect();
@@ -291,13 +204,12 @@ export function mountField(root, units) {
     R = Math.max(CFG.Rmin, Math.min(CFG.Rmax,
       isSmall() ? CFG.Rsm * Math.sqrt(W * H) : CFG.R * m));
     R2 = 2 * R * R;
-    FR = Math.max(CFG.flashMin, Math.min(CFG.flashMax, CFG.flash * m));
 
     const ws = 2.6 * R;
     wash.style.width = wash.style.height = ws + 'px';
     wash.style.margin = `${-ws / 2}px 0 0 ${-ws / 2}px`;
 
-    for (const cv of [spaceCv, lit, dustCv].filter(Boolean)) {
+    for (const cv of [spaceCv, dustCv].filter(Boolean)) {
       cv.width = Math.round(W);
       cv.height = Math.round(H);
       cv.style.width = W + 'px';
@@ -307,18 +219,7 @@ export function mountField(root, units) {
 
     prevSpaceRect = null;   // 캔버스 크기가 바뀌면 내용이 날아간다 — 다음 프레임에 새로 그린다
     for (const p of dust) { p.hx = p.u * W; p.hy = p.v * H; p.x = p.hx; p.y = p.hy; }
-    bake();
   };
-
-  /* 이미지는 다 받은 뒤에 굽는다. 반쯤 받은 상태로 구우면 빈 캔버스가 남고,
-     자리가 고정이라 다시 구울 계기가 영영 오지 않는다. */
-  units.slice(0, LAYOUT.length).forEach((u, i) => {
-    const img = new Image();
-    img.decoding = 'async';
-    img.src = u.asset.replace(/^assets\/motifs\//, 'assets/motifs/768/');
-    imgs[i] = img;
-    (img.decode ? img.decode() : Promise.resolve()).catch(() => {}).then(bake);
-  });
 
   fit();
   /* 주소창이 접히고 펴질 때마다 resize 가 온다. 히어로는 100svh 라 실제 크기는
@@ -351,7 +252,6 @@ export function mountField(root, units) {
       FINE = true;                         // wgt 는 건드리지 않는다 — 0 에서 서서히 오른다
       // 첫 자리로 **순간이동**한다. 중앙에서 끌려오면 지나온 자리가 쓸려 보인다
       sx = fx = pxN; sy = fy = pyN;
-      lx = pxN; ly = pyN;
       woke = true;
     }
   }, { passive: true });
@@ -378,10 +278,8 @@ export function mountField(root, units) {
 
   /* ── 렌더 ───────────────────────────────────────────────── */
   let sx = .5, sy = .5, fx = .5, fy = .5;    // 바람의 눈(정규화)
-  let lx = .5, ly = .5;                      // 손전등(정규화) — 바람보다 조금 빠르다
   let vx = 0, vy = 0;                        // 바람의 속도(px/s) — 진행 방향 쓸림용
   let raf = 0, t0 = 0, prev = 0;
-  let prevRect = null;
 
   const paint = (t, dt) => {
     /* ① 바람의 눈. 포인터가 있으면 포인터가 전부 가져간다 */
@@ -420,8 +318,6 @@ export function mountField(root, units) {
     vx += (nvx - vx) * (1 - Math.exp(-7.0 * dt));
     vy += (nvy - vy) * (1 - Math.exp(-7.0 * dt));
     sx = nsx; sy = nsy;
-    lx += (tx - lx) * (1 - Math.exp(-CFG.lag * dt));
-    ly += (ty - ly) * (1 - Math.exp(-CFG.lag * dt));
 
     const SX = sx * W, SY = sy * H;
 
@@ -514,28 +410,6 @@ export function mountField(root, units) {
     }
     dctx.globalAlpha = 1;
 
-    /* ④ 손전등 — 커서가 닿은 픽셀의 잉크만 찍어낸다.
-       화면 전체가 아니라 손전등 사각형만 건드린다. 지난 프레임 자리도 함께
-       지워야 잔상이 남지 않는다. */
-    const LX = lx * W, LY = ly * H;
-    const r = FR, pad = 2;
-    const rect = [LX - r - pad, LY - r - pad, 2 * (r + pad), 2 * (r + pad)];
-    if (prevRect) lctx.clearRect(...prevRect);
-    lctx.clearRect(...rect);
-    if (baked && wgt > .004) {
-      const a = CFG.ink * wgt;
-      const g = lctx.createRadialGradient(LX, LY, 0, LX, LY, r);
-      g.addColorStop(0, `rgba(255,255,255,${a})`);
-      g.addColorStop(CFG.soft, `rgba(255,255,255,${a * .82})`);
-      g.addColorStop(1, 'rgba(255,255,255,0)');
-      lctx.fillStyle = g;
-      lctx.fillRect(...rect);
-      // source-in: 방금 칠한 빛의 알파로 잉크를 오려낸다. 결과 알파 = 빛 × 잉크
-      lctx.globalCompositeOperation = 'source-in';
-      lctx.drawImage(ink, rect[0], rect[1], rect[2], rect[3], rect[0], rect[1], rect[2], rect[3]);
-      lctx.globalCompositeOperation = 'source-over';
-    }
-    prevRect = rect;
   };
 
   const frame = now => {

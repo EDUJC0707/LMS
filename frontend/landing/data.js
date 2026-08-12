@@ -47,24 +47,6 @@ export const SPACE = [
   { key: 'solar',   label: '태양계',        src: 'assets/space/solar-system.webp' },
 ];
 
-/* 히어로에 숨던 모티프 10종 — **2026-07-29 폐기.** 다른 비주얼로 교체한다.
-   화면은 더 이상 이걸 읽지 않는다(index.html 이 mountField 에 빈 목록을 넘긴다).
-   되살릴 때를 위해 이름과 경로만 남긴다. 왜 있었고 무엇을 배웠는지는 SPEC.md §4-옛.
-   **에셋과 패커는 local/landing-motif-board/ 로 옮겼다**(2026-07-29) — 작업 표면에
-   안 쓰는 2.1MB 를 두지 않는다. 아래 경로는 되살렸을 때의 자리이고 지금은 없다.
-   되살리는 법은 그 폴더의 README. 굽기 전 원본은 local/assets/motifs_accent/. */
-export const RETIRED_UNITS = [
-  { key: 'atom', asset: 'assets/motifs/atom.webp' },
-  { key: 'dna', asset: 'assets/motifs/dna.webp' },
-  { key: 'chromosome', asset: 'assets/motifs/chromosome.webp' },
-  { key: 'mitochondria', asset: 'assets/motifs/mitochondria.webp' },
-  { key: 'chloroplast', asset: 'assets/motifs/chloroplast.webp' },
-  { key: 'synapse', asset: 'assets/motifs/synapse.webp' },
-  { key: 'population', asset: 'assets/motifs/population.webp' },
-  { key: 'element', asset: 'assets/motifs/element.webp' },
-  { key: 'tectonics', asset: 'assets/motifs/tectonics.webp' },
-  { key: 'universe', asset: 'assets/motifs/universe.webp' },
-];
 /**
  * 커리큘럼 — 4단계 × 2트랙.
  * 통합과학은 2028이 첫 시행이라 수능 기출이 없어 `기출분석` 단계를 두지 않았다.

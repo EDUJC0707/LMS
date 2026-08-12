@@ -322,8 +322,8 @@
   .space{ position:absolute; inset:0; z-index:0; pointer-events:none; display:block }
   .spacesrc{ position:absolute; width:0; height:0; opacity:0; pointer-events:none }
 
-  .dust, .wash, .motifs{ position:absolute; pointer-events:none; display:block }
-  .dust, .motifs{ inset:0 }
+  .dust, .wash{ position:absolute; pointer-events:none; display:block }
+  .dust{ inset:0 }
   .dust{ mix-blend-mode:screen }    /* 검정 위에서 먼지가 빛으로 읽힌다 */
   .wash{ left:0; top:0 }            /* 크기·margin 은 JS 가 창 반경으로 계산 */
 
@@ -958,7 +958,7 @@ import { openChat } from './chat.js';
 /* 배경. **모티프판은 걷어냈다**(2026-07-29) — 빈 목록을 넘기면 이미지를 받지도
    굽지도 않고, 오려낼 잉크가 없어 먼지와 바람만 남는다. 렌더 코드는 그대로 두었다:
    다른 비주얼이 정해지면 그 자리에 넣으면 된다. 기록은 SPEC.md §4-옛. */
-mountField(document.getElementById('field'), []);
+mountField(document.getElementById('field'));
 
 /* 배경을 건다. data.js 의 `use: true` 하나가 기준이다 — 없으면 검정이고,
    그건 디버그를 열기 전까지 아무 배경도 없던 지금까지의 상태다. */
