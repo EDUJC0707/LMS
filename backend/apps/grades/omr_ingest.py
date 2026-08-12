@@ -39,7 +39,7 @@ from django.core.files.storage import default_storage
 
 from apps.accounts.models import Student
 
-from . import ocr, omr_match, omr_store, scoring
+from . import media, ocr, omr_match, omr_store, scoring
 from .models import AnswerSheet, Exam
 from .omr import drift, sheet
 
@@ -207,7 +207,7 @@ def page_images(pdf):
 def _store_scan(exam, image_bytes):
     """내용 주소로 저장하고 경로를 돌려준다. 같은 바이트면 다시 쓰지 않는다."""
     digest = hashlib.sha256(image_bytes).hexdigest()[:24]
-    path = f"omr/{exam.pk}/{digest}.jpg"
+    path = media.omr_scan(exam.pk, digest)
     if not default_storage.exists(path):
         default_storage.save(path, ContentFile(image_bytes))
     return path

@@ -33,7 +33,7 @@ from django.utils import timezone
 
 from apps.accounts.models import Student
 
-from . import workbook
+from . import media, workbook
 from .models import WorkbookSubmission
 
 ALLOWED_EXTENSIONS = frozenset({"jpg", "jpeg", "png", "webp"})
@@ -70,10 +70,11 @@ def create_submissions(files, student, session, user):
     실패하면 이미 저장한 파일을 걷어낸다(스토리지는 트랜잭션 밖이므로 수동 보상).
     """
     saved_paths = []
+    today = timezone.localdate()
     try:
         for file in files:
-            target = (
-                f"workbook/{timezone.localdate():%Y/%m}/{uuid.uuid4().hex}.{_extension(file.name)}"
+            target = media.workbook_page(
+                today.year, today.month, uuid.uuid4().hex, _extension(file.name)
             )
             saved_paths.append(default_storage.save(target, file))
         with transaction.atomic():

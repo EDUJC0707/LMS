@@ -50,7 +50,16 @@ from apps.accounts.models import Parent, ParentStudent, Student, User
 from apps.accounts.permissions import FeatureRequired, IsParent, IsStudent
 from apps.videos.models import MakeupGrant
 
-from . import attendance_admin, exam_admin, omr_store, report, tasks, workbook, workbook_admin
+from . import (
+    attendance_admin,
+    exam_admin,
+    media,
+    omr_store,
+    report,
+    tasks,
+    workbook,
+    workbook_admin,
+)
 from .models import AnswerSheet, Attendance, ClassSession, Exam, WorkbookSubmission
 from .omr import card
 
@@ -671,9 +680,7 @@ class AdminExamSheetsView(APIView):
                 {"detail": f"문항 수를 1~{card.ANSWER_QUESTIONS} 사이로 지정해 주세요."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        path = default_storage.save(
-            f"omr-upload/{exam.pk}/{uuid.uuid4().hex}.pdf", pdf
-        )
+        path = default_storage.save(media.omr_batch(exam.pk, uuid.uuid4().hex), pdf)
         task = tasks.ingest_omr_batch.delay(exam.pk, path, question_count)
         return Response({"task_id": task.id}, status=status.HTTP_202_ACCEPTED)
 

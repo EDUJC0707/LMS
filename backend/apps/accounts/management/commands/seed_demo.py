@@ -48,6 +48,7 @@ from apps.clinic.models import (
 )
 from apps.curriculum.models import Course, CourseEnrollment, CourseWeek, WeekDayPlan
 from apps.grades import attendance_admin
+from apps.grades import media as grades_media
 from apps.grades.models import (
     AnswerSheet,
     Assignment,
@@ -159,9 +160,10 @@ class Command(BaseCommand):
         (2026-07-28 실측: 6회 실행 → 파일 58개.)
 
         디렉터리째 비우면 DB 상태와 무관하게 항상 같은 결과가 된다.
-        `demo/` 하위만 지운다 — 실제 업로드본(`workbook/<다른 경로>`)은 건드리지 않는다.
+        `demo/` 하나만 지운다. 시드가 최상위 `demo/` 아래에만 쓰므로 실제
+        업로드본과 절대 안 겹친다(apps/grades/media.py).
         """
-        for prefix in ("workbook/demo", "omr/demo"):
+        for prefix in (grades_media.DEMO,):
             try:
                 _dirs, files = default_storage.listdir(prefix)
             except (FileNotFoundError, NotImplementedError, OSError):
@@ -502,7 +504,9 @@ class Command(BaseCommand):
                 sheet = AnswerSheet.objects.create(
                     exam=exam,
                     student=student,
-                    scan_image_path=f"omr/demo/{exam.round_no}/{student.matching_key}.png",
+                    scan_image_path=grades_media.demo(
+                        "omr", exam.round_no, f"{student.matching_key}.png"
+                    ),
                     recognized_matching_key=student.matching_key,
                     recognized_name=student.user.name,
                     match_status=AnswerSheet.MatchStatus.MATCHED,
@@ -849,7 +853,9 @@ class Command(BaseCommand):
         for idx, match_status, grade in specs:
             student = students[idx]
             path = default_storage.save(
-                f"workbook/demo/{target_session.session_id}-{student.matching_key}.png",
+                grades_media.demo(
+                    "workbook", f"{target_session.session_id}-{student.matching_key}.png"
+                ),
                 ContentFile(_PNG_BYTES),
             )
             WorkbookSubmission.objects.create(
