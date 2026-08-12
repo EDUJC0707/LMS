@@ -130,8 +130,10 @@ export interface CounselCard {
   };
   target: string;
   status: string;
-  /** 이미 수행한 통화 시도 수(0부터). 3회째 미연결이면 알림톡으로 종결된다. */
+  /** 이미 수행한 통화 시도 수(0부터). 3회는 "닫아도 된다"는 신호이고 발송은 버튼이다. */
   attempts: number;
+  /** 닫혔는데 결석 안내가 아직 안 나갔다 — 발송 버튼이 뜨는 자리 */
+  awaiting_notice: boolean;
   absence_date: string | null;
   created_at: string;
 }
@@ -141,7 +143,8 @@ export interface CounselRecordResult {
   status: string;
   attempts: number;
   next_counsel_id: number | null;
-  closed_by_sms: boolean;
+  /** 더 이상 재시도 카드를 만들지 않는다 — 3회 소진 또는 강제 종결 */
+  closed: boolean;
   makeup_requested: boolean;
 }
 

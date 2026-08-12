@@ -252,8 +252,8 @@ class CounselingRecordView(APIView):
             return _not_found()
         body = request.data if isinstance(request.data, dict) else {}
         result = body.get("result")
-        if result not in ("연결", "미연결"):
-            return _bad_request("result는 연결 또는 미연결이어야 합니다.")
+        if result not in ("연결", "미연결", "종결"):
+            return _bad_request("result는 연결·미연결·종결 중 하나여야 합니다.")
         if "makeup_requested" in body and not isinstance(body["makeup_requested"], bool):
             return _bad_request("makeup_requested는 true/false여야 합니다.")
         for name in ("absence_reason", "call_memo", "follow_up_action"):
@@ -271,7 +271,48 @@ class CounselingRecordView(APIView):
                 "status": card.status,
                 "attempts": attempts,
                 "next_counsel_id": next_card.counsel_id if next_card else None,
-                "closed_by_sms": closed,
+                "closed": closed,
                 "makeup_requested": card.makeup_requested,
             }
         )
+
+
+class CounselingOpenView(APIView):
+    """POST /api/admin/counseling — 통화 카드를 연다 (학생 2차, 8-18)."""
+
+    permission_classes = [FeatureRequired(FeatureKey.COUNSEL_RECORD)]
+
+    def post(self, request):
+        body = request.data if isinstance(request.data, dict) else {}
+        target = body.get("target")
+        if target not in AbsenceCounseling.Target.values:
+            return _bad_request("target은 학부모 또는 학생이어야 합니다.")
+        # 같은 결석의 다른 대상으로 연다 — 화면이 이미 들고 있는 카드를 기준점으로
+        # 삼으면 결석 회차 id 를 응답에 실어 내보내지 않아도 된다.
+        source = AbsenceCounseling.objects.filter(pk=body.get("from_counsel_id")).first()
+        if source is None:
+            return _bad_request("기준 상담 카드를 찾을 수 없습니다.")
+        try:
+            card = counseling.open_card(source.student, source.attendance, target)
+        except counseling.CounselingError as error:
+            return _bad_request(error.message)
+        return Response(
+            {"counsel_id": card.counsel_id, "target": card.target, "status": card.status},
+            status=201,
+        )
+
+
+class CounselingNotifyView(APIView):
+    """POST /api/admin/counseling/{counsel_id}/notify — 결석 안내 발송 (버튼)."""
+
+    permission_classes = [FeatureRequired(FeatureKey.COUNSEL_RECORD)]
+
+    def post(self, request, counsel_id):
+        card = AbsenceCounseling.objects.filter(pk=counsel_id).first()
+        if card is None:
+            return _not_found()
+        try:
+            sent = counseling.notify(card)
+        except counseling.CounselingError as error:
+            return _bad_request(error.message)
+        return Response({"counsel_id": card.counsel_id, "sent": sent})

@@ -4,8 +4,10 @@
  * 호출: GET   /api/admin/counseling/queue
  *      · PATCH /api/admin/counseling/{counsel_id}
  *
- * 3회 정책을 화면에 드러낸다: 미연결로 기록하면 재시도 카드가 생기고,
- * 3회째 미연결이면 알림톡 안내로 종결된다(백엔드 MAX_CALL_ATTEMPTS=3).
+ * 3회는 마감이 아니라 "닫아도 된다"는 신호다(2026-08-12). 미연결로 기록하면
+ * 재시도 카드가 생기고, 3회를 채우면 더 만들지 않는다. 창이 지나도 카드는
+ * 남으므로 조교가 `그만 겁니다`로 직접 닫을 수도 있다.
+ * **알림톡은 자동으로 나가지 않는다** — 닫힌 카드에서 버튼을 눌러야 나간다.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -31,7 +33,7 @@ import "./ops.css";
 import type { CounselCard, CounselRecordResult } from "./types";
 import { MAX_CALL_ATTEMPTS } from "./types";
 
-type CallResult = "연결" | "미연결";
+type CallResult = "연결" | "미연결" | "종결";
 
 export default function CounselingPage() {
   const [dateFilter, setDateFilter] = useState("");
@@ -45,6 +47,26 @@ export default function CounselingPage() {
   );
 
   const all = useMemo(() => queue.data ?? [], [queue.data]);
+
+  // 발송·학생 2차는 표에서 바로 누른다 — 통화 결과 폼을 열 필요가 없는 동작이다.
+  const notify = useApiAction(async (id: number) => {
+    await http.post(`/admin/counseling/${id}/notify`);
+  });
+  const openStudent = useApiAction(async (id: number) => {
+    await http.post("/admin/counseling", { from_counsel_id: id, target: "학생" });
+  });
+
+  const send = async (card: CounselCard) => {
+    if (!(await notify.run(card.counsel_id))) return;
+    setNotice(`${card.student.name ?? "학생"} 학부모에게 결석 안내를 보냈습니다`);
+    void queue.reload();
+  };
+
+  const toStudent = async (card: CounselCard) => {
+    if (!(await openStudent.run(card.counsel_id))) return;
+    setNotice(`${card.student.name ?? "학생"} 학생 통화 카드를 열었습니다`);
+    void queue.reload();
+  };
 
   const dates = useMemo(() => {
     const seen = new Set<string>();
@@ -101,7 +123,7 @@ export default function CounselingPage() {
           {r.attempts === 0 ? (
             <span className="ops-sub">첫 통화</span>
           ) : r.attempts >= MAX_CALL_ATTEMPTS - 1 ? (
-            <Badge tone="warning">이번에 안 되면 문자 종결</Badge>
+            <Badge tone="warning">3회 — 닫아도 됩니다</Badge>
           ) : (
             <span className="ops-sub">재시도</span>
           )}
@@ -120,11 +142,28 @@ export default function CounselingPage() {
       header: "기록",
       align: "right",
       width: "10rem",
-      cell: (r) => (
-        <Button size="sm" onClick={() => setTarget(r)}>
-          통화 결과 입력
-        </Button>
-      ),
+      cell: (r) =>
+        r.awaiting_notice ? (
+          <Button
+            size="sm"
+            variant="primary"
+            loading={notify.pending}
+            onClick={() => void send(r)}
+          >
+            결석 안내 보내기
+          </Button>
+        ) : (
+          <span className="ui-row">
+            <Button size="sm" onClick={() => setTarget(r)}>
+              통화 결과 입력
+            </Button>
+            {r.target === "학부모" && (
+              <Button size="sm" variant="ghost" loading={openStudent.pending} onClick={() => void toStudent(r)}>
+                학생에게
+              </Button>
+            )}
+          </span>
+        ),
     },
   ];
 
@@ -249,10 +288,8 @@ function RecordPanel({
     const data = await record.run();
     if (!data) return;
     const name = card.student.name ?? "학생";
-    if (data.closed_by_sms) {
-      onDone(
-        `${name} 학부모 통화 ${data.attempts}회 시도 — 알림톡 종결`,
-      );
+    if (data.closed) {
+      onDone(`${name} ${card.target} 통화 ${data.attempts}회 — 종결`);
       return;
     }
     if (data.next_counsel_id) {
@@ -291,6 +328,12 @@ function RecordPanel({
               label="연결되지 않았습니다"
               checked={result === "미연결"}
               onChange={() => setResult("미연결")}
+            />
+            <Radio
+              name={`call-${card.counsel_id}`}
+              label="그만 겁니다"
+              checked={result === "종결"}
+              onChange={() => setResult("종결")}
             />
           </div>
         </div>
