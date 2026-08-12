@@ -22,6 +22,7 @@
  *   결석 버튼 위에 경고를 먼저 띄운다.
  */
 import { useMemo, useState } from "react";
+import Markdown from "react-markdown";
 
 import { http, useApi, useApiAction } from "../../../api";
 import { useMe } from "../../../auth";
@@ -351,7 +352,13 @@ function RequestPanel({
           <Card title="전사 요약" padding="none">
             <div className="ui-stack ui-stack--sm cl-supervision">
               {request.supervision.summary ? (
-                <p className="cl-supervision__body">{request.supervision.summary}</p>
+                // 업체가 마크다운으로 준다(불릿·굵게, 때로는 표·번호목록).
+                // 손으로 파싱하면 오늘 오는 두 가지만 맞고 세 번째에서 깨진다.
+                // **raw HTML 은 켜지 않는다** — 학생 발화를 요약한 외부 업체
+                // 출력이라 신뢰 입력이 아니다(react-markdown 은 기본이 끔).
+                <div className="cl-supervision__body">
+                  <Markdown>{request.supervision.summary}</Markdown>
+                </div>
               ) : (
                 <EmptyState title="요약을 읽지 못했습니다" />
               )}

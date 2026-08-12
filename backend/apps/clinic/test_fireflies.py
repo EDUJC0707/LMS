@@ -189,16 +189,16 @@ class FetchSupervisionTests(SimpleTestCase):
         )
         self.assertIsNone(found)
 
-    def test_strips_the_markdown_the_vendor_writes(self):
-        # 업체는 마크다운으로 준다. 화면은 평문으로 그리므로 별표가 글자로 남는다
-        # (2026-08-12 실측: 관리자 화면에 `**어머니 유전자형:**` 이 그대로 보였다).
+    def test_keeps_the_markdown_for_the_screen_to_draw(self):
+        # 업체는 `- ` 불릿과 `**굵게**` 로 준다. 여기서 별표를 지우면 화면이
+        # 구조를 되살릴 방법이 없다 — 그리는 일은 화면 몫이다.
         transport = FakeTransport(
             transcripts_response(row(overview="- **어머니 유전자형:** A부터 D까지"))
         )
         found = FirefliesAdapter(transport=transport).fetch_supervision(
             "spaces/S1", file_as=TITLE
         )
-        self.assertEqual(found.summary, "- 어머니 유전자형: A부터 D까지")
+        self.assertEqual(found.summary, "- **어머니 유전자형:** A부터 D까지")
 
     def test_keeps_the_link_when_the_summary_is_empty(self):
         # 요약을 못 받아도 사람이 열어 볼 링크는 남긴다

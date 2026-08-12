@@ -21,7 +21,6 @@
 `fetch_supervision` 의 `file_as` 와 `start_supervision` 의 `title` 은 **같은 값**이다.
 """
 import json
-import re
 
 from django.conf import settings
 
@@ -46,17 +45,6 @@ MIN_MINUTES, MAX_MINUTES = 15, 120
 #: 같은 제목이 몇 개까지 나올 수 있나. 정상은 1이고 2를 넘길 이유가 없다
 #: (아래 `fetch_supervision` 의 중복 설명) — 넉넉히 잡아도 이 정도면 충분하다.
 TITLE_MATCH_LIMIT = 10
-
-#: 업체가 요약을 **마크다운**으로 준다. 우리 화면은 평문으로 그려서 별표가 글자로
-#: 남는다(2026-08-12 실측). 굵게 표시만 벗기고 줄머리 `- ` 는 남긴다 — 목록이라는
-#: 사실은 평문으로 읽어도 뜻이 통하기 때문이다.
-_BOLD = re.compile(r"\*\*(.+?)\*\*", re.S)
-
-
-def plain(text):
-    """마크다운 굵게 표시를 벗긴 평문. 빈 요약은 None(링크는 그대로 남는다)."""
-    return _BOLD.sub(r"\1", (text or "").strip()) or None
-
 
 _DISPATCH = """
 mutation($link: String!, $title: String, $language: String, $minutes: Int) {
@@ -144,8 +132,11 @@ class FirefliesAdapter(ConferenceAdapter):
         return Supervision(
             transcript_ref=row.get("id") or "",
             transcript_url=row.get("transcript_url") or "",
-            # 요약이 비면 None 이되 링크는 남긴다 — 사람이 열어 보면 된다.
-            summary=plain((row.get("summary") or {}).get("overview")),
+            # 마크다운 그대로 둔다 — 업체가 `- ` 불릿과 `**굵게**` 로 주고,
+            # 그 구조가 읽는 데 값을 한다. 별표를 여기서 지우면 화면이 되살릴
+            # 방법이 없다. 그리는 것은 화면 몫이다(ClinicManagePage).
+            # 빈 요약은 None 이되 링크는 남긴다 — 사람이 열어 보면 된다.
+            summary=((row.get("summary") or {}).get("overview") or "").strip() or None,
         )
 
     # -- HTTP -------------------------------------------------------------

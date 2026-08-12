@@ -734,13 +734,63 @@
 .cl-supervision {
   padding: 16px;
 }
+/* 요약은 업체가 마크다운으로 주고 화면이 진짜 요소로 그린다(react-markdown).
+   그래서 `white-space: pre-wrap` 을 뺐다 — 요소 안의 줄바꿈까지 살아나면
+   문단마다 빈 줄이 하나씩 더 생긴다. */
 .cl-supervision__body {
   margin: 0;
   max-height: 18rem;
   overflow-y: auto;
-  white-space: pre-wrap;
   font-size: 0.875rem;
   line-height: 1.6;
+}
+
+.cl-supervision__body > :first-child {
+  margin-top: 0;
+}
+
+.cl-supervision__body > :last-child {
+  margin-bottom: 0;
+}
+
+.cl-supervision__body p {
+  margin: 0 0 var(--space-sm);
+}
+
+.cl-supervision__body ul,
+.cl-supervision__body ol {
+  margin: 0 0 var(--space-sm);
+  padding-left: 1.25rem;
+}
+
+.cl-supervision__body li + li {
+  margin-top: var(--space-2xs, 0.25rem);
+}
+
+/* 업체 요약은 `**항목:** 내용` 꼴이라 굵은 부분이 사실상 소제목이다. */
+.cl-supervision__body strong {
+  font-weight: 600;
+  color: var(--color-ink-1);
+}
+
+.cl-supervision__body h1,
+.cl-supervision__body h2,
+.cl-supervision__body h3,
+.cl-supervision__body h4 {
+  margin: var(--space-sm) 0 var(--space-2xs, 0.25rem);
+  font-size: 0.9375rem;
+}
+
+.cl-supervision__body table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.cl-supervision__body th,
+.cl-supervision__body td {
+  padding: var(--space-2xs, 0.25rem) var(--space-xs);
+  border-bottom: 1px solid var(--color-rule-2);
+  text-align: left;
 }
 
 /* 업로드 진행률 — 3~4GB 는 몇 분씩 걸린다. 진행 표시가 없으면 조교가
