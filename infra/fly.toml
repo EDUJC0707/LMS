@@ -43,22 +43,30 @@ primary_region = "nrt"     # 도쿄
 #  같은 시각에 여러 머신이 같은 작업을 발행한다.)
 # beat 를 빠뜨리면 태스크는 등록돼 있는데 아무도 부르지 않아 조용히 안 돈다.
 #
-# ── 주기 작업은 supercronic 이 맡는다(2026-08-05 결정) ────────────────────
-# 클리닉 감독 자료 수집은 시간이 되면 도는 게 전부라 브로커가 필요 없다.
-# Celery 로 가면 워커 머신($2.02~3.32)에 **Redis 가 얹힌다** — Upstash 공식 문서가
-# "Celery 워커는 큐가 비어도 계속 폴링해서 종량제에서 비용이 커진다"며 정액
-# (250MB $10/월)을 권한다. 합치면 월 $12~13 이고, 그 돈은 **웹 요청이 일을
-# 떠넘길 때 쓰는 부품**에 나가는데 이 배치엔 떠넘길 요청이 없다.
-# supercronic 은 머신 하나($2.02)로 같은 일을 하고 주기 제한도 없다.
-# (알림톡 발송이 워커를 세우는 날, beat 로 옮겨 타면 된다 — `tasks.py` 는 그대로 둔다.)
+# ── supercronic → Celery 로 옮겨 탔다 (2026-08-12) ────────────────────────
+# ~~주기 작업은 supercronic 이 맡는다(2026-08-05)~~ → **뒤집혔다.**
+#
+# 그때 판단의 전제는 *"떠넘길 웹 요청이 없다"* 였다. 이제 있다 — 결제 취소가
+# 요청 안에서 알림을 걸고(`payments.payment_admin`), 그 뒤로 8-17 트리거들이
+# 줄줄이 붙는다. 브로커 없이는 **요청 스레드가 발송을 직접 물고 있어야** 한다.
+#
+# 값은 그때 계산한 그대로다: Redis 정액 250MB $10/월 + 워커 머신 약 $2.
+# **종량제를 쓰지 않는다** — Upstash 문서가 "Celery 는 큐가 비어도 계속 폴링해서
+# 종량제에서 비용이 커진다"고 명시한다(2026-08-12 에 종량제로 만들었다가 이 줄을
+# 읽고 정액으로 다시 만들었다).
+#
+# **supercronic 은 걷어냈다.** `crontab` 의 클리닉 수집이 `CELERY_BEAT_SCHEDULE`
+# 에 같은 20분 주기로 또 있어서, 둘을 같이 두면 같은 작업이 두 번 돈다
+# (멱등이라 사고는 아니지만 구글 API 를 두 배로 부른다).
 [processes]
   web = ".venv/bin/gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
-  cron = "supercronic /app/crontab"
-  # worker = ".venv/bin/celery -A config worker -B -l info"
+  # gossip·mingle·heartbeat 는 워커끼리 서로를 찾는 잡담이다. 워커가 하나뿐이라
+  # 할 상대가 없는데 Redis 명령만 계속 먹는다 — 정액제라도 끄는 편이 조용하다.
+  worker = ".venv/bin/celery -A config worker -B -l info --without-gossip --without-mingle --without-heartbeat"
 
-# cron 머신은 파이썬 하나 띄우는 게 전부라 web 만큼 안 준다.
+# 워커는 파이썬 하나라 web 만큼 안 준다.
 [[vm]]
-  processes = ["cron"]
+  processes = ["worker"]
   size = "shared-cpu-1x"
   memory = "256mb"
 

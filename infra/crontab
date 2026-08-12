@@ -1,3 +1,9 @@
+# ⚠ 2026-08-12 부터 **아무도 이 파일을 읽지 않는다.**
+# `cron` 프로세스 그룹을 fly.toml 에서 뺐고, 아래 작업은 CELERY_BEAT_SCHEDULE
+# 의 `clinic-supervision` 이 같은 20분 주기로 맡는다. 둘 다 두면 같은 작업이
+# 두 번 돈다(멱등이라 사고는 아니지만 구글 API 를 두 배로 부른다).
+# 파일·Dockerfile 의 supercronic 설치는 삭제 확인 대기 중이라 남겨 둔다.
+#
 # supercronic 이 읽는 주기 작업표 — `cron` 프로세스 그룹이 이 파일을 돈다.
 #
 # **반드시 1대만 돈다.** `fly scale count cron=2` 를 하면 같은 시각에 두 머신이
