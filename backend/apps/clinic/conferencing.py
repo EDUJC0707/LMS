@@ -76,6 +76,19 @@ class ConferenceAdapter(ABC):
     def create_space(self) -> Conference:
         """새 스페이스 1개. 실패하면 Temporary/PermanentConferenceError 를 던진다."""
 
+    def start_supervision(self, url: str, *, title: str, minutes: int) -> None:
+        """감독 기록을 시작시킨다. **기본은 아무것도 하지 않는 것이다.**
+
+        구글은 스페이스를 만들 때 "전사를 켜라"를 실어 보내므로 회의가 시작되면
+        저절로 돈다 — 부를 것이 없다. 봇을 회의에 넣어야 하는 업체만 이걸
+        구현한다(Fireflies). 그래서 `@abstractmethod` 가 아니다: 필요 없는
+        구현체까지 빈 메서드를 쓰게 만들면 계약이 거짓말을 하게 된다.
+
+        `title` 은 나중에 `fetch_supervision(file_as=...)` 이 되찾을 **같은
+        문자열**이다. 저장소가 제목을 모르는 업체면 무시해도 된다.
+        """
+        return None
+
     @abstractmethod
     def fetch_supervision(self, ref: str, *, file_as: str | None = None) -> "Supervision | None":
         """끝난 회의의 감독 자료. **아직 없으면 None**(실패가 아니다).

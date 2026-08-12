@@ -171,6 +171,10 @@ class ClinicRequest(models.Model):
     )
     conference_ref = models.CharField("화상 참조 ID", max_length=200, null=True, blank=True)  # noqa: DJ001
     conference_url = models.CharField("화상 참가 링크", max_length=500, null=True, blank=True)  # noqa: DJ001
+    # 봇을 넣어야 기록이 남는 업체(Fireflies)에서 **두 번 넣지 않기 위한 표시**다.
+    # 구글 경로에서는 아무도 안 쓴다 — 스페이스 설정이 알아서 전사를 켠다.
+    # 업체 이름을 담지 않는다: "감독을 언제 시작시켰나"는 업체와 무관한 사실이다.
+    supervision_started_at = models.DateTimeField("감독 시작 시각", null=True, blank=True)
     attendance_status = models.CharField(  # noqa: DJ001
         "클리닉 출결",
         max_length=10,

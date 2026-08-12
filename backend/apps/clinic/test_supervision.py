@@ -16,7 +16,12 @@ from apps.accounts.models import Student, User
 from apps.grades.models import Exam
 
 from . import clinic_admin, supervision
-from .conferencing import Conference, ConferenceAdapter, Supervision
+from .conferencing import (
+    Conference,
+    ConferenceAdapter,
+    Supervision,
+    TemporaryConferenceError,
+)
 from .models import ClinicEvaluation, ClinicRequest, ClinicSlot
 
 WED = datetime.date(2026, 7, 22)
@@ -28,6 +33,9 @@ class StubAdapter(ConferenceAdapter):
     result = None
     filed_as = []
     asked = []
+    started = []
+    titles = []
+    start_raises = None
 
     def create_space(self):
         return Conference(provider="google_meet", ref="spaces/S", url="https://x/s")
@@ -36,6 +44,12 @@ class StubAdapter(ConferenceAdapter):
         StubAdapter.asked.append(ref)
         StubAdapter.filed_as.append(file_as)
         return StubAdapter.result
+
+    def start_supervision(self, url, *, title, minutes):
+        if StubAdapter.start_raises:
+            raise StubAdapter.start_raises
+        StubAdapter.started.append((url, minutes))
+        StubAdapter.titles.append(title)
 
 
 ADAPTER = "apps.clinic.test_supervision.StubAdapter"
@@ -238,3 +252,93 @@ class CollectionWindowTests(CollectSupervisionTests):
         self.evening_clinic()
         supervision.collect(now=self.at(minutes=10))
         self.assertEqual(StubAdapter.asked, [])
+
+
+@override_settings(CLINIC_CONFERENCE_BACKEND=ADAPTER)
+class DispatchSupervisionTests(TestCase):
+    """봇 투입 — 시작한 클리닉에 **한 번만** 넣는다.
+
+    Fireflies 는 예약 참가가 없어서(진행 중인 회의에만 넣을 수 있다) 시작 시각
+    근처에 누군가 불러 줘야 한다. 그 "누군가"가 여기다.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.staff = User.objects.create_user(
+            login_id="dp-ast", password="pw-Secret-77!", name="조교", role=User.Role.ASSISTANT
+        )
+        cls.student_user = User.objects.create_user(
+            login_id="dp-stu", password="pw-Secret-77!", name="김하늘", role=User.Role.STUDENT
+        )
+        cls.student = Student.objects.create(user=cls.student_user, matching_key="김하늘0001")
+        cls.exam = Exam.objects.create(name="7월 모의고사", exam_date=WED)
+        cls.slot = ClinicSlot.objects.create(
+            weekday=3, start_time=datetime.time(19, 0), end_time=datetime.time(20, 0)
+        )
+
+    def setUp(self):
+        StubAdapter.started = []
+        StubAdapter.titles = []
+
+    def make_request(self, **extra):
+        extra.setdefault("status", ClinicRequest.Status.APPROVED)
+        extra.setdefault("conference_provider", "google_meet")
+        extra.setdefault("conference_ref", "spaces/S1")
+        extra.setdefault("conference_url", "https://meet.google.com/a-b-c")
+        return ClinicRequest.objects.create(
+            student=self.student,
+            exam=self.exam,
+            slot=self.slot,
+            assigned_staff=self.staff,
+            requested_date=timezone.localdate(),
+            requested_time=datetime.time(19, 0),
+            **extra,
+        )
+
+    def at(self, hour, minute):
+        return supervision.starts_at(
+            ClinicRequest(requested_date=timezone.localdate(), requested_time=datetime.time(0, 0))
+        ) + datetime.timedelta(hours=hour, minutes=minute)
+
+    def test_starts_supervision_for_a_clinic_that_just_began(self):
+        request = self.make_request()
+        supervision.dispatch(now=self.at(19, 0))
+        self.assertEqual(StubAdapter.started, [("https://meet.google.com/a-b-c", 60)])
+        request.refresh_from_db()
+        self.assertIsNotNone(request.supervision_started_at)
+
+    def test_files_it_under_the_same_name_collection_will_look_for(self):
+        request = self.make_request()
+        supervision.dispatch(now=self.at(19, 0))
+        self.assertEqual(StubAdapter.titles, [supervision.artifact_path(request)])
+
+    def test_does_not_send_a_second_bot(self):
+        self.make_request()
+        supervision.dispatch(now=self.at(19, 0))
+        supervision.dispatch(now=self.at(19, 1))
+        self.assertEqual(len(StubAdapter.started), 1)
+
+    def test_ignores_a_clinic_that_has_not_started(self):
+        self.make_request()
+        supervision.dispatch(now=self.at(18, 59))
+        self.assertEqual(StubAdapter.started, [])
+
+    def test_ignores_a_clinic_that_started_too_long_ago(self):
+        # 워커가 한참 죽어 있었다 — 이미 끝난 회의에 봇을 넣으면 돈만 나간다
+        self.make_request()
+        supervision.dispatch(now=self.at(19, 0) + supervision.DISPATCH_WINDOW)
+        self.assertEqual(StubAdapter.started, [])
+
+    def test_skips_clinics_without_a_space(self):
+        self.make_request(conference_provider=None, conference_ref=None, conference_url=None)
+        supervision.dispatch(now=self.at(19, 0))
+        self.assertEqual(StubAdapter.started, [])
+
+    def test_a_failure_leaves_it_to_be_retried(self):
+        StubAdapter.start_raises = TemporaryConferenceError("업체 장애")
+        self.addCleanup(setattr, StubAdapter, "start_raises", None)
+        request = self.make_request()
+        counts = supervision.dispatch(now=self.at(19, 0))
+        self.assertEqual(counts["failed"], 1)
+        request.refresh_from_db()
+        self.assertIsNone(request.supervision_started_at)

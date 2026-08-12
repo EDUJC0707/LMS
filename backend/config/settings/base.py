@@ -119,6 +119,14 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.clinic.tasks.collect_clinic_supervision",
         "schedule": 20 * 60,
     },
+    # 감독 봇 투입. **수집과 달리 늦으면 못 만회한다** — 봇은 회의가 도는 동안
+    # 에만 들어갈 수 있어서, 주기가 성기면 그만큼 회의 앞부분이 통째로 안 남는다.
+    # 1분인 이유가 그것이고, 할 일이 없으면 DB 조회 한 번으로 끝난다.
+    # 구글 경로에서는 어댑터가 아무것도 하지 않으므로 켜 두어도 해가 없다.
+    "clinic-supervision-dispatch": {
+        "task": "apps.clinic.tasks.dispatch_clinic_supervision",
+        "schedule": 60,
+    },
 }
 
 # --- 알림 채널 (PRD 6-8 채널 추상화 — apps/notifications/channels.py) --------
@@ -249,6 +257,11 @@ if AWS_STORAGE_BUCKET_NAME:
 CLINIC_CONFERENCE_BACKEND = env(
     "CLINIC_CONFERENCE_BACKEND", default="apps.clinic.google_meet.GoogleMeetAdapter"
 )
+
+# 조교가 아이패드로 호스트할 때의 감독 경로. 켜는 법은 값을 넣는 게 아니라
+# 위 한 줄을 `apps.clinic.fireflies.FirefliesAdapter` 로 바꾸는 것이다 —
+# 방은 그대로 구글이 만들고 감독 자료만 Fireflies 에서 온다.
+FIREFLIES_API_KEY = env("FIREFLIES_API_KEY", default="")
 # 구글 미트는 **사용자 인증만** 받는다(서비스 계정은 워크스페이스 도메인 위임
 # 한정) — 계정 1개로 한 번 동의받은 갱신 토큰을 서버가 들고 쓴다.
 # 발급: `manage.py meet_authorize`. 셋 중 하나라도 비면 스페이스 생성은
