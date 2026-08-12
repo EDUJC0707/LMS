@@ -188,7 +188,7 @@ export function openDebug() {
   // index.html 에 박힌 강사 기본값. 여기와 CSS 가 어긋나면 패널을 여는 순간 화면이 튄다
   const TEACHER0 = { h: 80, r: 5, b: 0, hSm: 58, rSm: -3, bSm: 0, gap: 0, h1gap: .20 };
   /* hSm 리터럴은 폰 값이다. 태블릿(600~860)에서는 :root 가
-     --teacher-h-sm:min(70svh, calc(100svh - 260px)) 로 덮고 가로 폰은 46svh 다 —
+     --teacher-h-sm:min(66svh, calc(100svh - 260px)) 로 덮고 가로 폰은 46svh 다 —
      58 을 그대로 쓰면 패널을 여는 순간 강사가 튄다(768x1024 에서 717→594px).
      지금 그려져 있는 높이를 되읽는다. 100svh 는 innerHeight 와 다를 수 있어서
      (주소창) 탐침 요소로 잰다. */

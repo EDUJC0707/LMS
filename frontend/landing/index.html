@@ -678,12 +678,19 @@
     /* 변수를 바꾼다 — .teacher{height} 만 덮으면 .hero 의 padding-bottom 이
        calc(58 * var(--vhu)) 폴백을 계속 읽어 헤드라인이 강사 위로 겹친다. 둘이 같은 값을 봐야 한다.
        디버그 패널은 :root 에 인라인으로 써서 여전히 이걸 이긴다. */
-    /* calc(70 * var(--vhu)) + nav + 헤드라인이 화면보다 커지면(높이 756px 미만) 남는 자리가 0 이 돼
-       가운데 정렬이 무력해지고 강사 발밑이 잘린다. 남는 자리로 상한을 건다. */
-    :root{ --teacher-h-sm:min(calc(70 * var(--vhu)), calc(calc(100 * var(--vhu)) - 260px)) }
+    /* 강사 + nav + 헤드라인이 화면보다 커지면 남는 자리가 0 이 돼 가운데 정렬이 무력해지고
+       강사 발밑이 잘린다. 남는 자리로 상한을 건다 — `100vhu - 260px` 쪽이 이기는 것은
+       화면이 765px 보다 낮을 때다(0.66H > H - 260 ⟺ H < 764.7. 70% 때는 867px 이었다). */
+    /* 70 → 66 (2026-08-12). 70 에서는 헤드라인이 nav 와 머리 사이에 **위아래 17px 씩**
+       끼어 있었다 — align-content:center 라 남는 공간이 균등하게 갈리는데, 강사가 70% 를
+       먹으면 1024px 화면에서 남는 것이 33px 뿐이다. 66 으로 내리면 37px 씩이 된다.
+       글자 크기는 안 변한다 — h1 의 min() 에서 12vw 항이 이기고 있어 높이 항을 안 탄다.
+       실측(위 여백 = 아래 간격, 70 → 66): 768x1024 17→37 · 820x1180 33→56 ·
+       1024x1366 34→61 · 600x900 20→38. 폰(58%)과 데스크탑은 이 줄을 안 탄다. */
+    :root{ --teacher-h-sm:min(calc(66 * var(--vhu)), calc(calc(100 * var(--vhu)) - 260px)) }
     /* rem 상한이 구간 전체를 이겨 600~860 이 통째로 70.4px 로 언다.
        폭은 vw 가, 높이는 실제로 남는 띠가 정하게 한다. 2.56 = h1 높이(2.2em) ÷ 띠의 86%. */
-    h1{ font-size:min(12vw, calc((calc(100 * var(--vhu)) - var(--nav) - var(--teacher-h-sm,calc(70 * var(--vhu)))) / 2.56)) }
+    h1{ font-size:min(12vw, calc((calc(100 * var(--vhu)) - var(--nav) - var(--teacher-h-sm,calc(66 * var(--vhu)))) / 2.56)) }
   }
 
   /* 아이패드 프로 세로(861~1024). 폭이 860 을 넘어 데스크탑 2열을 그대로 받는데
@@ -692,12 +699,18 @@
      상한에 걸려 화면 60% 에서 멈춰 있었다. 위 태블릿 블록과 같은 배치를 준다.
      **문은 orientation:portrait 다** — 확정된 데스크탑(가로)은 절대 안 탄다. */
   @media (min-width:861px) and (max-width:1024px) and (orientation: portrait){
-    :root{ --teacher-h-sm:min(calc(70 * var(--vhu)), calc(calc(100 * var(--vhu)) - 260px)) }
+    /* 70 → 66 (2026-08-12). 70 에서는 헤드라인이 nav 와 머리 사이에 **위아래 17px 씩**
+       끼어 있었다 — align-content:center 라 남는 공간이 균등하게 갈리는데, 강사가 70% 를
+       먹으면 1024px 화면에서 남는 것이 33px 뿐이다. 66 으로 내리면 37px 씩이 된다.
+       글자 크기는 안 변한다 — h1 의 min() 에서 12vw 항이 이기고 있어 높이 항을 안 탄다.
+       실측(위 여백 = 아래 간격, 70 → 66): 768x1024 17→37 · 820x1180 33→56 ·
+       1024x1366 34→61 · 600x900 20→38. 폰(58%)과 데스크탑은 이 줄을 안 탄다. */
+    :root{ --teacher-h-sm:min(calc(66 * var(--vhu)), calc(calc(100 * var(--vhu)) - 260px)) }
     .hero{
       grid-template-columns:1fr; align-content:center;
       padding-bottom:calc(var(--teacher-h-sm) + var(--hero-gap, calc(0 * var(--vhu))));
     }
-    h1{ font-size:min(12vw, calc((calc(100 * var(--vhu)) - var(--nav) - var(--teacher-h-sm,calc(70 * var(--vhu)))) / 2.56)) }
+    h1{ font-size:min(12vw, calc((calc(100 * var(--vhu)) - var(--nav) - var(--teacher-h-sm,calc(66 * var(--vhu)))) / 2.56)) }
     /* 상한 820px 을 벗기고 svh 로 되돌린다 — 벗기지 않으면 강사만 데스크탑 값에
        남아 헤드라인 자리(padding-bottom)와 어긋난다. */
     .teacher{ height:var(--teacher-h-sm); right:var(--teacher-right-sm, -3%); bottom:var(--teacher-bottom-sm, 0%) }
