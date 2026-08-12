@@ -59,15 +59,22 @@ def make_score(exam, student, total, max_score=Decimal("100"), percentile=None, 
 
 
 def make_sheet(exam, student, results):
-    """정상 매칭 답안지 1장 — results: {Question: (result, marked)}."""
+    """정상 매칭 답안지 1장 — results: {Question: (result, marked[, issue])}.
+
+    채점 결과와 이상 사유는 축이 다르다 — 복수마킹된 줄은 result 가 없다.
+    """
     sheet = AnswerSheet.objects.create(
         exam=exam,
         student=student,
         scan_image_path=f"scan/{exam.pk}-{student.pk}.jpg",
         match_status=AnswerSheet.MatchStatus.MATCHED,
     )
-    for question, (result, marked) in results.items():
-        SheetAnswer.objects.create(sheet=sheet, question=question, result=result, marked=marked)
+    for question, row in results.items():
+        result, marked, *rest = row
+        SheetAnswer.objects.create(
+            sheet=sheet, question=question, result=result, marked=marked,
+            issue_reason=rest[0] if rest else None,
+        )
     return sheet
 
 
@@ -77,6 +84,7 @@ class GradeFixtureMixin:
     @classmethod
     def setUpTestData(cls):
         R = SheetAnswer.Result
+        ISSUE = SheetAnswer.Issue
         cls.student_a = make_student(
             "stu-grd-a", "김서연", school="서연고", current_class="고2 B반"
         )
@@ -167,7 +175,7 @@ class GradeFixtureMixin:
                 cls.q2: (R.WRONG, "4"),
                 cls.q3: (R.CORRECT, "3"),
                 cls.q4: (R.CORRECT, "4"),
-                cls.q5: (R.BLANK, None),
+                cls.q5: (None, None, ISSUE.BLANK),
             },
         )
         make_sheet(
@@ -177,7 +185,7 @@ class GradeFixtureMixin:
                 cls.q2: (R.CORRECT, "2"),
                 cls.q3: (R.CORRECT, "3"),
                 cls.q4: (R.CORRECT, "4"),
-                cls.q5: (R.MULTI, "1,5"),
+                cls.q5: (None, "1,5", ISSUE.MULTI),
             },
         )
         make_sheet(
@@ -477,6 +485,7 @@ class StudentGradeReportDetailTests(GradeFixtureMixin, TestCase):
                     "answer": "1",
                     "marked": "1",
                     "result": "정답",
+                    "issue_reason": None,
                     "wrong_rate": 30.0,  # 저장값 우선(실측 25)
                 },
                 {
@@ -487,6 +496,7 @@ class StudentGradeReportDetailTests(GradeFixtureMixin, TestCase):
                     "answer": "2",
                     "marked": "4",
                     "result": "오답",
+                    "issue_reason": None,
                     "wrong_rate": 50.0,  # A·D 오답 2/4
                 },
                 {
@@ -497,6 +507,7 @@ class StudentGradeReportDetailTests(GradeFixtureMixin, TestCase):
                     "answer": "3",
                     "marked": "3",
                     "result": "정답",
+                    "issue_reason": None,
                     "wrong_rate": 0.0,
                 },
                 {
@@ -507,6 +518,7 @@ class StudentGradeReportDetailTests(GradeFixtureMixin, TestCase):
                     "answer": "4",
                     "marked": "4",
                     "result": "정답",
+                    "issue_reason": None,
                     "wrong_rate": 25.0,  # D 오답 1/4
                 },
                 {
@@ -516,7 +528,8 @@ class StudentGradeReportDetailTests(GradeFixtureMixin, TestCase):
                     "points": 20.0,
                     "answer": "5",
                     "marked": None,
-                    "result": "무응답",
+                    "result": None,
+                    "issue_reason": "무응답",
                     "wrong_rate": 50.0,  # A 무응답 + B 복수마킹 = 비정답 2/4
                 },
             ],

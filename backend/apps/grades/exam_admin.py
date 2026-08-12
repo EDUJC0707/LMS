@@ -103,13 +103,18 @@ def _pending_sheet_counts(exam_ids=None):
     (한 쿼리에 두 다:다 조인을 섞으면 집계가 곱으로 증식한다).
 
     "손봐야 할 장"은 두 가지다: **주인을 못 정한 장**(대조 6분기의 비정상 5종)과
-    **못 읽은 줄이 있는 장**. 후자는 대조가 `정상` 이어도 사람이 봐야 한다 —
-    안 세면 그 줄이 조용히 무응답처럼 지나간다(2026-08-12 줄 단위 보류 도입).
+    **사람이 손대야 할 줄이 있는 장**(`BLOCKING_ISSUES` — 복수마킹·판독불가).
+    후자는 대조가 `정상` 이어도 봐야 한다. 무응답은 빠진다 — 학생이 안 푼 사실이라
+    표시만 하고, 넣으면 큐가 무응답으로 덮인다.
     """
-    sheets = AnswerSheet.objects.filter(is_corrected=False).filter(
-        ~Q(match_status=AnswerSheet.MatchStatus.MATCHED)
-        | Q(answers__result=SheetAnswer.Result.UNREADABLE)
-    ).distinct()
+    sheets = (
+        AnswerSheet.objects.filter(is_corrected=False)
+        .filter(
+            ~Q(match_status=AnswerSheet.MatchStatus.MATCHED)
+            | Q(answers__issue_reason__in=SheetAnswer.BLOCKING_ISSUES)
+        )
+        .distinct()
+    )
     if exam_ids is not None:
         sheets = sheets.filter(exam_id__in=exam_ids)
     return {
@@ -169,6 +174,7 @@ def _question_stat_rows(exam):
     전량 집계를 보여준다(보정 반영 즉시 갱신되는 값이어야 한다).
     """
     R = SheetAnswer.Result
+    ISSUE = SheetAnswer.Issue
     cells = {
         row["question_id"]: row
         for row in SheetAnswer.objects.filter(question__exam=exam)
@@ -177,9 +183,9 @@ def _question_stat_rows(exam):
             answered=Count("pk"),
             correct=Count("pk", filter=Q(result=R.CORRECT)),
             wrong=Count("pk", filter=Q(result=R.WRONG)),
-            blank=Count("pk", filter=Q(result=R.BLANK)),
-            multi=Count("pk", filter=Q(result=R.MULTI)),
-            unreadable=Count("pk", filter=Q(result=R.UNREADABLE)),
+            blank=Count("pk", filter=Q(issue_reason=ISSUE.BLANK)),
+            multi=Count("pk", filter=Q(issue_reason=ISSUE.MULTI)),
+            unreadable=Count("pk", filter=Q(issue_reason=ISSUE.UNREADABLE)),
         )
     }
     rows = []
@@ -277,12 +283,14 @@ def sheet_rows(exam):
         AnswerSheet.objects.filter(exam=exam)
         .select_related("student__user")
         .annotate(
-            unreadable=Count("answers", filter=Q(answers__result=SheetAnswer.Result.UNREADABLE)),
+            issue_count=Count(
+                "answers", filter=Q(answers__issue_reason__in=SheetAnswer.BLOCKING_ISSUES)
+            ),
         )
         .annotate(
             settled=Q(is_corrected=True)
             & Q(match_status=AnswerSheet.MatchStatus.MATCHED)
-            & Q(unreadable=0)
+            & Q(issue_count=0)
         )
         .order_by("settled", "sheet_id")
     )
@@ -309,6 +317,9 @@ def sheet_detail(sheet):
                 "points": question.points,
                 "marked": row.marked if row else None,
                 "result": row.result if row else None,
+                # 채점 결과와 축이 다르다 — 둘 다 없을 수도, 하나만 있을 수도 있다.
+                "issue_reason": row.issue_reason if row else None,
+                "issue": bool(row and row.issue_reason),
                 "is_corrected": bool(row and row.is_corrected),
             }
         )
@@ -320,12 +331,12 @@ def sheet_detail(sheet):
     }
 
 
-def _unreadable_count(sheet):
-    """못 읽은 줄 수. 목록은 annotate 로 미리 세어 오고, 상세는 그 자리에서 센다."""
-    counted = getattr(sheet, "unreadable", None)
+def _issue_count(sheet):
+    """사람이 손대야 할 줄 수. 목록은 annotate 로 미리 세고, 상세는 그때 센다."""
+    counted = getattr(sheet, "issue_count", None)
     if counted is not None:
         return counted
-    return sheet.answers.filter(result=SheetAnswer.Result.UNREADABLE).count()
+    return sheet.answers.filter(issue_reason__in=SheetAnswer.BLOCKING_ISSUES).count()
 
 
 def _sheet_row(sheet):
@@ -335,8 +346,8 @@ def _sheet_row(sheet):
         "is_corrected": sheet.is_corrected,
         "recognized_name": sheet.recognized_name,
         "recognized_matching_key": sheet.recognized_matching_key,
-        # 기계가 못 읽은 줄 수. 대조가 `정상` 이어도 이게 있으면 사람이 봐야 한다.
-        "unreadable_count": _unreadable_count(sheet),
+        # 사람이 손대야 할 줄 수(복수마킹·판독불가). 대조가 `정상` 이어도 남는다.
+        "issue_count": _issue_count(sheet),
         # 모의고사(자기보고) 전용. 미니테스트 장에서는 언제나 null 이다.
         "recognized_score": sheet.recognized_score,
         # 그 점수가 버블이 아니라 손글씨 OCR 에서 왔다는 표시. 값만 보면 구분이

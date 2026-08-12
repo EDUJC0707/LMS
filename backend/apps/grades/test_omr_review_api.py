@@ -23,6 +23,7 @@ from .test_grade_report_api import make_student, make_user
 
 _MS = AnswerSheet.MatchStatus
 _R = SheetAnswer.Result
+_I = SheetAnswer.Issue
 
 
 class SheetReviewTests(TestCase):
@@ -60,7 +61,9 @@ class SheetReviewTests(TestCase):
             recognized_matching_key="박모름0002",
         )
         SheetAnswer.objects.create(sheet=cls.orphan, question=cls.q1, marked="3", result=_R.CORRECT)
-        SheetAnswer.objects.create(sheet=cls.orphan, question=cls.q2, marked=None, result=_R.BLANK)
+        SheetAnswer.objects.create(
+            sheet=cls.orphan, question=cls.q2, marked=None, issue_reason=_I.BLANK
+        )
 
     def setUp(self):
         self.client.force_login(self.admin)
@@ -133,7 +136,8 @@ class SheetReviewTests(TestCase):
         self.patch(self.orphan, {"answers": {"1": ""}})
 
         row = SheetAnswer.objects.get(sheet=self.orphan, question=self.q1)
-        self.assertEqual((row.marked, row.result, row.is_corrected), (None, _R.BLANK, True))
+        self.assertEqual((row.marked, row.result, row.issue_reason), (None, None, _I.BLANK))
+        self.assertTrue(row.is_corrected)
 
     def test_confirming_locks_without_changing_values(self):
         """기계 판독이 맞다는 확인 — 값도 대조 상태도 그대로, 잠금만 걸린다."""
@@ -178,3 +182,20 @@ class SheetReviewTests(TestCase):
         res = self.client.get(url)
         self.assertEqual(res.status_code, 200)
         self.assertEqual(b"".join(res.streaming_content), b"\xff\xd8\xff")
+
+
+class SettledSheetEditTests(SheetReviewTests):
+    """보정할 게 없어도 고칠 수 있어야 한다 — 끝난 장도 나중에 틀린 게 보인다."""
+
+    def test_a_settled_sheet_is_still_in_the_list(self):
+        rows = self.client.get(f"/api/admin/exams/{self.exam.pk}/sheets").json()["sheets"]
+
+        self.assertIn(self.settled.pk, [r["sheet_id"] for r in rows])
+
+    def test_a_settled_sheet_can_still_be_edited(self):
+        """이미 `정상`·확정된 장이어도 PATCH 가 통해야 한다."""
+        res = self.patch(self.settled, {"answers": {"1": "2"}})
+
+        self.assertEqual(res.status_code, 200)
+        row = SheetAnswer.objects.get(sheet=self.settled, question=self.q1)
+        self.assertEqual(row.marked, "2")

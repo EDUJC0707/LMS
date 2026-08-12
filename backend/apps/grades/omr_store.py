@@ -68,6 +68,7 @@ from .models import AnswerSheet, Exam, Question, Score, SheetAnswer
 
 _MS = AnswerSheet.MatchStatus
 _R = SheetAnswer.Result
+_I = SheetAnswer.Issue
 
 #: 재판독이 갱신하는 시트 필드 — 시트 보정(is_corrected)이 잠그는 것들.
 _SHEET_MACHINE_FIELDS = (
@@ -247,15 +248,17 @@ def _write_corrections(sheet, answers):
         if question is None:
             raise ValueError(f"{q_number}번 문항이 이 시험에 없습니다.")
         choices = tuple(int(part) for part in str(marked).split(",") if part.strip())
-        value, result = _verdict(choices, question.answer)
+        value, result, issue = _verdict(choices, question.answer)
         row = rows.get(question.question_id)
         if row is None:
             SheetAnswer.objects.create(
-                sheet=sheet, question=question, marked=value, result=result, is_corrected=True
+                sheet=sheet, question=question, marked=value,
+                result=result, issue_reason=issue, is_corrected=True,
             )
         else:
-            row.marked, row.result, row.is_corrected = value, result, True
-            row.save(update_fields=["marked", "result", "is_corrected"])
+            row.marked, row.result, row.issue_reason = value, result, issue
+            row.is_corrected = True
+            row.save(update_fields=["marked", "result", "issue_reason", "is_corrected"])
 
 
 def _apply_answers(sheet, exam, readings, created):
@@ -283,19 +286,22 @@ def _apply_answers(sheet, exam, readings, created):
                 # 떨어진다(영원히 문항이 없으므로 자연 무시).
                 missing.append(q_number)
                 continue
-            marked, result = _verdict(readings[q_number], question.answer)
+            marked, result, issue = _verdict(readings[q_number], question.answer)
             row = existing.pop(question.question_id, None)
             if row is None:
                 to_create.append(
-                    SheetAnswer(sheet=sheet, question=question, marked=marked, result=result)
+                    SheetAnswer(
+                        sheet=sheet, question=question,
+                        marked=marked, result=result, issue_reason=issue,
+                    )
                 )
                 written += 1
             elif row.is_corrected:
                 kept += 1
             else:
                 written += 1
-                if (row.marked, row.result) != (marked, result):
-                    row.marked, row.result = marked, result
+                if (row.marked, row.result, row.issue_reason) != (marked, result, issue):
+                    row.marked, row.result, row.issue_reason = marked, result, issue
                     to_update.append(row)
     kept += sum(1 for row in existing.values() if row.is_corrected)
     stale_ids = [row.pk for row in existing.values() if not row.is_corrected]
@@ -304,28 +310,31 @@ def _apply_answers(sheet, exam, readings, created):
         removed = SheetAnswer.objects.filter(pk__in=stale_ids).delete()[0]
     SheetAnswer.objects.bulk_create(to_create)
     if to_update:
-        SheetAnswer.objects.bulk_update(to_update, ["marked", "result"])
+        SheetAnswer.objects.bulk_update(to_update, ["marked", "result", "issue_reason"])
     return written, kept, removed, missing
 
 
 def _verdict(choices, answer):
-    """마킹 튜플 → (marked, result). `None` 은 그 줄을 못 읽었다는 뜻이다.
+    """마킹 튜플 → (marked, result, issue). 축이 둘이다(models.SheetAnswer).
 
-    무응답·복수마킹은 판독 사실(엔진 소유 — 어느 쪽이 진짜인지는 사람이
-    가른다, PRD 마킹 이상 경고), 단일 마킹은 키 대조로 즉시 정오 확정.
-    복수는 "1,3" 처럼 쉼표로 남긴다 — 보정 화면이 무엇이 겹쳤는지 봐야 한다.
+    깨끗한 단일 마킹일 때만 채점이 성립한다 — 그때 result 가 정답/오답이고
+    issue 는 없다. 나머지 셋은 **채점이 아니라 사실**이라 result 가 NULL 이고
+    issue 가 왜인지 말한다:
 
-    `판독불가` 는 무응답과 다르다: 빈칸은 학생이 안 푼 것이고, 판독불가는
-    기계가 못 읽은 것이다. 뭉치면 안 푼 문항과 놓친 문항이 같아 보인다.
+    - `무응답` — 학생이 안 풀었다
+    - `복수마킹` — 진한 칸이 둘 이상. 어느 쪽이 진짜인지 기계는 안 고른다
+      (X 로 지운 것인지 겹쳐 칠한 것인지 못 가른다). "1,3" 으로 둘 다 남긴다
+    - `판독불가` — 기계가 못 읽었다. 무응답과 뭉치면 **학생이 안 푼 문항과
+      기계가 놓친 문항이 같아 보인다**
     """
     if choices is None:
-        return None, _R.UNREADABLE
+        return None, None, _I.UNREADABLE
     if not choices:
-        return None, _R.BLANK
+        return None, None, _I.BLANK
     if len(choices) > 1:
-        return ",".join(str(choice) for choice in sorted(choices)), _R.MULTI
+        return ",".join(str(choice) for choice in sorted(choices)), None, _I.MULTI
     marked = str(choices[0])
-    return marked, _R.CORRECT if marked == answer.strip() else _R.WRONG
+    return marked, (_R.CORRECT if marked == answer.strip() else _R.WRONG), None
 
 
 def _apply_score(sheet, exam):

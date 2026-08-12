@@ -36,10 +36,10 @@ import type { DirectoryStudent } from "./directory";
 import "./manage.css";
 import type { ExamKind, SheetDetail, SheetQuestionRow, SheetRow } from "./types";
 
-const RESULT_TONE: Record<string, "success" | "danger" | "warning" | "outline"> = {
+//: 채점 결과와 이상 사유는 축이 다르다 — 한 줄에 둘 다 있을 수는 없다.
+const TONE: Record<string, "success" | "danger" | "warning" | "outline"> = {
   정답: "success",
   오답: "danger",
-  // 기계가 못 읽은 줄. 학생이 안 푼 것(무응답)과 다른 사실이라 톤도 가른다.
   판독불가: "danger",
   복수마킹: "warning",
   무응답: "outline",
@@ -128,8 +128,8 @@ export default function SheetReviewPage() {
             <Badge tone={current.is_corrected ? "success" : "warning"}>
               {current.match_status}
             </Badge>
-            {current.unreadable_count > 0 && (
-              <Badge tone="danger">판독불가 {current.unreadable_count}</Badge>
+            {current.issue_count > 0 && (
+              <Badge tone="danger">확인 {current.issue_count}</Badge>
             )}
             <Button
               size="sm"
@@ -257,8 +257,9 @@ function MarkRow({
         maxLength={9}
         onChange={(e) => onChange(e.target.value)}
       />
-      {question.result && (
-        <Badge tone={RESULT_TONE[question.result] ?? "outline"}>{question.result}</Badge>
+      {question.result && <Badge tone={TONE[question.result] ?? "outline"}>{question.result}</Badge>}
+      {question.issue_reason && (
+        <Badge tone={TONE[question.issue_reason] ?? "warning"}>{question.issue_reason}</Badge>
       )}
       {question.is_corrected && <Badge tone="outline">보정</Badge>}
     </li>

@@ -120,8 +120,10 @@ class ExamAdminListTests(ExamAdminFixtureMixin, TestCase):
         self.assertEqual(e2["taker_count"], 4)
         self.assertEqual(e2["score_count"], 4)
         self.assertEqual(e2["average"], 70.0)  # 캐시 없음 → 집계
-        self.assertEqual(e2["processing_status"], "완료")
-        self.assertEqual(e2["pending_sheet_count"], 0)
+        # B 의 5번이 복수마킹이라 대조가 `정상` 이어도 사람이 골라야 한다
+        # (2026-08-12 이상 축 분리 — 그 전에는 이 장이 완료로 지나갔다).
+        self.assertEqual(e2["processing_status"], "보정필요")
+        self.assertEqual(e2["pending_sheet_count"], 1)
         e1 = rows[self.exam1.pk]
         self.assertEqual(e1["taker_count"], 1)
         self.assertEqual(e1["average"], 25.0)  # 저장 캐시 우선(실측 20 아님)
@@ -175,8 +177,9 @@ class ExamAdminDetailTests(ExamAdminFixtureMixin, TestCase):
                 "stddev": 10.0,
                 "highest_score": 80.0,
                 "top30_score": 80.0,
-                "processing_status": "완료",
-                "pending_sheet_count": 0,
+                # B 의 5번 복수마킹 — 매칭은 됐지만 조교가 골라야 한다
+                "processing_status": "보정필요",
+                "pending_sheet_count": 1,
             },
         )
 

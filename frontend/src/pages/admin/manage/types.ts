@@ -275,8 +275,8 @@ export interface SheetRow {
   recognized_score: number | null;
   /** 버블이 아니라 손글씨 OCR 에서 온 점수 — 조교가 눈으로 대조해야 한다 */
   score_from_handwriting: boolean;
-  /** 기계가 못 읽은 줄 수. 대조가 `정상` 이어도 이게 있으면 사람이 봐야 한다 */
-  unreadable_count: number;
+  /** 사람이 손대야 할 줄 수(복수마킹·판독불가). 대조가 `정상` 이어도 남는다 */
+  issue_count: number;
   /** 명부(GET /admin/students)와 같은 행 모양 — 학생 선택기가 그대로 받는다 */
   student: DirectoryStudent | null;
 }
@@ -288,8 +288,12 @@ export interface SheetQuestionRow {
   points: number;
   /** 판독된 마킹. 복수는 "1,3", 무응답·판독 없음은 null */
   marked: string | null;
-  /** 정답/오답/무응답/복수마킹. 그 장에 행이 아직 없으면 null */
+  /** 정답/오답. **채점이 성립할 때만** 값이 있다 — 나머지는 null */
   result: string | null;
+  /** 무응답/복수마킹/판독불가. 채점 결과와 축이 다르다 */
+  issue_reason: string | null;
+  /** issue_reason 이 있으면 true — 조교가 봐야 하는 줄 */
+  issue: boolean;
   is_corrected: boolean;
 }
 

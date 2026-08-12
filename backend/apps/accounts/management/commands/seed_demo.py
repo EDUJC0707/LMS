@@ -515,7 +515,7 @@ class Command(BaseCommand):
                         marked, result = question.answer, SheetAnswer.Result.CORRECT
                         total += 5
                     elif roll < ability + 0.05:
-                        marked, result = None, SheetAnswer.Result.BLANK
+                        marked, result = None, None
                     else:
                         wrong = str(int(question.answer) % 5 + 1)
                         marked, result = wrong, SheetAnswer.Result.WRONG

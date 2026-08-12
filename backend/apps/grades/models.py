@@ -378,13 +378,28 @@ class SheetAnswer(models.Model):
     """
 
     class Result(models.TextChoices):
+        """**채점** 결과. 깨끗한 단일 마킹일 때만 값이 있고, 그 밖에는 NULL 이다."""
+
         CORRECT = "정답", "정답"
         WRONG = "오답", "오답"
+
+    class Issue(models.TextChoices):
+        """**이상** 사유 — 조교가 이 줄을 봐야 하는 이유. 없으면 NULL 이다.
+
+        채점 결과와 축이 다르다. 복수마킹된 줄은 정답도 오답도 아니라 채점 자체가
+        안 되고, 무응답은 학생이 안 푼 사실이며, 판독불가는 기계가 못 읽은 사실이다.
+        한 컬럼에 섞어 두면 "정답률"을 낼 때마다 무엇을 빼야 하는지 매번 따져야 한다.
+        """
+
         BLANK = "무응답", "무응답"
         MULTI = "복수마킹", "복수마킹"
-        # 그 줄만 못 읽었다 — 빈칸이라기엔 크고 마킹이라기엔 작은 잉크가 나왔다
-        # (접힘·잘림으로 희석된 마킹). 장은 멀쩡하므로 나머지 줄은 그대로 산다.
+        # 빈칸이라기엔 크고 마킹이라기엔 작은 잉크(접힘·잘림으로 희석된 마킹).
+        # 장은 멀쩡하므로 나머지 줄은 그대로 산다.
         UNREADABLE = "판독불가", "판독불가"
+
+    #: 사람이 **손을 대야** 하는 사유. 무응답은 학생이 안 푼 사실이라 뺀다 —
+    #: 표시는 하되 보정 대기로 잡지 않는다(안 그러면 큐가 무응답으로 덮인다).
+    BLOCKING_ISSUES = frozenset({Issue.MULTI, Issue.UNREADABLE})
 
     id = models.BigAutoField(primary_key=True)
     sheet = models.ForeignKey(
@@ -402,7 +417,13 @@ class SheetAnswer(models.Model):
         verbose_name="문항",
     )
     marked = models.CharField("마킹 값", max_length=10, null=True, blank=True)  # noqa: DJ001
-    result = models.CharField("채점 결과", max_length=10, choices=Result.choices)
+    result = models.CharField(  # noqa: DJ001
+        # NULL = 채점할 수 없었다(issue_reason 이 왜인지 말한다).
+        "채점 결과", max_length=10, choices=Result.choices, null=True, blank=True
+    )
+    issue_reason = models.CharField(  # noqa: DJ001
+        "이상 사유", max_length=10, choices=Issue.choices, null=True, blank=True
+    )
     is_corrected = models.BooleanField("수동 보정", default=False)
     extra_practice_marked = models.BooleanField("추가 마킹", default=False)
     extra_mark_corrected = models.BooleanField("추가 마킹 보정", default=False)
