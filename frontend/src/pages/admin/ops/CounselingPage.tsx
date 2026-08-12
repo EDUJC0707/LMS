@@ -349,7 +349,7 @@ function RecordPanel({
         {/* 아래 Field 들과 같은 위계의 칸이다 — 라벨 조판도 같은 것을 쓴다.
             툴바 라벨(11px 대문자 자간)이었을 때는 같은 폼 안에서 이 칸만
             다른 크기·색으로 떠 위계가 하나 더 있는 것처럼 읽혔다. */}
-        {(talk.data?.lines.length ?? 0) > 0 && (
+        {(talk.data?.transcript || talk.data?.recording_url) && (
           <div className="ui-field">
             <span className="ui-field__label">통화 내용</span>
             <div className="ui-stack ui-stack--sm">
@@ -358,11 +358,11 @@ function RecordPanel({
                   녹음 듣기
                 </a>
               )}
-              {talk.data?.lines.map((line, i) => (
-                <div key={i} className="ops-sub">
-                  <b>{line.speaker}</b> {line.said}
-                </div>
-              ))}
+              {talk.data?.transcript && (
+                <pre className="ops-sub" style={{ whiteSpace: "pre-wrap", margin: 0 }}>
+                  {talk.data.transcript}
+                </pre>
+              )}
             </div>
           </div>
         )}

@@ -186,6 +186,10 @@ class AbsenceCounseling(models.Model):
     # 채널톡은 통화 ID 를 안 준다 — 유일한 안정 참조가 userChatId 다.
     # 녹음·STT 도 이 값으로 찾는다.
     provider_ref = models.CharField("통화 참조", max_length=64, blank=True, default="")
+    # 전사는 **우리가 갖는다**. 채널톡은 90일까지만 되돌려 주므로 읽어서 보여주기만
+    # 하면 그 뒤엔 근거가 사라진다. 녹음은 반대로 저장하지 않는다 — 서명 URL 이라
+    # 만료된다(provider_ref 로 볼 때마다 새로 받는다).
+    call_transcript = models.TextField("통화 전사", blank=True, default="")
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)
 
     class Meta:

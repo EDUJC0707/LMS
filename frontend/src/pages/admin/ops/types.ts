@@ -173,7 +173,8 @@ export interface CounselCall {
 
 /** 통화 전사 한 줄 — 자동으로 메모에 들어가지 않는다. 조교가 읽고 확정한다. */
 export interface CounselTranscript {
-  lines: { speaker: string; said: string }[];
+  /** 저장된 전사 — 채널톡은 90일까지만 되돌려 주므로 우리가 갖는다 */
+  transcript: string;
   /** 만료되는 서명 URL — 저장하지 않고 볼 때마다 받는다 */
   recording_url: string | null;
 }

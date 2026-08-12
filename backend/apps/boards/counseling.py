@@ -29,6 +29,7 @@ from apps.accounts.models import ParentStudent
 from apps.notifications.models import Notification
 from apps.notifications.sending import queue as queue_notification
 
+from . import channeltalk
 from .models import AbsenceCounseling
 
 # 학부모 1차 통화 최대 시도 횟수(8-18) — 도달 시 문자 종결.
@@ -177,6 +178,7 @@ def record_call(card, result, fields, actor):
         if ref:
             card.provider = AbsenceCounseling.Provider.CHANNELTALK
             card.provider_ref = ref
+            card.call_transcript = _fetch_transcript(ref)
         connected = result == "연결"
         card.status = (
             AbsenceCounseling.Status.COMPLETED
@@ -218,6 +220,19 @@ def open_card(student, attendance, target):
         target=target,
         status=AbsenceCounseling.Status.PENDING,
     )
+
+
+def _fetch_transcript(user_chat_id):
+    """전사를 받아 한 덩어리 글로. 실패해도 기록 자체는 저장돼야 한다.
+
+    채널톡이 느리거나 죽었다고 통화 기록을 못 남기면 조교가 다시 걸어야 하는
+    것으로 읽힌다 — 여기서 막을 값어치가 없다. 나중에 전사 조회로 다시 볼 수 있다.
+    """
+    try:
+        lines = channeltalk.transcript(user_chat_id)
+    except Exception:  # noqa: BLE001 — 업체 장애가 기록을 막지 않는다
+        return ""
+    return "\n".join(f"{line['speaker']}: {line['said']}" for line in lines)
 
 
 def phone_for(card):

@@ -337,10 +337,12 @@ class CounselingTranscriptView(APIView):
         if card is None:
             return _not_found()
         if not card.provider_ref:
-            return Response({"lines": [], "recording_url": None})
+            return Response({"transcript": "", "recording_url": None})
         return Response(
             {
-                "lines": channeltalk.transcript(card.provider_ref),
+                # 전사는 저장분을 쓴다 — 채널톡은 90일까지만 되돌려 준다.
+                "transcript": card.call_transcript,
+                # 녹음은 매번 새로 받는다 — 서명 URL 이라 저장하면 죽는다.
                 "recording_url": channeltalk.recording_url(card.provider_ref),
             }
         )

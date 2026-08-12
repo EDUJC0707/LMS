@@ -443,25 +443,77 @@ class CounselingTranscriptTests(CounselingFixtureMixin, TestCase):
         self.login()
         self.card = self.make_card()
 
-    def test_reads_the_call_stored_on_the_card(self):
-        self.patch_card(
-            self.card.counsel_id, {"result": "연결", "provider_ref": "chat-1"}
-        )
+    def test_shows_the_transcript_we_saved_not_a_fresh_fetch(self):
+        # 저장분을 쓰는 이유: 채널톡은 90일까지만 되돌려 준다.
         lines = [{"speaker": "고객", "said": "아파서 못 갔어요"}]
+        with patch.object(channeltalk, "transcript", return_value=lines):
+            self.patch_card(
+                self.card.counsel_id, {"result": "연결", "provider_ref": "chat-1"}
+            )
 
-        with patch.object(channeltalk, "transcript", return_value=lines) as read, patch.object(
+        with patch.object(channeltalk, "transcript") as refetch, patch.object(
             channeltalk, "recording_url", return_value="https://x/y.mp4"
         ):
             res = self.client.get(
                 f"/api/admin/counseling/{self.card.counsel_id}/transcript"
             )
 
-        self.assertEqual(read.call_args.args[0], "chat-1")
-        self.assertEqual(res.json()["lines"], lines)
+        refetch.assert_not_called()
+        self.assertIn("아파서 못 갔어요", res.json()["transcript"])
+        # 녹음만 매번 새로 받는다 — 서명 URL 이 만료되므로 저장할 수 없다.
         self.assertEqual(res.json()["recording_url"], "https://x/y.mp4")
 
     def test_card_without_a_stored_call_has_nothing_to_show(self):
         res = self.client.get(f"/api/admin/counseling/{self.card.counsel_id}/transcript")
 
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.json(), {"lines": [], "recording_url": None})
+        self.assertEqual(res.json(), {"transcript": "", "recording_url": None})
+
+
+class CounselingTranscriptStoredTests(CounselingFixtureMixin, TestCase):
+    """전사는 자동으로 들어간다 — 메모는 조교가 따로 쓰는 칸이다.
+
+    채널톡은 90일까지만 되돌려 주므로 읽어서 보여주기만 하면 그 뒤엔 근거가
+    사라진다. 녹음은 반대로 저장하지 않는다 — 서명 URL 이라 만료된다.
+    """
+
+    def setUp(self):
+        self.login()
+        self.card = self.make_card()
+
+    def test_transcript_is_saved_with_the_call(self):
+        lines = [
+            {"speaker": "상담원", "said": "안녕하세요"},
+            {"speaker": "고객", "said": "아파서 못 갔어요"},
+        ]
+        with patch.object(channeltalk, "transcript", return_value=lines):
+            self.patch_card(
+                self.card.counsel_id, {"result": "연결", "provider_ref": "chat-1"}
+            )
+
+        self.card.refresh_from_db()
+        self.assertIn("아파서 못 갔어요", self.card.call_transcript)
+        self.assertIn("상담원", self.card.call_transcript)
+
+    def test_memo_is_the_assistants_own_and_is_not_overwritten(self):
+        said = [{"speaker": "고객", "said": "네"}]
+        with patch.object(channeltalk, "transcript", return_value=said):
+            self.patch_card(
+                self.card.counsel_id,
+                {"result": "연결", "provider_ref": "chat-1", "call_memo": "동보 안내함"},
+            )
+
+        self.card.refresh_from_db()
+        self.assertEqual(self.card.call_memo, "동보 안내함")
+
+    def test_a_failing_fetch_never_blocks_the_record(self):
+        # 채널톡이 느리거나 죽어도 통화 기록 자체는 저장돼야 한다.
+        with patch.object(channeltalk, "transcript", side_effect=RuntimeError("boom")):
+            res = self.patch_card(
+                self.card.counsel_id, {"result": "연결", "provider_ref": "chat-1"}
+            )
+
+        self.assertEqual(res.status_code, 200)
+        self.card.refresh_from_db()
+        self.assertEqual(self.card.status, AbsenceCounseling.Status.COMPLETED)
+        self.assertEqual(self.card.call_transcript, "")
