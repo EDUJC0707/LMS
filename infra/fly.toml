@@ -64,11 +64,8 @@ primary_region = "nrt"     # 도쿄
   # 할 상대가 없는데 Redis 명령만 계속 먹는다 — 정액제라도 끄는 편이 조용하다.
   worker = ".venv/bin/celery -A config worker -B -l info --without-gossip --without-mingle --without-heartbeat"
 
-# 워커는 파이썬 하나라 web 만큼 안 준다.
-[[vm]]
-  processes = ["worker"]
-  size = "shared-cpu-1x"
-  memory = "256mb"
+# 워커 크기는 아래 [[vm]] 이 web 과 함께 정한다(512mb). 여기 256mb 로 따로 잡았다가
+# 아래 블록에 밀렸다 — Django + Celery 를 올리면 256mb 는 빠듯해서 그대로 둔다.
 
 [http_service]
   internal_port = 8000
