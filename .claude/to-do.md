@@ -83,7 +83,7 @@
   워커 머신 1대. 요청 → 브로커 → 워커 → 결과 기록까지 운영에서 확인했다.
   - **supercronic 은 걷어냈다** — `crontab` 의 클리닉 수집이 `CELERY_BEAT_SCHEDULE` 에
     같은 20분 주기로 또 있어서 두 번 돌 뻔했다. 이제 beat 하나가 맡는다.
-    `infra/crontab` 과 Dockerfile 의 supercronic 설치는 **삭제 확인 대기**
+    `infra/crontab` 과 Dockerfile 의 supercronic 설치는 **삭제 완료**(2026-08-12)
   - **워커는 반드시 1대다** — `-B`(beat 내장)라서 2대가 되면 같은 시각에 스케줄을
     두 번 발행한다. 늘릴 일이 생기면 beat 를 분리할 것
   - 종량제로 만들었다가 `fly.toml` 의 2026-08-05 메모(Upstash: Celery 는 빈 큐도
@@ -379,7 +379,7 @@
   `ENV SENTRY_RELEASE`, CI 와 `make deploy` 가 넘긴다. **`fly deploy` 를 손으로 직접
   치면 태그가 사라지므로 `make deploy` 를 쓸 것.** 다음 배포부터 붙는다
 - ~~Celery 워커 + Redis 기동~~ → **안 세운다**(2026-08-05 결정). 주기 작업은
-  **supercronic** 이 맡는다 — `infra/crontab` + fly.toml `cron` 프로세스 그룹,
+  ~~**supercronic** 이 맡는다 — `infra/crontab` + fly.toml `cron` 프로세스 그룹,~~ **→ 2026-08-12 Celery beat 로 이관(decisions §9)**,
   머신 하나 월 $2.02. Celery 로 가면 워커 머신에 **Redis 가 얹혀 월 $12~13** 이 되는데
   (Upstash 공식 문서: 워커가 큐가 비어도 계속 폴링해 종량제 비용이 커지니 정액
   $10/월 권장), 그 돈이 나가는 브로커는 **웹 요청이 일을 떠넘길 때** 쓰는 부품이라
@@ -420,7 +420,7 @@
 ## 클리닉 화상 — **끝났다** (2026-08-11, `meet` 브랜치 닫음)
 
 배정→방 생성→전사·요약 수집이 **실서비스에서 돌고, 실제 클리닉 1건으로 끝까지
-확인됐다**(2026-08-11). 20분 주기 supercronic(`infra/crontab`), 머신 월 $2.02.
+확인됐다**(2026-08-11). 20분 주기 ~~supercronic(`infra/crontab`)~~ → **Celery beat**(2026-08-12 이관).
 경위·결정 근거는 `progress.md`.
 
 **다른 트랙이 알아야 할 것**
