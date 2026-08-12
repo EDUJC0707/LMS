@@ -12,10 +12,15 @@ DEBUG = False
 # 버킷이 비면 base 가 파일시스템으로 떨어지고, Fly 컨테이너 디스크는 **재배포마다
 # 사라진다.** 그러면 OMR 스캔과 워크북 사진이 조용히 날아가고 재판독도 못 한다.
 # 조용히 도는 것보다 안 뜨는 편이 낫다 — 그때는 아직 아무것도 안 잃었다.
-if not env("AWS_STORAGE_BUCKET_NAME", default=""):
+# **base 가 읽는 것과 같은 이름을 본다.** Tigris 가 꽂아 주는 이름은 `BUCKET_NAME`,
+# django-storages 가 읽는 이름은 `AWS_STORAGE_BUCKET_NAME` 이라 한쪽만 보면
+# 스토리지가 멀쩡히 붙어 있는데도 배포가 막힌다(2026-08-12 실제로 막혔다).
+# env 를 직접 읽는다 — `from .base import *` 는 캐시된 모듈 값을 가져오므로
+# import 순서에 결과가 매인다.
+if not (env("BUCKET_NAME", default="") or env("AWS_STORAGE_BUCKET_NAME", default="")):
     raise ImproperlyConfigured(
-        "AWS_STORAGE_BUCKET_NAME 이 없습니다. 운영에서 파일시스템 스토리지를 쓰면 "
-        "재배포 때 스캔·사진이 사라집니다(fly secrets 로 주입)."
+        "오브젝트 스토리지 버킷이 없습니다(BUCKET_NAME 또는 AWS_STORAGE_BUCKET_NAME). "
+        "운영에서 파일시스템 스토리지를 쓰면 재배포 때 스캔·사진이 사라집니다."
     )
 
 # Fly 프록시 뒤 HTTPS 인식
