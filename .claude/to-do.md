@@ -307,8 +307,8 @@
   *"clear and readable manner to all users, with the wording unaltered"* 를 요구한다.
   *"should not be hidden or disassociated from the image"* 이고 **링크가 살아 있어야** 한다.
   크레딧 문구는 `assets/INDEX.md` 에 적어 뒀다.
-  **화면에 넣는 것은 UI 문구라 대표 판단이 필요하다**(CLAUDE.md §8) — 넣는다면
-  푸터 한 줄이 표준 관행이다. 지금 쓰는 catseye 만이 아니라 넷 다 대상이다
+  **2026-08-12 대표 판단: 일단 무시.** 다시 꺼내지 말 것 — 런칭 전 점검 때 한 번 더 보면 된다.
+  넣게 되면 푸터 한 줄이 표준 관행이고, 지금 쓰는 catseye 만이 아니라 넷 다 대상이다
 - [ ] **커리큘럼 강좌 라인업 실제 값** — `data.js`에 기존 교재로 임시 배치. 4단계 × 2트랙 축에 실제 라인업 재배치 필요
 - [ ] **정오표 데이터 소스** — 지금 **샘플 3건**(2026-07-30 생성, `assets/errata/`).
   실 데이터가 오면 `data.js` 의 `ERRATA` 만 갈아 끼우면 된다(화면은 이 배열만 읽는다).
