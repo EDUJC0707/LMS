@@ -19,7 +19,7 @@ from django.test import TestCase
 from apps.accounts.features import FeatureKey
 from apps.accounts.models import StaffFeatureGrant, User
 
-from .models import Exam
+from .models import AnswerSheet, Exam
 from .test_grade_report_api import GradeFixtureMixin, make_user
 
 ADMIN_EXAMS = "/api/admin/exams"
@@ -362,3 +362,56 @@ class SheetUploadTests(ExamAdminFixtureMixin, TestCase):
 
         self.assertEqual(res.status_code, 400)
         delay.assert_not_called()
+
+
+class AnonymousSheetStatsTests(ExamAdminFixtureMixin, TestCase):
+    """익명 확정 장은 목록·상세 **양쪽** 모집단에 든다 (decisions.md 「익명 점수」).
+
+    상세만 `scores` 행을 세면 같은 시험에 두 개의 응시자 수가 나간다 — 익명 장은
+    학생 FK 가 NOT NULL 이라 `scores` 행이 아예 없기 때문이다.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        # exam2 는 4명·60/80/80/60 (합 280, 평균 70). 여기에 90점 익명 한 장.
+        cls.anon = AnswerSheet.objects.create(
+            exam=cls.exam2,
+            scan_image_path="omr/scans/anon.jpg",
+            match_status=AnswerSheet.MatchStatus.INVALID,
+            recognized_score=90,
+            is_corrected=True,
+        )
+
+    def stats(self):
+        self.login_admin()
+        row = next(
+            r
+            for r in self.client.get(ADMIN_EXAMS).json()["exams"]
+            if r["exam_id"] == self.exam2.pk
+        )
+        detail = self.client.get(self.detail_url(self.exam2)).json()["stats"]
+        return row, detail
+
+    def test_list_and_detail_report_the_same_taker_count(self):
+        row, detail = self.stats()
+
+        self.assertEqual(row["taker_count"], 5)
+        self.assertEqual(detail["taker_count"], row["taker_count"])
+
+    def test_the_taker_count_and_the_average_share_a_population(self):
+        """수는 4명인데 평균은 5명치면 화면이 스스로와 모순된다."""
+        row, detail = self.stats()
+
+        self.assertEqual(row["average"], 74.0)  # (280+90)/5
+        self.assertEqual(detail["average"], 74.0)
+        self.assertEqual(detail["taker_count"], 5)
+
+    def test_an_unconfirmed_anonymous_sheet_counts_for_neither(self):
+        """조교가 아직 안 본 장까지 세면 주인을 찾는 순간 평균이 바뀐다."""
+        AnswerSheet.objects.filter(pk=self.anon.pk).update(is_corrected=False)
+
+        row, detail = self.stats()
+
+        self.assertEqual((row["taker_count"], detail["taker_count"]), (4, 4))
+        self.assertEqual((row["average"], detail["average"]), (70.0, 70.0))

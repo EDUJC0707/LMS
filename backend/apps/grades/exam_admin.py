@@ -17,7 +17,7 @@ from django.db.models import Count, F, Q, Sum
 
 from apps.accounts import student_directory
 
-from . import omr_store, report
+from . import omr_store, report, scoring
 from .models import AnswerSheet, Exam, Question, Score, SheetAnswer
 
 
@@ -60,8 +60,12 @@ def build_exam_list():
 def build_exam_detail(exam):
     """상세 — 학생별 점수 테이블(정렬·석차) + 문항별 정답률(보정 화면 근거)."""
     pending_count = _pending_sheet_counts([exam.exam_id]).get(exam.exam_id, 0)
-    stats = report.summary_stats(exam)
-    stats.setdefault("taker_count", exam.taker_count)
+    # 응시자 수도 평균과 같은 모집단이어야 한다 — 목록은 익명 장을 더하는데
+    # 상세만 `scores` 행을 세면 같은 시험에 두 수가 나간다(익명 장은 학생 FK 가
+    # NOT NULL 이라 `scores` 행이 아예 없다). 점수 목록을 그대로 넘겨 통계와
+    # 응시자 수가 한 번 읽은 같은 행에서 나오게 한다.
+    anonymous = scoring.anonymous_totals(exam)
+    stats = report.summary_stats(exam, anonymous)
     scores = list(
         Score.objects.filter(exam=exam)
         .select_related("student__user")
@@ -79,7 +83,7 @@ def build_exam_detail(exam):
             "notice": exam.notice,
         },
         "stats": {
-            "taker_count": stats["taker_count"],
+            "taker_count": exam.taker_count + len(anonymous),
             "score_count": exam.score_count,
             "average": stats["average"],
             "stddev": stats["stddev"],

@@ -142,8 +142,13 @@ def build_report(student, exam_id):
 # --- 공용 통계 부품(관리자 시험 조회가 재사용) ----------------------------
 
 
-def summary_stats(exam):
-    """평균·표준편차·최고점·상위30% — 캐시 저장값 우선, 빠진 항목만 집계 보충."""
+def summary_stats(exam, anonymous=None):
+    """평균·표준편차·최고점·상위30% — 캐시 저장값 우선, 빠진 항목만 집계 보충.
+
+    `anonymous` 는 이미 읽어 둔 익명 점수 목록이다(`scoring.anonymous_totals`).
+    응시자 수까지 함께 내야 하는 호출자는 그 수를 세려고 어차피 같은 행을
+    읽으므로, 넘겨받아 **같은 답안지를 두 번 묻지 않는다.**
+    """
     stats = {
         "average": exam.avg_score,
         "stddev": exam.stddev,
@@ -156,9 +161,10 @@ def summary_stats(exam):
     taken = exam.scores.filter(is_taken=True, total_score__isnull=False)
     # 익명 장(점수만 주고 신원을 안 밝힌 학생)도 같은 시험을 본 사람이다 —
     # 빼면 평균이 그 학생들 없이 나온다(scoring.anonymous_totals).
+    if anonymous is None:
+        anonymous = scoring.anonymous_totals(exam)
     totals = sorted(
-        [row.total_score for row in taken]
-        + [Decimal(value) for value in scoring.anonymous_totals(exam)],
+        [row.total_score for row in taken] + [Decimal(value) for value in anonymous],
         reverse=True,
     )
     computed = _distribution(totals)
@@ -175,9 +181,9 @@ def rate(numerator, denominator):
 
 
 def _distribution(totals):
-    """평균·모표준편차·최고점·응시 인원 — 익명 장까지 담은 목록에서 낸다."""
+    """평균·모표준편차·최고점 — 익명 장까지 담은 목록에서 낸다."""
     if not totals:
-        return {"average": None, "stddev": None, "highest_score": None, "taker_count": 0}
+        return {"average": None, "stddev": None, "highest_score": None}
     size = len(totals)
     mean = sum(totals) / size
     variance = sum((value - mean) ** 2 for value in totals) / size
@@ -185,7 +191,6 @@ def _distribution(totals):
         "average": mean,
         "stddev": Decimal(variance).sqrt(),
         "highest_score": max(totals),
-        "taker_count": size,
     }
 
 
@@ -226,7 +231,14 @@ def _full_marks(score):
 
 
 def _percentile(score):
-    """백분위 — 저장값 우선, 없으면 응시자 분포 1회 집계(모듈 docstring 정의)."""
+    """백분위 — 저장값 우선, 없으면 응시자 분포 1회 집계(모듈 docstring 정의).
+
+    폴백은 `scores` 행만 센다 — 익명 장은 빠진다. 저장값을 채우는
+    `scoring.rank` 는 익명까지 담으므로 **두 값이 다를 수 있다.** 채점이 끝나는
+    자리마다 `finalize_exam` 이 돌아 실서비스에서는 저장값이 늘 있고, 폴백은
+    시드·구 데이터만 탄다. 지우지 않는 이유는 그쪽에서 백분위가 통째로 비기
+    때문이다(docs/decisions.md 「익명 점수」).
+    """
     if score.percentile is not None:
         return score.percentile
     if not score.is_taken or score.total_score is None:
