@@ -39,6 +39,8 @@ import type { ExamKind, SheetDetail, SheetQuestionRow, SheetRow } from "./types"
 const RESULT_TONE: Record<string, "success" | "danger" | "warning" | "outline"> = {
   정답: "success",
   오답: "danger",
+  // 기계가 못 읽은 줄. 학생이 안 푼 것(무응답)과 다른 사실이라 톤도 가른다.
+  판독불가: "danger",
   복수마킹: "warning",
   무응답: "outline",
 };
@@ -126,6 +128,9 @@ export default function SheetReviewPage() {
             <Badge tone={current.is_corrected ? "success" : "warning"}>
               {current.match_status}
             </Badge>
+            {current.unreadable_count > 0 && (
+              <Badge tone="danger">판독불가 {current.unreadable_count}</Badge>
+            )}
             <Button
               size="sm"
               variant="ghost"

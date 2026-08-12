@@ -382,6 +382,9 @@ class SheetAnswer(models.Model):
         WRONG = "오답", "오답"
         BLANK = "무응답", "무응답"
         MULTI = "복수마킹", "복수마킹"
+        # 그 줄만 못 읽었다 — 빈칸이라기엔 크고 마킹이라기엔 작은 잉크가 나왔다
+        # (접힘·잘림으로 희석된 마킹). 장은 멀쩡하므로 나머지 줄은 그대로 산다.
+        UNREADABLE = "판독불가", "판독불가"
 
     id = models.BigAutoField(primary_key=True)
     sheet = models.ForeignKey(

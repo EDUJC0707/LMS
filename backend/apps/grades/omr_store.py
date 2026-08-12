@@ -309,12 +309,17 @@ def _apply_answers(sheet, exam, readings, created):
 
 
 def _verdict(choices, answer):
-    """마킹 튜플 → (marked, result).
+    """마킹 튜플 → (marked, result). `None` 은 그 줄을 못 읽었다는 뜻이다.
 
     무응답·복수마킹은 판독 사실(엔진 소유 — 어느 쪽이 진짜인지는 사람이
     가른다, PRD 마킹 이상 경고), 단일 마킹은 키 대조로 즉시 정오 확정.
     복수는 "1,3" 처럼 쉼표로 남긴다 — 보정 화면이 무엇이 겹쳤는지 봐야 한다.
+
+    `판독불가` 는 무응답과 다르다: 빈칸은 학생이 안 푼 것이고, 판독불가는
+    기계가 못 읽은 것이다. 뭉치면 안 푼 문항과 놓친 문항이 같아 보인다.
     """
+    if choices is None:
+        return None, _R.UNREADABLE
     if not choices:
         return None, _R.BLANK
     if len(choices) > 1:

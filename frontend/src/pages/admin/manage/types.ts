@@ -185,6 +185,8 @@ export interface ExamQuestionRow {
   wrong_count: number;
   blank_count: number;
   multi_count: number;
+  /** 기계가 못 읽은 줄 — 학생이 안 푼 것(무응답)과 다른 사실이다 */
+  unreadable_count: number;
   correct_rate: number | null;
 }
 
@@ -273,6 +275,8 @@ export interface SheetRow {
   recognized_score: number | null;
   /** 버블이 아니라 손글씨 OCR 에서 온 점수 — 조교가 눈으로 대조해야 한다 */
   score_from_handwriting: boolean;
+  /** 기계가 못 읽은 줄 수. 대조가 `정상` 이어도 이게 있으면 사람이 봐야 한다 */
+  unreadable_count: number;
   /** 명부(GET /admin/students)와 같은 행 모양 — 학생 선택기가 그대로 받는다 */
   student: DirectoryStudent | null;
 }

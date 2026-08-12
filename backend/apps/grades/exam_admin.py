@@ -100,10 +100,16 @@ def _exam_queryset():
 
 def _pending_sheet_counts(exam_ids=None):
     """시험별 미보정 답안지 수 {exam_id: n} — scores 조인과 분리한 별도 쿼리
-    (한 쿼리에 두 다:다 조인을 섞으면 집계가 곱으로 증식한다)."""
-    sheets = AnswerSheet.objects.filter(is_corrected=False).exclude(
-        match_status=AnswerSheet.MatchStatus.MATCHED
-    )
+    (한 쿼리에 두 다:다 조인을 섞으면 집계가 곱으로 증식한다).
+
+    "손봐야 할 장"은 두 가지다: **주인을 못 정한 장**(대조 6분기의 비정상 5종)과
+    **못 읽은 줄이 있는 장**. 후자는 대조가 `정상` 이어도 사람이 봐야 한다 —
+    안 세면 그 줄이 조용히 무응답처럼 지나간다(2026-08-12 줄 단위 보류 도입).
+    """
+    sheets = AnswerSheet.objects.filter(is_corrected=False).filter(
+        ~Q(match_status=AnswerSheet.MatchStatus.MATCHED)
+        | Q(answers__result=SheetAnswer.Result.UNREADABLE)
+    ).distinct()
     if exam_ids is not None:
         sheets = sheets.filter(exam_id__in=exam_ids)
     return {
@@ -173,6 +179,7 @@ def _question_stat_rows(exam):
             wrong=Count("pk", filter=Q(result=R.WRONG)),
             blank=Count("pk", filter=Q(result=R.BLANK)),
             multi=Count("pk", filter=Q(result=R.MULTI)),
+            unreadable=Count("pk", filter=Q(result=R.UNREADABLE)),
         )
     }
     rows = []
@@ -192,6 +199,8 @@ def _question_stat_rows(exam):
                 "wrong_count": cell.get("wrong", 0),
                 "blank_count": cell.get("blank", 0),
                 "multi_count": cell.get("multi", 0),
+                # 학생이 안 푼 것(무응답)과 기계가 못 읽은 것은 다른 사실이다.
+                "unreadable_count": cell.get("unreadable", 0),
                 "correct_rate": report.rate(cell.get("correct", 0), answered),
             }
         )
@@ -268,7 +277,12 @@ def sheet_rows(exam):
         AnswerSheet.objects.filter(exam=exam)
         .select_related("student__user")
         .annotate(
-            settled=Q(is_corrected=True) & Q(match_status=AnswerSheet.MatchStatus.MATCHED)
+            unreadable=Count("answers", filter=Q(answers__result=SheetAnswer.Result.UNREADABLE)),
+        )
+        .annotate(
+            settled=Q(is_corrected=True)
+            & Q(match_status=AnswerSheet.MatchStatus.MATCHED)
+            & Q(unreadable=0)
         )
         .order_by("settled", "sheet_id")
     )
@@ -306,6 +320,14 @@ def sheet_detail(sheet):
     }
 
 
+def _unreadable_count(sheet):
+    """못 읽은 줄 수. 목록은 annotate 로 미리 세어 오고, 상세는 그 자리에서 센다."""
+    counted = getattr(sheet, "unreadable", None)
+    if counted is not None:
+        return counted
+    return sheet.answers.filter(result=SheetAnswer.Result.UNREADABLE).count()
+
+
 def _sheet_row(sheet):
     return {
         "sheet_id": sheet.sheet_id,
@@ -313,6 +335,8 @@ def _sheet_row(sheet):
         "is_corrected": sheet.is_corrected,
         "recognized_name": sheet.recognized_name,
         "recognized_matching_key": sheet.recognized_matching_key,
+        # 기계가 못 읽은 줄 수. 대조가 `정상` 이어도 이게 있으면 사람이 봐야 한다.
+        "unreadable_count": _unreadable_count(sheet),
         # 모의고사(자기보고) 전용. 미니테스트 장에서는 언제나 null 이다.
         "recognized_score": sheet.recognized_score,
         # 그 점수가 버블이 아니라 손글씨 OCR 에서 왔다는 표시. 값만 보면 구분이
