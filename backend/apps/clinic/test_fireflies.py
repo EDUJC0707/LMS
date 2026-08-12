@@ -27,11 +27,19 @@ def transcripts_response(*rows):
     return (200, json.dumps({"data": {"transcripts": list(rows)}}).encode())
 
 
-def row(title=TITLE, overview="오답 원인을 끝까지 설명했다."):
+def row(
+    title=TITLE,
+    overview="오답 원인을 끝까지 설명했다.",
+    ident="01JQF",
+    duration=58.0,
+    live=False,
+):
     return {
-        "id": "01JQF",
+        "id": ident,
         "title": title,
-        "transcript_url": "https://app.fireflies.ai/view/01JQF",
+        "duration": duration,
+        "is_live": live,
+        "transcript_url": f"https://app.fireflies.ai/view/{ident}",
         "summary": {"overview": overview},
     }
 
@@ -123,13 +131,55 @@ class FetchSupervisionTests(SimpleTestCase):
     """수집 — 우리가 붙인 제목으로 되찾는다."""
 
     def test_finds_the_transcript_by_our_title(self):
-        transport = FakeTransport(transcripts_response(row(title="남의 회의"), row()))
+        transport = FakeTransport(transcripts_response(row()))
         found = FirefliesAdapter(transport=transport).fetch_supervision(
             "spaces/S1", file_as=TITLE
         )
         self.assertEqual(found.transcript_ref, "01JQF")
         self.assertEqual(found.transcript_url, "https://app.fireflies.ai/view/01JQF")
         self.assertIn("오답 원인", found.summary)
+
+    def test_searches_by_the_last_segment_because_slashes_never_match(self):
+        # 업체 필터는 정확 일치가 아니라 단어 검색이고 `/` 가 색인에 없다
+        # (2026-08-12 실측: 'clinic/2026-08' → 0건, 'clinic' → 1건).
+        # 전체 경로를 그대로 보내면 **영원히 0건**이라 수집이 조용히 멎는다.
+        transport = FakeTransport(transcripts_response(row()))
+        FirefliesAdapter(transport=transport).fetch_supervision("spaces/S1", file_as=TITLE)
+        self.assertEqual(
+            json.loads(transport.calls[0]["body"])["variables"]["title"],
+            "2026-08-12_1900_김하늘0001",
+        )
+
+    def test_still_matches_the_whole_title_before_accepting(self):
+        # 좁히는 것은 서버, 확정은 우리다 — 부분 일치가 남의 요약을 물어 오면 안 된다.
+        transport = FakeTransport(
+            transcripts_response(row(title="clinic/딴것/2026-08-12_1900_김하늘0001"))
+        )
+        self.assertIsNone(
+            FirefliesAdapter(transport=transport).fetch_supervision("spaces/S1", file_as=TITLE)
+        )
+
+    def test_takes_the_longest_when_the_title_repeats(self):
+        # 같은 제목이 둘 나올 수 있다 — 학생이 같은 날 같은 시각으로 취소하고
+        # 다시 잡으면 `artifact_path` 가 글자 그대로 같다. 짧은 쪽은 봇이
+        # 들어갔다 튕긴 자국이지 수업이 아니다(구글 경로와 같은 규칙).
+        transport = FakeTransport(
+            transcripts_response(
+                row(ident="short", duration=0.4),
+                row(ident="real", duration=57.2),
+            )
+        )
+        found = FirefliesAdapter(transport=transport).fetch_supervision(
+            "spaces/S1", file_as=TITLE
+        )
+        self.assertEqual(found.transcript_ref, "real")
+
+    def test_ignores_a_transcript_still_being_recorded(self):
+        # 아직 도는 회의는 요약이 없거나 반쪽이다 — 다음 차례에 온전한 걸 받는다.
+        transport = FakeTransport(transcripts_response(row(live=True)))
+        self.assertIsNone(
+            FirefliesAdapter(transport=transport).fetch_supervision("spaces/S1", file_as=TITLE)
+        )
 
     def test_returns_none_while_the_title_has_not_appeared(self):
         # 아직 처리 중이다 — 실패가 아니라 대기다(`conferencing` 계약)
@@ -171,6 +221,16 @@ class CreateSpaceTests(SimpleTestCase):
 
 class ToggleTests(SimpleTestCase):
     """설정 한 줄로 갈아 끼운다 — 구글 코드는 남는다(2026-08-12 지시)."""
+
+    def test_this_is_the_default_now(self):
+        # 2026-08-12 전면 교체. 실제 클리닉으로 전사·화자분리·한국어 요약까지
+        # 확인하고 기본값을 옮겼다. 구글 어댑터는 지우지 않는다 — 설정 한 줄로
+        # 돌아갈 수 있어야 교체가 되돌릴 수 있는 결정으로 남는다.
+        from django.conf import settings
+
+        self.assertEqual(
+            settings.CLINIC_CONFERENCE_BACKEND, "apps.clinic.fireflies.FirefliesAdapter"
+        )
 
     @override_settings(CLINIC_CONFERENCE_BACKEND="apps.clinic.fireflies.FirefliesAdapter")
     def test_the_configured_path_resolves(self):

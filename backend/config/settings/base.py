@@ -276,13 +276,17 @@ STORAGES = {
 
 # --- 화상(클리닉) — key_considerations §4 추상화 경계 --------------------
 # 업체 교체는 이 경로 한 줄이다(apps.clinic.conferencing 계약).
+# 2026-08-12 전면 교체 — 기본값이 Fireflies 다. 방과 링크는 여전히 구글이
+# 만들고(FirefliesAdapter 가 위임한다) **감독 자료만** 봇에서 온다.
+# 바꾼 이유는 조교 기기다: 구글 전사는 컴퓨터·안드로이드에서만 켜지고
+# 아이폰·아이패드에는 버튼 자체가 없다. 봇은 클라우드에서 들어오므로 사람이
+# 무슨 기기를 쓰든 기록이 남는다(docs/2026-08-12-아이패드-전사-대안조사.md).
+# ~~apps.clinic.google_meet.GoogleMeetAdapter~~ ← 되돌리려면 이 값이다.
 CLINIC_CONFERENCE_BACKEND = env(
-    "CLINIC_CONFERENCE_BACKEND", default="apps.clinic.google_meet.GoogleMeetAdapter"
+    "CLINIC_CONFERENCE_BACKEND", default="apps.clinic.fireflies.FirefliesAdapter"
 )
 
-# 조교가 아이패드로 호스트할 때의 감독 경로. 켜는 법은 값을 넣는 게 아니라
-# 위 한 줄을 `apps.clinic.fireflies.FirefliesAdapter` 로 바꾸는 것이다 —
-# 방은 그대로 구글이 만들고 감독 자료만 Fireflies 에서 온다.
+# 비면 봇 투입·수집이 "API 키가 설정되지 않았습니다" 로 실패한다(조용한 성공 없음).
 FIREFLIES_API_KEY = env("FIREFLIES_API_KEY", default="")
 # 구글 미트는 **사용자 인증만** 받는다(서비스 계정은 워크스페이스 도메인 위임
 # 한정) — 계정 1개로 한 번 동의받은 갱신 토큰을 서버가 들고 쓴다.
