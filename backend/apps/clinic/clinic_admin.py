@@ -41,6 +41,7 @@ from apps.notifications.sending import queue as queue_notification
 from .booking import ClinicError
 from .conferencing import (
     Conference,
+    ConferenceError,
     PermanentConferenceError,
     TemporaryConferenceError,
     get_adapter,
@@ -176,7 +177,38 @@ def assign(request, staff_user, conference_url=None):
             "conference_url",
         ]
     )
+    _book_supervision(request)
     return request
+
+
+def supervision_key(request):
+    """감독 예약을 다시 가리키는 이름 — 클리닉 1건에 하나, 바뀌지 않는다.
+
+    시각이 바뀌어도 같은 이름이라 예약이 덮어써진다. 어느 예약이 그 클리닉
+    것인지 적어 둘 컬럼이 필요 없는 이유다.
+    """
+    return f"clinic{request.clinic_id}"
+
+
+def _book_supervision(request):
+    """끝난 배정에 감독을 걸어 둔다. **실패해도 배정은 되돌리지 않는다.**
+
+    감독은 다음에 다시 걸 수 있지만 배정은 사람이 다시 해야 한다 — 업체 장애로
+    관리자의 작업이 통째로 날아가는 편이 훨씬 나쁘다. 못 건 예약은 그 회차의
+    감독 자료가 없다는 뜻이고, 그건 화면이 이미 "자료 없음"으로 말한다.
+    """
+    from . import supervision
+
+    try:
+        get_adapter().schedule_supervision(
+            request.conference_url,
+            key=supervision_key(request),
+            title=supervision.artifact_path(request),
+            starts_at=supervision.starts_at(request),
+            minutes=supervision.slot_minutes(request),
+        )
+    except ConferenceError:
+        return
 
 
 def _resolve_conference(request, conference_url):

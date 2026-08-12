@@ -39,6 +39,7 @@ from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
 
+from .conferencing import ConferenceError, get_adapter
 from .models import ClinicEligibility, ClinicRequest, ClinicSlot
 
 # 미트 링크 활성화 선행 시간 — 시작 5분 전(PRD 3.2.4). curriculum.home 과 공유.
@@ -225,6 +226,7 @@ def change_booking(request, slot, requested_date):
                 "updated_at",
             ]
         )
+    _drop_supervision(request)
     return request, now
 
 
@@ -237,7 +239,24 @@ def cancel_booking(request):
     request.status = ClinicRequest.Status.CANCELLED
     request.cancelled_at = now
     request.save(update_fields=["status", "cancelled_at"])
+    _drop_supervision(request)
     return request, now
+
+
+def _drop_supervision(request):
+    """걸어 둔 감독 예약을 거둔다 — 취소·시간 변경 뒤.
+
+    안 거두면 **아무도 없는 방에 봇이 들어가** 빈 기록을 남기고, 옮긴 경우에는
+    옛 시각과 새 시각 양쪽에 들어간다. 실패해도 사용자 동작(취소·변경)은
+    이미 끝났으므로 되돌리지 않는다 — 취소가 업체 장애로 실패하면 학생은
+    취소되지 않은 화면을 보게 되고 그게 훨씬 나쁘다.
+    """
+    from .clinic_admin import supervision_key
+
+    try:
+        get_adapter().cancel_supervision(supervision_key(request))
+    except ConferenceError:
+        return
 
 
 # --- 조회 페이로드 조립 ---------------------------------------------------

@@ -172,7 +172,7 @@ def dispatch(now=None, adapter=None):
             adapter.start_supervision(
                 request.conference_url,
                 title=artifact_path(request),
-                minutes=_slot_minutes(request),
+                minutes=slot_minutes(request),
             )
         except ConferenceError:
             # 표시를 남기지 않는다 — 다음 차례에 다시 시도되고, 창이 닫히면 멎는다.
@@ -184,7 +184,7 @@ def dispatch(now=None, adapter=None):
     return counts
 
 
-def _slot_minutes(request):
+def slot_minutes(request):
     """슬롯 길이(분). 봇에게 얼마나 머무를지 알려 주는 값이다."""
     slot = request.slot
     if slot is None:

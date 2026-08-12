@@ -69,3 +69,20 @@ class StartSupervisionDefaultTests(SimpleTestCase):
                 return None
 
         self.assertIsNone(Bare().start_supervision("https://x/a", title="t", minutes=60))
+
+    def test_scheduling_and_cancelling_also_default_to_nothing(self):
+        # 예약형(업체가 시작 시각에 알아서 들어옴)을 지원하는 업체만 구현한다.
+        class Bare(ConferenceAdapter):
+            def create_space(self):
+                return Conference(provider="p", ref="r", url="u")
+
+            def fetch_supervision(self, ref, *, file_as=None):
+                return None
+
+        bare = Bare()
+        self.assertIsNone(
+            bare.schedule_supervision(
+                "https://x/a", key="clinic1", title="t", starts_at=None, minutes=60
+            )
+        )
+        self.assertIsNone(bare.cancel_supervision("clinic1"))

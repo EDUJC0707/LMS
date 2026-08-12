@@ -250,3 +250,47 @@ class ToggleTests(SimpleTestCase):
         from .conferencing import get_adapter
 
         self.assertIsInstance(get_adapter(), FirefliesAdapter)
+
+
+class ScheduleSupervisionTests(SimpleTestCase):
+    """예약형 — 업체가 **연결된 캘린더**를 보고 시작 시각에 알아서 들어온다.
+
+    그래서 예약은 Fireflies 를 부르는 게 아니라 **구글 캘린더에 일정을 세우는
+    일**이고, 구글 API 지식은 화상 어댑터가 갖고 있으므로 그쪽에 넘긴다.
+    """
+
+    def test_puts_it_on_the_calendar_instead_of_calling_the_vendor(self):
+        class StubConference:
+            calls = []
+
+            def upsert_event(self, key, *, title, url, starts_at, minutes):
+                StubConference.calls.append((key, title, url, starts_at, minutes))
+
+        stub = StubConference()
+        StubConference.calls = []
+        transport = FakeTransport()  # 업체를 부르면 응답이 없어 터진다
+        FirefliesAdapter(transport=transport, conference=stub).schedule_supervision(
+            "https://meet.google.com/a-b-c",
+            key="clinic11",
+            title=TITLE,
+            starts_at="2026-08-13T17:00:00+09:00",
+            minutes=60,
+        )
+        self.assertEqual(
+            StubConference.calls,
+            [("clinic11", TITLE, "https://meet.google.com/a-b-c", "2026-08-13T17:00:00+09:00", 60)],
+        )
+        self.assertEqual(transport.calls, [])
+
+    def test_cancelling_removes_the_event(self):
+        class StubConference:
+            removed = []
+
+            def delete_event(self, key):
+                StubConference.removed.append(key)
+
+        StubConference.removed = []
+        FirefliesAdapter(transport=FakeTransport(), conference=StubConference()).cancel_supervision(
+            "clinic11"
+        )
+        self.assertEqual(StubConference.removed, ["clinic11"])

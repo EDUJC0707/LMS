@@ -89,6 +89,30 @@ class ConferenceAdapter(ABC):
         """
         return None
 
+    def schedule_supervision(
+        self, url: str, *, key: str, title: str, starts_at, minutes: int
+    ) -> None:
+        """감독을 **미리 걸어 둔다**. 기본은 아무것도 하지 않는 것이다.
+
+        `start_supervision` 과 갈리는 점은 **누가 시각을 지키느냐**다. 그쪽은
+        회의가 도는 동안 우리가 밀어 넣는 것이라 배치가 1분마다 돌아야 하고,
+        이쪽은 업체가 시작 시각을 알고 알아서 들어온다 — 우리 쪽에 도는 것이
+        없다(알림톡을 업체 예약 발송으로 넘긴 것과 같은 모양).
+
+        `key` 는 나중에 고치거나 지울 때 그 예약을 다시 가리키는 이름이다.
+        클리닉 1건에 하나이고 **바뀌지 않아야** 한다 — 시각이 바뀌어도 같은
+        예약을 덮어쓰는 것이지 새로 만드는 게 아니기 때문이다.
+        """
+        return None
+
+    def cancel_supervision(self, key: str) -> None:
+        """걸어 둔 감독 예약을 거둔다. 없으면 조용히 넘어간다(멱등).
+
+        취소·시간 변경에서 부른다. 안 거두면 **아무도 없는 방에 봇이 들어가**
+        빈 기록을 남기고, 학생에게는 취소한 수업이 열린 것처럼 보인다.
+        """
+        return None
+
     @abstractmethod
     def fetch_supervision(self, ref: str, *, file_as: str | None = None) -> "Supervision | None":
         """끝난 회의의 감독 자료. **아직 없으면 None**(실패가 아니다).

@@ -84,6 +84,24 @@ class FirefliesAdapter(ConferenceAdapter):
     def create_space(self):
         return self.conference.create_space()
 
+    def schedule_supervision(self, url, *, key, title, starts_at, minutes):
+        """감독 예약 = **연결된 캘린더에 일정 한 건**.
+
+        Fireflies 를 부르지 않는다. 이 업체는 붙어 있는 구글 캘린더를 보고
+        시작 시각에 알아서 들어오므로, 예약이란 곧 그 캘린더에 클리닉을 올려
+        두는 일이다(계정이 `hjcedu@hjcedu.com` 으로 같다 — 2026-08-12 확인).
+        구글 API 지식은 화상 어댑터에 있으니 그쪽에 넘긴다.
+
+        일정 제목이 그대로 **전사 제목**이 되고, 그래서 `fetch_supervision` 의
+        `file_as` 와 같은 값이어야 나중에 되찾을 수 있다.
+        """
+        self.conference.upsert_event(
+            key, title=title, url=url, starts_at=starts_at, minutes=minutes
+        )
+
+    def cancel_supervision(self, key):
+        self.conference.delete_event(key)
+
     def start_supervision(self, url, *, title, minutes):
         """진행 중인 회의에 봇을 넣는다. 실패는 예외로 알린다."""
         self._call(
