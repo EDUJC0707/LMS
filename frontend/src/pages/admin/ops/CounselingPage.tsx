@@ -4,10 +4,13 @@
  * 호출: GET   /api/admin/counseling/queue
  *      · PATCH /api/admin/counseling/{counsel_id}
  *
- * 3회는 마감이 아니라 "닫아도 된다"는 신호다(2026-08-12). 미연결로 기록하면
- * 재시도 카드가 생기고, 3회를 채우면 더 만들지 않는다. 창이 지나도 카드는
- * 남으므로 조교가 `그만 겁니다`로 직접 닫을 수도 있다.
- * **알림톡은 자동으로 나가지 않는다** — 닫힌 카드에서 버튼을 눌러야 나간다.
+ * 화면 흐름(2026-08-12 확정):
+ *   ① 채널톡 통화 기록을 며칠치 보여준다 — 누르면 그 통화의 전사가 열린다
+ *   ② 조교가 **시도 횟수를 직접 넣는다**(− N +). 기계가 세지 않는 이유는
+ *      화면이 보여준 목록과 어긋나면 어느 쪽이 맞는지 알 수 없기 때문이다
+ *   ③ 3회부터 `결석 안내 보내기` 가 켜진다. **한 번만** 나가고, 보낸 뒤에도
+ *      통화는 더 걸 수 있다(4회째도 가능) — 3회는 마감이 아니라 신호다
+ * **문자는 자동으로 안 나간다.** 닫는 것도 보내는 것도 사람이 누른다.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -295,17 +298,22 @@ function RecordPanel({
     if (found) setResult(found.connected ? "연결" : "미연결");
   }, [found]);
 
-  // 이미 저장된 통화가 있으면 전사·녹음을 읽어 보여준다. **메모에 자동으로
-  // 넣지 않는다** — 무엇을 남길지는 조교가 정한다(2026-08-12).
+  // 목록에서 펼친 통화의 전사. 안 고르면 카드에 저장된 것(확정분)을 보여준다.
+  // **메모에 자동으로 넣지 않는다** — 무엇을 남길지는 조교가 정한다(2026-08-12).
+  const [openCall, setOpenCall] = useState<string | null>(null);
   const talk = useApi(
     async () =>
       (
         await http.get<CounselTranscript>(
           `/admin/counseling/${card.counsel_id}/transcript`,
+          { params: openCall ? { user_chat_id: openCall } : {} },
         )
       ).data,
-    [card.counsel_id],
+    [card.counsel_id, openCall],
   );
+
+  // 시도 횟수는 조교가 넣는다 — 화면이 보여준 통화 목록과 어긋나지 않게.
+  const [attempts, setAttempts] = useState(card.attempts);
 
   const record = useApiAction(async () => {
     const { data } = await http.patch<CounselRecordResult>(`/admin/counseling/${card.counsel_id}`, {
@@ -314,7 +322,8 @@ function RecordPanel({
       call_memo: memo,
       follow_up_action: result === "연결" ? followUp : "",
       makeup_requested: result === "연결" ? makeupRequested : false,
-      provider_ref: found?.user_chat_id ?? "",
+      attempts,
+      provider_ref: openCall ?? found?.user_chat_id ?? "",
     });
     return data;
   });
@@ -349,6 +358,24 @@ function RecordPanel({
         {/* 아래 Field 들과 같은 위계의 칸이다 — 라벨 조판도 같은 것을 쓴다.
             툴바 라벨(11px 대문자 자간)이었을 때는 같은 폼 안에서 이 칸만
             다른 크기·색으로 떠 위계가 하나 더 있는 것처럼 읽혔다. */}
+        {(calls.data?.length ?? 0) > 0 && (
+          <div className="ui-field">
+            <span className="ui-field__label">채널톡 통화 기록</span>
+            <div className="ui-stack ui-stack--sm">
+              {calls.data?.map((c) => (
+                <Button
+                  key={c.user_chat_id ?? c.called_at ?? ""}
+                  size="sm"
+                  variant={openCall === c.user_chat_id ? "primary" : "ghost"}
+                  onClick={() => setOpenCall(openCall === c.user_chat_id ? null : c.user_chat_id)}
+                >
+                  {`${stamp(c.called_at ?? "")} · ${c.connected ? "받음" : "안 받음"}`}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {(talk.data?.transcript || talk.data?.recording_url) && (
           <div className="ui-field">
             <span className="ui-field__label">통화 내용</span>
@@ -455,6 +482,19 @@ function RecordPanel({
             </Alert>
           </>
         )}
+
+        <div className="ui-field">
+          <span className="ui-field__label">시도 횟수</span>
+          <div className="ui-row">
+            <Button size="sm" onClick={() => setAttempts(Math.max(0, attempts - 1))}>
+              −
+            </Button>
+            <span className="num">{attempts}</span>
+            <Button size="sm" onClick={() => setAttempts(attempts + 1)}>
+              +
+            </Button>
+          </div>
+        </div>
 
         <div className="ui-row" style={{ justifyContent: "flex-end" }}>
           <Button variant="ghost" onClick={onClose}>

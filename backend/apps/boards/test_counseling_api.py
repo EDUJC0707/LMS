@@ -546,3 +546,27 @@ class CounselingNoticeOnceTests(CounselingFixtureMixin, TestCase):
         rows = self.client.get(QUEUE_URL).json()["queue"]
         self.assertEqual(rows[0]["counsel_id"], self.card.counsel_id)
         self.assertTrue(rows[0]["notified"], "보냈다는 것이 화면에 보여야 버튼이 꺼진다")
+
+
+class CounselingPerCallTranscriptTests(CounselingFixtureMixin, TestCase):
+    """목록에서 통화 하나를 펼치면 그 통화의 전사를 읽는다.
+
+    저장된 것은 조교가 확정한 한 건뿐이라, 아직 안 고른 통화는 그때그때 받아야 한다.
+    """
+
+    def setUp(self):
+        self.login()
+        self.card = self.make_card()
+
+    def test_named_call_is_read_live(self):
+        lines = [{"speaker": "고객", "said": "네"}]
+        with patch.object(channeltalk, "transcript", return_value=lines) as read, patch.object(
+            channeltalk, "recording_url", return_value="https://x/y.mp4"
+        ):
+            res = self.client.get(
+                f"/api/admin/counseling/{self.card.counsel_id}/transcript",
+                {"user_chat_id": "other-chat"},
+            )
+
+        self.assertEqual(read.call_args.args[0], "other-chat")
+        self.assertIn("네", res.json()["transcript"])

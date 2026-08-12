@@ -337,11 +337,21 @@ class CounselingTranscriptView(APIView):
         card = AbsenceCounseling.objects.filter(pk=counsel_id).first()
         if card is None:
             return _not_found()
+        # 목록에서 아직 안 고른 통화를 펼쳐 보는 경우 — 저장된 게 없으니 받아 온다.
+        asked = request.query_params.get("user_chat_id")
+        if asked:
+            lines = channeltalk.transcript(asked)
+            return Response(
+                {
+                    "transcript": "\n".join(f"{x['speaker']}: {x['said']}" for x in lines),
+                    "recording_url": channeltalk.recording_url(asked),
+                }
+            )
         if not card.provider_ref:
             return Response({"transcript": "", "recording_url": None})
         return Response(
             {
-                # 전사는 저장분을 쓴다 — 채널톡은 90일까지만 되돌려 준다.
+                # 확정된 통화는 저장분을 쓴다 — 채널톡은 90일까지만 되돌려 준다.
                 "transcript": card.call_transcript,
                 # 녹음은 매번 새로 받는다 — 서명 URL 이라 저장하면 죽는다.
                 "recording_url": channeltalk.recording_url(card.provider_ref),
