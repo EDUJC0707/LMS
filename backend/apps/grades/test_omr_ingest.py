@@ -200,57 +200,14 @@ class MockExamIngestTests(TestCase):
         self.assertIsNone(sheet_row.student)
         self.assertFalse(Score.objects.filter(exam=self.exam).exists())
 
-    def unmarked(self):
-        """버블이 하나도 없는 장 — 실물 94장 중 34장이 이랬다."""
-        return mock.Mock(held=sheet_module.CARD_UNMARKED, score=None)
-
     def test_holds_are_counted_by_reason(self):
-        """"보류 34장"이 아니라 "34명이 버블을 안 칠했다"를 알려 줘야 한다."""
-        with (
-            mock.patch("apps.grades.omr_ingest.ocr.read_score", return_value=None),
-            mock.patch("apps.grades.omr_ingest.sheet.score_box_image", return_value=b"png"),
-        ):
-            summary = self.ingest([self.unmarked(), self.survey(44, "김서연", "0001")])
+        """실물 94장 중 34장이 버블을 안 칠했다 — "보류 34"가 아니라 이유가 필요하다."""
+        held = mock.Mock(held=sheet_module.CARD_UNMARKED, score=None)
+
+        summary = self.ingest([held, self.survey(44, "김서연", "0001")])
 
         self.assertEqual(summary["held"], 1)
         self.assertEqual(summary["holds"], {sheet_module.CARD_UNMARKED: 1})
-
-    def test_ocr_rescues_a_card_with_only_handwriting(self):
-        """마킹이 없어도 손글씨 점수는 남아 있다 — 실물 34장 중 20장을 그렇게 건졌다."""
-        with (
-            mock.patch("apps.grades.omr_ingest.ocr.read_score", return_value=38) as read,
-            mock.patch("apps.grades.omr_ingest.sheet.score_box_image", return_value=b"png"),
-        ):
-            summary = self.ingest([self.unmarked()])
-
-        read.assert_called_once_with(b"png")
-        self.assertEqual(summary["held"], 0)
-        self.assertEqual(AnswerSheet.objects.get(exam=self.exam).recognized_score, 38)
-
-    def test_an_ocr_rescued_card_still_needs_a_person_for_the_student(self):
-        """점수는 건져도 신원은 없다 — 성명·번호 격자도 비어 있다."""
-        with (
-            mock.patch("apps.grades.omr_ingest.ocr.read_score", return_value=38),
-            mock.patch("apps.grades.omr_ingest.sheet.score_box_image", return_value=b"png"),
-        ):
-            summary = self.ingest([self.unmarked()])
-
-        self.assertEqual(summary["needs_review"], 1)
-        row = AnswerSheet.objects.get(exam=self.exam)
-        self.assertIsNone(row.student)
-        self.assertIsNone(row.recognized_name)
-        self.assertFalse(Score.objects.filter(exam=self.exam).exists())
-
-    def test_an_unreadable_card_stays_held(self):
-        """OCR 도 못 읽으면(백지·저신뢰) 그대로 보류다 — 지어내지 않는다."""
-        with (
-            mock.patch("apps.grades.omr_ingest.ocr.read_score", return_value=None),
-            mock.patch("apps.grades.omr_ingest.sheet.score_box_image", return_value=b"png"),
-        ):
-            summary = self.ingest([self.unmarked()])
-
-        self.assertEqual(summary["held"], 1)
-        self.assertIsNone(AnswerSheet.objects.get(exam=self.exam).recognized_score)
 
     def test_an_assistant_can_correct_the_score(self):
         """조사 카드에서 고칠 것은 점수 한 칸뿐이다(문항이 없다)."""

@@ -30,9 +30,6 @@ card 는 순수 데이터고, read 는 잉크만 알고 뜻을 모른다. 여기
 11.6% 내려가고, 흐린 장에서 인쇄 글리프가 답으로 승격된다 — 실제로 그렇게
 유령답 3건이 났었다. 그래서 문항 수는 **호출부가 반드시 준다.**
 """
-import cv2
-import numpy as np
-
 from . import card, decode, normalize, read
 
 #: 마커를 못 찾았거나 방향을 못 가렸다 — 다시 스캔.
@@ -163,37 +160,6 @@ def read_survey(image):
         phone=phone,
         matching_key=decode.matching_key(name, phone),
     )
-
-
-def score_box_image(image, frame):
-    """조사 카드의 `★내 점수★` 손글씨 칸만 잘라 PNG 바이트로. 순수 함수다.
-
-    엔진은 손글씨를 못 읽는다(마킹만 읽는다 — decisions.md). 이 함수는 **읽지
-    않고 자르기만** 한다. 읽는 것은 `grades.ocr` 의 일이고, 그래야 엔진이
-    네트워크를 모르는 채로 남는다.
-    """
-    x0, x1, y0, y1 = card.SURVEY_SCORE_HANDWRITING
-    corners = np.array(
-        [
-            frame.to_source(u, v)
-            for u, v in (
-                (x0 / 2223.5, y0 / 1493.5),
-                (x1 / 2223.5, y0 / 1493.5),
-                (x1 / 2223.5, y1 / 1493.5),
-                (x0 / 2223.5, y1 / 1493.5),
-            )
-        ],
-        dtype=np.float32,
-    )
-    # 2배로 펴서 낸다 — 실측에서 원본 크기 그대로는 OCR 신뢰도가 눈에 띄게 낮았다.
-    width, height = int((x1 - x0) * 2), int((y1 - y0) * 2)
-    target = np.array(
-        [[0, 0], [width, 0], [width, height], [0, height]], dtype=np.float32
-    )
-    flat = cv2.warpPerspective(
-        image, cv2.getPerspectiveTransform(corners, target), (width, height)
-    )
-    return cv2.imencode(".png", flat)[1].tobytes()
 
 
 def read_identity(image, frame, scale):

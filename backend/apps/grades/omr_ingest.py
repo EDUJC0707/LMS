@@ -7,9 +7,7 @@
 
 - **미니테스트** — 우리 답안 카드. 문항별 마킹을 읽고 정답 키로 채점한다
 - **모의고사** — 모의고사와 함께 오는 `성적 조사 카드`. 문항이 없고 학생이
-  학교에서 본 점수를 스스로 적어 낸다. 읽는 것은 점수 두 자리뿐이다.
-  **버블을 하나도 안 칠한 장은 손글씨 OCR 로 한 번 더 본다**(`grades.ocr`) —
-  실물 94장 중 34장이 그런 장이었고, 그중 20장을 그렇게 건졌다
+  학교에서 본 점수를 스스로 적어 낸다. 읽는 것은 점수 두 자리뿐이다
 
 매칭(이름+전화 뒷4)과 저장 멱등 계약은 둘이 같다.
 
@@ -39,7 +37,7 @@ from django.core.files.storage import default_storage
 
 from apps.accounts.models import Student
 
-from . import ocr, omr_match, omr_store
+from . import omr_match, omr_store
 from .models import Exam
 from .omr import sheet
 
@@ -64,8 +62,6 @@ def ingest_pdf(exam, pdf, question_count):
         reading = (
             sheet.read_survey(image) if survey else sheet.read_sheet(image, question_count)
         )
-        if survey and reading.held == sheet.CARD_UNMARKED:
-            reading = _rescue_by_ocr(image, reading)
         if reading.held:
             summary["held"] += 1
             summary["holds"][reading.held] = summary["holds"].get(reading.held, 0) + 1
@@ -95,23 +91,6 @@ def ingest_pdf(exam, pdf, question_count):
         sheets.append({"page": page_no, "sheet_id": row.pk, "held": reading.held})
     summary["sheets"] = sheets
     return summary
-
-
-def _rescue_by_ocr(image, reading):
-    """버블이 없는 조사 카드 — 손글씨 점수만 OCR 로 건진다(`grades.ocr` 계약).
-
-    건져도 **신원은 여전히 없다.** 성명·수험번호 격자도 비어 있어 대조에 넣을 값이
-    아무것도 없으므로 `비정상`으로 떨어진다(`omr_match.resolve` 첫 분기) — 점수를
-    든 채 보정 화면에 서고, 조교는 학생만 고르면 된다.
-
-    `비정상`은 판독을 못 믿는 장과 같은 칸이지만 여기서는 **점수가 채워져 있어**
-    화면에서 갈린다. 갈라 두려면 상태값을 새로 만들어야 하는데, 조교가 할 일이
-    (지면 보고 학생 고르기)로 같아서 두지 않았다.
-    """
-    score = ocr.read_score(sheet.score_box_image(image, reading.frame))
-    if score is None:
-        return reading
-    return sheet.SurveyReading(score=score, frame=reading.frame)
 
 
 def page_images(pdf):
