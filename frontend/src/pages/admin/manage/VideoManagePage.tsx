@@ -231,11 +231,11 @@ export default function VideoManagePage() {
         padding="none"
       >
         {transition.error && (
-          <div className="pm-toolbar">
+          <div className="pm-toolbar pm-cardpad">
             <ErrorState description={transition.error} onRetry={transition.clearError} />
           </div>
         )}
-        <div className="pm-toolbar">
+        <div className="pm-toolbar pm-cardpad">
           <Field label="영상 찾기">
             {(props) => (
               <Input
