@@ -1,6 +1,6 @@
 # 한종철 LMS
 
-한국 학원 LMS 모노레포. React SPA(프런트) + Django/DRF/Celery(백엔드) 구조의 개발 스켈레톤.
+수능 강사 LMS 모노레포. React SPA(프런트) + Django/DRF/Celery(백엔드) 구조의 개발 스켈레톤.
 
 ## 스택
 

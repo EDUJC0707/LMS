@@ -28,18 +28,21 @@ import StudentClinicPage from "../pages/student/StudentClinicPage";
 import StudentMakeupPage from "../pages/student/StudentMakeupPage";
 import StudentWorkbookPage from "../pages/student/StudentWorkbookPage";
 import StudentVideoPage from "../pages/student/StudentVideoPage";
+import StudentPaymentPage from "../pages/student/StudentPaymentPage";
 
 import ParentHomePage from "../pages/parent/ParentHomePage";
 import ParentGradesPage from "../pages/parent/ParentGradesPage";
 import ParentGradeDetailPage from "../pages/parent/ParentGradeDetailPage";
 import ParentWorkbookPage from "../pages/parent/ParentWorkbookPage";
 import ParentMakeupPage from "../pages/parent/ParentMakeupPage";
+import ParentPaymentPage from "../pages/parent/ParentPaymentPage";
 
 import AdminDashboardPage from "../pages/admin/ops/AdminDashboardPage";
 import AttendancePage from "../pages/admin/ops/AttendancePage";
 import AttendanceSessionPage from "../pages/admin/ops/AttendanceSessionPage";
 import MakeupOpsPage from "../pages/admin/ops/MakeupOpsPage";
 import CounselingPage from "../pages/admin/ops/CounselingPage";
+import PaymentsPage from "../pages/admin/ops/PaymentsPage";
 
 import StaffPage from "../pages/admin/manage/StaffPage";
 import AccountsPage from "../pages/admin/manage/AccountsPage";
@@ -102,6 +105,8 @@ export const router = createBrowserRouter([
           { path: "videos", element: <StudentVideoPage /> },
           { path: "makeup", element: <StudentMakeupPage /> },
           { path: "workbook", element: <StudentWorkbookPage /> },
+          // 교재 결제는 예비등록생에게도 열린다 — 등록 가드를 두지 않는다(PRD §4).
+          { path: "payments", element: <StudentPaymentPage /> },
         ],
       },
 
@@ -115,6 +120,7 @@ export const router = createBrowserRouter([
           { path: "grades/:examId", element: <ParentGradeDetailPage /> },
           { path: "workbook", element: <ParentWorkbookPage /> },
           { path: "makeup", element: <ParentMakeupPage /> },
+          { path: "payments", element: <ParentPaymentPage /> },
         ],
       },
 
@@ -140,6 +146,10 @@ export const router = createBrowserRouter([
           {
             element: <RequireFeature feature="상담기록" />,
             children: [{ path: "counseling", element: <CounselingPage /> }],
+          },
+          {
+            element: <RequireFeature feature="결제확인" />,
+            children: [{ path: "payments", element: <PaymentsPage /> }],
           },
 
           // 관리

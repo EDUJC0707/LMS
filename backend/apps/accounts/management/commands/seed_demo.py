@@ -784,7 +784,7 @@ class Command(BaseCommand):
         PostComment.objects.create(post=goods, author=s1, body="텀블러 옵션도 있나요?")
         Post.objects.create(
             category=Post.Category.EVENT_GOODS, author=admin,
-            title="학원 굿즈 수요조사",
+            title="굿즈 수요조사",
             body="원하는 굿즈를 댓글로 남겨주세요.",
         )
         return notice_week

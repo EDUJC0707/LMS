@@ -9,9 +9,186 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
+<script>
+  /* 로그인한 사람은 랜딩 대신 LMS 로. 표시 쿠키는 서버가 로그인 때 심는다
+     (accounts/views.py SIGNED_IN_COOKIE). 세션 쿠키는 HttpOnly 라 JS 가 못 읽는다.
+     **다른 무엇보다 먼저 둔다** — 스타일·서체가 그려진 뒤에 넘기면 로그인한 사람에게
+     랜딩이 한 번 번쩍인다.
+     첫 화면에서만 넘긴다 — /privacy 같은 곳은 로그인해도 볼 수 있어야 한다.
+     replace 라서 뒤로가기로 랜딩에 갇히지 않는다. */
+  /* 경로: /index.html 도 받는다. `cleanUrls`(vercel.json)를 켠 뒤로는 그 주소가
+     "/" 로 308 되어 이 가지를 탈 일이 거의 없지만, 켜기 전에는 308 없이 200 으로
+     서빙돼 그 URL 로 들어온 로그인 사용자가 안 넘어갔다(실측). 설정 하나에 기대는
+     동작이라 가지는 남겨 둔다.
+     쿠키: includes 는 이름 경계를 안 봐서 x_hjc_signed_in 같은 쿠키에 오탐한다
+     (실측: 그것만 심어도 리다이렉트됨). 경계를 박은 정규식으로 본다. */
+  if (/^\/(index\.html)?$/.test(location.pathname) &&
+      /(?:^|;\s*)hjc_signed_in=/.test(document.cookie)) {
+    location.replace("https://lms.hjcedu.com");
+  }
+</script>
+<script>
+  /* 뷰포트 높이를 얼린다(WebKit 255852 우회 — 위 --vhu 주석 참조).
+     resize 는 듣지 않는다 — 들으면 dvh 와 같아져 튐이 돌아온다.
+
+     **<meta name=viewport> 위에서는 재지 않는다**(2026-08-12 사고 → 같은 날 원인 정정).
+     이 스크립트는 viewport meta 보다 위에 있다. 그 위에서는 브라우저가 아직 980px
+     폴백 뷰포트를 쓰고 있어서 844 짜리 화면에서 100svh 가 2120 으로 나온다
+     (844 × 980/390 = 2120.7). 그대로 얼리면 --vhu 가 21.2px 이 되어 강사가 1230px,
+     히어로가 2120px 이 된다 — 배포까지 나간 사고다.
+
+     실측(390x844 dpr3, 같은 measureVh 본문):
+
+       재는 위치            100svh   innerHeight   clientWidth
+       meta 위               2120       2121           980
+       meta 아래              844        844           390
+       body 열림              844        844           390
+       DOMContentLoaded       844        844           390
+
+     **경계는 meta 태그다. body 유무는 무관하다.** 처음엔 "body 가 없어 초기 컨테이닝
+     블록이 확정되지 않아서" 라고 적었는데 틀린 진단이었고, 그 틀린 제약이 그대로
+     남아 다음 수정안을 한 번 더 망칠 뻔했다.
+
+     한때 head 에서 재고 DOMContentLoaded 에서 보정했는데, 그러면 값이 두 번 바뀌면서
+     열자마자 화면이 한 번 튄다. 그 튐을 없애겠다고 **보정 쪽을** 뺐던 것이 위의 사고다.
+     뺄 것은 보정이 아니라 **틀린 첫 측정**이었다.
+
+     DOMContentLoaded 한 번만 재면 둘 다 해결된다. 그전까지는 --vhu 가 폴백인 1svh 라
+     히어로가 제 크기로 그려지고, DCL 에서 넣는 값은 **바로 그 순간의 svh 를 px 로 굳힌
+     것**이라 숫자가 같다 — 값이 안 바뀌니 다시 그릴 일도 없다. 그 뒤로 주소창이 접혀
+     svh 가 움직여도 --vhu 는 px 이라 꿈쩍하지 않는다.
+
+     회전은 뷰포트가 진짜로 바뀌는 것이라 계속 듣는다. */
+  const measureVh = () => {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:fixed;top:0;left:0;width:0;height:100svh;visibility:hidden';
+    document.documentElement.append(d);
+    const h = d.getBoundingClientRect().height;
+    d.remove();
+    return h;
+  };
+  const freezeVh = () => {
+    const h = measureVh();
+    if (h > 0) document.documentElement.style.setProperty('--vhu', h / 100 + 'px');
+  };
+  /* **터치 기기에서만 얼린다.** 데스크탑에는 접히는 주소창이 없어 이 문제가 없고,
+     거기서 얼리면 브라우저 창을 늘렸을 때 레이아웃이 안 따라온다 — 없는 병을 고치려다
+     멀쩡한 것을 망가뜨리는 쪽이다. 데스크탑은 --vhu 가 1svh 인 채로 살아 있어
+     오늘과 한 픽셀도 다르지 않다. */
+  if (matchMedia('(hover: none) and (pointer: coarse)').matches) {
+    addEventListener('DOMContentLoaded', freezeVh, { once: true });
+    addEventListener('orientationchange', () => setTimeout(freezeVh, 250));
+  }
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+<!-- ↓↓↓ 재워 둔 계측기. 되살리려면 이 줄과 맨 아래 닫는 줄만 지운다 ↓↓↓
+     (2026-08-12 대표 지시 "test로 뒀던 것들 comment로 빼 삭제는 말고").
+     카톡에서 열자마자 나던 튐은 **못 고쳤다.** 헤드리스로는 끝내 재현이 안 됐고
+     — 0/150/400/900ms 어디서 재도 좌표가 같고 0ms 스크린샷에 이미 전부 그려져 있다 —
+     실기기 트레이스를 못 받은 채로 접었다. 다시 볼 때 여기서 이어가면 된다.
+     같이 확정된 것: 폰트 스왑은 무관(폴백 강제해도 좌표 동일), --nav/safe-area 는
+     h1 만 29.5px 밀고 선생님은 0.00px, 선생님은 오직 --vhu 에만 걸려 있다(42배).
+
+     Cmd+Alt+D 디버그 패널(debug.js)은 건드리지 않았다 — 그건 계측기가 아니라 도구다.
+
+<script>
+  /* 뷰포트 계측기. `?vh` 가 붙었을 때만 돈다.
+     카카오·인스타 인앱 브라우저에는 주소창이 없어 javascript: 를 못 넣는다. 그래서
+     페이지 안에 둔다.
+
+     **자리가 둘 다 중요하다.** viewport meta 아래여야 하고(위에서 재면 980px 폴백
+     뷰포트가 잡혀 844 화면에서 100svh 가 2120 으로 나온다), 문서 끝이 아니라 여기여야
+     한다(끝에 두면 히어로가 이미 그려진 뒤부터 기록이 시작돼 정작 봐야 할 창인
+     첫 페인트~DCL 을 통째로 놓친다 — 옛 계측기가 그랬다).
+
+     **왜 --vhu 를 찍나.** 선생님 위치는 `teacher.top = 42 × --vhu` 로 --vhu 하나에만
+     걸려 있다(실측: 42 × 8.44 = 354.48, 실제 354.484375). --vhu 가 1px 어긋나면
+     선생님이 42px 움직인다. h1 은 절반인 21× 라, 같은 움직임이 선생님에게서 두 배로 보인다.
+
+     보는 법: 카톡에서 https://hjcedu.com/?vh 를 열고 **스크롤하지 말고** 3초 뒤 캡처.
+       sv 움직임 @시각이 DCL 보다 앞  → 열리는 동안 웹뷰가 커졌다. 이게 그 버그다
+       sv 움직임 @시각이 DCL 보다 뒤  → --vhu 가 틀린 값으로 얼었다(튐 없이 계속 어긋남)
+       sv 가 한 값                    → 뷰포트는 안 움직인다. --vhu 가설은 죽는다
+       sat 이 0 이 아니고 움직임      → WebKit 191872. h1 만 29.5px 밀리고 선생님은 0px */
+  if (location.search.includes('vh')) {
+    const probe = h => {
+      const d = document.createElement('div');
+      d.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:' + h;
+      document.documentElement.append(d);
+      const v = d.getBoundingClientRect().height; d.remove();
+      return Math.round(v);
+    };
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;left:8px;top:8px;z-index:9999;background:#000C;' +
+      'color:#0f0;font:12px/1.5 ui-monospace,monospace;padding:8px 10px;border-radius:6px;' +
+      'white-space:pre;pointer-events:none';
+    const min = {}, max = {}, at = {}, n = {}, prev = {}, marks = [];
+    const mark = s => marks.push(s + ' ' + Math.round(performance.now()));
+    addEventListener('DOMContentLoaded', () => { mark('DCL'); document.body.append(box); });
+    addEventListener('load', () => mark('load'));
+    /* **요소도 같이 감시한다.** 뷰포트 숫자만으로는 "헤더가 늦게 자리 잡는다" 를
+       확인할 수 없다. 헤더 아랫변(navB)·헤드라인 윗변(h1T)·강사 윗변(teaT) 을 직접
+       재면 무엇이 언제 몇 px 움직였는지가 한 장에 다 나온다. 아직 파싱 전이라
+       없으면 그 줄은 건너뛰고, 생긴 뒤부터 기록을 시작한다. */
+    const el = { navB: '.nav', h1T: 'h1', teaT: '.teacher' };
+    const edge = (k, e) => Math.round(k === 'navB' ? e.getBoundingClientRect().bottom
+                                                   : e.getBoundingClientRect().top);
+    const tick = () => {
+      const t = Math.round(performance.now());
+      const v = { sv: probe('100svh'), lv: probe('100lvh'), dv: probe('100dvh'),
+                  inner: innerHeight, sat: probe('env(safe-area-inset-top)') };
+      for (const k in el) { const e = document.querySelector(el[k]); if (e) v[k] = edge(k, e); }
+      for (const k in v) {
+        if (prev[k] === undefined) { min[k] = max[k] = v[k]; n[k] = 0; at[k] = 0; }
+        else if (v[k] !== prev[k] && !n[k]++) at[k] = t;
+        prev[k] = v[k];
+        min[k] = Math.min(min[k], v[k]); max[k] = Math.max(max[k], v[k]);
+      }
+      box.textContent = Object.keys(v)
+        .map(k => `${k.padEnd(5)} ${String(v[k]).padStart(4)}  ${min[k]}~${max[k]}` +
+                  (n[k] ? `  움직임 ${n[k]}회 @${at[k]}ms` : ''))
+        .join('\n')
+        + `\nvhu   ${getComputedStyle(document.documentElement).getPropertyValue('--vhu').trim()}`
+        + `\n${marks.join('  ')}  t=${t}`;
+      requestAnimationFrame(tick);
+    };
+    tick();
+  }
+</script>
+     ↑↑↑ 재워 둔 계측기 끝 ↑↑↑ -->
+
 <title>한종철 통합과학</title>
 <meta name="description" content="통합과학도 철두철미하게. 한종철 통합과학.">
+<link rel="canonical" href="https://hjcedu.com/">
+<!-- 폰트를 미리 받는다. 없으면 브라우저가 <style> 을 파싱하고 @font-face 를 만난
+     뒤에야 요청을 건다 — 그 사이 헤더 글자가 시스템 폰트로 그려졌다가 SUIT 로
+     바뀌면서 눈에 띄게 흔들린다(brand 는 800 에 자간 -.025em 이라 폭이 크게 다르다).
+     카톡 인앱에서 "열자마자 헤더가 움찔" 하던 원인 중 하나다(2026-08-12 대표 제보).
+     **crossorigin 이 없으면 안 된다** — 같은 출처라도 폰트는 익명 CORS 로 받으므로,
+     빠뜨리면 이 preload 가 @font-face 요청과 별개 건으로 잡혀 두 번 받는다. -->
+<link rel="preload" as="font" type="font/woff2"
+      href="assets/fonts/SUIT-subset.woff2" crossorigin>
+<!-- 카톡·문자로 퍼지는 페이지다. 카드가 없으면 앱마다 제목·이미지를 제멋대로 집어간다.
+     **og:image 는 절대 URL 이어야 한다** — 카카오/트위터 크롤러는 상대경로를 풀지 않는다.
+     twitter:title/description/image 는 안 적는다: 없으면 og:* 를 그대로 읽는다.
+
+     카드는 세 자리가 각자 다른 일을 한다(2026-08-11 대표 확정). 이미지가 얼굴과
+     "통합과학도 철두철미하게" 를, 제목이 2028 수능이 만든 상황을, 설명이 그 과목을
+     맡은 사람을 준다. 셋이 같은 말을 하면 3초 안에 읽히는 카드가 한 문장으로 줄어든다.
+     콕스는 선생님 별명이다 — 배의 방향을 잡고 속도를 부르는 사람. **선생님을 붙인다**:
+     카드를 받는 쪽은 동료가 아니라 학생·학부모다.
+     **한종철은 강사다. 학원이 아니다** — 카피 주체를 기관으로 쓰지 말 것. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="한종철 통합과학">
+<meta property="og:url" content="https://hjcedu.com/">
+<meta property="og:title" content="2028 수능, 처음 준비하는 통합과학">
+<meta property="og:description" content="수능 통합과학의 콕스 한종철 선생님">
+<meta property="og:image" content="https://hjcedu.com/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="ko_KR">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/logo/atom-32.png">
 <link rel="icon" type="image/png" sizes="512x512" href="assets/logo/atom-512.png">
 <link rel="apple-touch-icon" href="assets/logo/atom-180.png">
@@ -26,10 +203,15 @@
 <script>window.__CHANNEL_TALK_KEY__ = '346bbc40-aad0-4f5f-a95b-90fc47bc9f48';</script>
 <!-- SUIT 가변 — 본체 앱(frontend/index.html)과 같은 서체로 간다.
      가변이라 100~900을 한 파일로 쓰고, 헤드라인은 900까지 밀어붙인다. -->
-<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-<link rel="stylesheet"
-      href="https://cdn.jsdelivr.net/gh/sun-typeface/SUIT@2/fonts/variable/woff2/SUIT-Variable.css">
 <style>
+  /* 이 페이지가 쓰는 글자만 구운 SUIT. 11,172 자를 통째로 받던 CDN 판은 624,536 B 였다.
+     굽는 법: pyftsubset SUIT-Variable.woff2 --flavor=woff2 --no-hinting --desubroutinize
+              --text-file=assets/fonts/subset-charset.txt --output-file=assets/fonts/SUIT-subset.woff2
+     문구를 새로 넣으면 목록에 없는 글자만 시스템 서체로 떨어진다 — 목록을 고쳐 다시 굽는다. */
+  @font-face{
+    font-family:"SUIT Variable"; font-weight:100 900; font-display:swap;
+    src:url("assets/fonts/SUIT-subset.woff2") format("woff2-variations");
+  }
   /* 팔레트는 배경 모티프에서 뽑았다 — 화면의 색이 두 군데서 나오면 안 된다.
      전체 평균을 쓰면 유리 하이라이트에 끌려 흰색으로 씻겨나간다. 그래서 각 에셋의
      **채도 높고 어두운** 픽셀(원자 링 음영·시냅스 소포 코어·은하 외곽)만 뽑았고,
@@ -47,11 +229,32 @@
     --line:rgba(107,135,222,.26);     /* 테두리도 같은 색상각에서 */
     --t1:#606DA4;                     /* 헤드라인 1행 — 휘도 110 */
     --t2:#EEF1FA;                     /* 헤드라인 2행 */
-    --pad:clamp(20px, 4.5vw, 72px);
-    --nav:72px;
+    /* viewport-fit=cover 라 노치 폰 가로에서 좌우가 잘린다(inset 44~59px 인데
+       clamp 는 33.3px). 세이프에어리어를 패딩에 더한다 — 노치가 없으면 env 가 0 이라
+       세로·데스크탑은 값이 그대로다. */
+    --pad:calc(clamp(20px, 4.5vw, 72px) + max(env(safe-area-inset-left), env(safe-area-inset-right)));
+    /* viewport-fit=cover 라 레이아웃 뷰포트가 상태바 밑까지 뻗는데 nav 는 top:0 이다.
+       노치 폰(inset-top 59)에서 브랜드·로그인이 다이내믹 아일랜드에 100% 가린다. */
+    --nav:calc(72px + env(safe-area-inset-top));
+    /* 뷰포트 높이 1% 를 하나로 모은 값. **아래 <script> 가 로드 때 한 번 재서 덮는다.**
+       카카오·인스타 인앱 웹뷰는 호스트 앱이 setMinimumViewportInset 을 안 부르면
+       svh·lvh·dvh 가 전부 현재 높이로 함께 움직인다(WebKit 255852, 미해결) — 그래서
+       스크롤로 툴바가 접힐 때마다 히어로와 섹션이 통째로 밀린다(대표 실기기 확인).
+       CSS 단위로는 못 막으므로 JS 로 얼린다. **resize 에는 일부러 반응하지 않는다** —
+       반응시키는 순간 dvh 와 같아져 튐이 돌아온다. 회전만 따로 다시 잰다.
+       여기 1svh 는 스크립트가 안 돌 때의 폴백이다. */
+    --vhu:1svh;
   }
   *{ box-sizing:border-box; margin:0 }
-  html{ -webkit-text-size-adjust:100%; scroll-behavior:smooth }
+  /* nav 가 fixed 라 앵커로 들어오면 대상이 그 아래로 들어간다(#errata 진입 시
+     섹션 위 66px 이 nav 뒤로 숨었다). 요소마다 scroll-margin 을 거는 대신
+     스크롤 컨테이너에 한 번 건다 — 키보드 포커스 이동도 같이 걸린다. */
+  html{ -webkit-text-size-adjust:100%; scroll-behavior:smooth; scroll-padding-top:var(--nav) }
+  /* 배경 애니메이션은 field.js 가 끄는데 스크롤 애니메이션은 CSS 라 그대로 남아 있었다 */
+  @media (prefers-reduced-motion: reduce){
+    html{ scroll-behavior:auto }
+    *, *::before, *::after{ animation-duration:.001ms !important; transition-duration:.001ms !important }
+  }
   body{
     background:var(--bg); color:var(--fg);
     font-family:"SUIT Variable","SUIT","Apple SD Gothic Neo",system-ui,sans-serif;
@@ -95,7 +298,7 @@
 
   /* ── 히어로 ────────────────────────────────────────────── */
   .hero{
-    position:relative; min-height:100svh; padding:var(--nav) var(--pad) 0;
+    position:relative; min-height:calc(100 * var(--vhu)); padding:var(--nav) var(--pad) 0;
     display:grid; grid-template-columns:1fr 1fr; align-items:center;
     overflow:hidden;
   }
@@ -119,8 +322,8 @@
   .space{ position:absolute; inset:0; z-index:0; pointer-events:none; display:block }
   .spacesrc{ position:absolute; width:0; height:0; opacity:0; pointer-events:none }
 
-  .dust, .wash, .motifs{ position:absolute; pointer-events:none; display:block }
-  .dust, .motifs{ inset:0 }
+  .dust, .wash{ position:absolute; pointer-events:none; display:block }
+  .dust{ inset:0 }
   .dust{ mix-blend-mode:screen }    /* 검정 위에서 먼지가 빛으로 읽힌다 */
   .wash{ left:0; top:0 }            /* 크기·margin 은 JS 가 창 반경으로 계산 */
 
@@ -155,36 +358,49 @@
   /* 강사 — 우측, 바닥에 선다. 100% 불투명이다.
      하단 페이드 마스크를 걷어냈다 — 부분 투명도 투명이고, 인물이 흐려지면
      배경 모티프와 같은 층으로 읽힌다. 뒤로 모티프가 지나가지도 않는다. */
+  /* picture 는 .hero 그리드의 칸을 하나 차지한다. 안쪽 img 는 absolute 라 흐름 밖이므로
+     껍데기만 걷어낸다 — display:contents 여도 img 의 절대배치 기준은 .hero 그대로다. */
+  .hero > picture{ display:contents }
   .teacher{
-    /* 확정: 80svh · 상한 820px · 오른쪽 5% · 바닥 0%
+    /* 확정: calc(80 * var(--vhu)) · 상한 820px · 오른쪽 5% · 바닥 0%
        (2026-07-28 확정 → 08-04 사진을 갈아 끼우고 재확인).
 
        사진을 바꿀 때 **높이 숫자가 아니라 화면에서 보이는 크기를 맞춘다.** 새 사진은
        프레임이 좁아(머리폭이 프레임의 39.1%, 예전은 39.5%) 같은 높이에서 머리가
-       예전의 85.5% 로 작아진다. 예전과 똑같이 맞추면 94svh 가 나오는데 실제로 보니
+       예전의 85.5% 로 작아진다. 예전과 똑같이 맞추면 calc(94 * var(--vhu)) 가 나오는데 실제로 보니
        커서, 80 을 그대로 쓰기로 했다 — 맞춰야 할 기준선이 아니라 출발점이었다.
 
        **투명 여백은 반드시 잘라내고 넣는다.** 원본처럼 인물이 프레임의 65% 만
-       차지하면 80svh 가 빈 공간까지 재서 인물이 52svh 로 나온다.
+       차지하면 calc(80 * var(--vhu)) 가 빈 공간까지 재서 인물이 calc(52 * var(--vhu)) 로 나온다.
 
        이 값은 debug.js 의 TEACHER0 에도 복제돼 있다 — 함께 고쳐야 패널을 여는 순간
        화면이 튀지 않는다. */
     position:absolute; right:var(--teacher-right, 5%); bottom:var(--teacher-bottom, 0%); z-index:1;
-    height:min(var(--teacher-h, 80svh), 820px); width:auto;
+    height:min(var(--teacher-h, calc(80 * var(--vhu))), 820px); width:auto;
     object-fit:contain; object-position:bottom right;
     pointer-events:none; user-select:none;
     opacity:1;
   }
 
   /* ── 아래 섹션 — 색이 바뀐다 ──────────────────────────────── */
-  section{ padding:clamp(80px,13vh,180px) var(--pad) }
-  .sec-head{ max-width:52rem; margin:0 auto clamp(32px,5vh,56px) }
+  /* **vh 를 svh 로 바꿔 봤다가 되돌렸다**(2026-08-11). 카톡 인앱에서 스크롤하면
+     화면이 튄다는 제보 때문이었는데, 전제가 틀렸다 —
+     ① 준수 브라우저(iOS Safari·Chrome 108+)에서 `vh` 는 이미 `lvh` 에 고정이라
+        주소창이 접혀도 안 변한다. 움직이는 건 `dvh` 뿐이다.
+     ② 정작 튀는 WKWebView 인앱 브라우저에서는 호스트 앱이 setMinimumViewportInset
+        을 부르지 않는 한 vh·svh·lvh·dvh **넷이 전부 같이** 움직인다
+        (WebKit 255852, 2023-05 접수 후 미해결).
+     즉 CSS 단위로는 못 고친다. 바꿔 봐야 모바일 여백만 10~12% 줄어든다.
+     실제 원인은 캔버스 쪽이었다 — mountNavDust 의 resize 가드를 보라. */
+  section{ padding:clamp(80px,calc(13 * var(--vhu)),180px) var(--pad) }
+  .sec-head{ max-width:52rem; margin:0 auto clamp(32px,calc(5 * var(--vhu)),56px) }
   .sec-head h2{
     font-weight:900; font-size:clamp(2rem,4.2vw,3.2rem);
     letter-spacing:-.04em; line-height:1.05; margin-bottom:.9rem;
   }
   .sec-head p{ color:var(--dim); font-size:clamp(.95rem,1.3vw,1.05rem); line-height:1.7 }
-  .stamp{ display:block; margin-top:1rem; font-size:.8rem; color:var(--dim); opacity:.75 }
+  /* opacity:.75 를 --dim 위에 곱해 3.66:1 이었다(AA 4.5 미달). 겹친 투명도를 걷는다 */
+  .stamp{ display:block; margin-top:1rem; font-size:.8rem; color:var(--dim) }
   /* 52rem(832px) — 60rem 은 규칙선이 글보다 450px 더 가서 오른쪽이 비었다.
      한 줄 길이도 여기가 읽기 좋다(한글 45~50자). */
   .wrap{ max-width:52rem; margin:0 auto }
@@ -192,8 +408,11 @@
   /* 커리큘럼 — 밝음 */
   #curriculum .sec-head{ margin-left:0; margin-right:auto }
   #curriculum{
-    background:#F4F2ED; color:#14151C; --dim:#666B7A; --line:rgba(20,21,28,.12);
-    --sec:#F4F2ED;   /* 노드가 레일을 뚫고 앉을 때 쓰는 배경색 */
+    /* 팔레트가 전부 H224 인데 여기만 베이지(#F4F2ED, H43)라 색상환 반대편이었다 —
+       그래서 이 구역만 겉돌았다. 명도(94.3%)는 그대로 두고 색상각만 224 로 옮겼다.
+       대비는 본문 15.8:1 · 보조 4.62:1 로 AA 통과(2026-08-11 확정). */
+    background:#ECEFF5; color:#14151C; --dim:#666B7A; --line:rgba(20,21,28,.12);
+    --sec:#ECEFF5;   /* 노드가 레일을 뚫고 앉을 때 쓰는 배경색 */
   }
   .tracks{ display:flex; gap:8px; margin-bottom:2.4rem; flex-wrap:wrap }
   .track{
@@ -235,14 +454,16 @@
     width:.66rem; height:.66rem; border-radius:50%;
     background:currentColor; box-shadow:0 0 0 5px var(--sec);
   }
-  .step:nth-child(1) .step-no{ color:#9096A2 }
+  /* #9096A2 는 밝은 배경에서 2.65:1 — 대형 텍스트 문턱 3.0 에도 못 미쳤다.
+     농도 진행(01 연함 → 04 진함)은 유지하되 첫 칸을 문턱 위로 올린다. */
+  .step:nth-child(1) .step-no{ color:#7C8290 }
   .step:nth-child(2) .step-no{ color:#717785 }
   .step:nth-child(3) .step-no{ color:#3E4350 }
   .step:nth-child(4) .step-no{ color:#14151C }
   /* 마지막 단계는 속을 채워 닫는다 — 링이 아니라 점이어야 "끝" 으로 읽힌다 */
   .step:nth-child(4) .step-no::before{ width:.8rem; height:.8rem; top:.28rem; left:.23rem }
   .step h3{ font-size:1.26rem; font-weight:800; margin-bottom:.4rem; letter-spacing:-.035em }
-  .step p{ color:#2E3340; font-size:.96rem; line-height:1.6 }
+  .step p{ color:#2E3340; font-size:.96rem; line-height:1.6; word-break:keep-all }
   .badge{
     display:inline-block; margin-left:.55rem; padding:.18rem .5rem; border-radius:5px;
     font-size:.7rem; font-weight:700; letter-spacing:.02em;
@@ -265,7 +486,7 @@
   /* 커리큘럼 구조의 근거. 법적 고지는 성격이 달라 footer 로 내렸다 */
   .note{
     margin-top:3.2rem; padding-top:1.4rem; border-top:1px solid var(--line);
-    font-size:.84rem; color:var(--dim); line-height:1.7; max-width:38rem;
+    font-size:.84rem; color:var(--dim); line-height:1.7; max-width:38rem; word-break:keep-all;
   }
 
   /* 정오표 — 중간톤 */
@@ -275,14 +496,20 @@
     text-align:left; font-size:.78rem; font-weight:600; letter-spacing:.03em;
     color:var(--dim); padding:0 0 .8rem; border-bottom:1px solid var(--line);
   }
-  .tbl td{ padding:1.05rem 0; border-bottom:1px solid var(--line); vertical-align:top }
+  /* 열 사이 여백이 0 이라 360px 에서 교재명 끝과 날짜가 1.88px 까지 붙어
+     `…실전 모의26.06.22` 로 한 문자열처럼 읽혔다. 마지막 열만 오른쪽 여백을 뺀다. */
+  .tbl td{ padding:1.05rem .8rem 1.05rem 0; border-bottom:1px solid var(--line); vertical-align:top }
+  .tbl th{ padding-right:.8rem }
+  .tbl td:last-child, .tbl th:last-child{ padding-right:0 }
   /* 교재만 늘어난다. 날짜는 tabular-nums 로 폭이 고정이고, 다운로드는 버튼 하나다 */
   .tbl th:nth-child(2){ width:8rem }
   .tbl th:nth-child(3){ width:7rem }
   .tbl .num{ font-variant-numeric:tabular-nums; white-space:nowrap; color:var(--dim) }
-  .title-cell{ font-weight:600 }
+  .title-cell{ font-weight:600; word-break:keep-all }
+  /* margin-left 가 줄바꿈 뒤에도 남아 배지가 어중간하게 들여쓰였다.
+     앞 공백을 마진 대신 여백 문자로 붙여 줄이 바뀌면 마진이 안 남게 한다. */
   .new{
-    display:inline-block; margin-left:.45rem; padding:.1rem .42rem; border-radius:4px;
+    display:inline-block; margin-left:0; padding:.1rem .42rem; border-radius:4px;
     font-size:.66rem; font-weight:700; background:#E8EAEE; color:#1C1E23; vertical-align:.14em;
   }
   /* 확장자를 그대로 라벨로 쓴다 — 무엇이 내려오는지 파일이 스스로 말한다 */
@@ -304,7 +531,7 @@
   /* 컨택트 — 검정으로 되돌아온다. 셋 중 혼자 가운데 정렬이라 튀었다: 왼쪽으로 맞췄다.
      세로 180px 패딩에 h2 하나 + 버튼 하나뿐이라 미완성으로 읽혀서
      footer 와 한 덩어리로 묶었다(아래 여백을 걷고 구분선으로 잇는다). */
-  #contact{ background:#000; padding-bottom:clamp(34px,4.5vh,56px) }
+  #contact{ background:#000; padding-bottom:clamp(34px,calc(4.5 * var(--vhu)),56px) }
   #contact .sec-head{ margin-bottom:1.6rem }
   .ch{
     display:inline-block; padding:.85rem 1.8rem; border-radius:999px;
@@ -312,7 +539,7 @@
     border:0; cursor:pointer; font-family:inherit;
   }
   footer{
-    padding:clamp(20px,2.6vh,30px) var(--pad) clamp(40px,5.5vh,64px); background:#000;
+    padding:clamp(20px,calc(2.6 * var(--vhu)),30px) var(--pad) clamp(40px,calc(5.5 * var(--vhu)),64px); background:#000;
     color:var(--dim); font-size:.8rem; line-height:1.8;
   }
   /* space-between 이 사업자 정보를 오른쪽 끝으로 밀어서 브랜드와 700px 떨어져
@@ -320,15 +547,20 @@
      매달렸다. 위아래로 쌓고 왼쪽에 맞춘다. */
   .foot{
     max-width:52rem; margin:0 auto;
-    padding-top:clamp(22px,3vh,30px); border-top:1px solid var(--line);
+    padding-top:clamp(22px,calc(3 * var(--vhu)),30px); border-top:1px solid var(--line);
     display:flex; flex-direction:column; gap:1.15rem;
   }
   .foot b{ color:var(--fg); font-weight:700; font-size:.86rem; letter-spacing:-.02em }
+  /* 법정 링크. 눈에 띄지 않되 찾으면 있어야 한다 */
+  .foot .pp{ margin-left:.7rem; color:var(--dim); text-decoration:none; border-bottom:1px solid var(--line) }
+  .foot .pp:hover{ color:var(--fg) }
   /* 라벨-값이 한 줄로 흐른다(국내 푸터 관행). 세로 dt/dd 격자는 값이 넷뿐이라
      빈 칸이 더 눈에 띄었다. */
   .foot dl{ display:flex; flex-wrap:wrap; gap:.3rem 1.5rem; margin:0; font-size:.78rem }
   .foot dl div{ display:flex; gap:.45rem }
-  .foot dt{ opacity:.55 }
+  /* 라벨은 줄어들지 않는다. 주소 값이 길어서 flex 가 dt 를 짜부라뜨렸고
+     `주소` 가 `주`/`소` 로 쪼개졌다(390px 에서 dt 박스 19x45 — 한 글자 폭에 두 줄). */
+  .foot dt{ opacity:.55; flex-shrink:0; white-space:nowrap }
   .foot dd{ margin:0 }
 
   /* ── 모바일 ──────────────────────────────────────────────── */
@@ -336,9 +568,65 @@
     /* 섹션 링크는 접는다 — 390px 에서 로그인 버튼을 20px 침범한다.
        아래로 내려가면 섹션이 순서대로 나오므로 이동 수단이 사라지지는 않는다. */
     .navL nav{ display:none }
-    .hero{ grid-template-columns:1fr; align-content:center; padding-bottom:32svh }
+
+    /* nav 는 불투명 검정이라 히어로 맨 위 72px 을 가로로 잘라 먹는다. 먼지는
+       .navdust 가 이어 주지만 우주는 이어 주는 것이 없어서, 자율 드리프트가 위로
+       올라오면 nav 아랫변에 화면을 가로지르는 직선이 생긴다(390x844 에서 시간의
+       34.7%, 1회 중앙값 13.8초). 히어로 꼭대기에 있을 때만 아래 16px 을 연다.
+       먼지 캔버스도 **같은 램프로** 깎아야 둘을 더해 밀도가 유지된다. */
+    .nav.attop{
+      background:linear-gradient(180deg, var(--bg) 0 calc(var(--nav) - var(--nav-ramp,16px)), transparent var(--nav));
+    }
+    .nav.attop .navdust{
+      -webkit-mask-image:linear-gradient(180deg,#000 0 calc(var(--nav) - var(--nav-ramp,16px)),transparent var(--nav));
+      mask-image:linear-gradient(180deg,#000 0 calc(var(--nav) - var(--nav-ramp,16px)),transparent var(--nav));
+    }
+    /* 세로 화면에는 데스크탑의 짝(왼쪽 글자 ↔ 오른쪽 사람)이 없다. 붙여서 하나로 만든다.
+       잉크가 하나도 지나가지 않던 가로 띠가 nav 아래 214px + 헤드라인 아래 146px
+       = 360px, 화면의 42.7% 였다. 데스크탑은 같은 띠가 88px(11%) 뿐인데 강사가
+       높이의 80% 를 차지해 헤드라인이 뜬 스캔라인에도 그의 몸이 걸리기 때문이다.
+       **빈 공간은 원인이 아니라 결과였다** — 강사가 절반으로 줄어서 생긴 자리다.
+
+       뒤의 상수(calc(10 * var(--vhu)))가 **헤드라인과 머리 사이 간격**이다. 3.5 일 때 nav 아래 153px /
+       머리 위 30px 로 5:1 이었다 — 위가 비고 아래가 붙었다. 헤드라인이 둘 사이에 있어서
+       이 수 하나가 두 간격을 맞바꾼다. 10 에서 98/85 로 거의 균형이다.
+       더 키우면 아래가 위보다 넓어지는데, 무거운 쪽(인물)이 글에 더 붙는 그림이라
+       어색하다. 13 을 넘기면 헤드라인이 인물에서 떨어져 화면 한복판에 뜬다 —
+       아래 calc 결합이 막으려던 바로 그 상태다.
+
+       padding-bottom 을 --teacher-h-sm 에 묶어 헤드라인 자리를 강사 높이의 함수로
+       만든다. 마법값 하나를 다른 마법값으로 바꾸지 않으려는 것이고, 덕분에 누가
+       강사 높이를 만져도 둘이 다시 갈라지지 않는다. */
+    .hero{
+      grid-template-columns:1fr;
+      align-content:center;
+      padding-bottom:calc(var(--teacher-h-sm, calc(58 * var(--vhu))) + var(--hero-gap, calc(0 * var(--vhu))));
+    }
     .copy{ max-width:none }
-    .teacher{ height:var(--teacher-h-sm, 40svh); right:var(--teacher-right-sm, -12%); bottom:var(--teacher-bottom-sm, 0%) }
+    /* clamp 하한 2.1rem 이 634px 밑에서 그대로 걸려(2.1rem ÷ 5.3vw = 634px)
+       320~634px 전 구간이 33.6px 로 얼어 있었다. 390px 에서 2행 잉크가 칸의 47.7%
+       뿐이고 같은 페이지 데스크탑은 57.9% 다.
+
+       **상한 45.6px 은 취향이 아니라 경계가 준다.** 861px(데스크탑 첫 픽셀)에서
+       5.3vw = 45.633px 이므로, 모바일이 이걸 넘으면 860→861 을 건널 때 화면이
+       넓어지는데 글자가 작아진다. 45.6px 은 그 아래라 경계가 증가 방향으로 이어진다.
+       넘침 검산: 한글 실효 어드밴스 0.8288em(실측), 2행 6자 = 4.9728em →
+       320px 에서 줄바꿈 없는 최대치가 56.3px 이므로 45.6px 은 안전하다. */
+    /* 2026-08-06 사용자 지시로 두 번에 걸쳐 키웠다: 2.85rem(45.6px) → 3.14 → 3.30rem(52.8px).
+       **860 경계에서 이어지지 않는다** — 861px(데스크탑 첫 픽셀)의 5.3vw 가 45.63px 이라
+       860→861 을 건너면 글자가 52.8 → 45.6 으로 작아진다. 실기기에는 그 경계를 건너는
+       일이 없고(폭이 고정) 브라우저 창을 끄는 사람에게만 보인다. */
+    /* **vw 항이 실제로 크기를 정한다.** 390px 에서 11.7vw = 45.63px 이고 상한
+       3.30rem(52.8px)은 451px 부터야 걸린다 — 상한만 올리면 폰에서는 아무 일도
+       안 일어난다(2026-08-06 에 두 번 그렇게 놓쳤다). 10%+5% 를 vw 에 건다:
+       11.7 × 1.155 = 13.51vw → 390px 에서 52.7px. */
+    h1{ font-size:min(13.51vw, 4.4rem) }   /* 391~599 도 vw 가 계속 이긴다 */
+    /* calc(40 * var(--vhu)) 는 데스크탑(calc(80 * var(--vhu)))의 절반이라 머리폭이 83px — 데스크탑 157px 의 53% 였다.
+       오른쪽 -12% 는 46.8px 을 잘랐는데, PNG 알파를 훑어 보면 팔짱 낀 팔꿈치가
+       인물 폭의 **99.71%** 까지 나간다(알파 전수 스캔, 임계 8). 파일이 실루엣에 딱 붙게
+       잘려 있어서 -3% 도 이미 살짝 자른다 —
+       고른 값이 아니라 사진에서 나온 값이다. */
+    .teacher{ height:var(--teacher-h-sm, calc(58 * var(--vhu))); right:var(--teacher-right-sm, -3%); bottom:var(--teacher-bottom-sm, 0%) }
     .steps::before{ display:none }
     .step{ grid-template-columns:1fr; gap:.55rem; padding-bottom:2rem }
     /* 좁은 화면에서는 뒤 두 열이 고정폭을 그대로 붙들어 교재가 110px 만 받고
@@ -347,7 +635,18 @@
     .tbl th:nth-child(2){ width:5.4rem }
     .tbl th:nth-child(3){ width:4.2rem }
     .scope{ padding-top:.3rem; line-height:1.8 }
-    .step-no{ padding-left:1.4rem; font-size:1.3rem }
+
+    /* 세로 패딩이 vh 기반이라 화면이 좁아질수록 글 단 대비 비율이 벌어진다 —
+       섹션 사이가 219px 로 데스크탑(208px)보다 넓은데 글 단은 350px 로
+       데스크탑 832px 의 42% 다. 좁은 화면에서는 여백도 같이 줄인다. */
+    section{ padding:clamp(56px,calc(9 * var(--vhu)),110px) var(--pad) }
+    /* 문의는 h2 하나 + 버튼 하나뿐인데 위가 110px, 아래가 38px 로 2.89:1 이었다 */
+    #contact{ padding-top:clamp(44px,calc(7 * var(--vhu)),84px) }
+    /* 레일을 숨겼으므로 노드 점과 그 자리(padding-left)도 같이 걷는다 —
+       안 걷으면 번호만 22.4px 안으로 밀려 제목·본문과 왼쪽 끝이 어긋나고
+       점은 잇는 선 없는 불릿으로 혼자 남는다. */
+    .step-no{ padding-left:0; font-size:1.3rem }
+    .step-no::before{ display:none }
 
     /* 채널톡 런처가 앉을 자리를 비운다. 런처는 화면 오른쪽 아래에 고정으로 뜨는데
        (24px 안쪽, 56px 크기 — 채널톡 번들 실측) 좁은 화면에서는 사업자 정보가
@@ -355,19 +654,181 @@
        세이프에어리어를 더해도 겹침이 남아서 아래를 그만큼 비운다.
        600px 부터는 사업자 정보가 런처까지 닿지 않아 여기(모바일)에만 건다. */
     footer{ padding-bottom:calc(env(safe-area-inset-bottom) + 24px + 56px + 16px) }
+    /* 좁은 화면에서 사업자 정보를 한 줄로 흘리면 줄바꿈이 값 길이에 좌우돼
+       들쭉날쭉해진다(상호+사업자등록번호가 한 줄, 대표 혼자 한 줄, 주소는 두 줄).
+       라벨 열·값 열로 세워 한 쌍이 한 행을 갖게 한다.
+       display:contents 로 래퍼 div 를 걷어내 dt/dd 가 직접 격자 칸이 된다. */
+    .foot dl{ display:grid; grid-template-columns:auto 1fr; gap:.4rem .8rem }
+    .foot dl div{ display:contents }
+    /* 건물명이 어절 중간에서 쪼개졌다(`파크뷰오피스` / `타워 1401호`).
+       한국어 기본 줄바꿈은 글자 단위라 공백 없는 고유명사가 아무 데서나 끊긴다. */
+    .foot dd{ word-break:keep-all }
+
+    /* 라벨이 --dim(#5E6B9C) 위에 opacity:.55 를 곱해 검정 대비 **1.90:1** 이었다 —
+       법정 표시 의무 항목이 사실상 안 읽혔다. 겹친 opacity 를 걷는다(팔레트에 새 색을
+       더하지 않는다 — 색이 두 군데서 나오면 안 된다). 값도 4.06:1 이라 AA 미달이라
+       푸터 본문만 한 단계 올린다. */
+    footer{ color:#8F9ABF }
+    .foot dt{ opacity:1; color:#6E79A6 }
+  }
+
+  /* 키가 작은 폰. **--nav 가 고정 72px 인 것이 뿌리다** — 568px 화면에서는 높이의
+     12.7% 를 먹는데 932px 에서는 7.7% 다. 나머지는 전부 높이에 비례하므로 화면이 짧을수록
+     남는 자리만 줄어들고, 가운데 정렬이 그것을 반씩 나눠 헤드라인이 nav 쪽으로 밀린다.
+     58% 일 때 위·아래 여백이 화면의 6.3%(320x568) · 7.3%(375x667) 였다 — 390x844 의
+     9.9% 와 어긋난다. 53% 로 내려 8.8% · 9.7% 로 맞춘다.
+
+     **높이로 가른다. 폭으로 가르면 안 된다** — 처음에 `max-width:389` 로 짰다가
+     360x800(폭은 좁고 키는 큰 갤럭시류)이 12.3% 로 오히려 과해졌다. 그 화면은 58% 가
+     이미 맞았다. 필요한 값은 폭이 아니라 높이가 정한다:
+     p ≈ 80.2 - (7200 + 100·헤드라인높이)/H — H 가 800 을 넘으면 답이 58 로 수렴한다.
+
+     portrait 을 붙이는 이유: 이걸 빼면 가로로 눕힌 폰(844x390)도 높이 719 이하라
+     같이 걸린다. 거기는 아래 가로 전용 블록이 따로 맡는다.
+     599 상한은 태블릿(600~860)을 안 건드리려는 것이다.
+     (여백과 간격은 align-content:center 라 언제나 같은 값이다.) */
+  @media (max-width:599px) and (max-height:719px) and (orientation: portrait){
+    :root{ --teacher-h-sm:calc(53 * var(--vhu)) }
+  }
+
+  /* 아이패드 세로(600~860). 폰 값이 그대로 올라오면 화면만 커지고 내용은 그대로라
+     헤드라인이 칸의 38% 밖에 안 차고 가운데가 242px 비었다. 둘 다 키운다. */
+  @media (min-width:600px) and (max-width:860px) and (min-height:600px){
+    /* 변수를 바꾼다 — .teacher{height} 만 덮으면 .hero 의 padding-bottom 이
+       calc(58 * var(--vhu)) 폴백을 계속 읽어 헤드라인이 강사 위로 겹친다. 둘이 같은 값을 봐야 한다.
+       디버그 패널은 :root 에 인라인으로 써서 여전히 이걸 이긴다. */
+    /* 강사 + nav + 헤드라인이 화면보다 커지면 남는 자리가 0 이 돼 가운데 정렬이 무력해지고
+       강사 발밑이 잘린다. 남는 자리로 상한을 건다 — `100vhu - 260px` 쪽이 이기는 것은
+       화면이 765px 보다 낮을 때다(0.66H > H - 260 ⟺ H < 764.7. 70% 때는 867px 이었다). */
+    /* 70 → 66 (2026-08-12). 70 에서는 헤드라인이 nav 와 머리 사이에 **위아래 17px 씩**
+       끼어 있었다 — align-content:center 라 남는 공간이 균등하게 갈리는데, 강사가 70% 를
+       먹으면 1024px 화면에서 남는 것이 33px 뿐이다. 66 으로 내리면 37px 씩이 된다.
+       글자 크기는 안 변한다 — h1 의 min() 에서 12vw 항이 이기고 있어 높이 항을 안 탄다.
+       실측(위 여백 = 아래 간격, 70 → 66): 768x1024 17→37 · 820x1180 33→56 ·
+       1024x1366 34→61 · 600x900 20→38. 폰(58%)과 데스크탑은 이 줄을 안 탄다. */
+    :root{ --teacher-h-sm:min(calc(66 * var(--vhu)), calc(calc(100 * var(--vhu)) - 260px)) }
+    /* rem 상한이 구간 전체를 이겨 600~860 이 통째로 70.4px 로 언다.
+       폭은 vw 가, 높이는 실제로 남는 띠가 정하게 한다. 2.56 = h1 높이(2.2em) ÷ 띠의 86%. */
+    h1{ font-size:min(12vw, calc((calc(100 * var(--vhu)) - var(--nav) - var(--teacher-h-sm,calc(66 * var(--vhu)))) / 2.56)) }
+  }
+
+  /* 아이패드 프로 세로(861~1024). 폭이 860 을 넘어 데스크탑 2열을 그대로 받는데
+     세로 화면에는 그 짝(왼쪽 글자 ↔ 오른쪽 사람)이 없다 — nav 아래 587px(화면의
+     43%)이 통짜 검정이고, 헤드라인 잉크가 폭의 26%(768 은 50%), 강사는 820px
+     상한에 걸려 화면 60% 에서 멈춰 있었다. 위 태블릿 블록과 같은 배치를 준다.
+     **문은 orientation:portrait 다** — 확정된 데스크탑(가로)은 절대 안 탄다. */
+  @media (min-width:861px) and (max-width:1024px) and (orientation: portrait){
+    /* 70 → 66 (2026-08-12). 70 에서는 헤드라인이 nav 와 머리 사이에 **위아래 17px 씩**
+       끼어 있었다 — align-content:center 라 남는 공간이 균등하게 갈리는데, 강사가 70% 를
+       먹으면 1024px 화면에서 남는 것이 33px 뿐이다. 66 으로 내리면 37px 씩이 된다.
+       글자 크기는 안 변한다 — h1 의 min() 에서 12vw 항이 이기고 있어 높이 항을 안 탄다.
+       실측(위 여백 = 아래 간격, 70 → 66): 768x1024 17→37 · 820x1180 33→56 ·
+       1024x1366 34→61 · 600x900 20→38. 폰(58%)과 데스크탑은 이 줄을 안 탄다. */
+    :root{ --teacher-h-sm:min(calc(66 * var(--vhu)), calc(calc(100 * var(--vhu)) - 260px)) }
+    .hero{
+      grid-template-columns:1fr; align-content:center;
+      padding-bottom:calc(var(--teacher-h-sm) + var(--hero-gap, calc(0 * var(--vhu))));
+    }
+    h1{ font-size:min(12vw, calc((calc(100 * var(--vhu)) - var(--nav) - var(--teacher-h-sm,calc(66 * var(--vhu)))) / 2.56)) }
+    /* 상한 820px 을 벗기고 svh 로 되돌린다 — 벗기지 않으면 강사만 데스크탑 값에
+       남아 헤드라인 자리(padding-bottom)와 어긋난다. */
+    .teacher{ height:var(--teacher-h-sm); right:var(--teacher-right-sm, -3%); bottom:var(--teacher-bottom-sm, 0%) }
+
+    /* 커리큘럼 3열을 되살린다 — 접는 조건이 max-width:860 하나뿐이라 600~860 이
+       폰에 딸려 들어갔다. 768px 에서 범위 한 줄이 칸의 13.6%, 제목이 22~48% 다.
+       범위 열만 12.5rem → 11rem 이다. 데스크탑 값 그대로면 600~609px 에서 내용 열이
+       239px 밑으로 떨어져 `로직N제 — …` 이 51.8% 짜리 두 줄로 접힌다(실측).
+       11rem 은 582px 까지 한 줄을 지키고, 가장 긴 범위(`시스템과 상호작용` 95px)도
+       176px 안에 든다 — 잘림 없음. */
+    .step{ grid-template-columns:4rem minmax(0,1fr) 11rem; gap:1.4rem 1.6rem; padding-bottom:2.4rem }
+    /* 열이 돌아오면 레일도 돌아온다 — 번호 열이 있어야 점이 걸릴 자리가 있다.
+       높이는 fitRail() 이 resize 마다 다시 잰다(리스너는 폭 조건 없이 상시). */
+    .steps::before{ display:block }
+    .step-no{ padding-left:1.7rem; font-size:1.5rem }
+    .step-no::before{ display:block }
+    .scope{ padding-top:.42rem; line-height:1.95 }
+  }
+
+
+  /* 가로로 눕힌 폰. calc(64 * var(--vhu)) 짜리 강사 위에 헤드라인을 얹으면 nav 를 뚫는다
+     (740x360 에서 헤드라인 top 32.6px < --nav 72px). */
+  @media (max-width:860px) and (max-height:599px) and (orientation: landscape){
+    .hero{ align-content:center; padding-bottom:calc(32 * var(--vhu)) }
+    /* 폰 상한(4.4rem)이 여기까지 올라오면 360px 높이에 70px 글자가 얹혀 위가 9px 남는다 */
+    h1{ font-size:min(13.51vw, 3rem) }
+    /* **-12% 를 되살리면 안 된다.** right 는 뷰포트 폭의 %인데 이미지는 높이로 재므로,
+       넓고 낮은 화면에서 -12% 가 이미지 폭보다 커진다 — 800x360 에서 이미지 폭 91px 에
+       밀어내는 양 96px 라 **가시폭 0px**, 강사가 통째로 화면 밖으로 나간다.
+       가로에서는 인물이 이미 작으니 블리드 자체가 필요 없다. */
+    .teacher{ height:calc(46 * var(--vhu)); right:2% }
+    /* 16px 램프는 세로에서 정한 값이다. 가로는 화면이 낮아 창이 nav 밑까지 올라오고,
+       램프가 짧으면 우주가 nav 아랫변에서 잘려 화면을 가로지르는 밝은 띠가 된다
+       (568x320 에서 y56 1.2 → y72 45.5, 2.65휘도/px). 40px 로 늘리면 0.71/px 다.
+       램프 안(y32~72)에 브랜드 글자가 걸리지만 그 자리 배경은 p70 11→16 로 거의
+       그대로다 — 창을 nav 안(110,40)에 못 박고 잰 최악값. */
+    :root{ --nav-ramp:40px }
+    /* 성운이 헤드라인 1행(--t1 #606DA4, 휘도 110)을 이긴다. 히어로 16px 블록평균
+       피크가 740x360 177 · 568x320 181 이었다. 창은 그대로 두고 층만 눕힌다 —
+       R 을 줄이면 폰 세로(Rmin 70)까지 따라 움직인다. .55 에서 둘 다 99. */
+    .space{ opacity:.55 }
   }
   /* prefers-reduced-motion 은 JS 가 처리한다 — 정적 1프레임만 그린다.
      CSS 로 배경을 끄면 히어로가 통째로 검게 남는다. */
+
+  /* ── 인쇄 ──────────────────────────────────────────────────
+     브라우저는 배경을 안 찍는다. 검정이 빠진 흰 종이 위에 본문은 그대로 #F0F0F4 라
+     대비 1.14:1 — 글이 통째로 사라진다. 검정을 쓰는 네 면만 뒤집는다.
+     #curriculum 은 원래 밝은 배경에 어두운 글이라 손댈 것이 없다. */
+  @media print{
+    :root{ --fg:#111; --t2:#111 }
+    body, footer, #errata, #contact{ background:#fff; color:#111 }
+    #errata{ --dim:#4A4F63; --line:#BBB }
+    /* 배경 캔버스·인물 사진·고정 nav·채널톡 런처는 종이에서 할 일이 없다 */
+    .nav, .field, .teacher, #ch-plugin{ display:none }
+    /* 그림자는 배경과 달리 인쇄된다 — 흰 종이에 검은 얼룩으로 남는다 */
+    h1{ text-shadow:none }
+    /* svh 기반 여백이 남으면 빈 종이가 한 장 더 나온다 */
+    .hero{ min-height:0; padding:0 0 28px }
+    section{ padding:0 0 28px }
+    footer{ padding-bottom:0 }
+    .foot dt{ color:#555 }
+    /* 흰 글자를 검정 면에 얹은 자리 — 면이 빠지면 흰 종이에 흰 글자만 남는다 */
+    .track[aria-selected="true"]{ background:none; color:#111; border-color:#111 }
+  }
+  /* 탭 타깃 HIG 44. **폭이 아니라 포인터로 건다** — 손가락 크기는 화면 크기와
+     무관하다. `max-width:860px` 안에 있을 때는 아이패드 프로(1024)가 통째로 빠져
+     44 미만이 12개였다. 전부 세로만 모자랐다(브랜드 143.8x30 · 로그인 83x39.5 ·
+     트랙 탭 113.5x39.2 · PDF/XLSX 45.4x26.6 · 제보하기 94x40.4).
+     패딩만 늘리므로 **보이는 크기는 그대로**다. */
+  @media (pointer: coarse){
+    .brand{ padding-block:7px }
+    .login{ padding-block:.74rem }
+    .track{ padding-block:.78rem }
+    .btn{ padding-block:.82rem }
+    /* 표 안이라 알약을 키우면 행 높이가 밀린다. 히트 영역만 넓힌다 —
+       보이는 테두리는 그대로 두고 ::after 로 44 높이의 투명 판을 덮는다. */
+    .dl{ position:relative }
+    .dl::after{
+      content:''; position:absolute; left:0; right:0;
+      top:50%; height:44px; transform:translateY(-50%);
+    }
+  }
 </style>
 </head>
 <body>
 
 <!-- 로그인 전에는 "LMS"를 걸지 않는다(사용자 지시 2026-07-28) — 비로그인 방문자에게
      LMS 는 제품 내부 명칭이고, 여기서 파는 것은 강의다. -->
-<div class="nav">
+<!-- attop 을 **마크업에 박아 둔다**. 스크롤 0 에서 켜지는 것이 초기 상태인데
+     JS 가 붙이면 모듈이 다 내려온 뒤라, 그전까지 통짜 검정이던 nav 아랫변이
+     모듈이 도는 순간 열린다 — 열자마자 나던 움찔의 다른 한 축이다(2026-08-12). -->
+<header class="nav attop">
   <div class="navL">
     <a class="brand" href="/">
-      <img src="assets/logo/atom-180.png" alt="">
+      <!-- 90px 이다(30 CSS px × DPR3). 180 을 쓰면 38KB 를 받아 30px 로 줄여 그린다 —
+           헤더가 완성되기를 기다리는 자원은 폰트와 이것 둘뿐이라 셀룰러에서 티가 난다.
+           **atom-180.png 은 지우지 않는다** — apple-touch-icon 이 그 크기를 쓴다. -->
+      <img src="assets/logo/atom-90.png" alt="" width="30" height="30">
       한종철 통합과학
     </a>
     <nav>
@@ -376,10 +837,12 @@
       <a href="#contact">문의하기</a>
     </nav>
   </div>
-  <a class="login" href="/student/login">로그인</a>
-</div>
+  <a class="login" href="https://lms.hjcedu.com/login">로그인</a>
+</header>
 
-<header class="hero">
+<!-- banner 는 이 배경 칸이 아니라 위 상단바다. <header> 로 두면 body 직계라
+     role=banner 가 여기 붙어 스크린리더가 nav·로그인 대신 먼지밭을 랜드마크로 읽는다. -->
+<div class="hero">
   <!-- 우주 사진(정적) → 먼지밭. 커서가 지나가면 먼지가 걷히고 우주가 드러난다 -->
   <div class="field" id="field" aria-hidden="true">
     <canvas class="space"></canvas>
@@ -394,31 +857,50 @@
     </h1>
   </div>
 
-  <img class="teacher" src="assets/teacher/nobg/teacher.png" alt="한종철 선생님">
-</header>
+  <!-- 터치 기기만 갈아 끼운다. 데스크탑은 <img src> 로 PNG 를 그대로 받아 바이트도
+       픽셀도 오늘과 같다. srcset+sizes 가 아니라 media 를 쓰는 이유: DPR3 폰은
+       필요 픽셀을 1029 로 계산해 srcset 으로는 도로 1.7MB PNG 를 집어간다.
+       실측 1,738,120 B → 266,230 B (-84.7%), 알파 최대차 0.
 
+       **pointer:coarse 가 아이패드를 잡는다.** 폭·높이로는 못 가른다 — 아이패드
+       가로(1366x1024·1180x820·1024x768)와 12.9" 세로(1024x1366)가 860/600 을
+       둘 다 넘어 1.7MB 를 집어갔는데, 1180x820 은 데스크탑 1200x800 과 20px
+       차이라 폭으로 자르면 데스크탑이 같이 걸린다.
+       높이 임계는 아래 가로 블록과 같은 599 에 둔다 — 600 이면 1024x600↔601 에서
+       레이아웃은 그대로인데 전송만 6.5배 뛴다. -->
+  <picture>
+    <source media="(pointer:coarse), (max-width:860px), (max-height:599px)" type="image/webp"
+            srcset="assets/teacher/nobg/teacher.webp">
+    <!-- 260KB webp 가 400kbps 에서 11.6초 걸리는데 크롬은 도착한 줄까지만 그린다 —
+         그동안 상반신이 가로로 잘려 보였다(실측). 다 온 뒤에 켠다. -->
+    <img class="teacher" style="opacity:0;transition:opacity .4s" onload="this.style.opacity=1"
+         src="assets/teacher/nobg/teacher.png" alt="한종철 선생님">
+  </picture>
+</div>
+
+<main>
 <section id="curriculum">
   <div class="wrap">
     <div class="sec-head">
       <h2>커리큘럼</h2>
-      <p>내신과 수능을 같은 개념으로 잡습니다.</p>
+      <p id="cur-lead">내신에서 배운 개념을 수능까지 이어갑니다.</p>
     </div>
 
     <div class="tracks" role="tablist">
-      <button class="track" role="tab" aria-selected="true" data-track="naesin">고1·고2 내신</button>
-      <button class="track" role="tab" aria-selected="false" data-track="suneung">2028 수능</button>
+      <button class="track" role="tab" aria-selected="true" aria-controls="steps" data-track="naesin">고1·고2 내신</button>
+      <button class="track" role="tab" aria-selected="false" aria-controls="steps" data-track="suneung">2028 수능</button>
     </div>
 
-    <div class="steps" id="steps"></div>
+    <div class="steps" id="steps" role="tabpanel" aria-live="polite"></div>
 
     <div class="mock">
       <h3>실전 모의고사</h3>
-      <p>시즌마다 새로 나옵니다.</p>
+      <p>한종철 통합과학 연구소에서 만든 시즌별 실전 모의고사 제공</p>
     </div>
 
     <p class="note">
-      통합과학은 2028학년도가 첫 시행이라 수능 기출이 없습니다.<br>
-      그래서 기출 분석 단계를 두지 않습니다.
+      통합과학 수능은 2028학년도에 처음 시행됩니다.<br>
+      수능 기출은 없지만 교육과정과 공개된 출제 자료를 분석해 예상 문항과 학습 자료를 준비했습니다.
     </p>
   </div>
 </section>
@@ -444,12 +926,15 @@
     <button class="ch" data-chat="상담 문의">채팅으로 문의하기</button>
   </div>
 </section>
+</main>
 
 <footer>
   <div class="foot">
     <div>
-      <b>한종철 통합과학</b><br>
-      © 2026
+      <b>한종철 통합과학</b> © 2026
+      <!-- 확장자를 뺀다 — `cleanUrls`(vercel.json)가 /privacy 로 서빙하고
+           /privacy.html 은 거기로 308 한다. 옛 링크도 살아 있다. -->
+      <a class="pp" href="/privacy">개인정보처리방침</a>
     </div>
     <!-- 사업자 정보(2026-08-05 수령). 교육 서비스는 전자상거래법상 표시 의무가 있다.
          **통신판매업신고 줄은 일부러 뺐다** — 신고번호를 아직 못 받았고, 정부 신고번호는
@@ -473,7 +958,7 @@ import { openChat } from './chat.js';
 /* 배경. **모티프판은 걷어냈다**(2026-07-29) — 빈 목록을 넘기면 이미지를 받지도
    굽지도 않고, 오려낼 잉크가 없어 먼지와 바람만 남는다. 렌더 코드는 그대로 두었다:
    다른 비주얼이 정해지면 그 자리에 넣으면 된다. 기록은 SPEC.md §4-옛. */
-mountField(document.getElementById('field'), []);
+mountField(document.getElementById('field'));
 
 /* 배경을 건다. data.js 의 `use: true` 하나가 기준이다 — 없으면 검정이고,
    그건 디버그를 열기 전까지 아무 배경도 없던 지금까지의 상태다. */
@@ -482,6 +967,24 @@ mountField(document.getElementById('field'), []);
   if (bg) window.__field?.space?.(bg.src, bg.zoom ?? 1);
 }
 mountNavDust(document.querySelector('.nav'));
+
+/* nav 아랫변에 우주가 잘려 생기던 직선을 없앤다(.attop). 스크롤하면 도로 닫는다:
+   밝은 커리큘럼 섹션이 nav 아래로 비치면 제목이 유령처럼 배어 나온다.
+
+   **켜는 일은 마크업이 하고 여기는 끄기만 한다** — 초기 상태(스크롤 0)를 JS 가
+   붙이면 모듈이 다 내려온 뒤라 열자마자 움찔한다(2026-08-12).
+
+   **터치 게이트를 뺐다.** 마크업에 박아 놓고 게이트를 남기면 860px 이하 데스크탑
+   창에서 한 번 켜진 뒤 영영 안 닫혀 위의 배어 나옴이 그대로 남는다. 게이트는
+   원래 "우주를 nav 밑으로 미는 것은 COARSE 드리프트뿐" 이라 붙였던 것인데,
+   그건 켤 이유였지 끄지 말아야 할 이유가 아니었다. CSS 는 이미 860px 이하로
+   묶여 있어 넓은 데스크탑은 이 클래스가 있어도 아무 일이 없다. */
+{
+  const nv = document.querySelector('.nav');
+  const syncTop = () => nv.classList.toggle('attop', scrollY < 8);
+  syncTop();
+  addEventListener('scroll', syncTop, { passive: true });
+}
 
 /* 디버그 패널 — ⌘⌥D(맥) / Ctrl+Alt+D. 누르기 전에는 debug.js 를 내려받지도 않는다.
    code 로 본다(key 가 아니라) — ⌥ 조합에서 macOS 는 key 를 '∂' 로 바꿔 준다. */
@@ -496,7 +999,7 @@ addEventListener('keydown', async e => {
 /* 커리큘럼 */
 const stepsEl = document.getElementById('steps');
 function renderSteps(track) {
-  stepsEl.innerHTML = CURRICULUM[track].map((s, i) => `
+  stepsEl.innerHTML = CURRICULUM[track].steps.map((s, i) => `
     <div class="step">
       <div class="step-no">${String(i + 1).padStart(2, '0')}</div>
       <div>
@@ -505,6 +1008,7 @@ function renderSteps(track) {
       </div>
       ${s.units?.length ? `<div class="scope">${s.units.map(u => `<div>${u}</div>`).join('')}</div>` : '<div></div>'}
     </div>`).join('');
+  document.getElementById('cur-lead').textContent = CURRICULUM[track].lead;
   fitRail();
 }
 /* 노드 중심 = .step-no 위에서 .34rem+.33rem. rem 을 그대로 읽어 재계산한다 */
@@ -557,7 +1061,7 @@ if (!ERRATA.length) {
       <tbody>
         ${sorted.map(b => `
           <tr>
-            <td class="title-cell">${b.title}${fresh(b.updated) ? '<span class="new">NEW</span>' : ''}</td>
+            <td class="title-cell">${b.title}${fresh(b.updated) ? ' <span class="new">NEW</span>' : ''}</td>
             <td class="num">${b.updated}</td>
             <td>
               <a class="dl" href="${b.file}" download>

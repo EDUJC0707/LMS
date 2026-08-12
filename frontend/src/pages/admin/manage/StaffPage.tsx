@@ -269,7 +269,9 @@ export default function StaffPage() {
                         <tr key={key}>
                           <th scope="row" className="pm-matrix__feature">
                             <b>{key}</b>
-                            <span>{FEATURE_NOTE[key] ?? "이 학원에서 쓰는 추가 기능입니다."}</span>
+                            {/* 설명이 없으면 아무것도 쓰지 않는다 — 폴백 문구는
+                                키가 이미 말한 것을 되풀이할 뿐이다(CLAUDE.md §8) */}
+                            {FEATURE_NOTE[key] && <span>{FEATURE_NOTE[key]}</span>}
                           </th>
                           {active.map((staff) => {
                             const on = currentOn(staff, key);

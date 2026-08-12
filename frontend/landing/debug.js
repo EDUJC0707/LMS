@@ -48,6 +48,10 @@ const CSSVARS = {
   h:     { v: '--teacher-h',     sm: '--teacher-h-sm',     smKey: 'hSm', unit: 'svh' },
   r:     { v: '--teacher-right', sm: '--teacher-right-sm', smKey: 'rSm', unit: '%' },
   b:     { v: '--teacher-bottom', sm: '--teacher-bottom-sm', smKey: 'bSm', unit: '%' },
+  /* 헤드라인과 강사 머리 사이. **모바일 전용이다** — 데스크탑 히어로는 2열
+     가운데정렬이라 이 개념이 없다. sm 짝을 안 두어 한 값이 두 모드로 나가지만,
+     읽는 규칙이 @media(max-width:860px) 안에만 있어 넓은 화면에서는 아무 일도 안 한다. */
+  gap:    { v: '--hero-gap', unit: 'svh' },
   h1gap:  { v: '--h1-gap', unit: 'em' },
 };
 
@@ -62,16 +66,25 @@ const GROUPS = [
        노출·채도·확대 노브는 뺐다: 캔버스에서는 아무 일도 안 했다. */
     ['spaceDim', '밝기',      0,   1, .01,'cfg', 2],
     ['spaceWin', '드러나는 범위', 1.5, 6, .1, 'cfg', 1],
+    /* 커서 없는 기기 전용 범위. 데스크탑 확정값(3.5)은 위 노브가 따로 쥔다 */
+    ['spaceWinSm','범위(모바일)', 1.5, 8, .1, 'cfg', 1],
     /* 줌은 **사진마다 따로** 기억한다. 비율이 제각각이라 한 값으로는 못 맞춘다
        (1440x900 에서 cover 로 잘리는 양: carina 좌우 4% · ngc1333 12% · catseye 20%). */
     ['spaceZoom','확대',       .5, 2, .01,'cfg', 2],
     /* 여는 속도. 우주와 바람이 함께 벌어지는 빠르기다 — 둘이 한 동작이라 노브도 하나다. */
     ['wake',     '열리는 속도', .15, 3, .05,'cfg', 2],
+    /* 자율 배회 속도. **커서 없는 기기에서만 보인다** — 데스크탑에서 돌려도
+       화면이 안 바뀐다(커서가 창을 쥐고 있어 자율항이 안 돈다). 기기 모드로 볼 것. */
+    ['drift',    '배회 속도',   .5, 3, .05,'cfg', 2],
   ]],
   ['블루 · 강사', [
     ['h',       '크기',      35, 100, 1,   'css', 0],
     ['r',       '위치',     -25,  35, 1,   'css', 0],
     ['b',       '바닥에서',    0,  20, .5,  'css', 1],
+    /* 크기 노브가 두 간격의 **합**을 정하고(강사가 클수록 남는 자리가 준다),
+       이 노브가 그 합을 위아래로 **나눈다**. 한 쌍이라 나란히 둔다.
+       모바일에서만 듣는다 — 데스크탑에서 움직여도 화면은 안 바뀐다. */
+    ['gap',     '머리 간격',   0,  25, .5,  'css', 1],
   ]],
   ['먼지', [
     ['dust',    '개수',     200, 4000, 50, 'new', 0],
@@ -91,10 +104,8 @@ const GROUPS = [
     ['kOut',    '밀림 속도',    1,  20, .5, 'cfg', 1],
     ['kIn',     '되메움 속도', .3,   6, .1, 'cfg', 1],
   ]],
-  /* 모티프(손전등) 노브 넷은 뺐다 — 판을 걷어낸 뒤로 아무것도 안 움직인다
-     (2026-07-29). 아무 일도 안 하는 노브가 붙어 있으면 그걸 돌려 보고 "왜 안 되지"
-     로 시간을 버린다. CFG 의 flash·soft·ink·lag 는 남겨 둔다 — 새 비주얼이 그
-     자리를 쓸 수 있고, 그때 이 그룹을 되살리면 된다. */
+  /* 모티프(손전등) 노브 넷은 2026-07-29 에 뺐고, 2026-08-12 에 CFG 쪽 값도 지웠다.
+     아무 일도 안 하는 노브가 붙어 있으면 그걸 돌려 보고 "왜 안 되지" 로 시간을 버린다. */
   ['헤드라인', [
     ['h1gap',   '줄 간격',    0,  .8, .01,'css', 2],
   ]],
@@ -170,10 +181,24 @@ export function openDebug() {
   if (document.querySelector('.dbg')) return null;   // 이미 열려 있다
   const api = window.__field;
   const rootS = document.documentElement.style;
-  const sm = () => matchMedia('(max-width: 860px)').matches;
+  const sm = () => matchMedia('(max-width: 860px), (max-width: 1024px) and (orientation: portrait)').matches;
 
   // index.html 에 박힌 강사 기본값. 여기와 CSS 가 어긋나면 패널을 여는 순간 화면이 튄다
-  const TEACHER0 = { h: 80, r: 5, b: 0, hSm: 40, rSm: -12, bSm: 0, h1gap: .20 };
+  const TEACHER0 = { h: 80, r: 5, b: 0, hSm: 58, rSm: -3, bSm: 0, gap: 0, h1gap: .20 };
+  /* hSm 리터럴은 폰 값이다. 태블릿(600~860)에서는 :root 가
+     --teacher-h-sm:min(66svh, calc(100svh - 260px)) 로 덮고 가로 폰은 46svh 다 —
+     58 을 그대로 쓰면 패널을 여는 순간 강사가 튄다(768x1024 에서 717→594px).
+     지금 그려져 있는 높이를 되읽는다. 100svh 는 innerHeight 와 다를 수 있어서
+     (주소창) 탐침 요소로 잰다. */
+  if (sm()) {
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:absolute;top:0;width:0;height:100svh;visibility:hidden';
+    document.body.append(probe);
+    const svh = probe.getBoundingClientRect().height / 100;
+    probe.remove();
+    const now = document.querySelector('.teacher')?.getBoundingClientRect().height;
+    if (svh && now) TEACHER0.hSm = Math.round(now / svh * 10) / 10;
+  }
   if (!BASE) BASE = { teacher: { ...TEACHER0 }, blue: 'royal', cfg: api ? { ...api.cfg } : {} };
 
   const st = document.createElement('style');
@@ -294,7 +319,7 @@ export function openDebug() {
        계속 이겨, 나중에 CSS 를 고쳐도 화면이 안 바뀌는 유령이 남는다. */
     for (const k of ['dim', 'accent', 'glow', 'chip', 't1', 't2', 'line',
                      'teacher-h', 'teacher-right', 'teacher-bottom',
-                     'teacher-h-sm', 'teacher-right-sm', 'teacher-bottom-sm', 'h1-gap',
+                     'teacher-h-sm', 'teacher-right-sm', 'teacher-bottom-sm', 'h1-gap', 'hero-gap',
                      'space-img'])
       rootS.removeProperty('--' + k);
     Object.assign(S, { blue: BASE.blue, ...BASE.teacher, space: '', spaceName: '', zoomOf: {} });

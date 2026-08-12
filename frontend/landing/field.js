@@ -5,11 +5,9 @@
  * 밀어낸다 — 지나가는 자리의 먼지가 밖으로 밀려나고 동시에 옅어지면서 빈 자리가
  * 생기고, 커서가 떠나면 서서히 되메워진다. 강사 뒤도 지난다(금지구역 없음).
  *
- * **모티프판은 2026-07-29 에 걷어냈다** — 배경이 우주 사진으로 바뀌었다.
- * index.html 이 mountField 에 빈 목록을 넘기므로 아래 LAYOUT·TONE·bake·손전등은
- * 돌지 않는다. 에셋과 패커는 local/landing-motif-board/ 로 옮겼으므로 **이 코드를
- * 그냥 켜면 이미지가 404 다** — 되살리는 절차는 그 폴더의 README.
- * 왜 걷어냈고 무엇을 배웠는지는 SPEC.md §4-옛.
+ * **모티프판(손전등에 드러나던 10종)은 2026-07-29 에 걷어냈고, 죽어 있던 코드도
+ * 2026-08-12 에 지웠다.** 왜 있었고 무엇을 배웠는지는 SPEC.md §4-옛, 되살리는
+ * 절차는 local/landing-motif-board/README — 에셋·패커·배치 계산기가 다 거기 있다.
  *
  * 밀릴 때(k 9.0)와 되메워질 때(k 1.6)의 **비대칭이 "걷힌다"를 만든다.**
  * 접선 성분(swirl)이 없으면 구멍이 정확한 원이 되고, 옅어짐(fade)이 없으면 밀린
@@ -31,6 +29,8 @@ const CFG = {
 
   /* 바람 — 걷히는 범위. 손전등보다 넓다 */
   R: 0.10,           // 창 반경 = min(W,H) × 이 값
+  Rsm: 0.122,        // 좁은 화면은 sqrt(W*H) × 이 값. 0.122 는 390x844 에서 정확히
+                     // 70 이 나오는 수 — 폰 값을 건드리지 않으려고 거기 맞췄다
   Rmin: 70, Rmax: 130,
   push: 0.85,        // 밀어내는 거리 = R × 이 값
   sweep: 0.16,       // 커서 속도를 얼마나 물고 가는가(진행 방향 쓸림)
@@ -43,17 +43,17 @@ const CFG = {
      따로 만들면 둘이 미묘하게 어긋나 "왜 여기는 걷혔는데 안 보이지" 가 된다. */
   spaceDim: 1.0,     // 창 한복판에서의 불투명도. 확정(2026-07-29)
   spaceWin: 3.5,     // 드러나는 반경 = R × 이 값. 확정(2026-07-29) — 315px.
+  spaceWinSm: 4.4,   // 커서 없는 기기에서만. 3.5 의 +25%(2026-08-11 대표 지시).
+                     // 데스크탑 확정값은 안 건드린다 — 거기서는 커서가 창을 쥐고 있어
+                     // "지나간 자리" 가 넓어지면 걷은 자국이 뭉개진다. 자율 배회는
+                     // 스스로 도는 것이라 조금 넓어야 화면이 열린 느낌이 난다
                      // 곡선 전체가 이 안으로 압축된다(자르는 게 아니다)
   wake: 0.6,         // 초당 여는 양. 0.6 = 만개까지 1.7초. 3.0(0.33초)은 "번쩍" 이었다
+  drift: 3.0,       // 자율 배회 속도 배수(커서 없는 기기 전용). 1 이면 좌우 57초·
+                     // 상하 37초 한 바퀴. 주기가 비배수라 경로가 눈에 안 띄게 반복된다 —
+                     // 이 값을 바꿔도 그 성질은 유지된다(네 항에 같은 배수를 곱하므로)
   spaceZoom: 1.0,    // cover 배율에 곱한다. **사진마다 다르다** — data.js SPACE 의
                      // zoom 이 원본이고, 배경을 갈아 끼울 때 여기로 들어온다
-
-  /* 손전등 — 모티프가 드러나는 범위. 아주 작다 */
-  flash: 0.062,      // 반경 = min(W,H) × 이 값 (900 → 56px)
-  flashMin: 34, flashMax: 92,
-  soft: 0.42,        // 이 비율까지는 온전히 밝고, 그 밖은 가장자리로 사그라든다
-  ink: 0.62,         // 손전등 한복판 모티프 불투명도. 피크 렌더휘도 ≈68
-  lag: 11,           // 손전등이 커서를 따라붙는 속도. 붙으면 UI, 뒤처지면 물질
 };
 
 /* 먼지·워시 색. 에셋 심부 청색(H236)에서 조금 더 차가운 H224 '로열' 로 확정.
@@ -71,49 +71,21 @@ const rgb = hex => [1, 3, 5].map(i => parseInt(hex.substr(i, 2), 16));
    따로 두면 히어로만 바뀌어 이어짐이 깨진다. */
 const statics = [];
 
-/* 에셋별 톤. 중간휘도를 실측해 피크 렌더휘도를 전부 ≈68 로 맞춘 계수.
-   element·tectonics 는 원래 어두워서(134·146) 계수가 높다. data.js UNITS 순서. */
-const TONE = [0.61, 0.53, 0.61, 0.63, 0.58, 0.59, 0.61, 0.84, 0.78, 0.61];
-
-/* 배치는 pack-layout.py 가 계산한다 — 손으로 잡지 않는다.
-   존을 먼저 정하고 그 안에서 흔든다. 순수 난수는 고르게 흩어져 평평하고,
-   군집 선호만 주면 한쪽으로 쏠린다. 순서는 data.js 의 UNITS 와 1:1.
-
-   **크기는 전부 같고 자리는 고정이다**(데스크탑 15vw / 모바일 16vw). 리듬은
-   자리와 회전에서만 나온다 — 회전은 난수가 아니라 사다리(±33°, 0° 근처는 빔)를
-   섞어 좌우 균형과 분산을 강제한다. 난수로 뽑으면 뭉친다(실측: 10개 중 5개가 16~17°).
-   강사와 그 오른쪽은 금지구역이라 데스크탑 좌표가 전부 좌측 절반에 모인다. */
-const LAYOUT = [
-  { x: 46, y: 21, size: 15, rot: 24,  dim: 1 },   // atom
-  { x: 32, y: 64, size: 15, rot: -5,  dim: 1 },   // dna
-  { x: 9,  y: 22, size: 15, rot: -20, dim: 1 },   // chromosome
-  { x: 22, y: 20, size: 15, rot: -31, dim: 1 },   // mitochondria
-  { x: 35, y: 38, size: 15, rot: 13,  dim: 1 },   // chloroplast
-  { x: 48, y: 47, size: 15, rot: -24, dim: 1 },   // synapse
-  { x: 14, y: 45, size: 15, rot: 5,   dim: 1 },   // population
-  { x: 25, y: 83, size: 15, rot: -11, dim: 1 },   // element
-  { x: 43, y: 81, size: 15, rot: 19,  dim: 1 },   // tectonics
-  { x: 10, y: 84, size: 15, rot: 33,  dim: 1 },   // universe
-];
-
-const LAYOUT_SM = [
-  { x: 18, y: 20, size: 16, rot: 5,   dim: 1 },   // atom
-  { x: 23, y: 41, size: 16, rot: 21,  dim: 1 },   // dna
-  { x: 15, y: 73, size: 16, rot: -29, dim: 1 },   // chromosome
-  { x: 34, y: 85, size: 16, rot: 9,   dim: 1 },   // mitochondria
-  { x: 20, y: 59, size: 16, rot: -14, dim: 1 },   // chloroplast
-  { x: 15, y: 80, size: 16, rot: -33, dim: 1 },   // synapse
-  { x: 34, y: 72, size: 16, rot: -17, dim: 1 },   // population
-  { x: 34, y: 34, size: 16, rot: -6,  dim: 1 },   // element
-  { x: 15, y: 30, size: 16, rot: 30,  dim: 1 },   // tectonics
-  { x: 19, y: 92, size: 16, rot: 27,  dim: 1 },   // universe
-];
-
 const isSmall = () => matchMedia('(max-width: 860px)').matches;
+
+/* 먼지는 개수가 아니라 **밀도**다. CFG.dust 4000 은 1200x800 에서 정한 값이고
+   (4.17개/천px²), 그대로 390x844 에 쓰면 12.15개/천px² — 데스크탑의 3.94배,
+   360x640 에서는 5.63배다. 같은 검정이 한쪽에서는 별밭, 한쪽에서는 노이즈로 읽힌다.
+   mountNavDust 는 처음부터 면적당으로 환산하고 있었다 — 히어로만 안 했다.
+   넓은 화면은 손대지 않는다(isSmall 밖에서는 CFG.dust 그대로). */
+const REF_AREA = 1200 * 800;
+const dustCount = () => (isSmall() || innerHeight > innerWidth)
+  ? Math.max(700, Math.round(CFG.dust * innerWidth * innerHeight / REF_AREA))
+  : CFG.dust;
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
 
-export function mountField(root, units) {
+export function mountField(root) {
   const GLOW = readGlow();
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -128,10 +100,31 @@ export function mountField(root, units) {
      전에는 마운트하자마자 자율 배회가 돌아 화면 한복판에 우주가 떠 있었다 —
      커서가 거기 있지도 않은데. 열자마자 검정이고, 손을 움직여야 열린다.
 
-     터치에는 pointermove 가 오지 않으므로 배경을 영영 못 본다. 그래서 스크롤을
-     신호로 쓴다 — 손가락으로 화면을 만졌다는 유일한 증거이고, 타이머처럼
-     "가만히 있었는데 저절로 켜지는" 일이 없다. */
-  let woke = false;
+     **이 규칙은 포인터가 있는 기기에만 적용한다**(사용자 지시 2026-08-05:
+     "just on mobile we can apply a different rule and change the rule").
+
+     규칙이 막으려던 것은 "커서가 거기 있지도 않은데 우주가 열려 있다" 였다.
+     커서가 없는 기기에는 부재할 커서가 없으므로 그 전제가 성립하지 않는다.
+     전에는 스크롤을 신호로 썼는데 스크롤은 히어로를 **떠나는** 동작이라,
+     클라이맥스가 히어로를 본 뒤에 왔다.
+
+     조사 근거(2026-08-05, 5개 각도). 커서 연출을 쓰는 곳의 압도적 다수는 터치에서
+     그냥 아무것도 안 한다 — Codrops 저장소 59개 중 53개가 touchmove 를 안 걸고
+     `pointer: coarse` 사용은 0건이다. 그러나 24 ways 가 명문화한 "호버를 터치에서
+     빼도 되는 조건"은 **호버가 아무것도 새로 공개하지 않을 때**뿐이고, 우리는
+     배경 사진 전체를 공개하므로 그 조건을 못 맞춘다.
+     제약(원판 금지·문구 금지·데스크탑 불변)을 전부 통과하면서 "영영 안 열림"을
+     실제로 푸는 패턴은 하나뿐이었다 — **앰비언트 드리프트**. trionn.com 이
+     `(1 - explodeAmt)` 스케일로 쓰고, 우리와 같은 효과를 파는 상용 컴포넌트
+     Cursor Reveal 이 "touch + idle animation" 을 기본으로 묶어 판다.
+     자이로는 iOS 가 requestPermission() 에 사용자 제스처를 요구해 탭 대상과 안내
+     문구가 필요해지므로 §8 과 충돌해 배제했다(three.js 도 PR #22654 로
+     DeviceOrientationControls 를 삭제했다).
+
+     드리프트 자체는 이미 paint() 의 else 분기에 쓰여 있었다 — woke 가 매 프레임
+     덮어써서 죽어 있었을 뿐이다. */
+  const COARSE = matchMedia('(hover: none) and (pointer: coarse)').matches;
+  let woke = COARSE;
 
   /* ── 워시 — 커서를 따라다니는 아주 옅은 빛.
      2026-07-29 사용자 지시로 절반으로 낮췄다(.070 → .034). 이건 남기되 눈에
@@ -151,18 +144,6 @@ export function mountField(root, units) {
     wctx.fillStyle = g;
     wctx.fillRect(0, 0, 256, 256);
   }
-
-  /* ── 모티프 — 캔버스 두 장.
-     ink 는 오프스크린이고 한 번만 굽는다(자리가 고정이라 다시 구울 일이 없다).
-     lit 은 화면에 붙어 매 프레임 손전등 모양으로 ink 를 찍어낸다. */
-  const lit = document.createElement('canvas');
-  lit.className = 'motifs';
-  root.append(lit);
-  const lctx = lit.getContext('2d');
-  const ink = document.createElement('canvas');
-  const ictx = ink.getContext('2d');
-  const imgs = [];
-  let baked = false;
 
   /* ── 우주 — 커서 자리에서만 오려낸다 ──────────────────────
      원본(img/video)은 화면에 안 나오고 여기서 읽어 가기만 한다. cover 로 맞추는
@@ -205,38 +186,10 @@ export function mountField(root, units) {
       tw: rand(.25, .8), tph: rand(0, 6.28),     // 반짝임 속도·위상
     };
   });
-  let dust = makeDust(CFG.dust);
+  let dust = makeDust(dustCount());
   const bucket = Array.from({ length: CFG.buckets }, () => []);
 
-  let W = 0, H = 0, R = 100, R2 = 1, FR = 56;
-
-  /* 모티프를 오프스크린에 굽는다. 자리가 고정이므로 resize 때만 다시 굽는다.
-     톤은 canvas filter 로 미리 태운다 — 매 프레임 filter 를 거는 것과 달리
-     한 번만 래스터되므로 프레임 비용이 0 이다. */
-  const bake = () => {
-    if (!imgs.length || !W || !H) return;
-    const L = isSmall() ? LAYOUT_SM : LAYOUT;
-    ink.width = Math.round(W);
-    ink.height = Math.round(H);
-    ictx.setTransform(1, 0, 0, 1, 0, 0);
-    ictx.clearRect(0, 0, W, H);
-    const canFilter = 'filter' in ictx;
-    L.forEach((p, i) => {
-      const img = imgs[i];
-      if (!img || !img.naturalWidth) return;
-      const s = p.size / 100 * W;
-      const tone = TONE[i] * p.dim;
-      ictx.save();
-      ictx.translate(p.x / 100 * W, p.y / 100 * H);
-      ictx.rotate(p.rot * Math.PI / 180);
-      if (canFilter) ictx.filter = `saturate(1.35) brightness(${tone})`;
-      else ictx.globalAlpha = tone;      // filter 미지원 — 어두워지는 결과는 같다
-      ictx.drawImage(img, -s / 2, -s / 2, s, s);
-      ictx.restore();
-    });
-    ictx.filter = 'none';
-    baked = true;
-  };
+  let W = 0, H = 0, R = 100, R2 = 1;
 
   const fit = () => {
     const r = root.getBoundingClientRect();
@@ -245,15 +198,18 @@ export function mountField(root, units) {
     // 창 반경. 화면이 좁으면 같이 좁아진다 — vw 로 고정하면 모바일에서 화면
     // 절반이 통째로 걷힌다
     const m = Math.min(W, H);
-    R = Math.max(CFG.Rmin, Math.min(CFG.Rmax, CFG.R * m));
+    /* 짧은 변으로 재면 세로 태블릿은 짧은 변이 폭이라 창이 안 큰다 — 820x1180 은
+       폰보다 면적이 2.9배인데 R 은 70→82(17%)뿐이었고 점유율이 절반이었다.
+       면적의 제곱근으로 재면 두 변이 다 들어온다. 넓은 화면은 종전대로 짧은 변이다. */
+    R = Math.max(CFG.Rmin, Math.min(CFG.Rmax,
+      isSmall() ? CFG.Rsm * Math.sqrt(W * H) : CFG.R * m));
     R2 = 2 * R * R;
-    FR = Math.max(CFG.flashMin, Math.min(CFG.flashMax, CFG.flash * m));
 
     const ws = 2.6 * R;
     wash.style.width = wash.style.height = ws + 'px';
     wash.style.margin = `${-ws / 2}px 0 0 ${-ws / 2}px`;
 
-    for (const cv of [spaceCv, lit, dustCv].filter(Boolean)) {
+    for (const cv of [spaceCv, dustCv].filter(Boolean)) {
       cv.width = Math.round(W);
       cv.height = Math.round(H);
       cv.style.width = W + 'px';
@@ -263,21 +219,21 @@ export function mountField(root, units) {
 
     prevSpaceRect = null;   // 캔버스 크기가 바뀌면 내용이 날아간다 — 다음 프레임에 새로 그린다
     for (const p of dust) { p.hx = p.u * W; p.hy = p.v * H; p.x = p.hx; p.y = p.hy; }
-    bake();
   };
 
-  /* 이미지는 다 받은 뒤에 굽는다. 반쯤 받은 상태로 구우면 빈 캔버스가 남고,
-     자리가 고정이라 다시 구울 계기가 영영 오지 않는다. */
-  units.slice(0, LAYOUT.length).forEach((u, i) => {
-    const img = new Image();
-    img.decoding = 'async';
-    img.src = u.asset.replace(/^assets\/motifs\//, 'assets/motifs/768/');
-    imgs[i] = img;
-    (img.decode ? img.decode() : Promise.resolve()).catch(() => {}).then(bake);
-  });
-
   fit();
-  addEventListener('resize', fit);
+  /* 주소창이 접히고 펴질 때마다 resize 가 온다. 히어로는 100svh 라 실제 크기는
+     안 변하는데 fit() 이 캔버스를 비우고 먼지를 홈으로 스냅해, 열려 있던 바람 구멍이
+     닫혔다가 1.4초에 걸쳐 되메워졌다. 크기가 실제로 달라졌을 때만 다시 맞춘다. */
+  let lastW = 0, lastH = 0;
+  addEventListener('resize', () => {
+    const r = root.getBoundingClientRect();
+    if (Math.abs(r.width - lastW) < 1 && Math.abs(r.height - lastH) < 1) return;
+    lastW = r.width; lastH = r.height;
+    const n = dustCount();
+    if (Math.abs(n - dust.length) > dust.length * 0.2) dust = makeDust(n);
+    fit();
+  });
 
   /* ── 입력 — 이벤트에서는 기록만. 물리는 rAF 에서만 돈다 ── */
   /* over — 커서가 히어로 안에 있는가. **가만히 있다고 닫히지는 않는다**
@@ -296,7 +252,6 @@ export function mountField(root, units) {
       FINE = true;                         // wgt 는 건드리지 않는다 — 0 에서 서서히 오른다
       // 첫 자리로 **순간이동**한다. 중앙에서 끌려오면 지나온 자리가 쓸려 보인다
       sx = fx = pxN; sy = fy = pyN;
-      lx = pxN; ly = pyN;
       woke = true;
     }
   }, { passive: true });
@@ -304,18 +259,27 @@ export function mountField(root, units) {
   root.parentElement.addEventListener('pointerleave', e => {
     if (e.pointerType === 'touch') return;
     over = false;
+    /* 터치 기기에 펜/마우스가 한 번 들어왔다 나가면 FINE 이 켜진 채로 남아
+       자율 드리프트로 못 돌아온다 — over 는 false 이고 FINE 은 true 라 히어로가
+       영영 검게 굳는다(스타일러스 태블릿·마우스 붙인 폰에서 실제로 재현된다).
+       커서 없는 기기에서는 포인터가 떠나면 소유권도 함께 돌려준다. */
+    if (COARSE) { FINE = false; woke = true; }
   }, { passive: true });
   addEventListener('scroll', () => {
-    scrollP = clamp01(scrollY / innerHeight);
-    woke = true;                            // 터치가 화면을 만졌다는 신호
+    /* 주소창이 접히면 innerHeight 가 바뀌어 같은 스크롤 위치에서 값이 흔들린다.
+       히어로 높이(100svh)는 그 사이 고정이므로 그걸 분모로 쓴다. */
+    scrollP = clamp01(scrollY / (root.getBoundingClientRect().height || innerHeight));
+    /* **여기서 woke 를 켜지 않는다**(2026-08-11 대표 지시 "desktop 은 돌면 안 돼").
+       터치 신호로 넣었던 줄인데, 이제 COARSE 가 마운트에서 이미 켜 주므로 터치에는
+       필요가 없다. 반대로 데스크탑에서는 마우스를 안 움직이고 스크롤부터 한 사람에게
+       자율 배회가 돌아 버린다 — "커서가 거기 있지도 않은데 우주가 열려 있다",
+       2026-07-29 규칙이 막으려던 바로 그것이다(실측: 스크롤만으로 점등 0 → 124,911). */
   }, { passive: true });
 
   /* ── 렌더 ───────────────────────────────────────────────── */
   let sx = .5, sy = .5, fx = .5, fy = .5;    // 바람의 눈(정규화)
-  let lx = .5, ly = .5;                      // 손전등(정규화) — 바람보다 조금 빠르다
   let vx = 0, vy = 0;                        // 바람의 속도(px/s) — 진행 방향 쓸림용
   let raf = 0, t0 = 0, prev = 0;
-  let prevRect = null;
 
   const paint = (t, dt) => {
     /* ① 바람의 눈. 포인터가 있으면 포인터가 전부 가져간다 */
@@ -330,9 +294,17 @@ export function mountField(root, units) {
       tx = fx; ty = fy;
     } else {
       // 주기가 비배수라 눈이 루프를 못 찾는다
-      tx = .50 + .30 * Math.sin(t * .110) + .07 * Math.sin(t * .041) + .18 * scrollP;
-      ty = .46 + .20 * Math.sin(t * .170 + 1.1) + .06 * Math.sin(t * .067) + .30 * scrollP;
-      wgt = 1;
+      /* 배회 속도는 **커서 없는 기기에만** 건다. 데스크탑도 이 분기를 탈 수 있다 —
+         마우스를 안 움직이고 스크롤부터 하면 FINE 이 아직 false 라 여기로 온다.
+         거기서는 확정값 그대로 1배여야 한다(2026-08-11 대표 지시). */
+      const td = t * (COARSE ? CFG.drift : 1);
+      tx = .50 + .30 * Math.sin(td * .110) + .07 * Math.sin(td * .041) + .18 * scrollP;
+      ty = .46 + .20 * Math.sin(td * .170 + 1.1) + .06 * Math.sin(td * .067) + .30 * scrollP;
+      /* 커서 없는 기기에서는 CFG.wake 로 **열린다**. 1 로 꽂으면 첫 프레임에
+         통째로 켜져 "번쩍" 하는데, 그 감각은 2026-07-29 에 이미 버렸다
+         (사용자 원문: "all of a sudden it gets hella bigger so its like bam!").
+         데스크탑은 이 분기에 스크롤 뒤에만 들어오므로 종전대로 1 이다. */
+      wgt = COARSE ? clamp01(wgt + CFG.wake * dt) : 1;
     }
     /* 아직 아무 입력도 없었다 — 바람도 우주도 없다. **먼지는 그대로 보인다**:
        화면이 달라지는 게 아니라 아무 일도 안 일어나는 것이 맞다. */
@@ -346,8 +318,6 @@ export function mountField(root, units) {
     vx += (nvx - vx) * (1 - Math.exp(-7.0 * dt));
     vy += (nvy - vy) * (1 - Math.exp(-7.0 * dt));
     sx = nsx; sy = nsy;
-    lx += (tx - lx) * (1 - Math.exp(-CFG.lag * dt));
-    ly += (ty - ly) * (1 - Math.exp(-CFG.lag * dt));
 
     const SX = sx * W, SY = sy * H;
 
@@ -363,7 +333,7 @@ export function mountField(root, units) {
          "번쩍" 으로 읽힌다. 40% 에서 시작해 100% 로 벌어지면 "펼쳐진다" 가 된다.
          smoothstep 을 먹여 시작과 끝의 가속을 눕힌다 — 선형이면 끝에서 뚝 선다. */
       const grow = wgt * wgt * (3 - 2 * wgt);
-      const win = CFG.spaceWin * R * (0.4 + 0.6 * grow), pad = 2;
+      const win = (COARSE ? CFG.spaceWinSm : CFG.spaceWin) * R * (0.4 + 0.6 * grow), pad = 2;
       const rect = [SX - win - pad, SY - win - pad, 2 * (win + pad), 2 * (win + pad)];
       if (prevSpaceRect) sctx.clearRect(...prevSpaceRect);
       sctx.clearRect(...rect);
@@ -440,28 +410,6 @@ export function mountField(root, units) {
     }
     dctx.globalAlpha = 1;
 
-    /* ④ 손전등 — 커서가 닿은 픽셀의 잉크만 찍어낸다.
-       화면 전체가 아니라 손전등 사각형만 건드린다. 지난 프레임 자리도 함께
-       지워야 잔상이 남지 않는다. */
-    const LX = lx * W, LY = ly * H;
-    const r = FR, pad = 2;
-    const rect = [LX - r - pad, LY - r - pad, 2 * (r + pad), 2 * (r + pad)];
-    if (prevRect) lctx.clearRect(...prevRect);
-    lctx.clearRect(...rect);
-    if (baked && wgt > .004) {
-      const a = CFG.ink * wgt;
-      const g = lctx.createRadialGradient(LX, LY, 0, LX, LY, r);
-      g.addColorStop(0, `rgba(255,255,255,${a})`);
-      g.addColorStop(CFG.soft, `rgba(255,255,255,${a * .82})`);
-      g.addColorStop(1, 'rgba(255,255,255,0)');
-      lctx.fillStyle = g;
-      lctx.fillRect(...rect);
-      // source-in: 방금 칠한 빛의 알파로 잉크를 오려낸다. 결과 알파 = 빛 × 잉크
-      lctx.globalCompositeOperation = 'source-in';
-      lctx.drawImage(ink, rect[0], rect[1], rect[2], rect[3], rect[0], rect[1], rect[2], rect[3]);
-      lctx.globalCompositeOperation = 'source-over';
-    }
-    prevRect = rect;
   };
 
   const frame = now => {
@@ -479,7 +427,7 @@ export function mountField(root, units) {
     cfg: CFG,
     // n 을 cfg 에도 반영한다 — 안 하면 패널이 읽는 cfg.dust 와 실제 입자 수가
     // 갈라져, 초기화나 재열기 때 엉뚱한 개수로 돌아간다
-    rebuild(n) { if (n != null) CFG.dust = n; dust = makeDust(CFG.dust); fit(); statics.forEach(f => f()); },
+    rebuild(n) { if (n != null) CFG.dust = n; dust = makeDust(dustCount()); fit(); statics.forEach(f => f()); },
     refit() { fit(); statics.forEach(f => f()); },
     /* 배경 갈아 끼우기. 확장자로 사진/영상을 가른다.
        빈 값이면 우주가 없어진다(= 검정). 캔버스도 같이 지운다. */
@@ -505,8 +453,15 @@ export function mountField(root, units) {
         spaceEl = srcVid;
       } else {
         if (srcVid) { srcVid.pause(); srcVid.removeAttribute('src'); srcVid.load(); }
+        /* 동작 줄이기에서는 rAF 가 안 돈다. 그런데 mountField 의 paint(0,1) 은 이
+           함수보다 **먼저** 돈다(index.html 이 mountField → space 순서로 부른다) —
+           그때는 spaceEl 이 아직 null 이라 우주가 한 번도 안 그려진다.
+           사진이 도착하면 그 한 프레임을 다시 그린다. 이게 없으면 동작 줄이기를 켠
+           사용자에게는 위 주석이 막으려던 상태(먼지밭만)가 그대로 남는다. */
+        if (reduce) srcImg.onload = () => paint(0, 1);
         srcImg.src = src;
         spaceEl = srcImg;
+        if (reduce && srcImg.complete && srcImg.naturalWidth) paint(0, 1);
       }
     },
   };
@@ -516,6 +471,11 @@ export function mountField(root, units) {
        포인터 분기를 끄면 자율항이 wgt 1 로 돌아 한 프레임에 구도가 잡힌다.
        커서로 걷어내는 연출을 그대로 두면 이 사용자에게는 먼지밭만 남는다. */
     FINE = false;
+    /* woke 게이트(07-29)가 이 분기(07-28)보다 뒤에 들어와 그 의도를 덮어썼다.
+       이 줄이 없으면 paint 의 `if(!woke){ ... wgt=0 }` 가 이겨서 grow=0,
+       ready=false — 바로 위 주석이 막으려던 상태(먼지밭만 남는다)가 그대로 된다.
+       동작 줄이기를 켠 사용자는 스크롤로도 이걸 풀 수 없다. */
+    woke = true;
     paint(0, 1);
   } else {
     raf = requestAnimationFrame(frame);
@@ -545,17 +505,20 @@ export function mountNavDust(host) {
   host.prepend(cv);
   const ctx = cv.getContext('2d');
 
+  let lw = -1, lh = -1;
   const draw = () => {
     const r = host.getBoundingClientRect();
     const W = Math.round(r.width), H = Math.round(r.height);
     if (!W || !H) return;
+    lw = W; lh = H;              // 그린 크기를 기록한다. 밖에서만 갱신하면 최초 draw()
+                                 // 가 안 잡혀 첫 resize 가 늘 통과한다(실측으로 걸렸다)
     cv.width = W; cv.height = H;
     cv.style.width = W + 'px';
     cv.style.height = H + 'px';
     ctx.fillStyle = readGlow();
 
     // 히어로가 기준으로 삼는 뷰포트 면적. 같은 밀도가 되도록 개수를 환산한다
-    const n = Math.max(8, Math.round(CFG.dust * (W * H) / (innerWidth * innerHeight)));
+    const n = Math.max(8, Math.round(dustCount() * (W * H) / (innerWidth * innerHeight)));
     for (let i = 0; i < n; i++) {
       ctx.globalAlpha = rand(CFG.aMin, CFG.aMax);
       const d = rand(CFG.dMin, CFG.dMax);
@@ -565,7 +528,17 @@ export function mountNavDust(host) {
   };
 
   statics.push(draw);
-  addEventListener('resize', draw);
+  /* **크기가 실제로 바뀔 때만 다시 그린다.** draw() 는 매번 Math.random() 으로
+     좌표를 새로 뽑으므로, 크기가 그대로여도 부르면 별이 통째로 갈린다.
+     모바일 주소창이 접히고 펴질 때마다 resize 가 오는데 nav 는 높이가 고정(72px)
+     이라 그림만 흔들렸다 — 대표가 카톡에서 본 튐의 실제 원인이다.
+     히어로에는 같은 가드가 있었고 여기만 없었다(2026-08-11 실측: 크기 불변인데
+     알파 해시 836332039 → 1347149388). */
+  addEventListener('resize', () => {
+    const r = host.getBoundingClientRect();
+    if (Math.abs(r.width - lw) < 1 && Math.abs(r.height - lh) < 1) return;
+    draw();
+  });
   draw();
   return draw;
 }

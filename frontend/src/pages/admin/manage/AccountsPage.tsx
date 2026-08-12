@@ -75,7 +75,7 @@ const COLUMNS: { field: keyof Omit<EntryRow, "key">; label: string; placeholder:
 ];
 
 /**
- * 서버가 돌려주는 행 실패 사유 중 DB 필드 이름이 섞인 두 개만 학원 말로 바꾼다.
+ * 서버가 돌려주는 행 실패 사유 중 DB 필드 이름이 섞인 두 개만 현장 말로 바꾼다.
  * (backend/apps/accounts/provisioning.py 의 RowError 문구 — 나머지는 그대로 통과)
  */
 const ROW_ERROR_KO: Record<string, string> = {

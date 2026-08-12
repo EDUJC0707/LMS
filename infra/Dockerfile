@@ -11,16 +11,8 @@ ENV PYTHONUNBUFFERED=1 \
 # uv 정적 바이너리(astral 공식 이미지에서 복사)
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# supercronic — 주기 작업 실행기(Fly 공식 블루프린트 권장).
-# **왜 일반 cron 이 아닌가**: 컨테이너에서 cron 은 PID 1 로 안 맞고, 로그를 syslog 로
-# 보내 `fly logs` 에 안 잡히며, 환경변수를 물려받지 못한다. supercronic 은 표준
-# crontab 문법을 쓰면서 로그를 표준출력으로 내보내 셋 다 해결한다.
-# 버전·체크섬을 박아 둔다 — latest 를 쓰면 빌드마다 다른 바이너리가 들어온다.
-ARG SUPERCRONIC_VERSION=v0.2.33
-ARG SUPERCRONIC_SHA1SUM=71b0d58cc53f6bd72cf2f293e09e294b79c666d8
-ADD https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-amd64 /usr/local/bin/supercronic
-RUN echo "${SUPERCRONIC_SHA1SUM}  /usr/local/bin/supercronic" | sha1sum -c - \
-    && chmod +x /usr/local/bin/supercronic
+# 주기 작업은 Celery beat 가 맡는다(2026-08-12, docs/decisions.md §9) —
+# supercronic 설치와 `infra/crontab` 은 그때 걷어냈다.
 
 WORKDIR /app
 
@@ -31,9 +23,6 @@ RUN uv sync --no-dev
 
 # 2) 앱 소스
 COPY backend/ /app/
-
-# 2-1) 주기 작업표. `cron` 프로세스 그룹이 supercronic 으로 이 파일을 돈다.
-COPY infra/crontab /app/crontab
 
 # 3) 이 이미지가 어느 커밋인지 — Sentry 의 release 태그.
 #    **여기 위치가 중요하다**: ARG/ENV 는 뒤따르는 레이어의 캐시를 무효화하므로,

@@ -53,3 +53,19 @@ class ConferenceValueTests(SimpleTestCase):
         conference = Conference(provider="google_meet", ref="spaces/a", url="https://x/a")
         with self.assertRaises(Exception):
             conference.url = "https://x/b"
+
+
+class StartSupervisionDefaultTests(SimpleTestCase):
+    """감독 시작은 **선택 사항**이다 — 구현 안 한 어댑터가 깨지면 안 된다."""
+
+    def test_defaults_to_doing_nothing(self):
+        # 구글은 스페이스 설정으로 알아서 전사를 시작한다. 봇을 넣어야 하는
+        # 업체만 이걸 구현하고, 나머지는 이 기본값 위에서 그대로 돈다.
+        class Bare(ConferenceAdapter):
+            def create_space(self):
+                return Conference(provider="p", ref="r", url="u")
+
+            def fetch_supervision(self, ref, *, file_as=None):
+                return None
+
+        self.assertIsNone(Bare().start_supervision("https://x/a", title="t", minutes=60))

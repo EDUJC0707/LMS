@@ -52,18 +52,24 @@ const ENTRIES: Entry[] = [
   { group: "학습", to: "/student/videos", label: "복습영상", icon: "video", match: "prefix", gate: { kind: "enrolled" } },
   { group: "학습", to: "/student/makeup", label: "동보 신청", icon: "play", match: "prefix", gate: { kind: "enrolled" } },
   { group: "학습", to: "/student/workbook", label: "워크북", icon: "notebook", match: "prefix", gate: { kind: "enrolled" } },
+  // 교재 결제만 `enrolled` 가 아니라 role 게이트다 — 예비등록생이 쓸 수 있는
+  // 유일한 기능이 교재 구매라서(PRD §4 "신규 계정 첫 로그인은 거의 bare").
+  // enrolled 로 걸면 신규생이 교재를 못 산다.
+  { group: "학습", to: "/student/payments", label: "교재 결제", icon: "key", match: "prefix", gate: { kind: "role", roles: ["학생"] } },
 
   // ── 학부모 ───────────────────────────────────────────────────────
   { group: "자녀", to: "/parent", label: "홈", icon: "calendar", match: "exact", gate: { kind: "role", roles: ["학부모"] } },
   { group: "자녀", to: "/parent/grades", label: "성적", icon: "chart", match: "prefix", gate: { kind: "role", roles: ["학부모"] } },
   { group: "자녀", to: "/parent/workbook", label: "워크북", icon: "notebook", match: "prefix", gate: { kind: "role", roles: ["학부모"] } },
   { group: "자녀", to: "/parent/makeup", label: "동보 신청", icon: "play", match: "prefix", gate: { kind: "role", roles: ["학부모"] } },
+  { group: "자녀", to: "/parent/payments", label: "교재 결제", icon: "key", match: "prefix", gate: { kind: "role", roles: ["학부모"] } },
 
   // ── 관리자 · 운영 ────────────────────────────────────────────────
   { group: "운영", to: "/admin", label: "대시보드", icon: "dashboard", match: "exact", gate: { kind: "role", roles: ["대표", "관리자", "조교"] } },
   { group: "운영", to: "/admin/attendance", label: "출결 입력", icon: "checklist", match: "prefix", gate: { kind: "feature", feature: "출결입력" } },
   { group: "운영", to: "/admin/makeup", label: "동보 관리", icon: "play", match: "prefix", gate: { kind: "feature", feature: "영상지급관리" } },
   { group: "운영", to: "/admin/counseling", label: "상담 대기열", icon: "counsel", match: "prefix", gate: { kind: "feature", feature: "상담기록" } },
+  { group: "운영", to: "/admin/payments", label: "교재 결제", icon: "key", match: "prefix", gate: { kind: "feature", feature: "결제확인" } },
 
   // ── 관리자 · 관리 ────────────────────────────────────────────────
   { group: "관리", to: "/admin/exams", label: "시험·성적", icon: "exam", match: "prefix", gate: { kind: "feature", feature: "성적처리" } },

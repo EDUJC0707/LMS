@@ -33,6 +33,10 @@ const TONE_BY_STATUS: Record<string, BadgeTone> = {
   결석: "danger",
   거절: "danger",
   취소: "danger",
+  // 교재 결제 3단계 — 손이 더 가야 하는 순서대로. 배부완료가 끝이다.
+  미결제: "warning",
+  결제완료: "accent",
+  배부완료: "success",
   퇴원: "danger",
   휴원: "neutral",
 };

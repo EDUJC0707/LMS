@@ -119,6 +119,14 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.clinic.tasks.collect_clinic_supervision",
         "schedule": 20 * 60,
     },
+    # 감독 봇 투입. **수집과 달리 늦으면 못 만회한다** — 봇은 회의가 도는 동안
+    # 에만 들어갈 수 있어서, 주기가 성기면 그만큼 회의 앞부분이 통째로 안 남는다.
+    # 1분인 이유가 그것이고, 할 일이 없으면 DB 조회 한 번으로 끝난다.
+    # 구글 경로에서는 어댑터가 아무것도 하지 않으므로 켜 두어도 해가 없다.
+    "clinic-supervision-dispatch": {
+        "task": "apps.clinic.tasks.dispatch_clinic_supervision",
+        "schedule": 60,
+    },
 }
 
 # --- 알림 채널 (PRD 6-8 채널 추상화 — apps/notifications/channels.py) --------
@@ -231,22 +239,25 @@ OMR_OCR_TIMEOUT = env.float("OMR_OCR_TIMEOUT", default=20.0)
 # --- 오브젝트 스토리지 (Tigris/S3, django-storages) ----------------------
 # 버킷명이 있으면 S3(Tigris) 사용, 없으면 로컬 파일시스템(MEDIA_ROOT).
 #
-# **`fly storage create` 가 넣어 주는 이름을 그대로 읽는다.** Tigris 는
-# `BUCKET_NAME`·`AWS_ENDPOINT_URL_S3`·`AWS_REGION` 으로 주입하는데 django-storages
-# 는 `AWS_STORAGE_BUCKET_NAME`·`AWS_S3_ENDPOINT_URL`·`AWS_S3_REGION_NAME` 을 쓴다.
-# 예전에는 **배포 문서가 별칭을 손으로 set 하라고** 안내했는데, 그 한 단계가
-# 빠지면 앱이 조용히 파일시스템으로 떨어진다 — 실제로 빠져 있었다(2026-08-12).
-# 손 절차 대신 여기서 양쪽 이름을 다 읽는다. 명시적으로 준 이름이 늘 이긴다.
+# **이름이 두 벌인 이유**: `fly storage create` 가 꽂아 주는 환경변수는 AWS CLI/SDK
+# 관례(`BUCKET_NAME`·`AWS_ENDPOINT_URL_S3`·`AWS_REGION`)인데, 이 설정이 채워야 할
+# django-storages 쪽 이름은 다르다(`AWS_STORAGE_BUCKET_NAME` 등). 값은 같은 것을
+# 가리키므로 **fly 가 준 이름을 먼저 읽고**, 없으면 django-storages 이름으로 떨어진다.
+# 시크릿을 두 벌 심으면 언젠가 한쪽만 바뀌어 어긋난다 — 그래서 복제하지 않는다.
+#
+# 이 별칭이 없던 동안 앱은 **조용히 컨테이너 파일시스템에 쓰고 있었다**(2026-08-12
+# `fly secrets list` 확인). 배포 문서가 "별칭을 손으로 set 하라"고 안내했는데 그
+# 단계가 빠져 있었다 — 잊히는 절차 대신 코드가 읽는다.
 AWS_ACCESS_KEY_ID = env("AWS_ACCESS_KEY_ID", default="")
 AWS_SECRET_ACCESS_KEY = env("AWS_SECRET_ACCESS_KEY", default="")
-AWS_STORAGE_BUCKET_NAME = env("AWS_STORAGE_BUCKET_NAME", default="") or env(
-    "BUCKET_NAME", default=""
+AWS_STORAGE_BUCKET_NAME = env("BUCKET_NAME", default="") or env(
+    "AWS_STORAGE_BUCKET_NAME", default=""
 )
-AWS_S3_ENDPOINT_URL = env("AWS_S3_ENDPOINT_URL", default="") or env(
-    "AWS_ENDPOINT_URL_S3", default=""
-)
+AWS_S3_ENDPOINT_URL = env("AWS_ENDPOINT_URL_S3", default="") or env(
+    "AWS_S3_ENDPOINT_URL", default=""
+)  # Tigris 엔드포인트
 AWS_S3_REGION_NAME = (
-    env("AWS_S3_REGION_NAME", default="") or env("AWS_REGION", default="") or "auto"
+    env("AWS_REGION", default="") or env("AWS_S3_REGION_NAME", default="") or "auto"
 )
 
 # 버킷이 있으면 S3, 없으면 파일시스템. **두 갈래를 다 적는다** — 예전에는 S3 쪽만
@@ -268,6 +279,11 @@ STORAGES = {
 CLINIC_CONFERENCE_BACKEND = env(
     "CLINIC_CONFERENCE_BACKEND", default="apps.clinic.google_meet.GoogleMeetAdapter"
 )
+
+# 조교가 아이패드로 호스트할 때의 감독 경로. 켜는 법은 값을 넣는 게 아니라
+# 위 한 줄을 `apps.clinic.fireflies.FirefliesAdapter` 로 바꾸는 것이다 —
+# 방은 그대로 구글이 만들고 감독 자료만 Fireflies 에서 온다.
+FIREFLIES_API_KEY = env("FIREFLIES_API_KEY", default="")
 # 구글 미트는 **사용자 인증만** 받는다(서비스 계정은 워크스페이스 도메인 위임
 # 한정) — 계정 1개로 한 번 동의받은 갱신 토큰을 서버가 들고 쓴다.
 # 발급: `manage.py meet_authorize`. 셋 중 하나라도 비면 스페이스 생성은
@@ -275,3 +291,28 @@ CLINIC_CONFERENCE_BACKEND = env(
 GOOGLE_MEET_CLIENT_ID = env("GOOGLE_MEET_CLIENT_ID", default="")
 GOOGLE_MEET_CLIENT_SECRET = env("GOOGLE_MEET_CLIENT_SECRET", default="")
 GOOGLE_MEET_REFRESH_TOKEN = env("GOOGLE_MEET_REFRESH_TOKEN", default="")
+
+# --- 결제 — key_considerations §4 추상화 경계 (PRD 6-5) ------------------
+# 업체 교체(결제선생 → PG)는 이 경로 한 줄이다(apps.payments.provider 계약).
+# 비면 청구·조회·취소가 전부 막힌다 — 닫힘이 안전 기본값(§5). 돈이 오가는
+# 경로라 "미설정 = 조용한 성공" 이 특히 위험하다.
+PAYMENT_PROVIDER_BACKEND = env("PAYMENT_PROVIDER_BACKEND", default="")
+
+# 결제선생(페이민트) 자격증명 — 업체 이름이 나오는 것은 이 층까지고 DB
+# 스키마에는 새지 않는다(apps/payments/models.py Provider 추상화 계약).
+# 샌드박스 키는 2026-08-05 페이민트 김상진 님 전달분. **운영 키는 연동 검수
+# 통과 후 별도 발급**되므로 아직 없다.
+#   MEMBER_ID    파트너 사용자 코드(요청의 `member`)
+#   MERCHANT_ID  파트너 상점 코드(요청의 `merchant`) — 학원이 앉는 자리
+PAYSSAM_API_KEY = env("PAYSSAM_API_KEY", default="")
+PAYSSAM_MEMBER_ID = env("PAYSSAM_MEMBER_ID", default="")
+PAYSSAM_MERCHANT_ID = env("PAYSSAM_MERCHANT_ID", default="")
+# V2 기준. 운영 URL 은 검수 후 제공되므로 기본값을 샌드박스로 둔다 — 운영
+# 주소를 안 넣었을 때 실수로 진짜 청구서가 나가는 것보다 샌드박스로 빠지는
+# 편이 안전하다(V1 `stg.paymint.co.kr` 은 폐기 — 2026-08-05 업체 안내).
+PAYSSAM_API_BASE_URL = env(
+    "PAYSSAM_API_BASE_URL", default="https://sandbox.paymint.co.kr/partner"
+)
+# 결제 승인 콜백이 돌아올 우리 쪽 주소(청구서 단위로 실려 나간다).
+# 비면 승인 통지를 못 받고 `/bill/read` 폴링에만 의존하게 된다.
+PAYSSAM_CALLBACK_BASE_URL = env("PAYSSAM_CALLBACK_BASE_URL", default="")

@@ -14,7 +14,7 @@
 
      사진        원본        잘림              좌측 휘도   레티나 확대
      carina      4000x2317   좌우 4%              32         1.0x
-     catseye     1546x1608   위아래 20%           21         1.0x
+     catseye     3172x3300   위아래 20%           39         1.0x  ← 2026-08-12 원본 교체
      ngc1333     4000x3271   위아래 12%           57         1.0x   ← 가장 밝다
      solar       1536x1024   위아래 3%             4         1.88x  ← 가장 어둡고 가장 무르다
 
@@ -47,75 +47,54 @@ export const SPACE = [
   { key: 'solar',   label: '태양계',        src: 'assets/space/solar-system.webp' },
 ];
 
-/* 히어로에 숨던 모티프 10종 — **2026-07-29 폐기.** 다른 비주얼로 교체한다.
-   화면은 더 이상 이걸 읽지 않는다(index.html 이 mountField 에 빈 목록을 넘긴다).
-   되살릴 때를 위해 이름과 경로만 남긴다. 왜 있었고 무엇을 배웠는지는 SPEC.md §4-옛.
-   **에셋과 패커는 local/landing-motif-board/ 로 옮겼다**(2026-07-29) — 작업 표면에
-   안 쓰는 2.1MB 를 두지 않는다. 아래 경로는 되살렸을 때의 자리이고 지금은 없다.
-   되살리는 법은 그 폴더의 README. 굽기 전 원본은 local/assets/motifs_accent/. */
-export const RETIRED_UNITS = [
-  { key: 'atom', asset: 'assets/motifs/atom.webp' },
-  { key: 'dna', asset: 'assets/motifs/dna.webp' },
-  { key: 'chromosome', asset: 'assets/motifs/chromosome.webp' },
-  { key: 'mitochondria', asset: 'assets/motifs/mitochondria.webp' },
-  { key: 'chloroplast', asset: 'assets/motifs/chloroplast.webp' },
-  { key: 'synapse', asset: 'assets/motifs/synapse.webp' },
-  { key: 'population', asset: 'assets/motifs/population.webp' },
-  { key: 'element', asset: 'assets/motifs/element.webp' },
-  { key: 'tectonics', asset: 'assets/motifs/tectonics.webp' },
-  { key: 'universe', asset: 'assets/motifs/universe.webp' },
-];
 /**
  * 커리큘럼 — 4단계 × 2트랙.
  * 통합과학은 2028이 첫 시행이라 수능 기출이 없어 `기출분석` 단계를 두지 않았다.
  * 가격·강의수·수강기간은 넣지 않는다(업계 불문율, SPEC §7-1).
  */
 export const CURRICULUM = {
-  naesin: [
-    {
-      stage: '입문', badge: '',
-      title: '중학 과학에서 통합과학으로 건너오기',
-      units: ['과학의 기초'],
-    },
-    {
-      stage: '개념완성', badge: '필수',
-      title: '철두철미 완자 통합과학 — 물리·화학·생명·지구 전 영역',
-      units: ['물질과 규칙성', '시스템과 상호작용', '변화와 다양성', '환경과 에너지'],
-    },
-    {
-      stage: '문제풀이', badge: '',
-      title: '로직N제 — 개념을 문항으로 바꾸는 훈련',
-      units: ['물질과 규칙성', '시스템과 상호작용'],
-    },
-    {
-      stage: '직전대비', badge: '',
-      title: '학교별 기출 분석과 마무리',
-      units: [],
-    },
-  ],
-  suneung: [
-    {
-      stage: '입문', badge: '',
-      title: '수능 통합과학이 무엇을 묻는 시험인가',
-      units: ['과학의 기초'],
-    },
-    {
-      stage: '개념완성', badge: '필수',
-      title: '철두철미 — 대단원 전체를 빠짐없이',
-      units: ['물질과 규칙성', '시스템과 상호작용', '변화와 다양성', '환경과 에너지', '과학과 미래 사회'],
-    },
-    {
-      stage: '문제풀이', badge: '',
-      title: '자료 분석의 기술 · 만점시퀀스 — 40분 안에 25문항',
-      units: ['시스템과 상호작용', '변화와 다양성', '환경과 에너지'],
-    },
-    {
-      stage: '직전대비', badge: '',
-      title: '파이널 — 시험장에서 쓸 것만',
-      units: [],
-    },
-  ],
+  /* 트랙마다 부제가 다르다 — 같은 4단계라도 겨냥하는 시험이 달라서다.
+     **줄표(—)로 잇는다**(2026-08-11 대표 확정). 두 줄로 나눠 봤는데 이상했다 —
+     한글 맞춤법상 부제 표기의 정석이 줄표이기도 하다. 하이픈(-)은 원래 이어붙이는
+     부호라 나누는 자리에 쓰면 어색하다. `·` 는 대등한 것을 잇는 자리에만 쓴다
+     (`자료 분석의 기술 · 만점시퀀스` — 둘 다 강좌 이름이다). */
+  naesin: {
+    lead: '내신에서 배운 개념을 수능까지 이어갑니다.',
+    steps: [
+      { stage: '입문', badge: '',
+        title: '중학 과학 핵심 개념 정리 — 통합과학을 시작하기 전에 필요한 기초 개념',
+        units: [] },
+      { stage: '개념완성', badge: '필수',
+        title: '철두철미 완자 통합과학 — 물리·화학·생명·지구 전 영역',
+        units: ['물질과 규칙성', '시스템과 상호작용', '변화와 다양성', '환경과 에너지'] },
+      { stage: '문제풀이', badge: '',
+        title: '로직N제 — 개념 적용과 문제풀이 훈련',
+        units: ['물질과 규칙성', '시스템과 상호작용'] },
+      { stage: '직전대비', badge: '',
+        title: '학교별 기출 분석 및 시험 전 최종 정리',
+        units: [] },
+    ],
+  },
+  suneung: {
+    lead: '2028 수능 통합과학을 처음부터 실전까지 준비합니다.',
+    steps: [
+      { stage: '입문', badge: '',
+        title: '수능 통합과학의 출제 방향 이해',
+        units: ['과학의 기초'] },
+      { stage: '개념완성', badge: '필수',
+        title: '철두철미 — 대단원 전 범위 완성',
+        units: ['물질과 규칙성', '시스템과 상호작용', '변화와 다양성', '환경과 에너지', '과학과 미래 사회'] },
+      { stage: '문제풀이', badge: '',
+        title: '자료 분석의 기술 · 만점시퀀스 — 40분 안에 25문항',
+        units: ['시스템과 상호작용', '변화와 다양성', '환경과 에너지'] },
+      { stage: '직전대비', badge: '',
+        title: '파이널 — 시험 직전 핵심 내용 정리',
+        units: [] },
+    ],
+  },
 };
+
+
 
 /**
  * 교재 정오표. 항목 하나가 표의 한 줄이다.

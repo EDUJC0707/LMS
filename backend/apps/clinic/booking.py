@@ -270,7 +270,32 @@ def build_clinic_home(student, exam):
         },
         "clinic_banned": student.clinic_banned,
         "my_requests": [request_block(r, now) for r in my_requests],
+        "history": history_rows(student, now),
     }
+
+
+def history_rows(student, now):
+    """지난 신청 전부 — **회차를 가리지 않는다**(최신 먼저).
+
+    화면에서 회차 선택 드롭다운을 뺐다(2026-08-11). 신청은 지금 열린 회차
+    하나로만 하고 지난 것은 한 목록으로 쌓이므로, 응답이 그 회차 것만 담으면
+    화면이 나머지를 보여 줄 방법이 없다.
+
+    줄마다 회차 이름을 붙인다 — 고르는 자리가 없어졌으니 어느 회차 것인지는
+    줄이 스스로 말해야 한다.
+    """
+    rows = (
+        ClinicRequest.objects.filter(student=student)
+        .select_related("exam")
+        .order_by("-requested_date", "-requested_time", "-clinic_id")
+    )
+    return [
+        {
+            **request_block(r, now),
+            "exam_name": r.exam.name if r.exam else None,
+        }
+        for r in rows
+    ]
 
 
 def availability(student, exam, date_from=None, date_to=None):

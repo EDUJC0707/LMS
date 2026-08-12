@@ -477,7 +477,7 @@ function WeekCard({ weeks }: { weeks: HomeWeek[] }) {
               }
             >
               {week.offline_notice && (
-                <p className="parent-note parent-note--lead">학원 공지 — {week.offline_notice}</p>
+                <p className="parent-note parent-note--lead">공지 — {week.offline_notice}</p>
               )}
               {(week.day_plans ?? []).length === 0 ? (
                 <p className="parent-note">학습 계획이 아직 없습니다</p>
