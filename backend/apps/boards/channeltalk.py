@@ -44,17 +44,14 @@ def _credentials():
     return (key, secret) if key and secret else (None, None)
 
 
-def fetch_calls(since, until):
-    """[since, until) 통화 로그. 키가 없으면 빈 목록 — 화면은 떠야 한다."""
+def _get(path, **params):
+    """GET 한 번. 키가 없으면 None — 화면은 떠야 하고 매칭만 비는 것이 맞다."""
     key, secret = _credentials()
     if key is None:
-        return []
+        return None
     response = requests.get(
-        f"{BASE_URL}/open/meet/call/log",
-        params={
-            "from": int(since.timestamp() * 1000),
-            "to": int(until.timestamp() * 1000),
-        },
+        f"{BASE_URL}{path}",
+        params=params,
         headers={
             "x-access-key": key,
             "x-access-secret": secret,
@@ -63,8 +60,66 @@ def fetch_calls(since, until):
         timeout=TIMEOUT,
     )
     response.raise_for_status()
-    payload = response.json()
+    return response.json()
+
+
+def fetch_calls(since, until):
+    """[since, until) 통화 로그. 키가 없으면 빈 목록."""
+    payload = _get(
+        "/open/meet/call/log",
+        **{
+            "from": int(since.timestamp() * 1000),
+            "to": int(until.timestamp() * 1000),
+        },
+    )
     return payload if isinstance(payload, list) else []
+
+
+def meet_message_id(user_chat_id):
+    """녹음·전사를 부르려면 `messageId` 가 필요한데 통화 로그는 안 준다.
+
+    상담 스레드의 메시지 중 `meet` 를 달고 있는 것이 그 통화이고, 그 메시지
+    id 가 곧 `messageId` 다(실측: `meet.call.id` 와 같은 값).
+    """
+    payload = _get(f"/open/user-chats/{user_chat_id}/messages", limit=100)
+    for message in (payload or {}).get("messages", []):
+        if message.get("meet"):
+            return message.get("id")
+    return None
+
+
+def transcript(user_chat_id):
+    """통화 전사 — 발화 순서대로 (`상담원`/`고객`, 말).
+
+    자동으로 메모를 채우지 않는다. 조교가 보고 확정하는 것이 계약이라
+    (2026-08-12) 여기서는 읽어 오기만 한다.
+    """
+    message_id = meet_message_id(user_chat_id)
+    if message_id is None:
+        return []
+    payload = _get(
+        f"/open/user-chats/{user_chat_id}/meets/{message_id}/messages", limit=200
+    )
+    lines = [
+        {
+            "speaker": "고객" if m.get("personType") == "user" else "상담원",
+            "said": m["plainText"],
+        }
+        for m in sorted(
+            (m for m in (payload or {}).get("messages", []) if m.get("plainText")),
+            key=lambda m: m.get("createdAt") or "",
+        )
+    ]
+    return lines
+
+
+def recording_url(user_chat_id):
+    """녹음 링크. **만료되는 서명 URL 이라 저장하지 않는다** — 볼 때마다 받는다."""
+    message_id = meet_message_id(user_chat_id)
+    if message_id is None:
+        return None
+    payload = _get(f"/open/user-chats/{user_chat_id}/meets/{message_id}/recording")
+    return (payload or {}).get("signedUrl")
 
 
 def recent_calls(phone, since=DEFAULT_WINDOW):

@@ -323,6 +323,29 @@ class CounselingCallsView(APIView):
         return Response({"calls": channeltalk.recent_calls(counseling.phone_for(card))})
 
 
+class CounselingTranscriptView(APIView):
+    """GET /api/admin/counseling/{counsel_id}/transcript — 전사 + 녹음 링크.
+
+    **자동으로 메모를 채우지 않는다** — 조교가 읽고 확정한다(2026-08-12).
+    녹음 링크는 만료되는 서명 URL 이라 저장하지 않고 볼 때마다 새로 받는다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.COUNSEL_RECORD)]
+
+    def get(self, request, counsel_id):
+        card = AbsenceCounseling.objects.filter(pk=counsel_id).first()
+        if card is None:
+            return _not_found()
+        if not card.provider_ref:
+            return Response({"lines": [], "recording_url": None})
+        return Response(
+            {
+                "lines": channeltalk.transcript(card.provider_ref),
+                "recording_url": channeltalk.recording_url(card.provider_ref),
+            }
+        )
+
+
 class CounselingNotifyView(APIView):
     """POST /api/admin/counseling/{counsel_id}/notify — 결석 안내 발송 (버튼)."""
 

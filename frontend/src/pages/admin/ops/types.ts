@@ -170,3 +170,10 @@ export interface CounselCall {
   /** 통화 ID 가 없어 이것이 유일한 참조. 녹음·STT 도 이 값으로 찾는다 */
   user_chat_id: string | null;
 }
+
+/** 통화 전사 한 줄 — 자동으로 메모에 들어가지 않는다. 조교가 읽고 확정한다. */
+export interface CounselTranscript {
+  lines: { speaker: string; said: string }[];
+  /** 만료되는 서명 URL — 저장하지 않고 볼 때마다 받는다 */
+  recording_url: string | null;
+}

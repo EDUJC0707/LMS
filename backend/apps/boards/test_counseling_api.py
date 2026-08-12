@@ -434,3 +434,34 @@ class CounselingCallLinkTests(CounselingFixtureMixin, TestCase):
 
         self.card.refresh_from_db()
         self.assertEqual(self.card.provider_ref, "aa11bb22cc33")
+
+
+class CounselingTranscriptTests(CounselingFixtureMixin, TestCase):
+    """통화 내용은 **보여주기만** 한다 — 메모 확정은 조교 몫(2026-08-12)."""
+
+    def setUp(self):
+        self.login()
+        self.card = self.make_card()
+
+    def test_reads_the_call_stored_on_the_card(self):
+        self.patch_card(
+            self.card.counsel_id, {"result": "연결", "provider_ref": "chat-1"}
+        )
+        lines = [{"speaker": "고객", "said": "아파서 못 갔어요"}]
+
+        with patch.object(channeltalk, "transcript", return_value=lines) as read, patch.object(
+            channeltalk, "recording_url", return_value="https://x/y.mp4"
+        ):
+            res = self.client.get(
+                f"/api/admin/counseling/{self.card.counsel_id}/transcript"
+            )
+
+        self.assertEqual(read.call_args.args[0], "chat-1")
+        self.assertEqual(res.json()["lines"], lines)
+        self.assertEqual(res.json()["recording_url"], "https://x/y.mp4")
+
+    def test_card_without_a_stored_call_has_nothing_to_show(self):
+        res = self.client.get(f"/api/admin/counseling/{self.card.counsel_id}/transcript")
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json(), {"lines": [], "recording_url": None})

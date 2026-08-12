@@ -30,7 +30,12 @@ import {
 import type { Column } from "../../../components";
 import { shortDate, stamp } from "./format";
 import "./ops.css";
-import type { CounselCall, CounselCard, CounselRecordResult } from "./types";
+import type {
+  CounselCall,
+  CounselCard,
+  CounselRecordResult,
+  CounselTranscript,
+} from "./types";
 import { MAX_CALL_ATTEMPTS } from "./types";
 
 type CallResult = "연결" | "미연결" | "종결";
@@ -290,6 +295,18 @@ function RecordPanel({
     if (found) setResult(found.connected ? "연결" : "미연결");
   }, [found]);
 
+  // 이미 저장된 통화가 있으면 전사·녹음을 읽어 보여준다. **메모에 자동으로
+  // 넣지 않는다** — 무엇을 남길지는 조교가 정한다(2026-08-12).
+  const talk = useApi(
+    async () =>
+      (
+        await http.get<CounselTranscript>(
+          `/admin/counseling/${card.counsel_id}/transcript`,
+        )
+      ).data,
+    [card.counsel_id],
+  );
+
   const record = useApiAction(async () => {
     const { data } = await http.patch<CounselRecordResult>(`/admin/counseling/${card.counsel_id}`, {
       result,
@@ -332,6 +349,24 @@ function RecordPanel({
         {/* 아래 Field 들과 같은 위계의 칸이다 — 라벨 조판도 같은 것을 쓴다.
             툴바 라벨(11px 대문자 자간)이었을 때는 같은 폼 안에서 이 칸만
             다른 크기·색으로 떠 위계가 하나 더 있는 것처럼 읽혔다. */}
+        {(talk.data?.lines.length ?? 0) > 0 && (
+          <div className="ui-field">
+            <span className="ui-field__label">통화 내용</span>
+            <div className="ui-stack ui-stack--sm">
+              {talk.data?.recording_url && (
+                <a href={talk.data.recording_url} target="_blank" rel="noreferrer">
+                  녹음 듣기
+                </a>
+              )}
+              {talk.data?.lines.map((line, i) => (
+                <div key={i} className="ops-sub">
+                  <b>{line.speaker}</b> {line.said}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {found && (
           <Alert tone="info">
             {`채널톡 통화 기록을 찾았습니다 — ${found.connected ? "연결됨" : "받지 않음"}`}

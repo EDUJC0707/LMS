@@ -86,3 +86,63 @@ class RecentCallsTests(SimpleTestCase):
         # 키가 없어도 화면은 떠야 한다 — 매칭만 비는 것이 맞다(안전 기본값).
         with override_settings(CHANNELTALK_ACCESS_KEY="", CHANNELTALK_ACCESS_SECRET=""):
             self.assertEqual(channeltalk.recent_calls("01097649812"), [])
+
+
+MEET_MESSAGES = {
+    "messages": [
+        {"id": "plain-1"},
+        {"id": "meet-msg-1", "meet": {"call": {"direction": "outbound"}}},
+    ]
+}
+STT = {
+    "messages": [
+        {
+            "personType": "user",
+            "createdAt": "2026-08-12T04:32:13Z",
+            "plainText": "아파서 못 갔어요",
+        },
+        {"personType": "manager", "createdAt": "2026-08-12T04:32:10Z", "plainText": "안녕하세요"},
+        {"personType": "manager", "createdAt": "2026-08-12T04:32:18Z"},
+    ]
+}
+
+
+@override_settings(CHANNELTALK_ACCESS_KEY="k", CHANNELTALK_ACCESS_SECRET="s")
+class TranscriptTests(SimpleTestCase):
+    """녹음·STT 는 통화가 아니라 **상담 스레드**에 매달려 있다.
+
+    통화 로그는 `userChatId` 만 주므로 그 스레드의 meet 메시지를 찾아야
+    `messageId` 가 나온다 — 그 두 값이 있어야 녹음·전사를 부를 수 있다.
+    """
+
+    def test_finds_the_meet_message_in_the_thread(self):
+        with patch.object(channeltalk, "_get", return_value=MEET_MESSAGES):
+            self.assertEqual(channeltalk.meet_message_id("chat-1"), "meet-msg-1")
+
+    def test_no_meet_message_means_no_id(self):
+        with patch.object(channeltalk, "_get", return_value={"messages": [{"id": "x"}]}):
+            self.assertIsNone(channeltalk.meet_message_id("chat-1"))
+
+    def test_transcript_reads_oldest_first_with_speakers(self):
+        with patch.object(channeltalk, "_get", side_effect=[MEET_MESSAGES, STT]):
+            lines = channeltalk.transcript("chat-1")
+
+        # 발화 순서대로 — 응답은 최신순이라 뒤집어야 대화로 읽힌다.
+        self.assertEqual(
+            lines,
+            [
+                {"speaker": "상담원", "said": "안녕하세요"},
+                {"speaker": "고객", "said": "아파서 못 갔어요"},
+            ],
+        )
+
+    def test_recording_returns_the_signed_url(self):
+        with patch.object(
+            channeltalk, "_get", side_effect=[MEET_MESSAGES, {"signedUrl": "https://x/y.mp4"}]
+        ):
+            self.assertEqual(channeltalk.recording_url("chat-1"), "https://x/y.mp4")
+
+    def test_no_credentials_means_nothing_not_an_error(self):
+        with override_settings(CHANNELTALK_ACCESS_KEY="", CHANNELTALK_ACCESS_SECRET=""):
+            self.assertEqual(channeltalk.transcript("chat-1"), [])
+            self.assertIsNone(channeltalk.recording_url("chat-1"))
