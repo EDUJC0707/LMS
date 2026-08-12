@@ -94,6 +94,51 @@ PHONE_DIGITS = 10
 #: 전화 버블은 답란과 같은 스타디움 인쇄물이라 표본 반경도 같은 것을 쓴다.
 PHONE_BUBBLE_RADIUS = ANSWER_BUBBLE_RADIUS
 
+# --- 성적 조사 카드: 모의고사 자체채점 -------------------------------------
+#
+# **이것은 우리 카드가 아니다.** 모의고사와 함께 오는 `성적 조사 카드`(2027학년도
+# 6월 모의평가 성적 조사)이고, 학생이 학교에서 본 점수를 스스로 적어 낸다.
+# "카드 판형은 통일한다"(decisions.md)는 **우리가 찍는 카드**에 대한 약속이라
+# 여기에는 걸리지 않는다 — 지면을 우리가 정하지 못한다.
+#
+# 답안 카드와 같은 것: 마커 네 점 · 성명란 좌표(무수정으로 읽힌다)
+# 다른 것: 번호칸이 4열이 아니라 **5열**이고, 답란 자리에 **점수 두 자리**가 있다
+#
+# 좌표는 실물 94장을 마커 정규좌표로 정합한 평균판에서 등간격 빗살을 맞춰 냈다
+# (2026-08-11). 성명·전화와 같은 방식이므로 보정량을 더하지 않는다.
+
+#: 수험번호 5열의 중심 x(평균판 px). 답안 카드 전화칸과 달리 구분선이 없어
+#: **간격이 균일하다**(49.10px). 학생들은 여기에 전화 뒷4를 오른쪽으로 붙여
+#: 넣는다 — 같은 날 답안 카드와 대조해 22장 중 18장이 일치했다(2026-08-11).
+SURVEY_NUMBER_X = (697.9, 747.0, 796.1, 845.2, 894.3)
+#: 숫자 0 행과 9 행의 중심 y. 전화칸(698.7~1149.2)과 비슷하나 같지 않다 —
+#: 다른 지면이므로 잰 값을 그대로 쓴다.
+SURVEY_NUMBER_Y = (695.9, 1145.0)
+SURVEY_NUMBER_POSITIONS = 5
+
+#: 점수칸은 답란 격자의 ① 열 자리에 선다(실측 x 1161.1, 답란 예측과 -1.3px).
+#: 그래도 answer_cells 를 빌려 쓰지 않는다 — 행이 답란과 최대 3.5px 어긋나고,
+#: 빌려 쓰면 답란 보정량(CALIBRATION_*)이 남의 지면까지 따라온다.
+SURVEY_SCORE_X = 1161.1
+#: 10의 자리 — 1~5 다섯 칸뿐이다(0 이 없다). 안 칠하면 0 이다: 카드 예시가
+#: `ex) 08점` 을 1의 자리 8 하나로만 보여 준다.
+SURVEY_TENS_Y = (154.5, 411.0)
+SURVEY_TENS_DIGITS = (1, 2, 3, 4, 5)
+#: 1의 자리 — 지면 순서가 1,2,…,9,0 이다(0 이 맨 끝).
+SURVEY_ONES_Y = (793.4, 1375.1)
+SURVEY_ONES_DIGITS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 0)
+
+#: `★내 점수★` 손글씨 칸 — (x0, x1, y0, y1) 평균판 px. **격자가 아니라 자른 자리**다.
+#:
+#: 버블을 안 칠한 학생이 손으로 적어 두는 칸이라, 마킹이 없는 장에서 유일하게
+#: 남는 값이 여기 있다(실물 94장 중 34장이 그런 장이었다). 엔진은 못 읽지만
+#: OCR 은 읽는다 — `grades.ocr` 이 이 자리만 잘라 보낸다.
+#:
+#: 인쇄된 ":" 를 피해 왼쪽을 1470 에서 시작한다. 위아래는 제목(★내 점수★)과
+#: 안내 문구 사이다. **이 칸에는 숫자만 있다** — 이름도 전화도 없으므로 잘라
+#: 밖으로 보내도 개인정보가 나가지 않는다.
+SURVEY_SCORE_HANDWRITING = (1470.0, 2010.0, 70.0, 290.0)
+
 
 def answer_cells():
     """답란 100칸 — `((문항번호, 선택지), (u, v))` 목록. 문항·선택지는 1부터."""
@@ -130,6 +175,33 @@ def phone_cells():
         for position in range(1, PHONE_POSITIONS + 1)
         for digit in range(PHONE_DIGITS)
     ]
+
+
+def survey_number_cells():
+    """조사 카드 수험번호 50칸 — `((자리, 숫자), (u, v))`. 자리 1~5, 숫자 0~9."""
+    vs = [_v_avg(y) for y in _even_span(SURVEY_NUMBER_Y, PHONE_DIGITS)]
+    return [
+        ((position, digit), (_u_avg(SURVEY_NUMBER_X[position - 1]), vs[digit]))
+        for position in range(1, SURVEY_NUMBER_POSITIONS + 1)
+        for digit in range(PHONE_DIGITS)
+    ]
+
+
+def survey_score_cells():
+    """조사 카드 점수 15칸 — `((자리, 숫자), (u, v))`. 자리는 `십`·`일`.
+
+    숫자를 행번호가 아니라 **그 칸이 뜻하는 값**으로 적는다 — 1의 자리는 지면
+    순서가 1,2,…,9,0 이라 행번호를 그대로 쓰면 마지막 칸이 10이 된다.
+    """
+    u = _u_avg(SURVEY_SCORE_X)
+    cells = []
+    for place, span, digits in (
+        ("십", SURVEY_TENS_Y, SURVEY_TENS_DIGITS),
+        ("일", SURVEY_ONES_Y, SURVEY_ONES_DIGITS),
+    ):
+        for digit, y in zip(digits, _even_span(span, len(digits))):
+            cells.append(((place, digit), (u, _v_avg(y))))
+    return cells
 
 
 # --- 내부 부품 --------------------------------------------------------------

@@ -350,14 +350,35 @@ def test_holds_a_sheet_when_a_row_reads_bare_paper():
     assert read.classify_answers(inks) is None
 
 
-def test_holds_a_sheet_with_a_half_strength_mark():
-    """빈칸도 마킹도 아닌 줄이 하나라도 있으면 장째 보류다.
+def test_holds_only_the_row_with_a_half_strength_mark():
+    """빈칸도 마킹도 아닌 줄은 **그 줄만** 못 읽은 것이다. 나머지는 그대로 산다.
 
     실측(65장·1040줄): 빈칸의 lead 비는 최대 0.094, 마킹은 최소 0.342 로 그
     사이가 통째로 비어 있다. 접힘·잘림으로 희석된 마킹이 정확히 거기 떨어지는데,
-    예전 규칙은 그걸 조용히 "무응답"으로 채점했다 — 학생이 답한 문항이 빈칸이 된다.
+    그걸 "무응답"으로 채점하면 학생이 답한 문항이 빈칸이 된다.
+
+    예전에는 그런 줄 하나에 장째 보류했다. **실물 386장 전수로 재 보니 보류
+    20장 중 19장이 이 경우였고 그중 9장은 애매한 줄이 딱 하나**였다 —
+    나머지 열다섯 줄이 멀쩡한데 통째로 버려지고 조교가 다시 쳤다(2026-08-12).
     """
     inks = varied_sheet(lead=100)
     inks[6] = row(c1=30.0, c2=30.0, c3=50.0, c4=30.0, c5=30.0)
+
+    readings = read.classify_answers(inks)
+
+    assert readings[6] is None, "애매한 줄은 None"
+    assert all(value is not None for q, value in readings.items() if q != 6)
+    assert readings[1] == (1,), "멀쩡한 줄은 그대로 읽힌다"
+
+
+def test_a_sheet_whose_pencil_is_not_the_majority_is_still_held_whole():
+    """눈금 자체가 틀렸을 때는 장째 보류다 — 어느 줄도 믿을 수 없다.
+
+    연필이 닿은 줄이 절반 이하면 lead 중앙값이 연필 통계가 아니라 인쇄 잡음
+    통계가 된다. 줄 단위로 살릴 수 있는 상황이 아니다(실물 386장 중 1장).
+    """
+    inks = {question: row(c1=30.0, c2=31.0, c3=30.5, c4=30.0, c5=32.0)
+            for question in range(1, 17)}
+    inks[1] = row(c1=130.0, c2=30.0, c3=30.0, c4=30.0, c5=30.0)
 
     assert read.classify_answers(inks) is None

@@ -49,6 +49,8 @@ CARD_FOLD = {
 
 NAME_SLOTS = 4
 PHONE_POSITIONS = 4
+#: 성적 조사 카드 수험번호 칸 수. 우리가 쓰는 값은 뒤 4칸뿐이다(decode_survey_number).
+SURVEY_NUMBER_POSITIONS = 5
 
 
 def decode_name(marks):
@@ -92,6 +94,38 @@ def decode_phone(marks):
             return None
         digits.append(str(digit))
     return "".join(digits)
+
+
+def decode_survey_number(marks):
+    """조사 카드 수험번호 `{자리: (칠해진 숫자, ...)}` → 뒷4자리. 못 읽으면 None.
+
+    칸이 다섯인데 우리가 쓰는 값은 넷이다. 학생들은 전화 뒷4를 **오른쪽에 붙여**
+    넣고 맨 왼쪽 칸은 0 을 칠하거나 비워 둔다(실물 6/12 94장 실측) — 그래서
+    1번 자리는 읽되 값으로 쓰지 않는다. 2~5 중 하나라도 흐리면 None 이다.
+    """
+    digits = []
+    for position in range(2, SURVEY_NUMBER_POSITIONS + 1):
+        marked = marks.get(position, ())
+        if len(marked) != 1 or not 0 <= marked[0] <= 9:
+            return None
+        digits.append(str(marked[0]))
+    return "".join(digits)
+
+
+def decode_score(marks):
+    """조사 카드 점수 `{자리: (칠해진 숫자, ...)}` → 정수. 못 읽으면 None.
+
+    10의 자리는 **비어 있어도 된다**(0 이라는 뜻이다) — 지면에 0 칸이 없고
+    카드 예시가 `ex) 08점` 을 1의 자리 하나로만 보여 준다. 1의 자리는 반드시
+    있어야 한다: 둘 다 비면 "0점"과 "안 썼다"가 구분되지 않는다.
+    """
+    ones = marks.get("일", ())
+    if len(ones) != 1:
+        return None
+    tens = marks.get("십", ())
+    if len(tens) > 1:
+        return None
+    return (tens[0] if tens else 0) * 10 + ones[0]
 
 
 def matching_key(name, phone):

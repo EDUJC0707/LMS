@@ -11,8 +11,15 @@
 - GET /api/student/grades/{exam_id}              성적표 상세 (IsStudent)
 - GET /api/parent/grades[?student_id=]           자녀 성적 목록 (IsParent, 읽기 전용)
 - GET /api/parent/grades/{exam_id}[?student_id=] 자녀 성적표 상세 (IsParent)
-- GET /api/admin/exams                           시험 목록 (성적처리)
-- GET /api/admin/exams/{exam_id}                 시험 상세 (성적처리)
+- GET  /api/admin/exams                          시험 목록 (성적처리)
+- POST /api/admin/exams                          시험 만들기 (성적처리)
+- GET  /api/admin/exams/{exam_id}                시험 상세 (성적처리)
+- GET/PUT /api/admin/exams/{exam_id}/questions   정답 키 (성적처리)
+- GET/POST /api/admin/exams/{exam_id}/sheets     보정 목록 · 스캔 업로드 (성적처리)
+- POST /api/admin/exams/{exam_id}/reread         저장된 스캔 재판독 → 202 (성적처리)
+- GET  /api/admin/omr-batches/{task_id}          판독 진행 상태 (성적처리)
+- GET/PATCH /api/admin/sheets/{sheet_id}         보정 화면 한 장 (성적처리)
+- GET  /api/admin/sheets/{sheet_id}/scan         스캔 원본 이미지 (성적처리)
 
 페이로드 조립은 report(소비자)·exam_admin(관리자) 서비스가 담당 — 뷰는
 역할·기능 키 게이트, 입력 검증, 대상 학생 결정(학부모는 자녀 소유 검증 —
@@ -28,7 +35,11 @@ SSOT 쓰기·트리거·페이로드 조립은 attendance_admin 서비스가 담
 기능 키 게이트·입력 검증·상태 코드 결정만 한다(2차 슬라이스 home 선례).
 """
 import datetime
+import uuid
 
+from celery.result import AsyncResult
+from django.core.files.storage import default_storage
+from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -39,8 +50,18 @@ from apps.accounts.models import Parent, ParentStudent, Student, User
 from apps.accounts.permissions import FeatureRequired, IsParent, IsStudent
 from apps.videos.models import MakeupGrant
 
-from . import attendance_admin, exam_admin, report, workbook, workbook_admin
-from .models import Attendance, ClassSession, WorkbookSubmission
+from . import (
+    attendance_admin,
+    exam_admin,
+    media,
+    omr_store,
+    report,
+    tasks,
+    workbook,
+    workbook_admin,
+)
+from .models import AnswerSheet, Attendance, ClassSession, Exam, WorkbookSubmission
+from .omr import card
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
 _STATUS_VALUES = set(Attendance.Status.values)
@@ -563,12 +584,291 @@ class ParentWorkbookView(APIView):
 
 
 class AdminExamListView(APIView):
-    """GET /api/admin/exams — 시험 목록(응시자 수·평균·처리 상태)."""
+    """GET·POST /api/admin/exams — 시험 목록 / 시험 만들기."""
 
     permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
 
     def get(self, request):
         return Response(exam_admin.build_exam_list())
+
+    def post(self, request):
+        name = str(request.data.get("name") or "").strip()
+        raw_date = request.data.get("exam_date")
+        if not name:
+            return Response({"detail": "시험명을 입력하세요."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            exam_date = datetime.date.fromisoformat(str(raw_date))
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "시험일 형식은 YYYY-MM-DD 입니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        kind = request.data.get("kind") or Exam.Kind.MINI
+        if kind not in Exam.Kind.values:
+            return Response(
+                {"detail": f"시험 종류는 {'·'.join(Exam.Kind.values)} 중 하나입니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        exam = exam_admin.create_exam(
+            name,
+            exam_date,
+            round_no=request.data.get("round_no") or None,
+            target_grade=request.data.get("target_grade") or None,
+            kind=kind,
+            full_score=request.data.get("full_score") or None,
+        )
+        return Response({"exam_id": exam.pk}, status=status.HTTP_201_CREATED)
+
+
+class AdminExamQuestionsView(APIView):
+    """GET·PUT /api/admin/exams/{exam_id}/questions — 정답 키 조회·저장."""
+
+    permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
+
+    def get(self, request, exam_id):
+        exam = exam_admin.load_exam(exam_id)
+        if exam is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return Response(
+            {"questions": exam_admin.question_rows(exam), "units": exam_admin.unit_options()}
+        )
+
+    def put(self, request, exam_id):
+        exam = exam_admin.load_exam(exam_id)
+        if exam is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        rows = request.data.get("questions")
+        error = _validate_questions(rows)
+        if error is not None:
+            return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"questions": exam_admin.save_questions(exam, rows), "units": exam_admin.unit_options()}
+        )
+
+
+class AdminExamSheetsView(APIView):
+    """스캔 묶음 — GET 은 보정 화면 목록, POST 는 PDF 업로드."""
+
+    permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
+
+    def get(self, request, exam_id):
+        exam = exam_admin.load_exam(exam_id)
+        if exam is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        # 종류를 함께 준다 — 보정 화면이 문항을 고칠지 점수를 고칠지가 여기서 갈리고,
+        # 장 하나만 봐서는 알 수 없다(보류된 조사 카드는 점수도 비어 있다).
+        return Response({"kind": exam.kind, "sheets": exam_admin.sheet_rows(exam)})
+
+    def post(self, request, exam_id):
+        exam = exam_admin.load_exam(exam_id)
+        if exam is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        pdf = request.FILES.get("pdf")
+        if pdf is None or not pdf.name.lower().endswith(".pdf"):
+            return Response(
+                {"detail": "스캔 PDF 파일을 올려 주세요."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            question_count = int(request.data.get("question_count"))
+        except (TypeError, ValueError):
+            question_count = 0
+        # 모의고사는 지면에 문항이 없다(성적 조사 카드) — 문항 수를 묻지 않는다.
+        # 미니테스트는 카드가 20줄이고, 범위 밖을 그냥 넘기면 워커에서 ValueError
+        # 로 죽어 사용자는 "판독 실패" 만 보게 된다 — 여기서 막는다.
+        if exam.kind != Exam.Kind.MOCK and not 1 <= question_count <= card.ANSWER_QUESTIONS:
+            return Response(
+                {"detail": f"문항 수를 1~{card.ANSWER_QUESTIONS} 사이로 지정해 주세요."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        path = default_storage.save(media.omr_batch(exam.pk, uuid.uuid4().hex), pdf)
+        task = tasks.ingest_omr_batch.delay(exam.pk, path, question_count)
+        return Response({"task_id": task.id}, status=status.HTTP_202_ACCEPTED)
+
+
+class AdminExamRereadView(APIView):
+    """POST /api/admin/exams/{exam_id}/reread — 저장된 스캔으로 다시 판독.
+
+    정답 키를 나중에 넣었거나 엔진이 좋아졌을 때 쓴다. 업로드와 같은 태스크·같은
+    진행 조회를 쓴다 — 조교가 보기엔 "다시 채점" 버튼 하나다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
+
+    def post(self, request, exam_id):
+        exam = exam_admin.load_exam(exam_id)
+        if exam is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        question_count = exam.questions.count()
+        if exam.kind != Exam.Kind.MOCK and not question_count:
+            return Response(
+                {"detail": "정답 키를 먼저 입력해 주세요."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        task = tasks.reread_omr_sheets.delay(exam.pk, question_count)
+        return Response({"task_id": task.id}, status=status.HTTP_202_ACCEPTED)
+
+
+class AdminOmrBatchView(APIView):
+    """GET /api/admin/omr-batches/{task_id} — 판독 진행 상태.
+
+    상태는 Celery 결과 백엔드(Redis)가 들고 있다 — 진행률 테이블을 따로 두면
+    태스크 결과와 두 벌이 되어 어긋난다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
+
+    def get(self, request, task_id):
+        result = AsyncResult(task_id)
+        body = {"state": result.state}
+        if result.successful():
+            body["summary"] = result.result
+        elif result.failed():
+            body["detail"] = "판독에 실패했습니다. 파일을 확인하고 다시 올려 주세요."
+        return Response(body)
+
+
+class AdminSheetView(APIView):
+    """GET/PATCH /api/admin/sheets/{sheet_id} — 보정 화면 한 장.
+
+    PATCH 본문은 손댄 것만 보낸다: `student_id`(장의 주인 확정 — null 이면
+    해제), `answers`({문항번호: "3"} — 무응답은 ""), `score`(모의고사 자기보고
+    점수), `confirm`(값은 그대로 두고 기계 판독을 승인). 전부 없으면 400 —
+    빈 PATCH 로 보정 잠금이 걸리면 조교가 안 본 장이 확인된 장으로 둔갑한다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
+
+    def get(self, request, sheet_id):
+        sheet = self._load(sheet_id)
+        if sheet is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return Response(exam_admin.sheet_detail(sheet))
+
+    def patch(self, request, sheet_id):
+        sheet = self._load(sheet_id)
+        if sheet is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        data = request.data
+        confirm = bool(data.get("confirm"))
+        answers, error = _validate_marks(data.get("answers"))
+        if error is None and "student_id" in data:
+            student, error = _load_student(data["student_id"])
+        else:
+            student = omr_store.UNSET
+        score = omr_store.UNSET
+        if error is None and "score" in data:
+            score, error = _validate_score(data["score"])
+        if (
+            error is None
+            and student is omr_store.UNSET
+            and score is omr_store.UNSET
+            and not answers
+            and not confirm
+        ):
+            error = "고칠 내용을 지정해 주세요."
+        if error is not None:
+            return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            omr_store.correct_sheet(
+                sheet, student=student, answers=answers, score=score, confirm=confirm
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(exam_admin.sheet_detail(self._load(sheet_id)))
+
+    def _load(self, sheet_id):
+        return (
+            AnswerSheet.objects.filter(pk=sheet_id)
+            .select_related("student__user", "exam")
+            .first()
+        )
+
+
+class AdminSheetScanView(APIView):
+    """GET /api/admin/sheets/{sheet_id}/scan — 스캔 원본 이미지.
+
+    스토리지 URL 을 그대로 내주지 않는다. 지면에는 **실명과 전화번호 뒷자리**가
+    찍혀 있어(개인정보) 링크 하나가 곧 유출 경로다 — 성적처리 키를 통과한
+    요청에만 바이트를 흘린다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
+
+    def get(self, request, sheet_id):
+        sheet = AnswerSheet.objects.filter(pk=sheet_id).first()
+        if sheet is None or not default_storage.exists(sheet.scan_image_path):
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return FileResponse(default_storage.open(sheet.scan_image_path, "rb"))
+
+
+def _load_student(raw):
+    """PATCH 의 student_id → (Student|None, 에러). null 은 '주인 해제'다."""
+    if raw in (None, ""):
+        return None, None
+    student = Student.objects.filter(pk=raw).first()
+    if student is None:
+        return None, "그 학생을 찾을 수 없습니다."
+    return student, None
+
+
+def _validate_score(raw):
+    """PATCH 의 score → (점수|None, 에러). null 은 '점수 지움'이다.
+
+    조사 카드가 표현할 수 있는 범위는 0~59 다(10의 자리 1~5 + 1의 자리 0~9).
+    그 밖의 수는 지면에서 온 값일 수 없으므로 조교의 오타다.
+    """
+    if raw in (None, ""):
+        return None, None
+    try:
+        score = int(raw)
+    except (TypeError, ValueError):
+        return None, "점수는 숫자로 입력하세요."
+    if not 0 <= score <= 59:
+        return None, "점수는 0~59 사이입니다."
+    return score, None
+
+
+def _validate_marks(raw):
+    """PATCH 의 answers → ({문항번호: 마킹}, 에러). 카드 밖 값은 여기서 막는다."""
+    if not raw:
+        return {}, None
+    if not isinstance(raw, dict):
+        return {}, "answers 는 {문항번호: 마킹} 이어야 합니다."
+    marks = {}
+    for key, value in raw.items():
+        try:
+            q_number = int(key)
+        except (TypeError, ValueError):
+            return {}, "문항번호가 올바르지 않습니다."
+        text = str(value or "").strip()
+        choices = [part.strip() for part in text.split(",") if part.strip()]
+        if any(not part.isdigit() or not 1 <= int(part) <= card.ANSWER_CHOICES for part in choices):
+            return {}, f"{q_number}번 마킹은 1~{card.ANSWER_CHOICES} 중에서 고릅니다."
+        marks[q_number] = ",".join(choices)
+    return marks, None
+
+
+def _validate_questions(rows):
+    """전량 검증 후에만 저장 — 반쯤 들어간 키는 반쯤 틀린 채점을 만든다."""
+    if not isinstance(rows, list) or not rows:
+        return "문항을 하나 이상 보내야 합니다."
+    numbers = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            return "문항 형식이 올바르지 않습니다."
+        try:
+            number = int(row.get("q_number"))
+        except (TypeError, ValueError):
+            return "문항 번호가 올바르지 않습니다."
+        if number in numbers:
+            return f"문항 번호 {number} 가 중복입니다."
+        numbers.add(number)
+        if not str(row.get("answer") or "").strip():
+            return f"{number}번 정답이 비어 있습니다."
+        points = row.get("points")
+        if points is not None and float(points) <= 0:
+            return f"{number}번 배점이 0 이하입니다."
+    return None
 
 
 class AdminExamDetailView(APIView):

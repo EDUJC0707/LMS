@@ -238,7 +238,11 @@ def _wrong_rate_rows(exam):
         .values("question_id")
         .annotate(
             answered=Count("pk"),
-            not_correct=Count("pk", filter=~Q(result=SheetAnswer.Result.CORRECT)),
+            # NULL 이 ~Q 에 안 걸린다(SQL 3값 논리) — 채점 안 된 줄도 "정답 아님"이다.
+            not_correct=Count(
+                "pk",
+                filter=~Q(result=SheetAnswer.Result.CORRECT) | Q(result__isnull=True),
+            ),
         )
     )
     return {row["question_id"]: row for row in rows}
@@ -292,6 +296,8 @@ def _question_rows(questions, my_answers, wrong_rate_rows):
                 "answer": question.answer,
                 "marked": answer_row.marked if answer_row else None,
                 "result": answer_row.result if answer_row else None,
+                # 채점 결과와 축이 다르다 — 복수마킹·무응답은 result 가 없다.
+                "issue_reason": answer_row.issue_reason if answer_row else None,
                 "wrong_rate": _wrong_rate(question, wrong_rate_rows),
             }
         )

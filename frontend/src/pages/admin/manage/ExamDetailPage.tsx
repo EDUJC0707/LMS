@@ -15,11 +15,13 @@
  *   40% 미만에는 표시를 남긴다(기준은 색이 아니라 라벨로도 읽힌다).
  */
 import { useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
-import { http, useApi } from "../../../api";
+import { http, useApi, useApiAction } from "../../../api";
 import {
+  Alert,
   Badge,
+  Button,
   Card,
   EmptyState,
   ErrorState,
@@ -30,6 +32,8 @@ import {
   Table,
   Tabs,
 } from "../../../components";
+import AnswerKeyPanel from "./AnswerKeyPanel";
+import SheetUploadPanel from "./SheetUploadPanel";
 import { score } from "./ExamsPage";
 import "./manage.css";
 import type { ExamDetail, ExamQuestionRow, ExamStudentRow } from "./types";
@@ -38,6 +42,11 @@ type TakenTab = "제출" | "미제출" | "전체";
 
 export default function ExamDetailPage() {
   const { examId } = useParams();
+  const navigate = useNavigate();
+  // 저장된 스캔으로 다시 판독한다 — 정답 키를 나중에 넣었거나 엔진이 바뀐 뒤.
+  const reread = useApiAction(async () => {
+    await http.post(`/admin/exams/${examId}/reread`);
+  });
   const detail = useApi(
     () => http.get<ExamDetail>(`/admin/exams/${examId}`).then((r) => r.data),
     [examId],
@@ -70,8 +79,34 @@ export default function ExamDetailPage() {
 
   return (
     <div className="ui-stack">
+      {reread.error && (
+        <Alert tone="danger" onClose={reread.clearError}>
+          {reread.error}
+        </Alert>
+      )}
       {/* 상단바는 "시험·성적"까지만 말한다 — 어느 회차인지는 첫 카드가 든다. */}
-      <Card title={exam.name} aside={<StatusBadge status={stats.processing_status} />}>
+      <Card
+        title={exam.name}
+        aside={
+          <div className="pm-review__nav">
+            <Badge tone="outline">{exam.kind}</Badge>
+            <StatusBadge status={stats.processing_status} />
+            <Button
+              size="sm"
+              loading={reread.pending}
+              onClick={async () => {
+                await reread.run();
+                void detail.reload();
+              }}
+            >
+              다시 판독
+            </Button>
+            <Button size="sm" onClick={() => navigate("sheets")}>
+              스캔 보정
+            </Button>
+          </div>
+        }
+      >
         <div className="ui-stack ui-stack--md">
           <p className="pm-meta">
             <span className="num">{exam.exam_date}</span>
@@ -118,6 +153,16 @@ export default function ExamDetailPage() {
           )}
         </div>
       </Card>
+
+      {/* 모의고사는 학교에서 본 점수를 적어 올 뿐이라 정답 키가 없다. */}
+      {exam.kind !== "모의고사" && <AnswerKeyPanel examId={String(examId)} />}
+
+      <SheetUploadPanel
+        examId={String(examId)}
+        kind={exam.kind}
+        questionCount={questions.length}
+        onUploaded={() => void detail.reload()}
+      />
 
       <Card title="학생별 점수" aside="석차순" padding="none">
         <div className="pm-cardpad ui-stack ui-stack--md">

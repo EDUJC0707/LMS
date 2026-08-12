@@ -49,6 +49,7 @@ import AccountsPage from "../pages/admin/manage/AccountsPage";
 import ClinicManagePage from "../pages/admin/manage/ClinicManagePage";
 import ExamsPage from "../pages/admin/manage/ExamsPage";
 import ExamDetailPage from "../pages/admin/manage/ExamDetailPage";
+import SheetReviewPage from "../pages/admin/manage/SheetReviewPage";
 import WorkbookManagePage from "../pages/admin/manage/WorkbookManagePage";
 import VideoManagePage from "../pages/admin/manage/VideoManagePage";
 
@@ -170,6 +171,7 @@ export const router = createBrowserRouter([
             children: [
               { path: "exams", element: <ExamsPage /> },
               { path: "exams/:examId", element: <ExamDetailPage /> },
+              { path: "exams/:examId/sheets", element: <SheetReviewPage /> },
             ],
           },
           {

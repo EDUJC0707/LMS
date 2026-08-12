@@ -64,6 +64,7 @@ class StoreVerdictTests(OmrStoreFixtureMixin, TestCase):
             "answers_kept": 0,
             "answers_removed": 0,
             "missing_questions": [],
+            "scored": 5.0,
         })
         self.assertEqual(sheet.exam_id, self.exam.pk)
         self.assertEqual(sheet.student_id, self.student.pk)
@@ -73,7 +74,8 @@ class StoreVerdictTests(OmrStoreFixtureMixin, TestCase):
         a1, a2, a3 = (self.answer(sheet, q) for q in (self.q1, self.q2, self.q3))
         self.assertEqual((a1.marked, a1.result), ("1", SheetAnswer.Result.CORRECT))
         self.assertEqual((a2.marked, a2.result), ("2", SheetAnswer.Result.WRONG))
-        self.assertEqual((a3.marked, a3.result), (None, SheetAnswer.Result.BLANK))
+        self.assertEqual((a3.marked, a3.result, a3.issue_reason),
+                         (None, None, SheetAnswer.Issue.BLANK))
         # 추가 마킹란은 엔진이 아직 읽지 않는다 — 기본값 그대로.
         self.assertFalse(a1.extra_practice_marked)
         self.assertFalse(a1.is_corrected)
@@ -83,7 +85,8 @@ class StoreVerdictTests(OmrStoreFixtureMixin, TestCase):
         sheet, _ = self.store({1: (3, 1), 2: (2,), 3: ()})
 
         a1 = self.answer(sheet, self.q1)
-        self.assertEqual((a1.marked, a1.result), ("1,3", SheetAnswer.Result.MULTI))
+        self.assertEqual((a1.marked, a1.result, a1.issue_reason),
+                         ("1,3", None, SheetAnswer.Issue.MULTI))
 
     def test_readings_beyond_exam_questions_are_deferred(self):
         """카드 20행 중 시험 문항 밖의 행 — 문항이 없으니 못 적고 보고만."""
@@ -269,7 +272,12 @@ class ProcessingStatusDerivationTests(OmrStoreFixtureMixin, TestCase):
         return next(row for row in rows if row["exam_id"] == self.exam.pk)
 
     def test_store_never_advances_processing_status(self):
-        """저장은 scores 를 만들지 않는다 — 보류 장이 있어도 채점 전은 채점전."""
+        """정답 키가 없으면 점수가 안 생기고, 그래서 여전히 채점전이다.
+
+        저장 순서가 뒤집혀도(문항 입력 전에 batch 를 스캔) 상태가 거짓말하지
+        않는다 — 읽기는 했지만 채점할 기준이 없으면 채점된 것이 아니다.
+        """
+        Question.objects.filter(exam=self.exam).update(answer="")
         self.store(READINGS)
         hold, _ = self.store(None, path="omr/5/held.png")
 

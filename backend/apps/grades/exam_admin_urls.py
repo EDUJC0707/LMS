@@ -12,4 +12,30 @@ app_name = "exam_admin"
 urlpatterns = [
     path("admin/exams", views.AdminExamListView.as_view(), name="exam-list"),
     path("admin/exams/<int:exam_id>", views.AdminExamDetailView.as_view(), name="exam-detail"),
+    path(
+        "admin/exams/<int:exam_id>/questions",
+        views.AdminExamQuestionsView.as_view(),
+        name="exam-questions",
+    ),
+    path(
+        "admin/exams/<int:exam_id>/sheets",
+        views.AdminExamSheetsView.as_view(),
+        name="exam-sheets",
+    ),
+    path(
+        "admin/exams/<int:exam_id>/reread",
+        views.AdminExamRereadView.as_view(),
+        name="exam-reread",
+    ),
+    path(
+        "admin/omr-batches/<str:task_id>",
+        views.AdminOmrBatchView.as_view(),
+        name="omr-batch",
+    ),
+    path("admin/sheets/<int:sheet_id>", views.AdminSheetView.as_view(), name="sheet-detail"),
+    path(
+        "admin/sheets/<int:sheet_id>/scan",
+        views.AdminSheetScanView.as_view(),
+        name="sheet-scan",
+    ),
 ]

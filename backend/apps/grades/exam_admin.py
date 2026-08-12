@@ -12,9 +12,12 @@
 우선, 없으면 집계). 학생별 백분위는 **저장값 표시만** 한다 — 학생 수 비례
 집계(N+1)를 피하고, 계산·저장은 성적처리 슬라이스의 몫.
 """
+from django.db import transaction
 from django.db.models import Avg, Count, F, Q
 
-from . import report
+from apps.accounts import student_directory
+
+from . import omr_store, report
 from .models import AnswerSheet, Exam, Question, Score, SheetAnswer
 
 
@@ -32,6 +35,7 @@ def build_exam_list():
             {
                 "exam_id": exam.exam_id,
                 "name": exam.name,
+                "kind": exam.kind,
                 "exam_date": exam.exam_date.isoformat(),
                 "round_no": exam.round_no,
                 "target_grade": exam.target_grade,
@@ -61,6 +65,8 @@ def build_exam_detail(exam):
         "exam": {
             "exam_id": exam.exam_id,
             "name": exam.name,
+            "kind": exam.kind,
+            "full_score": exam.full_score,
             "exam_date": exam.exam_date.isoformat(),
             "round_no": exam.round_no,
             "target_grade": exam.target_grade,
@@ -95,9 +101,20 @@ def _exam_queryset():
 
 def _pending_sheet_counts(exam_ids=None):
     """시험별 미보정 답안지 수 {exam_id: n} — scores 조인과 분리한 별도 쿼리
-    (한 쿼리에 두 다:다 조인을 섞으면 집계가 곱으로 증식한다)."""
-    sheets = AnswerSheet.objects.filter(is_corrected=False).exclude(
-        match_status=AnswerSheet.MatchStatus.MATCHED
+    (한 쿼리에 두 다:다 조인을 섞으면 집계가 곱으로 증식한다).
+
+    "손봐야 할 장"은 두 가지다: **주인을 못 정한 장**(대조 6분기의 비정상 5종)과
+    **사람이 손대야 할 줄이 있는 장**(`BLOCKING_ISSUES` — 복수마킹·판독불가).
+    후자는 대조가 `정상` 이어도 봐야 한다. 무응답은 빠진다 — 학생이 안 푼 사실이라
+    표시만 하고, 넣으면 큐가 무응답으로 덮인다.
+    """
+    sheets = (
+        AnswerSheet.objects.filter(is_corrected=False)
+        .filter(
+            ~Q(match_status=AnswerSheet.MatchStatus.MATCHED)
+            | Q(answers__issue_reason__in=SheetAnswer.BLOCKING_ISSUES)
+        )
+        .distinct()
     )
     if exam_ids is not None:
         sheets = sheets.filter(exam_id__in=exam_ids)
@@ -158,6 +175,7 @@ def _question_stat_rows(exam):
     전량 집계를 보여준다(보정 반영 즉시 갱신되는 값이어야 한다).
     """
     R = SheetAnswer.Result
+    ISSUE = SheetAnswer.Issue
     cells = {
         row["question_id"]: row
         for row in SheetAnswer.objects.filter(question__exam=exam)
@@ -166,8 +184,9 @@ def _question_stat_rows(exam):
             answered=Count("pk"),
             correct=Count("pk", filter=Q(result=R.CORRECT)),
             wrong=Count("pk", filter=Q(result=R.WRONG)),
-            blank=Count("pk", filter=Q(result=R.BLANK)),
-            multi=Count("pk", filter=Q(result=R.MULTI)),
+            blank=Count("pk", filter=Q(issue_reason=ISSUE.BLANK)),
+            multi=Count("pk", filter=Q(issue_reason=ISSUE.MULTI)),
+            unreadable=Count("pk", filter=Q(issue_reason=ISSUE.UNREADABLE)),
         )
     }
     rows = []
@@ -187,7 +206,178 @@ def _question_stat_rows(exam):
                 "wrong_count": cell.get("wrong", 0),
                 "blank_count": cell.get("blank", 0),
                 "multi_count": cell.get("multi", 0),
+                # 학생이 안 푼 것(무응답)과 기계가 못 읽은 것은 다른 사실이다.
+                "unreadable_count": cell.get("unreadable", 0),
                 "correct_rate": report.rate(cell.get("correct", 0), answered),
             }
         )
     return rows
+
+
+# --- 시험 만들기 · 정답 키 입력 (PRD 3.1.1 문항 정보 입력) -------------------
+
+
+def create_exam(name, exam_date, round_no=None, target_grade=None, kind=None, full_score=None):
+    """시험 한 건. 문항은 따로 넣는다 — 시험을 먼저 만들고 키는 나중에 채운다.
+
+    kind 는 **어느 카드가 들어오는지**를 정한다(omr_ingest) — 모의고사는
+    문항 없이 자기보고 점수만 오므로 정답 키를 채울 일이 없다.
+    """
+    return Exam.objects.create(
+        name=name,
+        exam_date=exam_date,
+        round_no=round_no,
+        target_grade=target_grade,
+        kind=kind or Exam.Kind.MINI,
+        # 만점은 모의고사에만 필요하다 — 미니테스트는 문항 배점의 합이다.
+        full_score=full_score,
+    )
+
+
+def save_questions(exam, rows):
+    """정답 키 저장 — `[{q_number, answer, points, unit_major, unit_minor}]`.
+
+    문항번호로 upsert 한다. 보내지 않은 문항은 **답안 행이 없을 때만** 지운다 —
+    이미 채점된 문항을 지우면 SheetAnswer 가 연쇄 삭제되어 판독 결과가 날아간다.
+
+    배점은 안 주면 1점. 단원은 비워도 된다(채점에 안 쓴다 — models 참조).
+    """
+    with transaction.atomic():
+        seen = []
+        for row in rows:
+            number = int(row["q_number"])
+            Question.objects.update_or_create(
+                exam=exam,
+                q_number=number,
+                defaults={
+                    "answer": str(row.get("answer") or "").strip(),
+                    "points": row.get("points") or 1,
+                    "unit_major": (row.get("unit_major") or "").strip(),
+                    "unit_minor": (row.get("unit_minor") or "").strip() or None,
+                },
+            )
+            seen.append(number)
+        stale = Question.objects.filter(exam=exam).exclude(q_number__in=seen)
+        stale.filter(sheet_answers__isnull=True).delete()
+        # 키가 바뀌면 이미 채점된 정오도 따라와야 한다. 안 하면 화면의 정답과
+        # 저장된 결과가 어긋난 채로 성적표가 나간다(이미지는 다시 안 읽는다).
+        omr_store.regrade_exam(exam)
+    return question_rows(exam)
+
+
+def question_rows(exam):
+    """문항 목록 — 키 입력 화면이 그대로 쓰는 모양."""
+    return [
+        {
+            "q_number": q.q_number,
+            "answer": q.answer,
+            "points": q.points,
+            "unit_major": q.unit_major,
+            "unit_minor": q.unit_minor,
+        }
+        for q in Question.objects.filter(exam=exam).order_by("q_number")
+    ]
+
+
+def sheet_rows(exam):
+    """보정 화면 목록 — 손봐야 할 장이 먼저 온다.
+
+    `정상`이면서 이미 확정된 장은 볼 일이 없으므로 뒤로 민다. 그 안에서는
+    스캔 순서(sheet_id)를 지킨다 — 조교는 종이 묶음을 옆에 두고 넘긴다.
+    """
+    sheets = (
+        AnswerSheet.objects.filter(exam=exam)
+        .select_related("student__user")
+        .annotate(
+            issue_count=Count(
+                "answers", filter=Q(answers__issue_reason__in=SheetAnswer.BLOCKING_ISSUES)
+            ),
+        )
+        .annotate(
+            settled=Q(is_corrected=True)
+            & Q(match_status=AnswerSheet.MatchStatus.MATCHED)
+            & Q(issue_count=0)
+        )
+        .order_by("settled", "sheet_id")
+    )
+    return [_sheet_row(sheet) for sheet in sheets]
+
+
+def sheet_detail(sheet):
+    """장 1건 — 문항은 정답 키 전량에 그 장의 판독을 붙인다.
+
+    판독이 없는 문항도 줄을 내놓는다: 보류된 장은 행이 하나도 없고, 그때야말로
+    사람이 손으로 채워 넣어야 하는 자리다.
+
+    모의고사 장은 문항이 없어 questions 가 빈 목록이다 — 고칠 것은
+    `recognized_score` 한 칸뿐이고, 화면은 그 차이로 갈린다.
+    """
+    marks = {row.question_id: row for row in sheet.answers.all()}
+    questions = []
+    for question in Question.objects.filter(exam_id=sheet.exam_id).order_by("q_number"):
+        row = marks.get(question.question_id)
+        questions.append(
+            {
+                "q_number": question.q_number,
+                "answer": question.answer,
+                "points": question.points,
+                "marked": row.marked if row else None,
+                "result": row.result if row else None,
+                # 채점 결과와 축이 다르다 — 둘 다 없을 수도, 하나만 있을 수도 있다.
+                "issue_reason": row.issue_reason if row else None,
+                "issue": bool(row and row.issue_reason),
+                "is_corrected": bool(row and row.is_corrected),
+            }
+        )
+    score = Score.objects.filter(exam_id=sheet.exam_id, student_id=sheet.student_id).first()
+    return {
+        **_sheet_row(sheet),
+        "questions": questions,
+        "total_score": float(score.total_score) if score else None,
+    }
+
+
+def _issue_count(sheet):
+    """사람이 손대야 할 줄 수. 목록은 annotate 로 미리 세고, 상세는 그때 센다."""
+    counted = getattr(sheet, "issue_count", None)
+    if counted is not None:
+        return counted
+    return sheet.answers.filter(issue_reason__in=SheetAnswer.BLOCKING_ISSUES).count()
+
+
+def _sheet_row(sheet):
+    return {
+        "sheet_id": sheet.sheet_id,
+        "match_status": sheet.match_status,
+        "is_corrected": sheet.is_corrected,
+        "recognized_name": sheet.recognized_name,
+        "recognized_matching_key": sheet.recognized_matching_key,
+        # 사람이 손대야 할 줄 수(복수마킹·판독불가). 대조가 `정상` 이어도 남는다.
+        "issue_count": _issue_count(sheet),
+        # 모의고사(자기보고) 전용. 미니테스트 장에서는 언제나 null 이다.
+        "recognized_score": sheet.recognized_score,
+        # 그 점수가 버블이 아니라 손글씨 OCR 에서 왔다는 표시. 값만 보면 구분이
+        # 안 되므로 화면이 이걸로 배지를 가른다.
+        "score_from_handwriting": sheet.score_from_handwriting,
+        # 명부와 같은 행 모양으로 낸다 — 보정 화면의 학생 선택기가 명부 API 로
+        # 고르는 값과 같아야 "이미 붙은 학생"과 "지금 고른 학생"이 한 자리에 선다.
+        "student": None if sheet.student is None else student_directory.row(sheet.student),
+    }
+
+
+def unit_options():
+    """이미 쓴 단원들 — 대단원 하나에 중단원 여럿. 별도 표를 두지 않는다.
+
+    쓸수록 채워지고, 새 단원은 그냥 입력하면 다음부터 후보로 뜬다.
+    """
+    options = {}
+    pairs = (
+        Question.objects.exclude(unit_major="")
+        .values_list("unit_major", "unit_minor")
+        .distinct()
+    )
+    for major, minor in pairs:
+        options.setdefault(major, set())
+        if minor:
+            options[major].add(minor)
+    return {major: sorted(minors) for major, minors in sorted(options.items())}

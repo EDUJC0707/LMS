@@ -138,12 +138,18 @@ def classify_answers(inks):
     않는다(X 로 지운 것인지 겹쳐 칠한 것인지 기계가 못 가른다. PRD 3.1.1 의
     마킹 이상 경고로 넘어가 사람이 본다).
 
-    **None 은 장 전체 보류다.** 연필이 닿은 줄이 절반 이하면 lead 중앙값이 연필
-    통계가 아니라 인쇄 잡음 통계다 — 그 40% 를 빈칸 기준으로 삼으면 빈 줄의 글리프
-    잡음이 답으로 승격된다(실측: 빈 장을 넣으면 65장 전원이 12~16문항을 답으로
-    읽었고, 고른 선택지는 글리프 잉크가 무거운 순서였다). 잡음과 흐린 마킹은
-    절대값으로 안 갈리므로(마킹 최소 29.5 < 잡음 최대 32.5) 몇 줄만 골라 살리지
-    않고 장째 사람에게 넘긴다 — 방향을 못 가릴 때 보류하는 locate_card 와 같은 태도다.
+    **줄 값이 None 이면 그 줄만 못 읽은 것이다** — 빈칸이라기엔 크고 마킹이라기엔
+    작은 lead 가 나온 줄이다(접힘·잘림으로 희석된 마킹이 거기 떨어진다). 예전에는
+    그런 줄이 하나만 있어도 장째 보류했는데, 실물 386장을 전수로 재 보니 **보류
+    20장 중 19장이 이 경우였고 그중 9장은 애매한 줄이 딱 하나**였다(2026-08-12).
+    나머지 열다섯 줄이 멀쩡히 읽혔는데 통째로 버려지고 조교가 다시 쳤다.
+
+    **None 을 통째로 돌려주는 것은 장 전체가 못 미더울 때뿐이다.** 연필이 닿은 줄이
+    절반 이하면 lead 중앙값이 연필 통계가 아니라 인쇄 잡음 통계다 — 그 40% 를 빈칸
+    기준으로 삼으면 빈 줄의 글리프 잡음이 답으로 승격된다(실측: 빈 장을 넣으면
+    65장 전원이 12~16문항을 답으로 읽었고, 고른 선택지는 글리프 잉크가 무거운
+    순서였다). 그때는 **눈금 자체가 틀린 것**이라 어느 줄도 믿을 수 없다.
+    실물 386장에서 이쪽은 1장뿐이었다.
     """
     if not inks:
         return {}
@@ -159,11 +165,13 @@ def classify_answers(inks):
     sheet_lead = median(leads)
     floor_lead = max(LEAD_FRACTION * sheet_lead, MARK_MIN_ABS)
     blank_ceiling = max(BLANK_MAX_RATIO * sheet_lead, BLANK_MAX_ABS)
-    if any(blank_ceiling <= stats.lead < floor_lead for stats in rows.values()):
-        return None
     runner_min = min(RUNNER_MIN, RUNNER_FRACTION * sheet_lead)
     return {
-        question: _marked_choices(stats, floor_lead, runner_min)
+        question: (
+            None
+            if blank_ceiling <= stats.lead < floor_lead
+            else _marked_choices(stats, floor_lead, runner_min)
+        )
         for question, stats in rows.items()
     }
 
@@ -231,6 +239,28 @@ def sheet_scale(rows):
     """그 장의 연필 세기 — 답란 판정이 쓰는 것과 같은 중앙 lead."""
     column_floors = _column_floors(rows)
     return median(_row_stats(cells, column_floors).lead for cells in rows.values())
+
+
+def field_scale(fields):
+    """답란 없는 지면의 연필 세기 — 필드마다 (최고 − 나머지 중앙값)의 중앙값.
+
+    `sheet_scale` 은 답란처럼 **직사각** 격자를 전제한다(열 기준선을 만든다).
+    성적 조사 카드에는 답란이 없고, 성명은 열마다 행 수가 14/19 로 달라 그
+    전제가 깨진다 — 열 기준선을 만들려 하면 없는 열에서 터진다.
+
+    대신 필드 안에서 눈금을 만든다. 필드 하나에 마킹이 하나뿐이라 "최고 −
+    나머지 바닥"이 곧 그 마킹의 lead 다.
+
+    전체 중앙값이 아니라 **위 절반의 중앙값**을 쓰는 이유: 성명 12열 중 안
+    쓰는 열이 이름 길이만큼 남는다(세 글자면 3열, 두 글자면 6열). 전체
+    중앙값은 두 글자 이름에서 마킹과 빈 열의 경계에 정확히 얹혀 눈금이 반토막
+    난다 — 위 절반만 보면 어느 길이에서도 칠해진 열만 남는다.
+    """
+    leads = sorted(
+        sorted(cells.values())[-1] - median(sorted(cells.values())[:-1])
+        for cells in fields.values()
+    )
+    return median(leads[len(leads) // 2 :])
 
 
 def classify_fields(fields, scale, fraction=IDENTITY_FRACTION):

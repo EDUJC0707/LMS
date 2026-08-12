@@ -183,11 +183,30 @@ class Exam(models.Model):
 
     avg_score/stddev/max_score/top30_score 는 채점 후 계산 캐시(PRD 3.2.1
     성적 요약). avg_score 는 클리닉 대상 판정(평균미달)에서 재사용.
+
+    `max_score` 는 **최고점**(누가 제일 잘 봤나)이고 `full_score` 는 **만점**이다 —
+    이름이 비슷해 섞기 쉬우니 주의.
     """
+
+    class Kind(models.TextChoices):
+        # 우리가 낸 문제 — OMR 답안 카드가 들어오고 우리가 채점한다.
+        MINI = "미니테스트", "미니테스트"
+        # 학교·평가원에서 보고 점수만 적어 온다 — 지면이 `성적 조사 카드`고
+        # 문항이 없다(자기보고). 무엇을 읽을지가 여기서 갈린다(omr_ingest).
+        MOCK = "모의고사", "모의고사"
 
     exam_id = models.BigAutoField(primary_key=True)
     name = models.CharField("시험명", max_length=100)
+    kind = models.CharField(
+        "시험 종류", max_length=20, choices=Kind.choices, default=Kind.MINI
+    )
     exam_date = models.DateField("시험일")
+    full_score = models.DecimalField(
+        # **만점.** 미니테스트는 문항 배점의 합이라 안 쓴다(파생값이 진실이다).
+        # 모의고사는 문항이 없고 조사 카드도 만점을 말하지 않아 여기서만 온다 —
+        # 비어 있으면 성적표가 `44 / —` 로 나간다.
+        "만점", max_digits=6, decimal_places=2, null=True, blank=True
+    )
     round_no = models.SmallIntegerField("회차 번호", null=True, blank=True)
     target_grade = models.SmallIntegerField("대상 학년", null=True, blank=True)
     notice = models.TextField("성적표 공지사항", null=True, blank=True)  # noqa: DJ001
@@ -242,7 +261,9 @@ class Question(models.Model):
     q_number = models.SmallIntegerField("문항 번호")
     answer = models.CharField("정답", max_length=10)
     points = models.DecimalField("배점", max_digits=4, decimal_places=1)
-    unit_major = models.CharField("대단원", max_length=50)
+    # 채점에는 필요 없다 — 정답만 있으면 점수가 나온다. 약점체크(PRD 3.1.8)의
+    # 집계축이라 나중에 채운다. 비워 두지 못하면 정답 입력이 단원 입력에 막힌다.
+    unit_major = models.CharField("대단원", max_length=50, blank=True, default="")
     unit_minor = models.CharField("중단원", max_length=50, null=True, blank=True)  # noqa: DJ001
     wrong_rate = models.DecimalField(
         "오답률", max_digits=5, decimal_places=2, null=True, blank=True
@@ -321,6 +342,19 @@ class AnswerSheet(models.Model):
         "인식된 대조키", max_length=30, null=True, blank=True
     )
     recognized_name = models.CharField("인식된 이름", max_length=50, null=True, blank=True)  # noqa: DJ001
+    recognized_score = models.SmallIntegerField(
+        # 모의고사(자기보고) 전용 — 조사 카드에는 문항이 없고 점수 두 자리뿐이라
+        # sheet_answers 에 담을 데가 없다. 학생이 안 붙은 장에도 판독을 남겨야
+        # 조교가 보정 화면에서 지면과 대조할 수 있다(recognized_name 과 같은 축).
+        "인식된 점수", null=True, blank=True
+    )
+    score_from_handwriting = models.BooleanField(
+        # 버블이 아니라 **손글씨 OCR** 에서 온 점수다. 마킹 판독은 결정적이지만
+        # OCR 은 아니라, 조교가 어느 쪽인지 알고 봐야 한다 — 보정 화면이 이 값으로
+        # 표시를 가른다. 그 자체로 점수를 막지는 않는다(막는 것은 학생이 없다는
+        # 사실이다 — 학생이 붙기 전에는 scores 행이 생기지 않는다).
+        "손글씨에서 읽음", default=False
+    )
     match_status = models.CharField("대조 상태", max_length=20, choices=MatchStatus.choices)
     is_corrected = models.BooleanField("수동 보정 완료", default=False)
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)
@@ -353,10 +387,28 @@ class SheetAnswer(models.Model):
     """
 
     class Result(models.TextChoices):
+        """**채점** 결과. 깨끗한 단일 마킹일 때만 값이 있고, 그 밖에는 NULL 이다."""
+
         CORRECT = "정답", "정답"
         WRONG = "오답", "오답"
+
+    class Issue(models.TextChoices):
+        """**이상** 사유 — 조교가 이 줄을 봐야 하는 이유. 없으면 NULL 이다.
+
+        채점 결과와 축이 다르다. 복수마킹된 줄은 정답도 오답도 아니라 채점 자체가
+        안 되고, 무응답은 학생이 안 푼 사실이며, 판독불가는 기계가 못 읽은 사실이다.
+        한 컬럼에 섞어 두면 "정답률"을 낼 때마다 무엇을 빼야 하는지 매번 따져야 한다.
+        """
+
         BLANK = "무응답", "무응답"
         MULTI = "복수마킹", "복수마킹"
+        # 빈칸이라기엔 크고 마킹이라기엔 작은 잉크(접힘·잘림으로 희석된 마킹).
+        # 장은 멀쩡하므로 나머지 줄은 그대로 산다.
+        UNREADABLE = "판독불가", "판독불가"
+
+    #: 사람이 **손을 대야** 하는 사유. 무응답은 학생이 안 푼 사실이라 뺀다 —
+    #: 표시는 하되 보정 대기로 잡지 않는다(안 그러면 큐가 무응답으로 덮인다).
+    BLOCKING_ISSUES = frozenset({Issue.MULTI, Issue.UNREADABLE})
 
     id = models.BigAutoField(primary_key=True)
     sheet = models.ForeignKey(
@@ -374,7 +426,13 @@ class SheetAnswer(models.Model):
         verbose_name="문항",
     )
     marked = models.CharField("마킹 값", max_length=10, null=True, blank=True)  # noqa: DJ001
-    result = models.CharField("채점 결과", max_length=10, choices=Result.choices)
+    result = models.CharField(  # noqa: DJ001
+        # NULL = 채점할 수 없었다(issue_reason 이 왜인지 말한다).
+        "채점 결과", max_length=10, choices=Result.choices, null=True, blank=True
+    )
+    issue_reason = models.CharField(  # noqa: DJ001
+        "이상 사유", max_length=10, choices=Issue.choices, null=True, blank=True
+    )
     is_corrected = models.BooleanField("수동 보정", default=False)
     extra_practice_marked = models.BooleanField("추가 마킹", default=False)
     extra_mark_corrected = models.BooleanField("추가 마킹 보정", default=False)

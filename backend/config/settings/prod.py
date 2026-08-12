@@ -1,10 +1,22 @@
 """운영 설정 — Fly.io. 보안 강화 + Sentry. 비밀은 env(fly secrets)로 주입."""
+from django.core.exceptions import ImproperlyConfigured
+
 from config.observability import init_sentry
 
 from .base import *  # noqa: F401,F403
 from .base import env
 
 DEBUG = False
+
+# --- 오브젝트 스토리지는 운영에서 **필수** --------------------------------
+# 버킷이 비면 base 가 파일시스템으로 떨어지고, Fly 컨테이너 디스크는 **재배포마다
+# 사라진다.** 그러면 OMR 스캔과 워크북 사진이 조용히 날아가고 재판독도 못 한다.
+# 조용히 도는 것보다 안 뜨는 편이 낫다 — 그때는 아직 아무것도 안 잃었다.
+if not env("AWS_STORAGE_BUCKET_NAME", default=""):
+    raise ImproperlyConfigured(
+        "AWS_STORAGE_BUCKET_NAME 이 없습니다. 운영에서 파일시스템 스토리지를 쓰면 "
+        "재배포 때 스캔·사진이 사라집니다(fly secrets 로 주입)."
+    )
 
 # Fly 프록시 뒤 HTTPS 인식
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

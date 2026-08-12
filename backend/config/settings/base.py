@@ -119,6 +119,14 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.clinic.tasks.collect_clinic_supervision",
         "schedule": 20 * 60,
     },
+    # 감독 봇 투입. **수집과 달리 늦으면 못 만회한다** — 봇은 회의가 도는 동안
+    # 에만 들어갈 수 있어서, 주기가 성기면 그만큼 회의 앞부분이 통째로 안 남는다.
+    # 1분인 이유가 그것이고, 할 일이 없으면 DB 조회 한 번으로 끝난다.
+    # 구글 경로에서는 어댑터가 아무것도 하지 않으므로 켜 두어도 해가 없다.
+    "clinic-supervision-dispatch": {
+        "task": "apps.clinic.tasks.dispatch_clinic_supervision",
+        "schedule": 60,
+    },
 }
 
 # --- 알림 채널 (PRD 6-8 채널 추상화 — apps/notifications/channels.py) --------
@@ -223,6 +231,16 @@ MUX_PLAYBACK_RESTRICTION_ID = env("MUX_PLAYBACK_RESTRICTION_ID", default="")
 # 비어 있으면 대체하지 않는다(운영에는 시드 데이터가 없다).
 MUX_DEMO_PLAYBACK_ID = env("MUX_DEMO_PLAYBACK_ID", default="")
 
+# --- 손글씨 OCR (Upstage) — apps.grades.ocr 한 곳에서만 쓴다 -------------
+# 모의고사 조사 카드에서 **버블이 하나도 없는 장**의 점수만 읽는다. 마킹 판독은
+# 여전히 엔진 몫이고 OCR 을 안 부른다(decisions.md "인식 방식").
+# 키가 비면 호출 자체를 안 한다 — OCR 없이도 시스템이 그대로 돈다(닫힘 기본값).
+UPSTAGE_API_KEY = env("UPSTAGE_API_KEY", default="")
+# 0.90 은 실측이다: 정답을 아는 59장에서 이 문턱 위의 오답이 0 건이었다
+# (2026-08-11 — 틀린 두 건의 신뢰도는 0.617·0.890). 근거는 apps/grades/ocr.py.
+OMR_OCR_MIN_CONFIDENCE = env.float("OMR_OCR_MIN_CONFIDENCE", default=0.90)
+OMR_OCR_TIMEOUT = env.float("OMR_OCR_TIMEOUT", default=20.0)
+
 # --- 오브젝트 스토리지 (Tigris/S3, django-storages) ----------------------
 # 버킷명이 있으면 S3(Tigris) 사용, 없으면 로컬 파일시스템(MEDIA_ROOT).
 #
@@ -231,6 +249,10 @@ MUX_DEMO_PLAYBACK_ID = env("MUX_DEMO_PLAYBACK_ID", default="")
 # django-storages 쪽 이름은 다르다(`AWS_STORAGE_BUCKET_NAME` 등). 값은 같은 것을
 # 가리키므로 **fly 가 준 이름을 먼저 읽고**, 없으면 django-storages 이름으로 떨어진다.
 # 시크릿을 두 벌 심으면 언젠가 한쪽만 바뀌어 어긋난다 — 그래서 복제하지 않는다.
+#
+# 이 별칭이 없던 동안 앱은 **조용히 컨테이너 파일시스템에 쓰고 있었다**(2026-08-12
+# `fly secrets list` 확인). 배포 문서가 "별칭을 손으로 set 하라"고 안내했는데 그
+# 단계가 빠져 있었다 — 잊히는 절차 대신 코드가 읽는다.
 AWS_ACCESS_KEY_ID = env("AWS_ACCESS_KEY_ID", default="")
 AWS_SECRET_ACCESS_KEY = env("AWS_SECRET_ACCESS_KEY", default="")
 AWS_STORAGE_BUCKET_NAME = env("BUCKET_NAME", default="") or env(
@@ -243,17 +265,34 @@ AWS_S3_REGION_NAME = (
     env("AWS_REGION", default="") or env("AWS_S3_REGION_NAME", default="") or "auto"
 )
 
-if AWS_STORAGE_BUCKET_NAME:
-    STORAGES = {
-        "default": {"BACKEND": "storages.backends.s3.S3Storage"},
-        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
-    }
+# 버킷이 있으면 S3, 없으면 파일시스템. **두 갈래를 다 적는다** — 예전에는 S3 쪽만
+# 대입하고 없는 경우를 Django 기본값에 맡겼는데, 그러면 "지금 어디에 쓰고 있나"가
+# 설정에 안 보인다.
+STORAGES = {
+    "default": {
+        "BACKEND": (
+            "storages.backends.s3.S3Storage"
+            if AWS_STORAGE_BUCKET_NAME
+            else "django.core.files.storage.FileSystemStorage"
+        )
+    },
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
 
 # --- 화상(클리닉) — key_considerations §4 추상화 경계 --------------------
 # 업체 교체는 이 경로 한 줄이다(apps.clinic.conferencing 계약).
+# 2026-08-12 전면 교체 — 기본값이 Fireflies 다. 방과 링크는 여전히 구글이
+# 만들고(FirefliesAdapter 가 위임한다) **감독 자료만** 봇에서 온다.
+# 바꾼 이유는 조교 기기다: 구글 전사는 컴퓨터·안드로이드에서만 켜지고
+# 아이폰·아이패드에는 버튼 자체가 없다. 봇은 클라우드에서 들어오므로 사람이
+# 무슨 기기를 쓰든 기록이 남는다(docs/2026-08-12-아이패드-전사-대안조사.md).
+# ~~apps.clinic.google_meet.GoogleMeetAdapter~~ ← 되돌리려면 이 값이다.
 CLINIC_CONFERENCE_BACKEND = env(
-    "CLINIC_CONFERENCE_BACKEND", default="apps.clinic.google_meet.GoogleMeetAdapter"
+    "CLINIC_CONFERENCE_BACKEND", default="apps.clinic.fireflies.FirefliesAdapter"
 )
+
+# 비면 봇 투입·수집이 "API 키가 설정되지 않았습니다" 로 실패한다(조용한 성공 없음).
+FIREFLIES_API_KEY = env("FIREFLIES_API_KEY", default="")
 # 구글 미트는 **사용자 인증만** 받는다(서비스 계정은 워크스페이스 도메인 위임
 # 한정) — 계정 1개로 한 번 동의받은 갱신 토큰을 서버가 들고 쓴다.
 # 발급: `manage.py meet_authorize`. 셋 중 하나라도 비면 스페이스 생성은

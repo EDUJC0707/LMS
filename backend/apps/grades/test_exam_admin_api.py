@@ -5,15 +5,21 @@
 - 시험 목록: 응시자 수·평균(저장값 우선)·처리 상태(파생값 — 조회 시 계산)
 - 시험 상세: 학생별 점수 테이블(점수 내림차순·동점 공동 석차·미응시 후순위),
   문항별 정답률·결과 분포(무응답·복수마킹 — 보정 화면 근거, PRD 마킹 이상 경고)
-- 조회 전용: GET 외 메서드 차단(성적 수정·OMR 업로드는 이번 범위 아님)
+- 시험 만들기·정답 키 저장, 스캔 묶음 업로드(판독 자체는 Celery 워커의 일)
 
 픽스처·검산 값은 test_grade_report_api.GradeFixtureMixin(모듈 docstring) 공용.
 """
+import json
+from unittest import mock
+
+from django.core.files.storage import default_storage
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
 from apps.accounts.features import FeatureKey
 from apps.accounts.models import StaffFeatureGrant, User
 
+from .models import Exam
 from .test_grade_report_api import GradeFixtureMixin, make_user
 
 ADMIN_EXAMS = "/api/admin/exams"
@@ -69,10 +75,9 @@ class ExamAdminAccessTests(ExamAdminFixtureMixin, TestCase):
         self.client.force_login(self.owner)
         self.assertEqual(self.client.get(self.detail_url(self.exam2)).status_code, 200)
 
-    def test_write_methods_not_allowed(self):
-        """조회 전용 — 성적 수정·OMR 업로드는 이번 범위 아님."""
+    def test_detail_is_read_only(self):
+        """상세는 조회 전용 — 성적 수정은 보정 화면 몫이다."""
         self.login_admin()
-        self.assertEqual(self.client.post(ADMIN_EXAMS).status_code, 405)
         self.assertEqual(self.client.put(self.detail_url(self.exam2)).status_code, 405)
 
 
@@ -100,6 +105,7 @@ class ExamAdminListTests(ExamAdminFixtureMixin, TestCase):
             {
                 "exam_id": self.exam3.pk,
                 "name": "오메가블랙 3회",
+                "kind": "미니테스트",
                 "exam_date": "2026-07-15",
                 "round_no": 3,
                 "target_grade": None,
@@ -114,8 +120,10 @@ class ExamAdminListTests(ExamAdminFixtureMixin, TestCase):
         self.assertEqual(e2["taker_count"], 4)
         self.assertEqual(e2["score_count"], 4)
         self.assertEqual(e2["average"], 70.0)  # 캐시 없음 → 집계
-        self.assertEqual(e2["processing_status"], "완료")
-        self.assertEqual(e2["pending_sheet_count"], 0)
+        # B 의 5번이 복수마킹이라 대조가 `정상` 이어도 사람이 골라야 한다
+        # (2026-08-12 이상 축 분리 — 그 전에는 이 장이 완료로 지나갔다).
+        self.assertEqual(e2["processing_status"], "보정필요")
+        self.assertEqual(e2["pending_sheet_count"], 1)
         e1 = rows[self.exam1.pk]
         self.assertEqual(e1["taker_count"], 1)
         self.assertEqual(e1["average"], 25.0)  # 저장 캐시 우선(실측 20 아님)
@@ -153,6 +161,8 @@ class ExamAdminDetailTests(ExamAdminFixtureMixin, TestCase):
             {
                 "exam_id": self.exam2.pk,
                 "name": "오메가블랙 2회",
+                "kind": "미니테스트",
+                "full_score": None,  # 미니테스트는 문항 배점의 합이라 안 쓴다
                 "exam_date": "2026-07-08",
                 "round_no": 2,
                 "target_grade": None,
@@ -168,8 +178,9 @@ class ExamAdminDetailTests(ExamAdminFixtureMixin, TestCase):
                 "stddev": 10.0,
                 "highest_score": 80.0,
                 "top30_score": 80.0,
-                "processing_status": "완료",
-                "pending_sheet_count": 0,
+                # B 의 5번 복수마킹 — 매칭은 됐지만 조교가 골라야 한다
+                "processing_status": "보정필요",
+                "pending_sheet_count": 1,
             },
         )
 
@@ -240,3 +251,112 @@ class ExamAdminDetailTests(ExamAdminFixtureMixin, TestCase):
         # + 상위30 1 + 학생별 성적 1 + 문항 1 + 문항 집계 1
         with self.assertNumQueries(10):
             self.assertEqual(self.client.get(self.detail_url(self.exam2)).status_code, 200)
+
+
+class ExamCreateAndKeyTests(ExamAdminFixtureMixin, TestCase):
+    """시험 만들기 · 정답 키 입력 — 채점은 키가 있어야 성립한다(PRD 3.1.1)."""
+
+    def key_url(self, exam):
+        return f"{ADMIN_EXAMS}/{exam.pk}/questions"
+
+    def test_creates_an_exam_without_questions(self):
+        """키는 나중에 채운다 — 시험을 먼저 잡아 둘 수 있어야 한다."""
+        self.login_admin()
+
+        res = self.client.post(
+            ADMIN_EXAMS,
+            data=json.dumps({"name": "8월 미니테스트", "exam_date": "2026-08-12"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 201)
+        self.assertTrue(Exam.objects.filter(pk=res.json()["exam_id"]).exists())
+
+    def test_rejects_an_exam_without_a_date(self):
+        self.login_admin()
+
+        res = self.client.post(
+            ADMIN_EXAMS,
+            data=json.dumps({"name": "이름만"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 400)
+
+    def put_key(self, exam, questions):
+        return self.client.put(
+            self.key_url(exam),
+            data=json.dumps({"questions": questions}),
+            content_type="application/json",
+        )
+
+    def test_saves_a_key_without_units(self):
+        """단원은 채점에 안 쓴다 — 정답만으로 저장돼야 한다."""
+        self.login_admin()
+
+        res = self.put_key(self.exam2, [
+            {"q_number": 1, "answer": "4"},
+            {"q_number": 2, "answer": "2", "points": 5},
+        ])
+
+        self.assertEqual(res.status_code, 200)
+        rows = {r["q_number"]: r for r in res.json()["questions"]}
+        self.assertEqual(rows[1]["answer"], "4")
+        self.assertEqual(float(rows[2]["points"]), 5.0)
+
+    def test_rejects_a_partial_key(self):
+        """반쯤 들어간 키는 반쯤 틀린 채점을 만든다 — 전량 검증 후에만 저장."""
+        self.login_admin()
+
+        res = self.put_key(self.exam2, [
+            {"q_number": 1, "answer": "4"},
+            {"q_number": 2, "answer": ""},
+        ])
+
+        self.assertEqual(res.status_code, 400)
+
+    def test_units_already_used_come_back_as_options(self):
+        """별도 표 없이 쓰던 단원이 후보가 된다 — 대단원 하나에 중단원 여럿."""
+        self.login_admin()
+        self.put_key(self.exam2, [
+            {"q_number": 1, "answer": "1", "unit_major": "물질과 규칙성", "unit_minor": "원소"},
+        ])
+
+        units = self.client.get(self.key_url(self.exam2)).json()["units"]
+
+        self.assertIn("원소", units["물질과 규칙성"])
+
+
+class SheetUploadTests(ExamAdminFixtureMixin, TestCase):
+    """스캔 업로드 — 뷰는 파일만 놓고 즉시 답한다(판독은 워커)."""
+
+    def post_pdf(self, exam, question_count):
+        pdf = SimpleUploadedFile("batch.pdf", b"%PDF-1.4\n", content_type="application/pdf")
+        return self.client.post(
+            f"{ADMIN_EXAMS}/{exam.pk}/sheets", {"pdf": pdf, "question_count": question_count}
+        )
+
+    def test_hands_the_batch_to_the_worker(self):
+        """판독이 요청을 붙잡으면 안 된다 — 스토리지에 놓고 경로만 넘긴다."""
+        self.login_admin()
+
+        with mock.patch("apps.grades.tasks.ingest_omr_batch.delay") as delay:
+            delay.return_value = mock.Mock(id="task-1")
+            res = self.post_pdf(self.exam2, 16)
+
+        self.assertEqual(res.status_code, 202)
+        self.assertEqual(res.json()["task_id"], "task-1")
+        exam_pk, path, count = delay.call_args.args
+        self.assertEqual((exam_pk, count), (self.exam2.pk, 16))
+        self.assertTrue(default_storage.exists(path))
+        default_storage.delete(path)
+
+    def test_rejects_a_question_count_off_the_card(self):
+        """카드는 20줄이다. 워커에서 죽으면 사용자는 "판독 실패"만 보게 된다."""
+        self.login_admin()
+
+        with mock.patch("apps.grades.tasks.ingest_omr_batch.delay") as delay:
+            res = self.post_pdf(self.exam2, 21)
+
+        self.assertEqual(res.status_code, 400)
+        delay.assert_not_called()

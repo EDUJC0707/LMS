@@ -104,16 +104,18 @@ class CreateSpaceTests(SimpleTestCase):
         body = json.loads(transport.calls[1]["body"].decode())
         self.assertEqual(body["config"]["accessType"], "TRUSTED")
 
-    def test_transcript_and_summary_are_on_recording_is_off(self):
-        # PRD 8-5 확정(2026-07-17): 오디오 전용 녹음이 미트에 없어서 **전사 +
-        # Gemini 요약**으로 감독 목적을 달성한다. 녹화는 하지 않는다.
-        # 회의별 강제 지점이 여기(artifactConfig)라 스페이스를 만들 때 건다 —
-        # 조교가 매번 버튼을 누르는 것에 기대면 안 눌린 회차가 반드시 나온다.
+    def test_google_records_nothing_now_that_the_bot_does(self):
+        # ~~전사·요약 ON~~ → **전부 OFF**(2026-08-12 전면 교체).
+        # 감독 자료는 Fireflies 봇이 만든다. 구글까지 같이 켜 두면 ①안 쓰는
+        # 회의록이 드라이브에 클리닉마다 하나씩 쌓이고 ②학생에게 녹취 안내가
+        # **두 번** 뜬다. 구글을 켜 둘 이유였던 "아이패드에서 안 켜진다"가
+        # 그대로 남아 있어서 어차피 조교 기기에 따라 있다 없다 한다.
+        # 되돌리는 것은 이 세 줄이다 — 어댑터 토글과는 별개 스위치다.
         transport = FakeTransport(TOKEN_OK, SPACE_OK)
         GoogleMeetAdapter(transport=transport).create_space()
         artifacts = json.loads(transport.calls[1]["body"].decode())["config"]["artifactConfig"]
-        self.assertEqual(artifacts["transcriptionConfig"]["autoTranscriptionGeneration"], "ON")
-        self.assertEqual(artifacts["smartNotesConfig"]["autoSmartNotesGeneration"], "ON")
+        self.assertEqual(artifacts["transcriptionConfig"]["autoTranscriptionGeneration"], "OFF")
+        self.assertEqual(artifacts["smartNotesConfig"]["autoSmartNotesGeneration"], "OFF")
         self.assertEqual(artifacts["recordingConfig"]["autoRecordingGeneration"], "OFF")
 
     def test_each_call_makes_a_new_space(self):
@@ -203,17 +205,24 @@ class ConsentFlowTests(SimpleTestCase):
         self.assertEqual(params["redirect_uri"], "http://localhost:8765/")
         self.assertEqual(params["response_type"], "code")
 
-    def test_scopes_are_the_two_we_need_and_no_more(self):
-        # 스페이스 생성 + 감독 문서 읽기·정리.
+    def test_scopes_are_the_three_we_need_and_no_more(self):
+        # 스페이스 생성 + 감독 문서 읽기·정리 + 일정 만들기.
         # 좁은 권한을 두 번 시도했다가 두 번 다 막혔다(2026-08-04 실측):
         # `drive.meet.readonly` 는 파일 존재까지만 보이고 본문이 404 였고,
         # 파일을 우리 폴더 구조로 옮기는 것은 **쓰기**라 읽기 권한으로 안 된다.
         # 구글에 "미트가 만든 파일만 읽고 쓰기" 는 없다.
+        #
+        # 캘린더는 2026-08-12 에 붙었다. 감독 봇을 우리가 1분마다 밀어 넣는
+        # 대신 **일정에 걸어 두면 업체가 시작 시각에 알아서 들어오기** 때문이다.
+        # `calendar` 전체가 아니라 `calendar.events` 인 이유: 우리가 하는 일은
+        # 클리닉 일정 하나를 만들고 고치고 지우는 것뿐이고, 달력 자체를
+        # 만들거나 남의 달력 설정을 건드릴 일이 없다.
         self.assertEqual(
             list(SCOPES),
             [
                 "https://www.googleapis.com/auth/meetings.space.created",
                 "https://www.googleapis.com/auth/drive",
+                "https://www.googleapis.com/auth/calendar.events",
             ],
         )
 

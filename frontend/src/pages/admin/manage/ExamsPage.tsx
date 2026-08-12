@@ -12,20 +12,26 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { http, useApi } from "../../../api";
+import { http, useApi, useApiAction } from "../../../api";
 import {
+  Alert,
   Badge,
+  Button,
   Card,
   EmptyState,
   ErrorState,
   Field,
   Input,
   Loading,
+  Modal,
+  Select,
   StatusBadge,
   Table,
 } from "../../../components";
 import "./manage.css";
-import type { ExamListRow } from "./types";
+import type { ExamKind, ExamListRow } from "./types";
+
+const EXAM_KINDS: ExamKind[] = ["미니테스트", "모의고사"];
 
 /** 평균은 소수가 길게 내려오므로 한 자리로 줄여 읽는다. */
 export function score(value: number | null | undefined): string {
@@ -40,6 +46,21 @@ export default function ExamsPage() {
     [],
   );
   const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [examDate, setExamDate] = useState("");
+  const [kind, setKind] = useState<ExamKind>("미니테스트");
+  const [fullScore, setFullScore] = useState("");
+
+  const create = useApiAction(async () => {
+    const { data } = await http.post<{ exam_id: number }>("/admin/exams", {
+      name: name.trim(),
+      exam_date: examDate,
+      kind,
+      full_score: fullScore || null,
+    });
+    return data.exam_id;
+  });
 
   const rows = useMemo(() => {
     const list = exams.data ?? [];
@@ -54,7 +75,12 @@ export default function ExamsPage() {
   if (exams.error) return <ErrorState description={exams.error} onRetry={exams.reload} />;
 
   return (
-    <Card title="시험 회차" aside={`${(exams.data ?? []).length}개 회차`} padding="none">
+    <>
+    <Card
+      title="시험 회차"
+      aside={<Button onClick={() => setCreating(true)}>새 회차</Button>}
+      padding="none"
+    >
       <div className="pm-toolbar pm-cardpad">
         <Field label="회차 찾기">
           {(props) => (
@@ -146,5 +172,83 @@ export default function ExamsPage() {
         ]}
       />
     </Card>
+
+    <Modal
+      open={creating}
+      onClose={() => setCreating(false)}
+      title="새 회차"
+      footer={
+        <>
+          <Button onClick={() => setCreating(false)}>취소</Button>
+          <Button
+            variant="primary"
+            loading={create.pending}
+            disabled={!name.trim() || !examDate}
+            onClick={async () => {
+              const id = await create.run();
+              if (id === undefined) return;
+              setCreating(false);
+              setName("");
+              setExamDate("");
+              setKind("미니테스트");
+              setFullScore("");
+              navigate(String(id));
+            }}
+          >
+            만들기
+          </Button>
+        </>
+      }
+    >
+      <div className="ui-stack ui-stack--sm">
+        {create.error && <Alert tone="danger">{create.error}</Alert>}
+        <Field label="시험명">
+          {(props) => (
+            <Input {...props} value={name} onChange={(e) => setName(e.target.value)} />
+          )}
+        </Field>
+        <Field label="시험일">
+          {(props) => (
+            <Input
+              {...props}
+              type="date"
+              value={examDate}
+              onChange={(e) => setExamDate(e.target.value)}
+            />
+          )}
+        </Field>
+        {/* 지면이 갈린다 — 미니테스트는 답안 카드, 모의고사는 성적 조사 카드다. */}
+        <Field label="종류">
+          {(props) => (
+            <Select
+              {...props}
+              value={kind}
+              onChange={(e) => setKind(e.target.value as ExamKind)}
+            >
+              {EXAM_KINDS.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        {/* 모의고사는 문항이 없어 만점을 딴 데서 못 구한다. */}
+        {kind === "모의고사" && (
+          <Field label="만점">
+            {(props) => (
+              <Input
+                {...props}
+                type="number"
+                min="1"
+                value={fullScore}
+                onChange={(e) => setFullScore(e.target.value)}
+              />
+            )}
+          </Field>
+        )}
+      </div>
+    </Modal>
+    </>
   );
 }

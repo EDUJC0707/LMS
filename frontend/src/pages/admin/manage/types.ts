@@ -4,6 +4,8 @@
  * 전부 실제 응답(localhost:8000)에서 받아 적은 것이다 — 추측한 필드가 없다.
  * 필드가 null 로 내려올 수 있는 자리는 전부 `| null` 로 표시해 뒀다.
  */
+// 타입만 가져온다(런타임 순환 없음) — 명부 행 모양은 directory 가 원본이다.
+import type { DirectoryStudent } from "./directory";
 
 /* ── /api/admin/staff ─────────────────────────────────────────────── */
 
@@ -139,9 +141,13 @@ export interface ClinicCriteria {
 
 /* ── /api/admin/exams ─────────────────────────────────────────────── */
 
+/** 어느 카드가 들어오는지 — 미니테스트는 답안 카드, 모의고사는 성적 조사 카드. */
+export type ExamKind = "미니테스트" | "모의고사";
+
 export interface ExamListRow {
   exam_id: number;
   name: string;
+  kind: ExamKind;
   exam_date: string;
   round_no: number | null;
   target_grade: number | null;
@@ -179,6 +185,8 @@ export interface ExamQuestionRow {
   wrong_count: number;
   blank_count: number;
   multi_count: number;
+  /** 기계가 못 읽은 줄 — 학생이 안 푼 것(무응답)과 다른 사실이다 */
+  unreadable_count: number;
   correct_rate: number | null;
 }
 
@@ -186,6 +194,9 @@ export interface ExamDetail {
   exam: {
     exam_id: number;
     name: string;
+    kind: ExamKind;
+    /** 만점. 모의고사에만 쓴다 — 미니테스트는 문항 배점의 합이다 */
+    full_score: number | null;
     exam_date: string;
     round_no: number | null;
     target_grade: number | null;
@@ -234,4 +245,62 @@ export interface WorkbookList {
   submissions: WorkbookRow[];
   total_count: number;
   unmatched_count: number;
+}
+
+/** 정답 키 한 줄. 단원은 채점에 안 쓰므로 비어 있어도 된다. */
+export interface QuestionKeyRow {
+  q_number: number;
+  answer: string;
+  points?: number;
+  unit_major?: string;
+  unit_minor?: string;
+}
+
+/** 정답 키 + 이미 쓴 단원 후보(대단원 하나에 중단원 여럿). */
+export interface QuestionKeyPayload {
+  questions: QuestionKeyRow[];
+  units: Record<string, string[]>;
+}
+
+/* ── /api/admin/exams/{id}/sheets · /api/admin/sheets/{id} ────────── */
+
+/** 보정 화면 목록의 한 장. */
+export interface SheetRow {
+  sheet_id: number;
+  /** 대조 6분기 — 정상/부분/불일치/미존재/중복/비정상 */
+  match_status: string;
+  /** 사람이 확정한 장. 재판독이 덮지 않는다 */
+  is_corrected: boolean;
+  recognized_name: string | null;
+  recognized_matching_key: string | null;
+  /** 모의고사(자기보고) 전용. 미니테스트 장에서는 언제나 null */
+  recognized_score: number | null;
+  /** 버블이 아니라 손글씨 OCR 에서 온 점수 — 조교가 눈으로 대조해야 한다 */
+  score_from_handwriting: boolean;
+  /** 사람이 손대야 할 줄 수(복수마킹·판독불가). 대조가 `정상` 이어도 남는다 */
+  issue_count: number;
+  /** 명부(GET /admin/students)와 같은 행 모양 — 학생 선택기가 그대로 받는다 */
+  student: DirectoryStudent | null;
+}
+
+export interface SheetQuestionRow {
+  q_number: number;
+  /** 정답 키 */
+  answer: string;
+  points: number;
+  /** 판독된 마킹. 복수는 "1,3", 무응답·판독 없음은 null */
+  marked: string | null;
+  /** 정답/오답. **채점이 성립할 때만** 값이 있다 — 나머지는 null */
+  result: string | null;
+  /** 무응답/복수마킹/판독불가. 채점 결과와 축이 다르다 */
+  issue_reason: string | null;
+  /** issue_reason 이 있으면 true — 조교가 봐야 하는 줄 */
+  issue: boolean;
+  is_corrected: boolean;
+}
+
+/** 보정 화면 한 장 — 문항은 정답 키 전량에 그 장의 판독을 얹은 것. */
+export interface SheetDetail extends SheetRow {
+  questions: SheetQuestionRow[];
+  total_score: number | null;
 }
