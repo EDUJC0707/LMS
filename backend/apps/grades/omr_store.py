@@ -194,6 +194,49 @@ def store_survey(
     return sheet, {"created": created, "scored": scored}
 
 
+def regrade_exam(exam):
+    """정답 키가 바뀌었다 — 저장된 마킹을 그 키로 다시 채점한다. (문항수, 성적수)
+
+    **이미지를 다시 읽지 않는다.** 마킹값(`marked`)은 이미 지면에서 온 사실이고,
+    바뀐 것은 그 마킹이 정답이냐 아니냐뿐이다. 그래서 순수 DB 작업이라 정답 키
+    저장 안에서 그 자리에 끝난다.
+
+    ## `is_corrected` 는 채점을 잠그지 않는다
+
+    보정 잠금은 **판독**의 소유권이다 — "학생이 무엇을 칠했나"를 사람이 정했다는
+    뜻이지 "그게 정답인가"까지 정한 것이 아니다. 정답은 키가 정한다. 그래서
+    조교가 고친 줄도 키가 바뀌면 정오가 따라 움직인다.
+
+    판독불가 줄은 그대로 둔다 — 채점할 마킹 자체가 없다.
+    """
+    answers = list(
+        SheetAnswer.objects.filter(question__exam=exam)
+        .exclude(issue_reason=_I.UNREADABLE)
+        .select_related("question")
+    )
+    changed = []
+    for row in answers:
+        marked, result, issue = _verdict(_choices_from(row.marked), row.question.answer)
+        if (row.marked, row.result, row.issue_reason) != (marked, result, issue):
+            row.marked, row.result, row.issue_reason = marked, result, issue
+            changed.append(row)
+    if changed:
+        SheetAnswer.objects.bulk_update(changed, ["marked", "result", "issue_reason"])
+
+    scored = 0
+    for sheet in AnswerSheet.objects.filter(exam=exam).exclude(student=None):
+        if _apply_score(sheet, exam) is not None:
+            scored += 1
+    return len(changed), scored
+
+
+def _choices_from(marked):
+    """저장된 마킹 문자열 → 선택지 튜플. 빈칸은 빈 튜플이다."""
+    if not marked:
+        return ()
+    return tuple(int(part) for part in str(marked).split(",") if part.strip())
+
+
 #: '안 넘겼음' 과 '넘겼는데 None(주인 해제)' 을 가른다.
 UNSET = object()
 
@@ -247,8 +290,7 @@ def _write_corrections(sheet, answers):
         question = questions.get(q_number)
         if question is None:
             raise ValueError(f"{q_number}번 문항이 이 시험에 없습니다.")
-        choices = tuple(int(part) for part in str(marked).split(",") if part.strip())
-        value, result, issue = _verdict(choices, question.answer)
+        value, result, issue = _verdict(_choices_from(marked), question.answer)
         row = rows.get(question.question_id)
         if row is None:
             SheetAnswer.objects.create(

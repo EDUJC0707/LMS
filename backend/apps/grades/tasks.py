@@ -27,6 +27,22 @@ from .models import Exam
 logger = logging.getLogger(__name__)
 
 
+@shared_task(name="grades.reread_omr_sheets")
+def reread_omr_sheets(exam_id, question_count):
+    """이미 저장된 스캔을 다시 판독한다 — PDF 를 또 올리지 않는다.
+
+    업로드와 같은 이유로 태스크다(장당 CPU 작업). 저장이 멱등이라 중간에 끊겨
+    다시 걸어도 안전하다.
+    """
+    exam = Exam.objects.get(pk=exam_id)
+    summary = omr_ingest.reread_exam(exam, question_count)
+    logger.info(
+        "omr reread: exam=%s pages=%s held=%s matched=%s",
+        exam_id, summary["pages"], summary["held"], summary["matched"],
+    )
+    return summary
+
+
 @shared_task(name="grades.ingest_omr_batch")
 def ingest_omr_batch(exam_id, pdf_path, question_count):
     """업로드된 스캔 PDF 한 묶음을 판독·매칭·저장하고 요약을 돌려준다.

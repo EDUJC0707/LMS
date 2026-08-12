@@ -17,8 +17,9 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { http, useApi } from "../../../api";
+import { http, useApi, useApiAction } from "../../../api";
 import {
+  Alert,
   Badge,
   Button,
   Card,
@@ -42,6 +43,10 @@ type TakenTab = "제출" | "미제출" | "전체";
 export default function ExamDetailPage() {
   const { examId } = useParams();
   const navigate = useNavigate();
+  // 저장된 스캔으로 다시 판독한다 — 정답 키를 나중에 넣었거나 엔진이 바뀐 뒤.
+  const reread = useApiAction(async () => {
+    await http.post(`/admin/exams/${examId}/reread`);
+  });
   const detail = useApi(
     () => http.get<ExamDetail>(`/admin/exams/${examId}`).then((r) => r.data),
     [examId],
@@ -74,6 +79,11 @@ export default function ExamDetailPage() {
 
   return (
     <div className="ui-stack">
+      {reread.error && (
+        <Alert tone="danger" onClose={reread.clearError}>
+          {reread.error}
+        </Alert>
+      )}
       {/* 상단바는 "시험·성적"까지만 말한다 — 어느 회차인지는 첫 카드가 든다. */}
       <Card
         title={exam.name}
@@ -81,6 +91,16 @@ export default function ExamDetailPage() {
           <div className="pm-review__nav">
             <Badge tone="outline">{exam.kind}</Badge>
             <StatusBadge status={stats.processing_status} />
+            <Button
+              size="sm"
+              loading={reread.pending}
+              onClick={async () => {
+                await reread.run();
+                void detail.reload();
+              }}
+            >
+              다시 판독
+            </Button>
             <Button size="sm" onClick={() => navigate("sheets")}>
               스캔 보정
             </Button>

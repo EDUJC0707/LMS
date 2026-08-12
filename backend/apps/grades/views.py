@@ -16,6 +16,7 @@
 - GET  /api/admin/exams/{exam_id}                시험 상세 (성적처리)
 - GET/PUT /api/admin/exams/{exam_id}/questions   정답 키 (성적처리)
 - GET/POST /api/admin/exams/{exam_id}/sheets     보정 목록 · 스캔 업로드 (성적처리)
+- POST /api/admin/exams/{exam_id}/reread         저장된 스캔 재판독 → 202 (성적처리)
 - GET  /api/admin/omr-batches/{task_id}          판독 진행 상태 (성적처리)
 - GET/PATCH /api/admin/sheets/{sheet_id}         보정 화면 한 장 (성적처리)
 - GET  /api/admin/sheets/{sheet_id}/scan         스캔 원본 이미지 (성적처리)
@@ -673,6 +674,29 @@ class AdminExamSheetsView(APIView):
             f"omr-upload/{exam.pk}/{uuid.uuid4().hex}.pdf", pdf
         )
         task = tasks.ingest_omr_batch.delay(exam.pk, path, question_count)
+        return Response({"task_id": task.id}, status=status.HTTP_202_ACCEPTED)
+
+
+class AdminExamRereadView(APIView):
+    """POST /api/admin/exams/{exam_id}/reread — 저장된 스캔으로 다시 판독.
+
+    정답 키를 나중에 넣었거나 엔진이 좋아졌을 때 쓴다. 업로드와 같은 태스크·같은
+    진행 조회를 쓴다 — 조교가 보기엔 "다시 채점" 버튼 하나다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
+
+    def post(self, request, exam_id):
+        exam = exam_admin.load_exam(exam_id)
+        if exam is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        question_count = exam.questions.count()
+        if exam.kind != Exam.Kind.MOCK and not question_count:
+            return Response(
+                {"detail": "정답 키를 먼저 입력해 주세요."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        task = tasks.reread_omr_sheets.delay(exam.pk, question_count)
         return Response({"task_id": task.id}, status=status.HTTP_202_ACCEPTED)
 
 

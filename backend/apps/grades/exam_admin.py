@@ -17,7 +17,7 @@ from django.db.models import Avg, Count, F, Q
 
 from apps.accounts import student_directory
 
-from . import report
+from . import omr_store, report
 from .models import AnswerSheet, Exam, Question, Score, SheetAnswer
 
 
@@ -256,6 +256,9 @@ def save_questions(exam, rows):
             seen.append(number)
         stale = Question.objects.filter(exam=exam).exclude(q_number__in=seen)
         stale.filter(sheet_answers__isnull=True).delete()
+        # 키가 바뀌면 이미 채점된 정오도 따라와야 한다. 안 하면 화면의 정답과
+        # 저장된 결과가 어긋난 채로 성적표가 나간다(이미지는 다시 안 읽는다).
+        omr_store.regrade_exam(exam)
     return question_rows(exam)
 
 

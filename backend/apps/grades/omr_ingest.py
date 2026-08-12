@@ -40,7 +40,7 @@ from django.core.files.storage import default_storage
 from apps.accounts.models import Student
 
 from . import ocr, omr_match, omr_store
-from .models import Exam
+from .models import AnswerSheet, Exam
 from .omr import sheet
 
 
@@ -58,46 +58,82 @@ def ingest_pdf(exam, pdf, question_count):
     survey = exam.kind == Exam.Kind.MOCK
     sheets = []
     for page_no, image_bytes in enumerate(page_images(pdf), start=1):
-        summary["pages"] += 1
-        from_handwriting = False
         path = _store_scan(exam, image_bytes)
         image = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_GRAYSCALE)
-        reading = (
-            sheet.read_survey(image) if survey else sheet.read_sheet(image, question_count)
-        )
-        if survey and reading.held == sheet.CARD_UNMARKED:
-            reading, from_handwriting = _rescue_by_ocr(image, reading)
-        if reading.held:
-            summary["held"] += 1
-            summary["holds"][reading.held] = summary["holds"].get(reading.held, 0) + 1
-            row, _ = (
-                omr_store.store_survey(exam, path, None)
-                if survey
-                else omr_store.store_sheet(exam, path, None)
-            )
-        else:
-            summary["read"] += 1
-            student, status = omr_match.match_sheet(reading.name, reading.phone, roster=roster)
-            if student is not None:
-                summary["matched"] += 1
-            else:
-                summary["needs_review"] += 1
-            identity = {
-                "student": student,
-                "match_status": status,
-                "recognized_matching_key": reading.matching_key,
-                "recognized_name": reading.name,
-            }
-            row, _ = (
-                omr_store.store_survey(
-                    exam, path, reading.score, from_handwriting=from_handwriting, **identity
-                )
-                if survey
-                else omr_store.store_sheet(exam, path, reading.answers, **identity)
-            )
-        sheets.append({"page": page_no, "sheet_id": row.pk, "held": reading.held})
+        _read_one(exam, path, image, question_count, survey, roster, summary, sheets, page_no)
     summary["sheets"] = sheets
     return summary
+
+
+def reread_exam(exam, question_count):
+    """이미 저장된 스캔으로 **다시 판독**한다 — PDF 를 또 올릴 필요가 없다.
+
+    쓰는 자리 둘:
+
+    - **정답 키 없이 먼저 올린 배치.** 그때는 문항 행을 만들 수 없어(FK) 시트만
+      저장된다. 키를 넣은 뒤 여기를 돌리면 그때부터 채점된다
+    - **엔진이 좋아졌을 때.** 같은 지면을 새 판정으로 다시 읽는다
+
+    저장이 멱등이라(`omr_store`) 몇 번을 돌려도 같은 행으로 수렴하고, 조교가
+    보정한 값은 덮이지 않는다.
+    """
+    roster = list(Student.objects.select_related("user").all())
+    summary = {"pages": 0, "read": 0, "held": 0, "matched": 0, "needs_review": 0, "holds": {}}
+    survey = exam.kind == Exam.Kind.MOCK
+    sheets = []
+    rows = AnswerSheet.objects.filter(exam=exam).order_by("sheet_id")
+    for page_no, row in enumerate(rows, start=1):
+        if not default_storage.exists(row.scan_image_path):
+            # 스캔 파일이 사라진 장은 건너뛴다 — 지어낼 것이 없다.
+            continue
+        with default_storage.open(row.scan_image_path, "rb") as handle:
+            raw = handle.read()
+        image = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_GRAYSCALE)
+        _read_one(
+            exam, row.scan_image_path, image, question_count,
+            survey, roster, summary, sheets, page_no,
+        )
+    summary["sheets"] = sheets
+    return summary
+
+
+def _read_one(exam, path, image, question_count, survey, roster, summary, sheets, page_no):
+    """장 한 개 — 판독·매칭·저장. PDF 업로드와 재판독이 같은 길을 쓴다."""
+    summary["pages"] += 1
+    from_handwriting = False
+    reading = sheet.read_survey(image) if survey else sheet.read_sheet(image, question_count)
+    if survey and reading.held == sheet.CARD_UNMARKED:
+        reading, from_handwriting = _rescue_by_ocr(image, reading)
+
+    if reading.held:
+        summary["held"] += 1
+        summary["holds"][reading.held] = summary["holds"].get(reading.held, 0) + 1
+        row, _ = (
+            omr_store.store_survey(exam, path, None)
+            if survey
+            else omr_store.store_sheet(exam, path, None)
+        )
+    else:
+        summary["read"] += 1
+        student, status = omr_match.match_sheet(reading.name, reading.phone, roster=roster)
+        if student is not None:
+            summary["matched"] += 1
+        else:
+            summary["needs_review"] += 1
+        identity = {
+            "student": student,
+            "match_status": status,
+            "recognized_matching_key": reading.matching_key,
+            "recognized_name": reading.name,
+        }
+        row, _ = (
+            omr_store.store_survey(
+                exam, path, reading.score, from_handwriting=from_handwriting, **identity
+            )
+            if survey
+            else omr_store.store_sheet(exam, path, reading.answers, **identity)
+        )
+    sheets.append({"page": page_no, "sheet_id": row.pk, "held": reading.held})
 
 
 def _rescue_by_ocr(image, reading):

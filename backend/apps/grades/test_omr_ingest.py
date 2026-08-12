@@ -14,8 +14,8 @@ from django.test import TestCase
 
 from apps.accounts.models import Student
 
-from . import omr_ingest, omr_store
-from .models import AnswerSheet, Exam, Question, Score
+from . import exam_admin, omr_ingest, omr_store
+from .models import AnswerSheet, Exam, Question, Score, SheetAnswer
 from .omr import card, normalize
 from .omr import sheet as sheet_module
 from .test_grade_report_api import make_student
@@ -294,3 +294,97 @@ class MockExamIngestTests(TestCase):
         row.refresh_from_db()
         self.assertEqual(row.recognized_score, 41)
         self.assertFalse(row.score_from_handwriting)
+
+
+class RegradeTests(TestCase):
+    """정답 키가 바뀌면 이미 채점된 결과도 따라와야 한다."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.exam = Exam.objects.create(name="8월 재채점", exam_date=datetime.date(2026, 8, 12))
+        cls.student = make_student("stu-regrade", "김서연")
+
+    def key(self, answer):
+        return exam_admin.save_questions(self.exam, [{"q_number": 1, "answer": answer}])
+
+    def sheet_with_mark(self, marked):
+        row = AnswerSheet.objects.create(
+            exam=self.exam, student=self.student, scan_image_path="omr/x.jpg",
+            match_status=AnswerSheet.MatchStatus.MATCHED,
+        )
+        question = Question.objects.get(exam=self.exam, q_number=1)
+        SheetAnswer.objects.create(
+            sheet=row, question=question, marked=marked,
+            result=SheetAnswer.Result.WRONG,
+        )
+        return row
+
+    def test_fixing_the_key_rescores_stored_marks(self):
+        """조교가 정답을 잘못 넣었다가 고쳤다 — 저장된 정오가 따라와야 한다."""
+        self.key("2")
+        self.sheet_with_mark("3")
+
+        self.key("3")
+
+        row = SheetAnswer.objects.get(sheet__exam=self.exam)
+        self.assertEqual(row.result, SheetAnswer.Result.CORRECT)
+        self.assertEqual(float(Score.objects.get(exam=self.exam).total_score), 1.0)
+
+    def test_a_corrected_row_still_follows_the_key(self):
+        """보정 잠금은 **판독**의 소유권이다 — 정답 여부는 키가 정한다."""
+        self.key("2")
+        row = self.sheet_with_mark("3")
+        SheetAnswer.objects.filter(sheet=row).update(is_corrected=True)
+
+        self.key("3")
+
+        answer = SheetAnswer.objects.get(sheet=row)
+        self.assertEqual(answer.result, SheetAnswer.Result.CORRECT)
+        self.assertEqual(answer.marked, "3", "사람이 적은 마킹은 그대로다")
+
+
+class RereadTests(TestCase):
+    """저장된 스캔으로 다시 판독 — PDF 를 또 올리지 않는다."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.exam = Exam.objects.create(name="8월 재판독", exam_date=datetime.date(2026, 8, 12))
+
+    def test_a_batch_uploaded_before_the_key_can_be_read_again(self):
+        """키 없이 먼저 올린 배치 — 키를 넣고 다시 돌리면 그때부터 채점된다."""
+        from django.core.files.base import ContentFile
+        from django.core.files.storage import default_storage
+
+        page = synthetic_page({q: 3 for q in range(1, 17)})
+        with mock.patch.object(omr_ingest, "page_images", return_value=iter([page])):
+            omr_ingest.ingest_pdf(self.exam, object(), question_count=16)
+        # 키가 없어 문항 행이 하나도 안 생긴다(FK — questions.answer 가 NOT NULL)
+        self.assertEqual(SheetAnswer.objects.filter(sheet__exam=self.exam).count(), 0)
+        path = AnswerSheet.objects.get(exam=self.exam).scan_image_path
+        if not default_storage.exists(path):
+            default_storage.save(path, ContentFile(page))
+
+        exam_admin.save_questions(
+            self.exam, [{"q_number": q, "answer": "3"} for q in range(1, 17)]
+        )
+        summary = omr_ingest.reread_exam(self.exam, question_count=16)
+
+        self.assertEqual(summary["pages"], 1)
+        self.assertEqual(SheetAnswer.objects.filter(sheet__exam=self.exam).count(), 16)
+
+    def test_rereading_does_not_duplicate_sheets(self):
+        """저장이 멱등이라 몇 번을 돌려도 장이 안 늘어난다."""
+        from django.core.files.base import ContentFile
+        from django.core.files.storage import default_storage
+
+        page = synthetic_page({1: 3})
+        with mock.patch.object(omr_ingest, "page_images", return_value=iter([page])):
+            omr_ingest.ingest_pdf(self.exam, object(), question_count=1)
+        path = AnswerSheet.objects.get(exam=self.exam).scan_image_path
+        if not default_storage.exists(path):
+            default_storage.save(path, ContentFile(page))
+
+        omr_ingest.reread_exam(self.exam, question_count=1)
+        omr_ingest.reread_exam(self.exam, question_count=1)
+
+        self.assertEqual(AnswerSheet.objects.filter(exam=self.exam).count(), 1)
