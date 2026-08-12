@@ -793,7 +793,10 @@
 <header class="nav attop">
   <div class="navL">
     <a class="brand" href="/">
-      <img src="assets/logo/atom-180.png" alt="">
+      <!-- 90px 이다(30 CSS px × DPR3). 180 을 쓰면 38KB 를 받아 30px 로 줄여 그린다 —
+           헤더가 완성되기를 기다리는 자원은 폰트와 이것 둘뿐이라 셀룰러에서 티가 난다.
+           **atom-180.png 은 지우지 않는다** — apple-touch-icon 이 그 크기를 쓴다. -->
+      <img src="assets/logo/atom-90.png" alt="" width="30" height="30">
       한종철 통합과학
     </a>
     <nav>
