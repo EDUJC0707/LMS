@@ -32,8 +32,13 @@
    **`use: true` 인 것이 실제로 깔린다.** 없으면 배경이 안 뜬다 — 지금까지 디버그
    패널을 열어야만 켜졌다. 하나만 표시한다(둘이면 첫 번째).
 
-   **zoom 은 여기가 원본이다.** 사진마다 비율이 달라 한 값으로는 못 맞춘다.
-   생략하면 1(= cover 그대로). 확정: 고양이눈만 0.9, 나머지는 1(2026-07-29).
+   **zoom 은 여기가 원본이다.** 생략하면 1(= cover 그대로).
+   **넷 다 1 이다. 1 미만을 넣지 마라**(2026-08-12) — cover 배율에 곱하는 값이라
+   1 미만이면 사진이 화면보다 작게 그려지고, 안 그려진 자리를 커서로 걷으면
+   걷어낼 사진이 없어 **검정이 수직선으로 잘려 보인다.** 고양이눈에 0.9 가 붙어
+   있었고(2026-07-29) 1440x900 에서 좌우 72px 씩, 390x844 에서 상하 42px 씩이
+   비어 있었다. 화면 절반이 검정인 배경이라 오래 안 보이다가 배경을 밝은 것으로
+   갈면서 드러났다. 사진을 더 작게 보이고 싶으면 zoom 이 아니라 **원본을 다시 잘라야** 한다.
 
    원본 PNG 는 지웠다(2026-07-29 사용자 확인). 커밋 d825758 · 7d060e2 에 있다.
 
@@ -42,7 +47,7 @@
    쓴다. 잘라 둔 루프 둘은 커밋 408a809 에 있다. */
 export const SPACE = [
   { key: 'carina',  label: '카리나 성운',   src: 'assets/space/carina.webp' },
-  { key: 'catseye', label: '고양이눈 성운', src: 'assets/space/catseye.webp', zoom: 0.9, use: true },
+  { key: 'catseye', label: '고양이눈 성운', src: 'assets/space/catseye.webp', use: true },
   { key: 'ngc1333', label: 'NGC 1333',      src: 'assets/space/ngc1333.webp' },
   { key: 'solar',   label: '태양계',        src: 'assets/space/solar-system.webp' },
 ];
