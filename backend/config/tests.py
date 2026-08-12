@@ -70,6 +70,9 @@ class ProdSettingsSentryTests(SimpleTestCase):
         sentry_sdk.get_global_scope().set_client(None)
 
     def load_prod_settings(self, **environ):
+        # 운영은 오브젝트 스토리지 없이는 부팅을 거부한다(prod.py) — 설정을
+        # 읽어 보려는 테스트는 그 조건을 채워 줘야 한다.
+        environ.setdefault("AWS_STORAGE_BUCKET_NAME", "test-bucket")
         with mock.patch.dict(os.environ, environ):
             importlib.reload(importlib.import_module("config.settings.prod"))
 
