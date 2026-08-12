@@ -132,8 +132,10 @@ export interface CounselCard {
   status: string;
   /** 이미 수행한 통화 시도 수(0부터). 3회는 "닫아도 된다"는 신호이고 발송은 버튼이다. */
   attempts: number;
-  /** 닫혔는데 결석 안내가 아직 안 나갔다 — 발송 버튼이 뜨는 자리 */
+  /** 닫혔는데 결석 안내가 아직 안 나갔다 */
   awaiting_notice: boolean;
+  /** 문자는 한 번만 — 보냈으면 버튼이 꺼진다 */
+  notified: boolean;
   absence_date: string | null;
   created_at: string;
 }

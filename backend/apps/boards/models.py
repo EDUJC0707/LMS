@@ -190,6 +190,9 @@ class AbsenceCounseling(models.Model):
     # 하면 그 뒤엔 근거가 사라진다. 녹음은 반대로 저장하지 않는다 — 서명 URL 이라
     # 만료된다(provider_ref 로 볼 때마다 새로 받는다).
     call_transcript = models.TextField("통화 전사", blank=True, default="")
+    # 시도 횟수는 **조교가 넣는 숫자**다(2026-08-12). 행 수로 세면 화면이 보여준
+    # 채널톡 통화 목록과 어긋날 수 있고, 어긋나면 어느 쪽이 맞는지 알 수 없다.
+    attempts = models.PositiveSmallIntegerField("통화 시도 횟수", default=0)
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)
 
     class Meta:

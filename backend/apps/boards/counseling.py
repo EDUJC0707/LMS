@@ -22,7 +22,6 @@ queue` 가 행을 남기고 **커밋 뒤** 태스크를 건다(clinic_admin 과 
 (3차 슬라이스 기능 키 판단과 동일 축).
 """
 from django.db import transaction
-from django.db.models import Count, Q
 from django.utils import timezone
 
 from apps.accounts.models import ParentStudent
@@ -44,20 +43,9 @@ class CounselingError(Exception):
         self.message = message
 
 
-def _attempt_filter(card):
-    """같은 통화 그룹(학생·결석 회차·대상) — 시도 횟수 산출 단위."""
-    return Q(
-        student_id=card.student_id,
-        attendance_id=card.attendance_id,
-        target=card.target,
-    )
-
-
 def attempts_so_far(card):
-    """이 그룹에서 이미 수행된 통화 시도 수(called_at 찍힌 행)."""
-    return AbsenceCounseling.objects.filter(
-        _attempt_filter(card), called_at__isnull=False
-    ).count()
+    """조교가 넣은 시도 횟수. 행 수로 세지 않는다 — 모델 주석 참조."""
+    return card.attempts
 
 
 def _notified_ids(cards):
@@ -75,59 +63,27 @@ def _notified_ids(cards):
 
 
 def queue_rows():
-    """대기 카드 + **안내를 아직 안 보낸 닫힌 카드** — 시도 횟수·결석일 동봉.
+    """대기 카드 + **안내를 아직 안 보낸 닫힌 카드**.
 
-    닫힌 카드를 남기는 이유(2026-08-12): 알림톡이 버튼이 된 이상 닫자마자
-    목록에서 빠지면 누를 자리가 없어지고, 학부모는 아무 연락도 못 받는다.
-    안내가 나가면 그때 빠진다.
+    닫힌 카드를 남기는 이유(2026-08-12): 문자가 버튼이 된 이상 닫자마자 목록에서
+    빠지면 누를 자리가 없어지고, 학부모는 아무 연락도 못 받는다.
+    보낸 뒤에도 카드는 남는다 — 문자만 다시 못 보낼 뿐 통화는 더 걸 수 있다.
     """
-    cards = (
+    cards = list(
         AbsenceCounseling.objects.filter(
-            Q(status=AbsenceCounseling.Status.PENDING)
-            | Q(status=AbsenceCounseling.Status.UNREACHED)
+            status__in=(
+                AbsenceCounseling.Status.PENDING,
+                AbsenceCounseling.Status.UNREACHED,
+            )
         )
         .select_related("student__user", "attendance__session")
         .order_by("created_at", "counsel_id")
     )
-    cards = list(cards)
-    # 닫힌 카드는 안내 전까지만 남긴다. 재시도 카드가 생긴 미연결 행은
-    # 이미 다음 카드가 대기 중이므로 목록에 두 번 나오지 않게 걷어낸다.
     notified = _notified_ids(cards)
-    retried = set(
-        AbsenceCounseling.objects.filter(
-            status=AbsenceCounseling.Status.PENDING
-        ).values_list("student_id", "attendance_id", "target")
-    )
-    cards = [
-        c
-        for c in cards
-        if c.status == AbsenceCounseling.Status.PENDING
-        or (
-            c.counsel_id not in notified
-            and (c.student_id, c.attendance_id, c.target) not in retried
-        )
-    ]
-    # 그룹별 시도 수 1쿼리 집계(카드마다 COUNT 재실행 방지).
-    counts = {}
-    if cards:
-        grouped = (
-            AbsenceCounseling.objects.filter(
-                called_at__isnull=False,
-                student_id__in={c.student_id for c in cards},
-            )
-            .values("student_id", "attendance_id", "target")
-            .annotate(n=Count("counsel_id"))
-        )
-        counts = {
-            (g["student_id"], g["attendance_id"], g["target"]): g["n"] for g in grouped
-        }
-    return [
-        _queue_row(c, counts.get((c.student_id, c.attendance_id, c.target), 0))
-        for c in cards
-    ]
+    return [_queue_row(c, c.attempts, c.counsel_id in notified) for c in cards]
 
 
-def _queue_row(card, attempts):  # noqa: D401
+def _queue_row(card, attempts, notified=False):  # noqa: D401
     student = card.student
     session = card.attendance.session if card.attendance else None
     return {
@@ -143,29 +99,33 @@ def _queue_row(card, attempts):  # noqa: D401
         "attempts": attempts,
         # 닫혔는데 안내가 아직 안 나간 카드 — 화면이 발송 버튼을 띄우는 자리.
         "awaiting_notice": card.status == AbsenceCounseling.Status.UNREACHED,
+        # 문자는 한 번만 — 보냈으면 화면이 버튼을 끈다.
+        "notified": notified,
         "absence_date": session.session_date.isoformat() if session else None,
         "created_at": timezone.localtime(card.created_at).isoformat(),
     }
 
 
 def record_call(card, result, fields, actor):
-    """통화 결과 기록 — 연결→완료 / 미연결→재시도 카드 / 종결→닫음.
+    """카드 저장 — 시도 횟수·메모·통화 참조. 결과가 있으면 카드를 닫는다.
 
-    반환: (card, attempts, next_card|None, closed). 한 트랜잭션 —
-    카드 확정과 재시도 카드 생성은 함께 반영되거나 함께 무효다.
+    반환: (card, attempts, None, closed).
 
-    **알림톡은 여기서 나가지 않는다**(2026-08-12 확정). 3회는 "닫아도 된다"는
-    신호일 뿐이고 발송은 `notify()` 를 부르는 버튼이 한다 — 조교가 창을 넘겨
-    더 걸 수도, 3회 전에 닫을 수도 있어서 기계가 시점을 못 정한다.
+    **재시도 카드를 만들지 않는다**(2026-08-12). 예전에는 `미연결` 마다 새 행을
+    만들어 그 수를 세었는데, 이제 횟수는 조교가 넣는 숫자다 — 화면이 채널톡
+    통화 목록을 보여주고 그중 몇 건이 우리 시도인지 사람이 확정한다.
+
+    **알림톡은 여기서 안 나간다.** 3회는 "문자 보내도 된다"는 신호일 뿐이고
+    발송은 `notify()` 를 부르는 버튼이 한다. 4회째도 걸 수 있다.
     """
     if card.status != AbsenceCounseling.Status.PENDING:
         raise CounselingError("이미 처리된 상담 카드입니다.")
-    closed_manually = result == "종결"
+    if "attempts" in fields:
+        attempts = fields["attempts"]
+        if not isinstance(attempts, int) or isinstance(attempts, bool) or attempts < 0:
+            raise CounselingError("시도 횟수는 0 이상의 정수여야 합니다.")
+        card.attempts = attempts
     with transaction.atomic():
-        # 종결은 "더 안 건다"는 선언이라 통화 시각을 찍지 않는다 — 찍으면
-        # 걸지도 않은 시도가 카운트에 들어간다.
-        if not closed_manually:
-            card.called_at = timezone.now()
         card.counselor = actor
         for name in ("absence_reason", "call_memo", "follow_up_action"):
             if name in fields:
@@ -179,25 +139,17 @@ def record_call(card, result, fields, actor):
             card.provider = AbsenceCounseling.Provider.CHANNELTALK
             card.provider_ref = ref
             card.call_transcript = _fetch_transcript(ref)
-        connected = result == "연결"
-        card.status = (
-            AbsenceCounseling.Status.COMPLETED
-            if connected
-            else AbsenceCounseling.Status.UNREACHED
-        )
-        card.save()
-        attempts = attempts_so_far(card)
-        if connected or closed_manually:
-            return card, attempts, None, closed_manually
-        if attempts < MAX_CALL_ATTEMPTS:
-            next_card = AbsenceCounseling.objects.create(
-                student=card.student,
-                attendance=card.attendance,
-                target=card.target,
-                status=AbsenceCounseling.Status.PENDING,
+        # 결과를 안 주면 횟수만 저장하고 카드는 열어 둔다 — 조교가 아직 거는 중이다.
+        if result in ("연결", "미연결", "종결"):
+            card.called_at = timezone.now() if result == "연결" else card.called_at
+            card.status = (
+                AbsenceCounseling.Status.COMPLETED
+                if result == "연결"
+                else AbsenceCounseling.Status.UNREACHED
             )
-            return card, attempts, next_card, False
-        return card, attempts, None, True
+        card.save()
+    closed = card.status != AbsenceCounseling.Status.PENDING
+    return card, card.attempts, None, closed
 
 
 def open_card(student, attendance, target):
@@ -248,10 +200,23 @@ def phone_for(card):
     return link.parent.phone if link else ""
 
 
+def already_notified(card):
+    """안내를 이미 보냈나 — 발송 사실은 notifications 도메인이 갖고 있다."""
+    return Notification.objects.filter(
+        ref_type="absence_counseling", ref_id=card.counsel_id
+    ).exists()
+
+
 def notify(card):
-    """닫힌 카드에서 결석 안내(+동보 신청 링크)를 보낸다 — 버튼이 부른다."""
-    if card.status != AbsenceCounseling.Status.UNREACHED:
-        raise CounselingError("닫힌 상담 카드에서만 보낼 수 있습니다.")
+    """결석 안내(+동보 신청 링크) — 3회부터, 한 번만.
+
+    보낸 뒤에도 카드는 살아 있다(2026-08-12): 문자만 다시 못 보낼 뿐 통화는
+    더 걸 수 있고, 그래서 시도 횟수는 계속 올라간다.
+    """
+    if card.attempts < MAX_CALL_ATTEMPTS:
+        raise CounselingError(f"{MAX_CALL_ATTEMPTS}회부터 보낼 수 있습니다.")
+    if already_notified(card):
+        raise CounselingError("이미 보냈습니다.")
     links = list(ParentStudent.objects.filter(student=card.student))
     if not links:
         raise CounselingError("연결된 학부모가 없습니다.")

@@ -252,7 +252,8 @@ class CounselingRecordView(APIView):
             return _not_found()
         body = request.data if isinstance(request.data, dict) else {}
         result = body.get("result")
-        if result not in ("연결", "미연결", "종결"):
+        # 결과 없이 횟수만 저장할 수 있다 — 조교가 아직 거는 중인 상태다.
+        if result is not None and result not in ("연결", "미연결", "종결"):
             return _bad_request("result는 연결·미연결·종결 중 하나여야 합니다.")
         if "makeup_requested" in body and not isinstance(body["makeup_requested"], bool):
             return _bad_request("makeup_requested는 true/false여야 합니다.")

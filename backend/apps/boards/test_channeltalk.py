@@ -146,3 +146,38 @@ class TranscriptTests(SimpleTestCase):
         with override_settings(CHANNELTALK_ACCESS_KEY="", CHANNELTALK_ACCESS_SECRET=""):
             self.assertEqual(channeltalk.transcript("chat-1"), [])
             self.assertIsNone(channeltalk.recording_url("chat-1"))
+
+
+@override_settings(CHANNELTALK_ACCESS_KEY="k", CHANNELTALK_ACCESS_SECRET="s")
+class NewestFirstTests(SimpleTestCase):
+    """조회 범위가 며칠이면 같은 번호에 여러 건이 잡힌다 — 최신이 먼저 와야 한다.
+
+    화면은 첫 건으로 버튼을 채운다. 업체가 준 순서를 믿으면 며칠 전 통화가
+    방금 건 것으로 둔갑한다.
+    """
+
+    OLD_AND_NEW = [
+        {
+            "direction": "outbound",
+            "to": "+821097649812",
+            "createdAt": "2026-08-09T01:00:00Z",
+            "userChatId": "old",
+        },
+        {
+            "direction": "outbound",
+            "to": "+821097649812",
+            "createdAt": "2026-08-12T04:31:49Z",
+            "engagedAt": "2026-08-12T04:31:59Z",
+            "userChatId": "new",
+        },
+    ]
+
+    def test_most_recent_call_comes_first(self):
+        with patch.object(channeltalk, "fetch_calls", return_value=self.OLD_AND_NEW):
+            found = channeltalk.recent_calls("01097649812")
+
+        self.assertEqual([c["user_chat_id"] for c in found], ["new", "old"])
+
+    def test_default_window_spans_days_not_hours(self):
+        # 조교가 걸고 한참 뒤에 입력할 수 있다 — 좁으면 그때 못 찾는다.
+        self.assertGreaterEqual(channeltalk.DEFAULT_WINDOW, datetime.timedelta(days=3))

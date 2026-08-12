@@ -148,7 +148,7 @@ export default function CounselingPage() {
       align: "right",
       width: "10rem",
       cell: (r) =>
-        r.awaiting_notice ? (
+        r.attempts >= MAX_CALL_ATTEMPTS && !r.notified ? (
           <Button
             size="sm"
             variant="primary"

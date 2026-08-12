@@ -23,7 +23,11 @@ BASE_URL = "https://api.channel.io"
 # 응답에 Warning 헤더가 붙는다 — 조용히 바뀌는 것보다 박아 두는 편이 낫다.
 API_VERSION = "2026-06-01"
 TIMEOUT = 10
-DEFAULT_WINDOW = datetime.timedelta(hours=6)
+# 조회 범위 — 주기가 아니다(폴링 없음). 카드를 열 때 한 번 부르면서
+# "언제부터 찾을까"를 준다. 넉넉한 이유: 조교가 걸고 한참 뒤에 입력할 수 있고,
+# "당일, 늦어도 다음날"(PRD 3.1.9)이라 이틀에 걸치기도 한다.
+# 넓혀서 여러 건이 잡히는 것은 문제가 아니다 — 확정은 조교가 한다.
+DEFAULT_WINDOW = datetime.timedelta(days=7)
 
 
 def normalize(phone):
@@ -133,11 +137,14 @@ def recent_calls(phone, since=DEFAULT_WINDOW):
         return []
     until = timezone.now()
     logs = fetch_calls(until - since, until)
-    return [
-        _call_row(log)
+    matched = [
+        log
         for log in logs
         if log.get("direction") == "outbound" and normalize(log.get("to")) == wanted
     ]
+    # 최신이 먼저. 업체가 준 순서를 믿으면 며칠 전 통화가 방금 건 것으로 둔갑한다.
+    matched.sort(key=lambda log: log.get("createdAt") or "", reverse=True)
+    return [_call_row(log) for log in matched]
 
 
 def _call_row(log):
