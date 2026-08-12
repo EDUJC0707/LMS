@@ -9,6 +9,7 @@ import os
 from unittest import mock
 
 import sentry_sdk
+from django.core.exceptions import ImproperlyConfigured
 from django.test import Client, SimpleTestCase, override_settings
 
 from config.observability import init_sentry
@@ -205,3 +206,27 @@ class StorageSettingsTests(SimpleTestCase):
 
         self.assertEqual(base.AWS_STORAGE_BUCKET_NAME, "")
         self.assertNotIn("s3", str(getattr(base, "STORAGES", {})))
+
+
+class ProdStorageGuardTests(SimpleTestCase):
+    """운영 부팅 가드는 **base 와 같은 이름**을 봐야 한다.
+
+    Tigris 가 꽂아 주는 이름은 `BUCKET_NAME` 이고 django-storages 가 읽는 이름은
+    `AWS_STORAGE_BUCKET_NAME` 이다. base 는 둘 다 보는데 가드가 한쪽만 보면,
+    **스토리지가 멀쩡히 붙어 있는데도 배포가 막힌다**(2026-08-12 실제로 막혔다).
+    """
+
+    def load_prod(self, **environ):
+        with mock.patch.dict(os.environ, environ, clear=False):
+            importlib.reload(importlib.import_module("config.settings.prod"))
+
+    def test_fly_injected_name_alone_is_enough(self):
+        with mock.patch.dict(os.environ, {"AWS_STORAGE_BUCKET_NAME": ""}, clear=False):
+            self.load_prod(BUCKET_NAME="edujc-lms-media")  # 예외가 나면 실패
+
+    def test_missing_both_names_still_refuses_to_boot(self):
+        with self.assertRaises(ImproperlyConfigured):
+            with mock.patch.dict(
+                os.environ, {"AWS_STORAGE_BUCKET_NAME": "", "BUCKET_NAME": ""}, clear=False
+            ):
+                importlib.reload(importlib.import_module("config.settings.prod"))
