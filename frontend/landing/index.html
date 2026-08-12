@@ -116,10 +116,18 @@
     const mark = s => marks.push(s + ' ' + Math.round(performance.now()));
     addEventListener('DOMContentLoaded', () => { mark('DCL'); document.body.append(box); });
     addEventListener('load', () => mark('load'));
+    /* **요소도 같이 감시한다.** 뷰포트 숫자만으로는 "헤더가 늦게 자리 잡는다" 를
+       확인할 수 없다. 헤더 아랫변(navB)·헤드라인 윗변(h1T)·강사 윗변(teaT) 을 직접
+       재면 무엇이 언제 몇 px 움직였는지가 한 장에 다 나온다. 아직 파싱 전이라
+       없으면 그 줄은 건너뛰고, 생긴 뒤부터 기록을 시작한다. */
+    const el = { navB: '.nav', h1T: 'h1', teaT: '.teacher' };
+    const edge = (k, e) => Math.round(k === 'navB' ? e.getBoundingClientRect().bottom
+                                                   : e.getBoundingClientRect().top);
     const tick = () => {
       const t = Math.round(performance.now());
       const v = { sv: probe('100svh'), lv: probe('100lvh'), dv: probe('100dvh'),
                   inner: innerHeight, sat: probe('env(safe-area-inset-top)') };
+      for (const k in el) { const e = document.querySelector(el[k]); if (e) v[k] = edge(k, e); }
       for (const k in v) {
         if (prev[k] === undefined) { min[k] = max[k] = v[k]; n[k] = 0; at[k] = 0; }
         else if (v[k] !== prev[k] && !n[k]++) at[k] = t;
