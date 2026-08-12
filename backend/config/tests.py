@@ -188,13 +188,13 @@ class StorageSettingsTests(SimpleTestCase):
         self.assertEqual(base.AWS_S3_ENDPOINT_URL, "https://t3.storage.dev")
         self.assertIn("s3", base.STORAGES["default"]["BACKEND"])
 
-    def test_an_explicit_name_wins_over_the_tigris_one(self):
-        """둘 다 있으면 사람이 명시한 쪽이다 — 버킷을 갈아 끼울 때의 탈출구."""
+    def test_the_injected_name_wins_when_both_are_set(self):
+        """둘 다 있으면 fly 가 준 쪽이다 — 시크릿을 두 벌 심으면 한쪽만 바뀌어 어긋난다."""
         base = self.load_base(
-            AWS_STORAGE_BUCKET_NAME="chosen", BUCKET_NAME="injected"
+            AWS_STORAGE_BUCKET_NAME="alias", BUCKET_NAME="injected"
         )
 
-        self.assertEqual(base.AWS_STORAGE_BUCKET_NAME, "chosen")
+        self.assertEqual(base.AWS_STORAGE_BUCKET_NAME, "injected")
 
     def test_no_bucket_leaves_the_filesystem_in_place(self):
         """로컬·테스트는 버킷이 없다 — 그때는 S3 로 붙으면 안 된다."""
