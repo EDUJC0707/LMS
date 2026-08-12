@@ -158,3 +158,50 @@ class SentryDebugViewTests(SimpleTestCase):
         client = Client(raise_request_exception=False)
         with self.assertLogs("django.request", level=logging.ERROR):
             self.assertEqual(client.get(f"/sentry-debug?token={TOKEN}").status_code, 500)
+
+
+class StorageSettingsTests(SimpleTestCase):
+    """`fly storage create` 가 넣어 준 이름을 그대로 읽는가.
+
+    Tigris 는 `BUCKET_NAME`·`AWS_ENDPOINT_URL_S3`·`AWS_REGION` 으로 주입하고
+    django-storages 는 `AWS_STORAGE_BUCKET_NAME`·`AWS_S3_ENDPOINT_URL`·
+    `AWS_S3_REGION_NAME` 을 쓴다. 예전에는 배포 문서가 **별칭을 손으로 set** 하라고
+    했는데 그 한 단계가 빠져 있었고, 앱은 아무 소리 없이 파일시스템으로 떨어져
+    있었다(2026-08-12 fly secrets 확인). 손 절차는 잊힌다 — 코드가 읽는다.
+    """
+
+    def load_base(self, **environ):
+        with mock.patch.dict(os.environ, environ, clear=False):
+            return importlib.reload(importlib.import_module("config.settings.base"))
+
+    def tearDown(self):
+        importlib.reload(importlib.import_module("config.settings.base"))
+
+    def test_it_reads_the_names_tigris_actually_injects(self):
+        base = self.load_base(
+            BUCKET_NAME="edujc-lms-storage",
+            AWS_ENDPOINT_URL_S3="https://t3.storage.dev",
+            AWS_REGION="auto",
+        )
+
+        self.assertEqual(base.AWS_STORAGE_BUCKET_NAME, "edujc-lms-storage")
+        self.assertEqual(base.AWS_S3_ENDPOINT_URL, "https://t3.storage.dev")
+        self.assertIn("s3", base.STORAGES["default"]["BACKEND"])
+
+    def test_an_explicit_name_wins_over_the_tigris_one(self):
+        """둘 다 있으면 사람이 명시한 쪽이다 — 버킷을 갈아 끼울 때의 탈출구."""
+        base = self.load_base(
+            AWS_STORAGE_BUCKET_NAME="chosen", BUCKET_NAME="injected"
+        )
+
+        self.assertEqual(base.AWS_STORAGE_BUCKET_NAME, "chosen")
+
+    def test_no_bucket_leaves_the_filesystem_in_place(self):
+        """로컬·테스트는 버킷이 없다 — 그때는 S3 로 붙으면 안 된다."""
+        with mock.patch.dict(
+            os.environ, {"AWS_STORAGE_BUCKET_NAME": "", "BUCKET_NAME": ""}, clear=False
+        ):
+            base = importlib.reload(importlib.import_module("config.settings.base"))
+
+        self.assertEqual(base.AWS_STORAGE_BUCKET_NAME, "")
+        self.assertNotIn("s3", str(getattr(base, "STORAGES", {})))

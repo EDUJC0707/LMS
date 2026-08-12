@@ -230,17 +230,38 @@ OMR_OCR_TIMEOUT = env.float("OMR_OCR_TIMEOUT", default=20.0)
 
 # --- 오브젝트 스토리지 (Tigris/S3, django-storages) ----------------------
 # 버킷명이 있으면 S3(Tigris) 사용, 없으면 로컬 파일시스템(MEDIA_ROOT).
+#
+# **`fly storage create` 가 넣어 주는 이름을 그대로 읽는다.** Tigris 는
+# `BUCKET_NAME`·`AWS_ENDPOINT_URL_S3`·`AWS_REGION` 으로 주입하는데 django-storages
+# 는 `AWS_STORAGE_BUCKET_NAME`·`AWS_S3_ENDPOINT_URL`·`AWS_S3_REGION_NAME` 을 쓴다.
+# 예전에는 **배포 문서가 별칭을 손으로 set 하라고** 안내했는데, 그 한 단계가
+# 빠지면 앱이 조용히 파일시스템으로 떨어진다 — 실제로 빠져 있었다(2026-08-12).
+# 손 절차 대신 여기서 양쪽 이름을 다 읽는다. 명시적으로 준 이름이 늘 이긴다.
 AWS_ACCESS_KEY_ID = env("AWS_ACCESS_KEY_ID", default="")
 AWS_SECRET_ACCESS_KEY = env("AWS_SECRET_ACCESS_KEY", default="")
-AWS_STORAGE_BUCKET_NAME = env("AWS_STORAGE_BUCKET_NAME", default="")
-AWS_S3_ENDPOINT_URL = env("AWS_S3_ENDPOINT_URL", default="")  # Tigris 엔드포인트
-AWS_S3_REGION_NAME = env("AWS_S3_REGION_NAME", default="auto")
+AWS_STORAGE_BUCKET_NAME = env("AWS_STORAGE_BUCKET_NAME", default="") or env(
+    "BUCKET_NAME", default=""
+)
+AWS_S3_ENDPOINT_URL = env("AWS_S3_ENDPOINT_URL", default="") or env(
+    "AWS_ENDPOINT_URL_S3", default=""
+)
+AWS_S3_REGION_NAME = (
+    env("AWS_S3_REGION_NAME", default="") or env("AWS_REGION", default="") or "auto"
+)
 
-if AWS_STORAGE_BUCKET_NAME:
-    STORAGES = {
-        "default": {"BACKEND": "storages.backends.s3.S3Storage"},
-        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
-    }
+# 버킷이 있으면 S3, 없으면 파일시스템. **두 갈래를 다 적는다** — 예전에는 S3 쪽만
+# 대입하고 없는 경우를 Django 기본값에 맡겼는데, 그러면 "지금 어디에 쓰고 있나"가
+# 설정에 안 보인다.
+STORAGES = {
+    "default": {
+        "BACKEND": (
+            "storages.backends.s3.S3Storage"
+            if AWS_STORAGE_BUCKET_NAME
+            else "django.core.files.storage.FileSystemStorage"
+        )
+    },
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
 
 # --- 화상(클리닉) — key_considerations §4 추상화 경계 --------------------
 # 업체 교체는 이 경로 한 줄이다(apps.clinic.conferencing 계약).
