@@ -8,15 +8,21 @@
 
 ## 1. 저장소 구조 원칙 (가장 중요)
 
-**작업 표면(우리가 매일 건드리는 것)은 넷뿐이다.**
+**작업 표면(우리가 매일 건드리는 것)은 이것뿐이다.**
 
 | 경로 | 성격 |
 |---|---|
 | `backend/` | Django 앱·설정 |
 | `frontend/` | Vite + React SPA |
 | `infra/` | Dockerfile, fly.toml |
-| `docs/PRD.md` | 제품 요구사항 — 살아있는 단일 기준 문서 |
+| `docs/FLOW.md` | **제품이 어떻게 흘러가는가 — 기준(canon)**. PRD 와 어긋나면 이쪽이 맞다 |
+| `docs/PRD.md` | 제품 요구사항 — 무엇을 만들 것인가 |
 | `docs/decisions.md` | **확정 사항만** 모은 표 — "그래서 뭘로 정했지"의 답. 뒤집힌 결정도 표시해 남긴다 |
+
+**`docs/` 셋의 역할이 다르다** — `FLOW.md` 는 **어떻게 흘러가는가**(대표 구술, 2026-08-12 시작),
+`PRD.md` 는 **무엇을 만드는가**, `decisions.md` 는 **무엇으로 정했는가**.
+새 화면·모델을 설계하기 전에 **`FLOW.md` 를 먼저 본다.** PRD 에는 이미 뒤집힌 전제가
+남아 있다(반이 문자열인 세계, 교재 청구 시점 등).
 
 루트의 설정 파일(`README.md`, `Makefile`, `docker-compose.yml`, `.gitignore`, `.dockerignore`)과 `.claude/`, `.github/`는 그대로 둔다.
 
