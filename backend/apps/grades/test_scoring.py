@@ -9,7 +9,8 @@ from decimal import Decimal
 
 from django.test import TestCase
 
-from apps.curriculum.models import Course, CourseWeek
+from apps.accounts.models import User
+from apps.curriculum.models import Class, Course, CourseEnrollment, CourseWeek
 
 from . import scoring
 from .models import AnswerSheet, Attendance, ClassSession, Exam, Score
@@ -68,6 +69,89 @@ class MarkMissingTests(TestCase):
 
         self.assertEqual(scoring.mark_missing(lonely), 0)
         self.assertEqual(Score.objects.filter(exam=lonely).count(), 0)
+
+
+class MarkPresentTests(TestCase):
+    """대조된 장이 곧 출석이다 — 조교가 같은 명단을 두 번 찍지 않게 (FLOW 3-2·3-4)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.exam = Exam.objects.create(name="3주차 미니", exam_date=datetime.date(2026, 9, 18))
+        course = Course.objects.create(name="2026 여름 N제", total_weeks=3)
+        cls.klass = Class.objects.create(
+            course=course, name="목 6.5 대치러셀", start_date=datetime.date(2026, 9, 4)
+        )
+        week = CourseWeek.objects.create(course=course, week_no=3)
+        cls.session = ClassSession.objects.create(
+            session_date=datetime.date(2026, 9, 18),
+            course_week=week,
+            klass=cls.klass,
+            week_no=3,
+            exam=cls.exam,
+        )
+        cls.taker = make_student("stu-present", "김하늘")
+        cls.skipper = make_student("stu-noshow", "이서준")
+        for student in (cls.taker, cls.skipper):
+            CourseEnrollment.objects.create(
+                student=student, course=course, klass=cls.klass
+            )
+        AnswerSheet.objects.create(
+            exam=cls.exam, student=cls.taker, scan_image_path="omr/present.png",
+            match_status=AnswerSheet.MatchStatus.MATCHED,
+        )
+
+    def test_a_matched_sheet_marks_the_student_present(self):
+        self.assertEqual(scoring.mark_present(self.exam), 1)
+
+        row = Attendance.objects.get(session=self.session, student=self.taker)
+        self.assertEqual(row.status, Attendance.Status.PRESENT)
+        # 사람이 안 찍었다는 표시 — 다음 판독이 덮어도 되는 자리다.
+        self.assertIsNone(row.marked_by_id)
+
+    def test_an_unmatched_student_is_left_alone(self):
+        """대조 안 된 학생은 `미입력` 이다 — 결석으로 찍으면 결석 문자가 나간다."""
+        scoring.mark_present(self.exam)
+
+        self.assertFalse(Attendance.objects.filter(student=self.skipper).exists())
+
+    def test_running_twice_changes_nothing(self):
+        scoring.mark_present(self.exam)
+
+        self.assertEqual(scoring.mark_present(self.exam), 0)
+        self.assertEqual(Attendance.objects.filter(session=self.session).count(), 1)
+
+    def test_it_does_not_overwrite_what_a_person_marked(self):
+        """조교가 손으로 고친 값은 재판독이 되돌리지 못한다(FLOW 3-2)."""
+        actor = User.objects.create_user(
+            login_id="staff-omr", password="pw1234!!", role=User.Role.ADMIN, name="조교"
+        )
+        Attendance.objects.create(
+            session=self.session, student=self.taker,
+            status=Attendance.Status.ABSENT, marked_by=actor,
+        )
+
+        self.assertEqual(scoring.mark_present(self.exam), 0)
+        row = Attendance.objects.get(session=self.session, student=self.taker)
+        self.assertEqual(row.status, Attendance.Status.ABSENT)
+
+    def test_it_does_not_undo_a_cleared_entry(self):
+        """눌렀던 것을 해제한 `미입력` 도 사람의 판단이다 — 다시 찍지 않는다."""
+        actor = User.objects.create_user(
+            login_id="staff-clear", password="pw1234!!", role=User.Role.ADMIN, name="조교"
+        )
+        Attendance.objects.create(
+            session=self.session, student=self.taker,
+            status=Attendance.Status.UNENTERED, marked_by=actor,
+        )
+
+        self.assertEqual(scoring.mark_present(self.exam), 0)
+
+    def test_the_missing_list_comes_from_the_class_roster(self):
+        """출결 행이 없어도 반 명단에 있으면 미제출이다 — 지금까지 0건이었다."""
+        scoring.mark_present(self.exam)
+
+        self.assertEqual(scoring.mark_missing(self.exam), 1)
+        self.assertFalse(Score.objects.get(exam=self.exam, student=self.skipper).is_taken)
 
 
 class RankTests(TestCase):
