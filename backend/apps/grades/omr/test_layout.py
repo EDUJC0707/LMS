@@ -152,11 +152,19 @@ class TestRender:
         for got, want_mm in ((mark_x[0], layout.MARK_X_MM[0]), (mark_x[1], layout.MARK_X_MM[1])):
             assert abs(got - float(want_mm) / 25.4 * 200) / 200 * 25.4 < 0.2
 
+        def inside_rules(x, y):
+            """`지켜야 할 사항` 의 잘못된 표기 예시는 장식이지 데이터 칸이 아니다."""
+            u = (x - mark_x[0]) / (mark_x[1] - mark_x[0])
+            v = (y - mark_y[0]) / (mark_y[1] - mark_y[0])
+            u0, v0, u1, v1 = generate.BOX_RULES
+            return u0 <= u <= u1 and v0 <= v <= v1
+
         rings = [
             (centres[i][0], centres[i][1])
             for i in range(1, count)
             if 14 < stats[i][2] < 26 and 26 < stats[i][3] < 42
             and stats[i][4] < 0.85 * stats[i][2] * stats[i][3]
+            and not inside_rules(centres[i][0], centres[i][1])
         ]
         # 답란 200 + 전화 40. 성명은 정원이라 이 필터에 안 걸린다.
         assert len(rings) == 240
