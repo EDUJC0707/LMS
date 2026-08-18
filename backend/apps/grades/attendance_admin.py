@@ -5,13 +5,14 @@
   ① `출석`·`결석(현보)` 확정 → videos.VideoGrant(source=출석자동, 그 회차 주차, +7일)
   ② `결석` 확정 → boards.AbsenceCounseling 대기열 행(1차 통화 대상=학부모)
   ③ `결석(동보)` 확정 → videos.MakeupGrant(지급완료) + VideoGrant(source=동보)
+     — 살아있는 신청이 붙은 `결석` 도 여기서 `결석(동보)` 로 올라가며 지급된다
 
 **값집합 4종의 트리거 판정 근거** (2026-07-29 개편 — `지각` 제거, 결석 3분화).
 
 | status | 복습영상 | 상담 대기열 | 동보 체인 |
 |---|---|---|---|
 | `출석` | 지급(출석자동) | — | — |
-| `결석` | — | **생성** | — |
+| `결석` | — | **생성** | 신청이 있으면 **지급완료**(→ `결석(동보)`) |
 | `결석(동보)` | 동보 근거로 지급 | — | **지급완료** |
 | `결석(현보)` | 지급(출석자동) | — | — |
 
@@ -31,18 +32,20 @@
 **`결석(동보)` 와 학생 동보 신청 흐름의 겹침 정리 (2026-07-29).**
 같은 사실("이 결석은 동영상으로 보강한다")에 입구가 셋이었다:
   (a) 담임의 출결 값 `결석(동보)`   (b) POST /api/admin/attendance/makeup(관리자 체크)
-  (c) 학생·학부모 신청 → 관리자 승인(videos.views)
+  (c) 학생·학부모 신청(videos.views)
 셋을 그대로 두면 "출결은 `결석` 인데 동보만 지급된" / "동보로 찍혔는데 신청
 레코드는 `신청` 인 채 남은" 갈린 상태가 생긴다. **끝 상태를 하나로 못 박는다** —
 어느 입구로 들어와도 `attendance.status == 결석(동보)` **그리고** 그 결석에
 `MakeupGrant(지급완료)` 1건 **그리고** 그 동보에 `VideoGrant(동보)` 1건:
   - (a) 는 트리거 ③ 이 지급 체인을 만든다. 그 결석에 **이미 신청 중인
     MakeupGrant 가 있으면 새로 만들지 않고 그 행을 지급완료로 전이**한다 —
-    담임이 동보로 찍은 것이 곧 그 신청의 승인이다(source 는 신청 경로 그대로
+    담임이 동보로 찍은 것이 곧 그 신청의 확정이다(source 는 신청 경로 그대로
     보존 — 누가 시작했는지가 감사 이력이다).
   - (b) 는 `grant_makeup()` 이 **출결 값을 `결석(동보)` 로 올린 뒤** 같은 트리거를
     태운다. 즉 (a) 의 축약일 뿐 별도 경로가 아니다.
-  - (c) 승인도 `promote_to_makeup_absence()` 로 출결을 올린다(videos.views).
+  - (c) 도 `promote_to_makeup_absence()` 로 출결을 올린다(videos.views). **승인
+    단계는 없다**(FLOW 3-4) — 결석이 이미 확정돼 있으면 신청받는 자리에서 바로,
+    아직이면 트리거 ③ 이 결석 확정 시점에 낸다.
 
 **원자성 판단 — 출결 저장과 트리거를 한 트랜잭션으로 묶는다.**
 근거: 출결은 SSOT(grades.Attendance 계약)이고 지급·대기열은 그 파생이다.
@@ -95,7 +98,12 @@ from apps.curriculum.models import CourseEnrollment
 
 # GRANT_DURATION(시청 기간 기본 7일)은 동보 지급 체인과 공유하는 단일 기본값 —
 # videos.makeup 이 원천이다(4차 슬라이스 공용 서비스 추출).
-from apps.videos.makeup import GRANT_DURATION, complete_makeup, published_videos_of
+from apps.videos.makeup import (
+    GRANT_DURATION,
+    complete_makeup,
+    held_video_ids,
+    published_videos_of,
+)
 from apps.videos.models import MakeupGrant, VideoGrant
 
 from .models import Attendance, ClassSession
@@ -350,12 +358,23 @@ def _sync_video_grants(session, attendances, actor, now, triggers):
         (g.attendance_id, g.video_id): g
         for g in VideoGrant.objects.filter(attendance_id__in=[a.id for a in attendances])
     }
+    # 이미 가진 영상은 건너뛴다(FLOW 3-5) — 이 출석 근거로 만든 행이 아니라
+    # **학생이 지금 들고 있는 권한**을 본다. 같은 주차 회차가 둘 이상이거나
+    # 동보로 이미 받은 영상이 여기서 걸린다.
+    held = held_video_ids(
+        [a.student_id for a in attendances],
+        videos,
+        now,
+        exclude_attendances=[a.id for a in attendances],
+    )
     created = []
     for att in attendances:
         if att.status in _REVIEW_VIDEO_STATUSES:
             for video in videos:
                 grant = grant_map.get((att.id, video.video_id))
                 if grant is None:
+                    if (att.student_id, video.video_id) in held:
+                        continue
                     created.append(
                         VideoGrant(
                             student_id=att.student_id,
@@ -399,15 +418,23 @@ def _sync_video_grants(session, attendances, actor, now, triggers):
 
 
 def _sync_makeup_grants(attendances, actor, now, triggers):
-    """트리거 ③ — `결석(동보)` 확정 = 동보 지급 확정 (2026-07-29 입구 단일화).
+    """트리거 ③ — 동보 지급 확정 (2026-07-29 입구 단일화, 2026-08-18 승인 제거).
 
-    담임이 값을 찍는 순간 MakeupGrant `지급완료` + VideoGrant(동보)까지 간다.
-    학생 신청을 기다리지 않는 근거는 모듈 docstring — 담임이 찍는 값과 학생
+    담임이 `결석(동보)` 를 찍는 순간 MakeupGrant `지급완료` + VideoGrant(동보)까지
+    간다. 학생 신청을 기다리지 않는 근거는 모듈 docstring — 담임이 찍는 값과 학생
     신청이 같은 사실을 가리키므로 둘을 한 레코드로 합친다:
       - 그 결석에 아직 MakeupGrant 가 없으면 `관리자체크` 로 새로 만든다.
       - **신청 중인 행이 있으면 그 행을 지급완료로 전이**한다(새로 만들지 않는다).
         source 는 신청 경로 그대로 둔다 — 누가 시작했는지가 감사 이력이다.
       - 이미 지급완료면 아무것도 하지 않는다(멱등 — 만료를 연장하지 않는다).
+
+    **`결석` 도 여기서 지급된다 — 살아있는 신청이 붙어 있을 때만**(FLOW 3-4).
+    지급 조건은 신청 + 결석 확인 둘뿐이고 순서는 상관없으므로, 미리 신청해 둔
+    결석이 출결표 저장으로 확정되는 이 자리가 "신청이 먼저인" 쪽의 지급 시점이다.
+    승인 단계는 없앴다 — 결석했다는 근거가 이미 출결에 있다. 지급과 함께 출결 값을
+    `결석(동보)` 로 올린다(입구 셋의 끝 상태 단일화). 상담 대기열 정리는 바로 뒤에
+    도는 트리거 ② 가 그 값을 보고 한다.
+
     `결석(동보)` 가 아니게 정정되면 동보 지급을 revoke, 되돌아오면 재활성한다.
     """
     makeup_by_att = {}
@@ -430,6 +457,13 @@ def _sync_makeup_grants(attendances, actor, now, triggers):
             grant_by_makeup.setdefault(g.makeup_id, []).append(g)
     for att in attendances:
         makeup = makeup_by_att.get(att.id)
+        # 신청 + 결석 확인이 둘 다 찼다 — 승인 없이 여기서 나간다(FLOW 3-4).
+        if (
+            att.status == Attendance.Status.ABSENT
+            and makeup is not None
+            and makeup.status == MakeupGrant.Status.REQUESTED
+        ):
+            _mark_makeup_absence(att, actor, now)
         if att.status == Attendance.Status.ABSENT_MAKEUP:
             if makeup is None:
                 makeup = MakeupGrant.objects.create(
@@ -542,21 +576,31 @@ def grant_makeup(attendance, actor):
     return makeup, grants
 
 
-def promote_to_makeup_absence(attendance, actor, now):
-    """동보 지급이 확정된 결석의 출결 값을 `결석(동보)` 로 올린다(신청 승인 경로).
+def _mark_makeup_absence(attendance, actor, now):
+    """출결 값만 `결석(동보)` 로 올린다 — 상담 대기열 정리는 호출측 몫.
 
-    videos.views 의 승인이 호출한다 — 지급은 났는데 출결은 `결석` 인 갈린 상태를
-    남기지 않기 위함(모듈 docstring 의 입구 단일화). 지급 체인 자체는 호출측이
-    이미 태웠으므로 여기서는 출결 값과 **상담 대기열 정리**만 맞춘다.
-    트랜잭션은 호출측 소유(승인과 같은 트랜잭션).
+    트리거 ③ 안에서는 바로 뒤에 트리거 ② 가 도므로 여기서 대기열을 건드리면
+    같은 삭제를 두 번 계산하게 된다(응답 카운터가 어긋난다).
     """
     if attendance.status == Attendance.Status.ABSENT_MAKEUP:
-        return
+        return False
     attendance.status = Attendance.Status.ABSENT_MAKEUP
     attendance.marked_by = actor
     attendance.updated_at = now
     attendance.save(update_fields=["status", "marked_by", "updated_at"])
-    _sync_counseling_queue([attendance], empty_triggers())
+    return True
+
+
+def promote_to_makeup_absence(attendance, actor, now):
+    """동보 지급이 확정된 결석의 출결 값을 `결석(동보)` 로 올린다.
+
+    관리자 동보 체크(grant_makeup)와 학생·학부모 신청이 호출한다 — 지급은 났는데
+    출결은 `결석` 인 갈린 상태를 남기지 않기 위함(모듈 docstring 의 입구 단일화).
+    지급 체인 자체는 호출측이 이미 태웠으므로 여기서는 출결 값과 **상담 대기열
+    정리**만 맞춘다. 트랜잭션은 호출측 소유.
+    """
+    if _mark_makeup_absence(attendance, actor, now):
+        _sync_counseling_queue([attendance], empty_triggers())
 
 
 # --- 퇴원 처리 -------------------------------------------------------------

@@ -182,18 +182,9 @@ class AttendanceAdminAccessTests(AttendanceAdminFixtureMixin, TestCase):
             403,
         )
 
-    def test_assistant_without_feature_is_denied(self):
-        # 조교 프리셋에 출결입력이 들어간 뒤(2026-08-18)라 delta 로 거둬서 검증한다
-        StaffFeatureGrant.objects.create(
-            user=self.assistant,
-            feature_key=FeatureKey.ATTENDANCE_ENTRY,
-            is_granted=False,
-        )
+    def test_assistant_without_video_grant_feature_is_denied(self):
+        # 조교 프리셋에 영상지급관리는 없다(features.ROLE_PRESETS) — 키 분리
         self.login(self.assistant)
-        self.assertEqual(self.client.get(SESSIONS_URL).status_code, 403)
-        self.assertEqual(
-            self.client.get(self.detail_url(self.session_w2.session_id)).status_code, 403
-        )
         self.assertEqual(self.post_makeup({}).status_code, 403)
 
     def test_admin_and_owner_are_allowed(self):
@@ -204,13 +195,24 @@ class AttendanceAdminAccessTests(AttendanceAdminFixtureMixin, TestCase):
                 self.client.get(self.detail_url(self.session_w2.session_id)).status_code, 200
             )
 
-    def test_assistant_with_delta_grant_is_allowed(self):
-        # 프리셋 ⊕ delta — 대표가 개별 부여하면 조교도 출결입력 가능
-        StaffFeatureGrant.objects.create(
-            user=self.assistant, feature_key=FeatureKey.ATTENDANCE_ENTRY, is_granted=True
-        )
+    def test_assistant_preset_covers_attendance_entry(self):
+        # 조교 프리셋에 출결입력이 있다 — 반별 관리가 조교의 일이다(FLOW §3)
         self.login(self.assistant)
         self.assertEqual(self.client.get(SESSIONS_URL).status_code, 200)
+        self.assertEqual(
+            self.client.get(self.detail_url(self.session_w2.session_id)).status_code, 200
+        )
+
+    def test_assistant_with_feature_revoked_is_denied(self):
+        # 프리셋 ⊕ delta — 대표가 개별 회수하면 조교도 못 연다
+        StaffFeatureGrant.objects.create(
+            user=self.assistant, feature_key=FeatureKey.ATTENDANCE_ENTRY, is_granted=False
+        )
+        self.login(self.assistant)
+        self.assertEqual(self.client.get(SESSIONS_URL).status_code, 403)
+        self.assertEqual(
+            self.client.get(self.detail_url(self.session_w2.session_id)).status_code, 403
+        )
 
     def test_makeup_requires_video_grant_feature(self):
         # 출결입력만 delta 로 받은 조교는 동보(영상지급관리) 불가 — 키 분리 검증
@@ -628,6 +630,127 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
         self.assertEqual(grants.count(), len(self.w2_videos))
         self.assertEqual({g.granted_at for g in grants}, {later})
 
+    def test_pending_request_is_granted_when_absence_is_confirmed(self):
+        """미리 신청해 둔 결석이 출결표 저장으로 확정되면 **그때** 지급된다(FLOW 3-4).
+
+        지급 조건은 신청 + 결석 확인 둘이고 순서는 상관없다. 승인 단계가
+        없으므로 결석이 확정되는 이 자리가 곧 지급 시점이다.
+        """
+        att = Attendance.objects.create(
+            session=self.session_w2, student=self.s1, status=Attendance.Status.PRESENT
+        )
+        pending = MakeupGrant.objects.create(
+            student=self.s1,
+            attendance=att,
+            source=MakeupGrant.Source.STUDENT_REQUEST,
+            requested_by=self.s1.user,
+        )
+        self.assertFalse(VideoGrant.objects.filter(makeup=pending).exists())
+
+        self.put_attendance(
+            self.session_w2.session_id, [{"student_id": self.s1.student_id, "status": "결석"}]
+        )
+
+        pending.refresh_from_db()
+        self.assertEqual(pending.status, MakeupGrant.Status.GRANTED)
+        self.assertEqual(pending.granted_at, NOW)
+        self.assertEqual(pending.source, MakeupGrant.Source.STUDENT_REQUEST)  # 이력 보존
+        grants = VideoGrant.objects.filter(makeup=pending).order_by("video__sequence_no")
+        self.assertEqual([g.video_id for g in grants], self.w2_video_ids())
+        self.assertEqual({g.expires_at for g in grants}, {NOW + GRANT_DURATION})
+        # 출결도 `결석(동보)` 로 올라간다 — 지급됐는데 `결석` 인 갈린 상태를 안 남긴다
+        att.refresh_from_db()
+        self.assertEqual(att.status, Attendance.Status.ABSENT_MAKEUP)
+        # 보강 방법이 확정됐으므로 상담 대기열에도 올리지 않는다
+        self.assertEqual(AbsenceCounseling.objects.filter(attendance=att).count(), 0)
+        # 결석이므로 출석 근거 자동지급은 회수된 채로 남는다
+        self.assertFalse(
+            VideoGrant.objects.filter(attendance=att, revoked_at__isnull=True).exists()
+        )
+
+    def test_absence_without_request_grants_nothing(self):
+        """신청이 없으면 결석만으로는 안 나간다 — 조건 둘 중 하나가 비었다."""
+        self.put_attendance(
+            self.session_w2.session_id, [{"student_id": self.s1.student_id, "status": "결석"}]
+        )
+        att = Attendance.objects.get(session=self.session_w2, student=self.s1)
+        self.assertEqual(att.status, Attendance.Status.ABSENT)
+        self.assertFalse(MakeupGrant.objects.filter(attendance=att).exists())
+        self.assertFalse(VideoGrant.objects.filter(attendance=att).exists())
+        self.assertEqual(AbsenceCounseling.objects.filter(attendance=att).count(), 1)
+
+    def test_rejected_request_is_not_granted_by_absence(self):
+        """거절된 신청은 살아있는 신청이 아니다 — 결석이 확정돼도 나가지 않는다."""
+        att = Attendance.objects.create(
+            session=self.session_w2, student=self.s1, status=Attendance.Status.PRESENT
+        )
+        rejected = MakeupGrant.objects.create(
+            student=self.s1,
+            attendance=att,
+            source=MakeupGrant.Source.STUDENT_REQUEST,
+            requested_by=self.s1.user,
+            status=MakeupGrant.Status.REJECTED,
+        )
+        self.put_attendance(
+            self.session_w2.session_id, [{"student_id": self.s1.student_id, "status": "결석"}]
+        )
+        rejected.refresh_from_db()
+        self.assertEqual(rejected.status, MakeupGrant.Status.REJECTED)
+        self.assertFalse(VideoGrant.objects.filter(makeup=rejected).exists())
+        att.refresh_from_db()
+        self.assertEqual(att.status, Attendance.Status.ABSENT)
+
+    def test_already_held_video_is_not_granted_again(self):
+        """이미 가진 영상은 건너뛰고 **만료를 뒤로 밀지 않는다** (FLOW 3-5).
+
+        같은 주차 회차가 둘이면(보강 회차 등) 한쪽에서 나간 권한이 살아 있는
+        채로 다른 쪽 출결이 저장된다. 지급 근거(출결·동보)마다 따로 세면 학생
+        하나가 같은 영상을 두 벌 들게 되고, 뒤에 난 행의 만료가 일주일 더
+        뒤라 시청 기간이 조용히 늘어난다.
+        """
+        twin = ClassSession.objects.create(  # 같은 2주차를 가리키는 다른 회차
+            session_date=datetime.date(2026, 7, 23), session_no=4, course_week=self.week2
+        )
+        self.put_attendance(
+            self.session_w2.session_id, [{"student_id": self.s1.student_id, "status": "출석"}]
+        )
+        first = list(VideoGrant.objects.filter(student=self.s1).order_by("grant_id"))
+        self.assertEqual(len(first), len(self.w2_videos))
+
+        later = NOW + datetime.timedelta(days=1)
+        self.put_attendance(
+            twin.session_id,
+            [{"student_id": self.s1.student_id, "status": "출석"}],
+            at=later,
+        )
+        after = list(VideoGrant.objects.filter(student=self.s1).order_by("grant_id"))
+        self.assertEqual([g.grant_id for g in after], [g.grant_id for g in first])
+        self.assertEqual({g.expires_at for g in after}, {NOW + GRANT_DURATION})
+
+    def test_already_held_video_is_not_granted_again_by_makeup(self):
+        """출석으로 받은 영상을 동보로 또 주지 않는다 (FLOW 3-5)."""
+        twin = ClassSession.objects.create(
+            session_date=datetime.date(2026, 7, 23), session_no=4, course_week=self.week2
+        )
+        self.put_attendance(
+            self.session_w2.session_id, [{"student_id": self.s1.student_id, "status": "출석"}]
+        )
+        held = list(VideoGrant.objects.filter(student=self.s1).order_by("grant_id"))
+
+        later = NOW + datetime.timedelta(days=1)
+        self.put_attendance(
+            twin.session_id,
+            [{"student_id": self.s1.student_id, "status": "결석(동보)"}],
+            at=later,
+        )
+        makeup = MakeupGrant.objects.get(attendance__session=twin, student=self.s1)
+        self.assertEqual(makeup.status, MakeupGrant.Status.GRANTED)
+        # 동보는 지급완료로 끝나지만 이미 가진 영상이라 권한 행은 늘지 않는다
+        self.assertFalse(VideoGrant.objects.filter(makeup=makeup).exists())
+        after = list(VideoGrant.objects.filter(student=self.s1).order_by("grant_id"))
+        self.assertEqual([g.grant_id for g in after], [g.grant_id for g in held])
+        self.assertEqual({g.expires_at for g in after}, {NOW + GRANT_DURATION})
+
     def test_absent_to_makeup_absence_removes_untouched_counseling(self):
         self.put_attendance(
             self.session_w2.session_id, [{"student_id": self.s2.student_id, "status": "결석"}]
@@ -843,11 +966,12 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
         ]
         # 세션인증 2 + 기능키 1 + 회차 1 + 명단 1 + SAVEPOINT/RELEASE 2
         # + 기존출결 1 + INSERT 3
-        # + 트리거① 3: 주차 공개영상 조회 1 + 기존지급 조회 1 + 지급 bulk INSERT 1
-        #   (지급 단위가 영상이 된 뒤 영상 조회 1쿼리가 늘고, 대신 건별 INSERT 가
-        #    bulk 1쿼리로 묶여 총합은 그대로다 — 학생·영상 수가 늘어도 고정)
+        # + 트리거① 4: 주차 공개영상 조회 1 + 기존지급 조회 1 + **보유영상 조회 1**
+        #   + 지급 bulk INSERT 1
+        #   (보유영상 조회는 "이미 가진 영상은 두 번 주지 않는다"(FLOW 3-5)의 근거다 —
+        #    명단 전체를 한 번에 묻는 1쿼리라 학생·영상 수가 늘어도 고정)
         # + 동보조회 1(지급건 없음 → 2번째 쿼리 생략) + 대기열조회/생성 2
-        with freeze_now(), self.assertNumQueries(17):
+        with freeze_now(), self.assertNumQueries(18):
             self.client.put(
                 self.detail_url(self.session_w2.session_id),
                 data=json.dumps(entries),
@@ -1012,10 +1136,9 @@ class WithdrawTests(AttendanceAdminFixtureMixin, TestCase):
 
     def test_withdraw_requires_attendance_entry_feature(self):
         self.client.logout()
+        # 조교 프리셋에는 출결입력이 있다 — 게이트를 보려면 delta 로 회수해야 한다
         StaffFeatureGrant.objects.create(
-            user=self.assistant,
-            feature_key=FeatureKey.ATTENDANCE_ENTRY,
-            is_granted=False,
+            user=self.assistant, feature_key=FeatureKey.ATTENDANCE_ENTRY, is_granted=False
         )
         self.login(self.assistant)
         self.assertEqual(

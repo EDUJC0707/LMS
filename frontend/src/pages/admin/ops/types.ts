@@ -85,7 +85,7 @@ export interface AttendanceEntry {
   exam_taken: boolean | null;
 }
 
-export type MakeupStatus = "신청" | "승인" | "지급완료" | "거절";
+export type MakeupStatus = "신청" | "지급완료" | "거절";
 
 export interface MakeupRow {
   makeup_id: number;

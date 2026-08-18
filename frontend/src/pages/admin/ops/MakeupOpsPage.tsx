@@ -1,12 +1,12 @@
 /**
- * 동보 승인 — 결석 학생의 복습영상 신청을 확인하고 지급한다.
+ * 동보 — 결석 학생의 복습영상 신청 내역.
  *
  * 호출: GET  /api/admin/makeup-requests
- *      · POST /api/admin/makeup-requests/{id}/approve
  *      · POST /api/admin/makeup-requests/{id}/reject
  *
- * 승인은 곧 "영상 권한이 학생 계정으로 나간다"는 뜻이라 결과를 문장으로 알린다.
- * 거절은 되돌릴 수 없으므로(다시 승인하면 400) 확인 모달을 둔다.
+ * **승인이 없다**(FLOW 3-4). 신청 + 결석 확인이 차면 서버가 알아서 지급하므로
+ * 이 화면은 그 결과를 보는 자리다. `신청` 으로 남는 것은 결석이 확정되지 않은
+ * 신청뿐이고, 거절은 그것을 닫는 유일한 손이다 — 되돌릴 수 없어 확인 모달을 둔다.
  */
 import { useMemo, useState } from "react";
 
@@ -25,7 +25,7 @@ import {
 import type { Column } from "../../../components";
 import { shortDate, stamp } from "./format";
 import "./ops.css";
-import type { MakeupRow, MakeupStatus, VideoGrantBlock } from "./types";
+import type { MakeupRow, MakeupStatus } from "./types";
 
 type Tab = MakeupStatus | "전체";
 const TABS: Tab[] = ["신청", "지급완료", "거절", "전체"];
@@ -33,9 +33,6 @@ const TABS: Tab[] = ["신청", "지급완료", "거절", "전체"];
 export default function MakeupOpsPage() {
   const [tab, setTab] = useState<Tab>("신청");
   const [rejecting, setRejecting] = useState<MakeupRow | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  /** 어느 행을 처리 중인지 — 전 행이 함께 스피너를 도는 걸 막는다. */
-  const [busyId, setBusyId] = useState<number | null>(null);
 
   const list = useApi(
     async () =>
@@ -51,34 +48,11 @@ export default function MakeupOpsPage() {
     [all, tab],
   );
 
-  const approve = useApiAction(async (row: MakeupRow) => {
-    const { data } = await http.post<{ video_grant: VideoGrantBlock }>(
-      `/admin/makeup-requests/${row.makeup_id}/approve`,
-    );
-    return data;
-  });
-
   const reject = useApiAction(async (row: MakeupRow) => {
     await http.post(`/admin/makeup-requests/${row.makeup_id}/reject`);
   });
 
-  const runApprove = async (row: MakeupRow) => {
-    setNotice(null);
-    setBusyId(row.makeup_id);
-    const data = await approve.run(row);
-    setBusyId(null);
-    if (!data) return;
-    const until = data.video_grant.expires_at
-      ? `${shortDate(data.video_grant.expires_at.slice(0, 10))}까지`
-      : "지정된 기간 동안";
-    setNotice(
-      `${row.student.name ?? "학생"}(원번 ${row.student.login_id ?? row.student.matching_key}) 계정에 ${row.course_name ?? "해당 강좌"} ${row.week_no ?? "-"}주차 복습영상 권한이 나갔습니다. ${until} 시청할 수 있습니다.`,
-    );
-    void list.reload();
-  };
-
   const runReject = async (row: MakeupRow) => {
-    setNotice(null);
     await reject.run(row);
     setRejecting(null);
     void list.reload();
@@ -147,13 +121,6 @@ export default function MakeupOpsPage() {
       cell: (r) =>
         r.status === "신청" ? (
           <span className="ui-row" style={{ justifyContent: "flex-end" }}>
-            <Button
-              size="sm"
-              loading={approve.pending && busyId === r.makeup_id}
-              onClick={() => void runApprove(r)}
-            >
-              승인·지급
-            </Button>
             <Button size="sm" variant="ghost" onClick={() => setRejecting(r)}>
               거절
             </Button>
@@ -167,13 +134,7 @@ export default function MakeupOpsPage() {
   return (
     <>
       <div className="ui-stack">
-        {approve.error && <Alert tone="danger">{approve.error}</Alert>}
         {reject.error && !rejecting && <Alert tone="danger">{reject.error}</Alert>}
-        {notice && (
-          <Alert tone="success" onClose={() => setNotice(null)}>
-            승인했습니다 — {notice}
-          </Alert>
-        )}
 
         {list.loading ? (
           <Loading label="신청 목록을 불러오는 중…" />
@@ -196,7 +157,7 @@ export default function MakeupOpsPage() {
               rows={rows}
               rowKey={(r) => r.makeup_id}
               empty={
-                tab === "신청" ? "승인을 기다리는 신청이 없습니다" : `${tab} 상태인 신청이 없습니다`
+                tab === "전체" ? "동보 신청이 없습니다" : `${tab} 상태인 신청이 없습니다`
               }
             />
           </Card>

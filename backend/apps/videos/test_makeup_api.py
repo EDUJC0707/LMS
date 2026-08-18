@@ -1,15 +1,16 @@
-"""동보 신청 API 4차 슬라이스 테스트 — 예비 경로(전화 두절) (PRD 3.2.3·§4).
+"""동보 신청 API 테스트 (PRD 3.2.3·§4, FLOW 3-4).
 
 검증 축:
-- 역할 게이트: 학생/학부모 신청, 관리자 목록·승인·거절(기능 키 = 영상지급관리)
+- 역할 게이트: 학생/학부모 신청, 관리자 목록·거절(기능 키 = 영상지급관리)
 - 자격(§4): 본인(자녀)의 `결석` 출결만 신청 가능 — 타인 404(존재 비노출),
   비결석 400. 자격 없으면 API 자체가 4xx
-- 중복: 같은 결석에 신청/승인/지급완료 존재 시 400, 거절만 재신청 허용
-- 승인 체인: 지급완료 전환 + VideoGrant(동보) 생성 — 3차 슬라이스
-  grant_makeup 과 같은 공용 서비스(apps.videos.makeup) 경유.
-  지급 단위는 **영상 1개**라 그 주차 `공개` 영상마다 1행이다(2026-08-04)
-- 시간: 승인 시각은 apps.videos.views.timezone.now 를 patch 해 고정
-  (Asia/Seoul — attendance_admin 테스트 선례)
+- 중복: 같은 결석에 신청/지급완료 존재 시 400, 거절만 재신청 허용
+- **승인이 없다**(FLOW 3-4): 결석이 이미 확정된 신청은 받는 자리에서 바로
+  `지급완료` + VideoGrant(동보) 까지 간다. 지급 단위는 **영상 1개**라 그 주차
+  `공개` 영상마다 1행이다(2026-08-04). 신청이 먼저인 쪽(미리 신청 → 나중에
+  결석 확정)은 출결 트리거가 낸다 — grades.test_attendance_admin_api
+- 시간: 지급 시각은 apps.grades.attendance_admin.timezone.now 를 patch 해 고정
+  (지급 체인이 그 모듈의 grant_makeup 을 지난다 — Asia/Seoul)
 """
 import datetime
 import json
@@ -37,8 +38,8 @@ GRANT_DURATION = datetime.timedelta(days=7)
 
 
 def freeze_now(at=NOW):
-    """동보 뷰의 기준 시각 고정(뷰 모듈 경유 timezone.now 만 patch)."""
-    return mock.patch("apps.videos.views.timezone.now", return_value=at)
+    """지급 체인의 기준 시각 고정 — 신청은 attendance_admin.grant_makeup 을 지난다."""
+    return mock.patch("apps.grades.attendance_admin.timezone.now", return_value=at)
 
 
 def make_user(login_id, role, name="사용자"):
@@ -138,9 +139,6 @@ class MakeupFixtureMixin:
             requested_by=student.user,
         )
 
-    def approve_url(self, makeup_id):
-        return f"{ADMIN_LIST_URL}/{makeup_id}/approve"
-
     def reject_url(self, makeup_id):
         return f"{ADMIN_LIST_URL}/{makeup_id}/reject"
 
@@ -172,13 +170,6 @@ class MakeupAccessTests(MakeupFixtureMixin, TestCase):
         self.login(self.owner)
         self.assertEqual(self.client.get(ADMIN_LIST_URL).status_code, 200)
 
-    def test_approve_feature_gate(self):
-        makeup = self.make_request_row(self.att_s1_absent)
-        self.login(self.assistant)
-        self.assertEqual(self.post_json(self.approve_url(makeup.makeup_id), {}).status_code, 403)
-        self.login(self.s1.user)
-        self.assertEqual(self.post_json(self.approve_url(makeup.makeup_id), {}).status_code, 403)
-
 
 class StudentMakeupRequestTests(MakeupFixtureMixin, TestCase):
     """POST /api/student/makeup-request — 본인 결석만, 중복 400."""
@@ -187,23 +178,34 @@ class StudentMakeupRequestTests(MakeupFixtureMixin, TestCase):
         self.login(self.s1.user)
 
     def test_request_creates_makeup(self):
-        res = self.request_makeup(STUDENT_URL, self.att_s1_absent)
+        """결석이 이미 확정돼 있으므로 신청받는 자리에서 바로 지급된다(FLOW 3-4)."""
+        with freeze_now():
+            res = self.request_makeup(STUDENT_URL, self.att_s1_absent)
         self.assertEqual(res.status_code, 201)
         makeup = MakeupGrant.objects.get(attendance=self.att_s1_absent)
         self.assertEqual(makeup.student_id, self.s1.student_id)
         self.assertEqual(makeup.source, MakeupGrant.Source.STUDENT_REQUEST)
-        self.assertEqual(makeup.status, MakeupGrant.Status.REQUESTED)
+        self.assertEqual(makeup.status, MakeupGrant.Status.GRANTED)
+        self.assertEqual(makeup.granted_at, NOW)
         self.assertEqual(makeup.requested_by_id, self.s1.user.user_id)
         body = res.json()["makeup"]
         self.assertEqual(body["makeup_id"], makeup.makeup_id)
         self.assertEqual(body["attendance_id"], self.att_s1_absent.id)
         self.assertEqual(body["source"], "학생신청")
-        self.assertEqual(body["status"], "신청")
+        self.assertEqual(body["status"], "지급완료")
         self.assertEqual(body["session_date"], "2026-07-15")
         self.assertEqual(body["week_no"], 1)
         self.assertEqual(body["course_name"], "로직엔제")
-        # 신청만으로는 지급되지 않는다 — 승인 시점에 VideoGrant 생성
-        self.assertFalse(VideoGrant.objects.filter(makeup=makeup).exists())
+        grants = list(VideoGrant.objects.filter(makeup=makeup).order_by("grant_id"))
+        self.assertEqual(
+            [g.video_id for g in grants], [v.video_id for v in self.week1_videos]
+        )
+        for grant in grants:
+            self.assertEqual(grant.source, VideoGrant.Source.MAKEUP)
+            self.assertEqual(grant.granted_at, NOW)
+            self.assertEqual(grant.expires_at, NOW + GRANT_DURATION)
+            # 승인한 사람이 없다 — 조건이 차서 나간 것이라 처리자가 비어 있다
+            self.assertIsNone(grant.granted_by_id)
 
     def test_request_invalid_attendance_id_400(self):
         for body in ({}, {"attendance_id": "abc"}, {"attendance_id": True}, [1]):
@@ -226,11 +228,7 @@ class StudentMakeupRequestTests(MakeupFixtureMixin, TestCase):
         self.assertFalse(MakeupGrant.objects.exists())
 
     def test_request_duplicate_active_400(self):
-        for dup_status in (
-            MakeupGrant.Status.REQUESTED,
-            MakeupGrant.Status.APPROVED,
-            MakeupGrant.Status.GRANTED,
-        ):
+        for dup_status in (MakeupGrant.Status.REQUESTED, MakeupGrant.Status.GRANTED):
             MakeupGrant.objects.all().delete()
             self.make_request_row(self.att_s1_absent, status=dup_status)
             res = self.request_makeup(STUDENT_URL, self.att_s1_absent)
@@ -244,11 +242,18 @@ class StudentMakeupRequestTests(MakeupFixtureMixin, TestCase):
         self.assertEqual(MakeupGrant.objects.filter(attendance=self.att_s1_absent).count(), 2)
 
     def test_request_unmapped_week_still_allowed(self):
-        # 주차 미매핑은 관리자가 고칠 데이터 문제 — 신청은 받고 승인에서 차단
+        """주차 미매핑은 관리자가 고칠 데이터 문제 — 신청은 받고 영상만 0건이다.
+
+        지급 처리가 끝난 것과 볼 영상이 아직 없는 것은 별개 사실이라 뭉치지
+        않는다(공개 영상이 0개인 주차와 같은 취급).
+        """
         res = self.request_makeup(STUDENT_URL, self.att_s1_noweek)
         self.assertEqual(res.status_code, 201)
         body = res.json()["makeup"]
         self.assertIsNone(body["week_no"])
+        makeup = MakeupGrant.objects.get(attendance=self.att_s1_noweek)
+        self.assertEqual(makeup.status, MakeupGrant.Status.GRANTED)
+        self.assertFalse(VideoGrant.objects.filter(makeup=makeup).exists())
 
 
 class ParentMakeupRequestTests(MakeupFixtureMixin, TestCase):
@@ -263,7 +268,7 @@ class ParentMakeupRequestTests(MakeupFixtureMixin, TestCase):
         makeup = MakeupGrant.objects.get(attendance=self.att_s1_absent)
         self.assertEqual(makeup.student_id, self.s1.student_id)
         self.assertEqual(makeup.source, MakeupGrant.Source.PARENT_REQUEST)
-        self.assertEqual(makeup.status, MakeupGrant.Status.REQUESTED)
+        self.assertEqual(makeup.status, MakeupGrant.Status.GRANTED)
         self.assertEqual(makeup.requested_by_id, self.p1.user.user_id)
         self.assertEqual(res.json()["makeup"]["source"], "학부모신청")
 
@@ -323,134 +328,143 @@ class AdminMakeupListTests(MakeupFixtureMixin, TestCase):
         self.assertEqual(self.client.get(ADMIN_LIST_URL, {"status": "이상한값"}).status_code, 400)
 
 
-class AdminMakeupApproveRejectTests(MakeupFixtureMixin, TestCase):
-    """approve = 지급완료 + VideoGrant(동보) 체인 / reject = 거절 전환."""
+class MakeupGrantOnRequestTests(MakeupFixtureMixin, TestCase):
+    """신청 = 지급 (FLOW 3-4) — 승인 단계는 없다. reject 만 관리자에게 남는다."""
 
     def setUp(self):
-        self.login(self.admin)
-        self.makeup = self.make_request_row(self.att_s1_absent)
+        self.login(self.s1.user)
 
-    def approve(self, makeup_id, at=NOW):
+    def request_now(self, attendance, at=NOW):
         with freeze_now(at):
-            return self.post_json(self.approve_url(makeup_id), {})
+            return self.request_makeup(STUDENT_URL, attendance)
 
-    def test_approve_grants_video(self):
-        res = self.approve(self.makeup.makeup_id)
-        self.assertEqual(res.status_code, 200)
-        self.makeup.refresh_from_db()
-        self.assertEqual(self.makeup.status, MakeupGrant.Status.GRANTED)
-        self.assertEqual(self.makeup.granted_at, NOW)
-        grants = list(VideoGrant.objects.filter(makeup=self.makeup).order_by("grant_id"))
-        # 지급 단위가 영상 1개다 — 결석 회차 주차의 `공개` 영상마다 1행(2026-08-04)
-        self.assertEqual(len(grants), len(self.week1_videos))
-        self.assertEqual(
-            [g.video_id for g in grants], [v.video_id for v in self.week1_videos]
-        )
-        for grant in grants:
-            self.assertEqual(grant.student_id, self.s1.student_id)
-            self.assertEqual(grant.source, VideoGrant.Source.MAKEUP)
-            self.assertEqual(grant.granted_by_id, self.admin.user_id)
-            self.assertEqual(grant.granted_at, NOW)
-            self.assertEqual(grant.expires_at, NOW + GRANT_DURATION)
-        body = res.json()
-        self.assertEqual(body["makeup"]["status"], "지급완료")
-        self.assertEqual(
-            [row["grant_id"] for row in body["video_grants"]], [g.grant_id for g in grants]
-        )
-        self.assertEqual(
-            [row["video_id"] for row in body["video_grants"]],
-            [v.video_id for v in self.week1_videos],
-        )
-
-    def test_approve_skips_unpublished_video(self):
+    def test_request_skips_unpublished_video(self):
         """`공개` 가 아닌 영상에는 권한이 생기지 않는다 — 지급 시점 계약(VideoGrant).
 
         아직 못 볼 영상에 권한을 미리 깔면 만료만 조용히 흘러간다.
         """
-        self.approve(self.makeup.makeup_id)
+        self.request_now(self.att_s1_absent)
         granted_video_ids = set(
-            VideoGrant.objects.filter(makeup=self.makeup).values_list("video_id", flat=True)
+            VideoGrant.objects.filter(makeup__attendance=self.att_s1_absent).values_list(
+                "video_id", flat=True
+            )
         )
         self.assertNotIn(self.w1_video_preparing.video_id, granted_video_ids)
 
-    def test_approve_without_published_video_still_completes(self):
-        """공개 영상이 0개인 주차 — 권한은 0건이어도 신청은 `지급완료` 로 끝난다.
-
-        지급 처리가 끝난 것과 볼 영상이 아직 없는 것은 별개 사실이라 뭉치지 않는다.
-        """
-        attendance = Attendance.objects.create(  # 2주차 = 영상 없는 주차
-            session=self.session_w2, student=self.s2, status=Attendance.Status.ABSENT
+    def test_request_without_published_video_still_completes(self):
+        """공개 영상이 0개인 주차 — 권한은 0건이어도 신청은 `지급완료` 로 끝난다."""
+        session = ClassSession.objects.create(  # 2주차 = 영상 없는 주차
+            session_date=datetime.date(2026, 7, 23), session_no=4, course_week=self.week2
         )
-        makeup = self.make_request_row(attendance)
-        res = self.approve(makeup.makeup_id)
-        self.assertEqual(res.status_code, 200)
-        makeup.refresh_from_db()
+        attendance = Attendance.objects.create(
+            session=session, student=self.s1, status=Attendance.Status.ABSENT
+        )
+        res = self.request_now(attendance)
+        self.assertEqual(res.status_code, 201)
+        makeup = MakeupGrant.objects.get(attendance=attendance)
         self.assertEqual(makeup.status, MakeupGrant.Status.GRANTED)
         self.assertEqual(makeup.granted_at, NOW)
         self.assertFalse(VideoGrant.objects.filter(makeup=makeup).exists())
-        self.assertEqual(res.json()["video_grants"], [])
 
-    def test_approve_promotes_attendance_to_makeup_absence(self):
-        """승인도 출결을 `결석(동보)` 로 올린다 — 입구 셋의 끝 상태 단일화.
+    def test_request_promotes_attendance_to_makeup_absence(self):
+        """출결도 `결석(동보)` 로 올라간다 — 입구 셋의 끝 상태 단일화.
 
         지급은 났는데 출결은 `결석` 이면 출결 SSOT 만 보고는 이 학생이 동보인지
         알 수 없고, 담임이 그 결석을 다시 상담 대기열에서 만나게 된다.
         """
-        self.approve(self.makeup.makeup_id)
+        self.request_now(self.att_s1_absent)
         self.att_s1_absent.refresh_from_db()
         self.assertEqual(self.att_s1_absent.status, Attendance.Status.ABSENT_MAKEUP)
         self.assertEqual(self.att_s1_absent.updated_at, NOW)
+        # 출결 입력자를 학생 계정으로 덮어쓰지 않는다 — 담임이 찍은 것이 아니다
+        self.assertIsNone(self.att_s1_absent.marked_by_id)
 
-    def test_approve_removes_untouched_counseling_row(self):
+    def test_request_removes_untouched_counseling_row(self):
         row = AbsenceCounseling.objects.create(
             student=self.s1,
             attendance=self.att_s1_absent,
             target=AbsenceCounseling.Target.PARENT,
             status=AbsenceCounseling.Status.PENDING,
         )
-        self.approve(self.makeup.makeup_id)
+        self.request_now(self.att_s1_absent)
         self.assertFalse(AbsenceCounseling.objects.filter(pk=row.counsel_id).exists())
 
-    def test_approve_unknown_404(self):
-        self.assertEqual(self.approve(999999).status_code, 404)
-
-    def test_approve_twice_400(self):
-        self.approve(self.makeup.makeup_id)
-        res = self.approve(self.makeup.makeup_id)
+    def test_request_twice_400_and_grants_once(self):
+        self.request_now(self.att_s1_absent)
+        res = self.request_now(self.att_s1_absent, at=NOW + datetime.timedelta(hours=2))
         self.assertEqual(res.status_code, 400)
-        # 재승인이 튕겼으므로 첫 승인분(영상마다 1행)만 남는다
-        self.assertEqual(
-            VideoGrant.objects.filter(makeup=self.makeup).count(), len(self.week1_videos)
-        )
+        self.assertEqual(MakeupGrant.objects.filter(attendance=self.att_s1_absent).count(), 1)
+        grants = VideoGrant.objects.filter(makeup__attendance=self.att_s1_absent)
+        self.assertEqual(grants.count(), len(self.week1_videos))
+        # 두 번째가 튕겼으므로 만료가 뒤로 밀리지 않는다
+        self.assertEqual({g.expires_at for g in grants}, {NOW + GRANT_DURATION})
 
-    def test_approve_rejected_400(self):
-        self.makeup.status = MakeupGrant.Status.REJECTED
-        self.makeup.save(update_fields=["status"])
-        self.assertEqual(self.approve(self.makeup.makeup_id).status_code, 400)
-
-    def test_approve_when_attendance_corrected_400(self):
-        # 정정으로 결석이 아니게 된 경우 — 출석자동 지급과 이중 지급 차단
-        self.att_s1_absent.status = Attendance.Status.PRESENT
-        self.att_s1_absent.save(update_fields=["status"])
-        self.assertEqual(self.approve(self.makeup.makeup_id).status_code, 400)
-        self.assertFalse(VideoGrant.objects.filter(makeup=self.makeup).exists())
-
-    def test_approve_without_attendance_400(self):
-        self.makeup.attendance = None
-        self.makeup.save(update_fields=["attendance"])
-        self.assertEqual(self.approve(self.makeup.makeup_id).status_code, 400)
-
-    def test_approve_unmapped_week_400(self):
-        makeup = self.make_request_row(self.att_s1_noweek)
-        self.assertEqual(self.approve(makeup.makeup_id).status_code, 400)
-
-    def test_approve_when_admin_check_already_granted_400(self):
+    def test_request_when_admin_check_already_granted_400(self):
         # 같은 결석에 관리자체크 지급이 선행된 경우 — 이중 지급 차단
         self.make_request_row(
             self.att_s1_absent, source=MakeupGrant.Source.ADMIN_CHECK,
             status=MakeupGrant.Status.GRANTED,
         )
-        self.assertEqual(self.approve(self.makeup.makeup_id).status_code, 400)
+        self.assertEqual(self.request_now(self.att_s1_absent).status_code, 400)
+
+    def test_already_held_video_is_not_granted_again(self):
+        """이미 가진 영상은 건너뛰고 **만료를 뒤로 밀지 않는다** (FLOW 3-5).
+
+        출석으로 받은 영상을 동보로 또 받게 되는 자리다 — 같은 주차 회차가
+        둘이면(보강 회차 등) 한쪽에서 이미 나간 권한이 살아 있다.
+        """
+        earlier = NOW - datetime.timedelta(days=2)
+        held = VideoGrant.objects.create(
+            student=self.s1,
+            video=self.w1_video1,
+            source=VideoGrant.Source.ATTENDANCE_AUTO,
+            granted_at=earlier,
+            expires_at=earlier + GRANT_DURATION,
+        )
+        self.request_now(self.att_s1_absent)
+        makeup = MakeupGrant.objects.get(attendance=self.att_s1_absent)
+        # 아직 없던 2강만 새로 나간다
+        self.assertEqual(
+            list(VideoGrant.objects.filter(makeup=makeup).values_list("video_id", flat=True)),
+            [self.w1_video2.video_id],
+        )
+        held.refresh_from_db()
+        self.assertEqual(held.expires_at, earlier + GRANT_DURATION)
+        self.assertEqual(
+            VideoGrant.objects.filter(student=self.s1, video=self.w1_video1).count(), 1
+        )
+
+    def test_revoked_grant_does_not_block_new_one(self):
+        """회수된 권한은 "가진 것"이 아니다 — 지금 볼 수 없으므로 다시 나간다."""
+        VideoGrant.objects.create(
+            student=self.s1,
+            video=self.w1_video1,
+            source=VideoGrant.Source.ATTENDANCE_AUTO,
+            granted_at=NOW - datetime.timedelta(days=2),
+            expires_at=NOW + GRANT_DURATION,
+            revoked_at=NOW - datetime.timedelta(days=1),
+        )
+        self.request_now(self.att_s1_absent)
+        makeup = MakeupGrant.objects.get(attendance=self.att_s1_absent)
+        self.assertEqual(
+            set(VideoGrant.objects.filter(makeup=makeup).values_list("video_id", flat=True)),
+            {v.video_id for v in self.week1_videos},
+        )
+
+    def test_approve_endpoint_is_gone(self):
+        """구 승인 엔드포인트는 존재하지 않는다(FLOW 3-4)."""
+        self.login(self.admin)
+        makeup = self.make_request_row(self.att_s2_absent)
+        res = self.post_json(f"{ADMIN_LIST_URL}/{makeup.makeup_id}/approve", {})
+        self.assertEqual(res.status_code, 404)
+
+
+class AdminMakeupRejectTests(MakeupFixtureMixin, TestCase):
+    """reject = 거절 전환 — 결석이 확정되지 않아 `신청` 으로 남은 행을 닫는다."""
+
+    def setUp(self):
+        self.login(self.admin)
+        self.makeup = self.make_request_row(self.att_s1_absent)
 
     def test_reject_transitions_and_blocks_reprocess(self):
         res = self.post_json(self.reject_url(self.makeup.makeup_id), {})
@@ -462,7 +476,6 @@ class AdminMakeupApproveRejectTests(MakeupFixtureMixin, TestCase):
         # 거절된 신청은 재처리 불가
         rerejected = self.post_json(self.reject_url(self.makeup.makeup_id), {})
         self.assertEqual(rerejected.status_code, 400)
-        self.assertEqual(self.approve(self.makeup.makeup_id).status_code, 400)
 
     def test_reject_unknown_404(self):
         self.assertEqual(self.post_json(self.reject_url(999999), {}).status_code, 404)

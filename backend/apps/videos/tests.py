@@ -258,9 +258,19 @@ class MakeupGrantTests(TestCase):
         )
 
     def test_status_value_set(self):
-        self.assertEqual(
-            set(MakeupGrant.Status.values), {"신청", "승인", "지급완료", "거절"}
-        )
+        # `승인` 은 걷어냈다(FLOW 3-4) — 지급 조건은 신청 + 결석 확인 둘뿐이다.
+        self.assertEqual(set(MakeupGrant.Status.values), {"신청", "지급완료", "거절"})
+
+    def test_clinic_keeps_its_own_approval(self):
+        """동보에서 승인을 뺀 것이 클리닉 승인까지 죽이지 않는다 (FLOW 3-7).
+
+        동보는 자동, 클리닉은 승인이다 — 자리와 시간을 배정하는 일이라 조교가
+        본다. 값집합이 아예 다르므로 한쪽을 지워도 다른 쪽은 그대로다.
+        """
+        from apps.clinic.models import ClinicRequest
+
+        self.assertNotIn("승인", MakeupGrant.Status.values)
+        self.assertIn("승인배정", ClinicRequest.Status.values)
 
     def test_no_tuition_billable_field(self):
         # 동보 무과금(2026-07-15 확정, 8-8) — is_tuition_billable 은 만들지 않는다
