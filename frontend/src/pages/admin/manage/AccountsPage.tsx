@@ -15,6 +15,10 @@
  *   것이라, 행마다 받지 않고 명단 전체에 하나를 건다. 안 고르면 발급하지 않는다.
  * - 이미 계정이 있는 학생은 그 반 수강만 추가되고 아이디·비밀번호가 다시 나오지
  *   않는다(FLOW 2-4) — 결과 표에 `기존` 으로 뜬다.
+ * - **번호가 하나만 맞는 행은 `확인필요` 로 세워 둔다**(FLOW 2-3). 그 행은 계정도
+ *   수강도 만들어지지 않았고, 결과 표에 겹치는 학생의 값이 실려 온다. 조교가
+ *   `같은 사람` 이나 `새로 발급` 을 고르면 그 행만 답을 달아 다시 보낸다 —
+ *   대기 상태를 서버에 남기지 않으므로 반쪽 계정이 생길 자리가 없다.
  * - **원번 입력칸은 없다**(2026-07-29 개정). 원번은 이름·휴대폰에서 서버가
  *   계산하는 값이라 입력하면 그 행이 거절된다 — 대신 발급 결과 표에 실려 온다.
  *   학년은 원번의 재료가 아니므로(재개정) 비어 있어도 행이 통과한다.
@@ -61,6 +65,12 @@ interface EntryRow {
   school: string;
 }
 
+/** 조교의 답이 붙을 수 있는 발급 행 — 서버는 둘 중 하나만 본다(FLOW 2-3). */
+type BulkRow = Omit<EntryRow, "key"> & {
+  same_as_student_id?: number;
+  force_new?: boolean;
+};
+
 let nextKey = 1;
 const blankRow = (): EntryRow => ({
   key: nextKey++,
@@ -102,6 +112,27 @@ function parsePasted(text: string): EntryRow[] {
     });
 }
 
+const STATUS_TONE: Record<BulkResultRow["status"], "success" | "neutral" | "warning" | "danger"> = {
+  생성: "success",
+  기존: "neutral",
+  확인필요: "warning",
+  실패: "danger",
+};
+
+/** 결과 표 머리의 집계 — 답을 단 행이 바뀌므로 서버 summary 가 아니라 행에서 센다. */
+function countRows(rows: BulkResultRow[]): string {
+  const count = (fn: (row: BulkResultRow) => boolean) => rows.filter(fn).length;
+  const parts = [
+    `생성 ${count((r) => r.status === "생성")}명`,
+    `기존 ${count((r) => r.status === "기존")}명`,
+    `확인필요 ${count((r) => r.status === "확인필요")}명`,
+    `실패 ${count((r) => r.status === "실패")}명`,
+    `학부모 신규 ${count((r) => Boolean(r.parent?.created))}명`,
+    `기존 연결 ${count((r) => Boolean(r.parent) && !r.parent?.created)}명`,
+  ];
+  return parts.join(" · ");
+}
+
 export default function AccountsPage() {
   const { hasFeature } = useMe();
   const toast = useToast();
@@ -110,6 +141,9 @@ export default function AccountsPage() {
   const [classId, setClassId] = useState("");
   const [pasted, setPasted] = useState("");
   const [result, setResult] = useState<BulkResult | null>(null);
+  // 확인필요 행에 답을 달아 다시 보내려면 그 행이 무엇이었는지가 있어야 한다.
+  const [submitted, setSubmitted] = useState<BulkRow[]>([]);
+  const [answering, setAnswering] = useState<number | null>(null);
   // 발급에 성공할 때마다 올린다 — 아래 전환 대기 명부가 새 학생을 바로 집어 온다.
   const [issuedCount, setIssuedCount] = useState(0);
 
@@ -118,7 +152,7 @@ export default function AccountsPage() {
     return data.courses.flatMap((course) => course.classes);
   }, []);
 
-  const issue = useApiAction(async (body: { class_id: number; rows: Omit<EntryRow, "key">[] }) => {
+  const issue = useApiAction(async (body: { class_id: number; rows: BulkRow[] }) => {
     const { data } = await http.post<BulkResult>("/admin/accounts/bulk", body);
     return data;
   });
@@ -130,10 +164,11 @@ export default function AccountsPage() {
 
   const submit = async () => {
     if (filled.length === 0 || !classId) return;
-    const payload = filled.map(({ key: _key, ...rest }) => rest);
+    const payload: BulkRow[] = filled.map(({ key: _key, ...rest }) => rest);
     const data = await issue.run({ class_id: Number(classId), rows: payload });
     if (!data) return;
     setResult(data);
+    setSubmitted(payload);
     if (data.summary.created > 0) setIssuedCount((prev) => prev + 1);
     // 성공한 행은 입력 격자에서 비운다 — 두 번 발급하는 사고를 막는다.
     const failedIndexes = new Set(
@@ -141,6 +176,28 @@ export default function AccountsPage() {
     );
     const remaining = filled.filter((_, index) => failedIndexes.has(index));
     setRows(remaining.length > 0 ? remaining : [blankRow(), blankRow(), blankRow()]);
+  };
+
+  /** 확인필요 행의 답 — 그 행 하나만 다시 보내고 결과 표의 같은 자리를 갈아 끼운다. */
+  const answer = async (row: BulkResultRow, choice: Pick<BulkRow, "same_as_student_id" | "force_new">) => {
+    const original = submitted[row.index];
+    if (!original || !classId) return;
+    setAnswering(row.index);
+    const data = await issue.run({
+      class_id: Number(classId),
+      rows: [{ ...original, ...choice }],
+    });
+    setAnswering(null);
+    if (!data) return;
+    const answered = { ...data.results[0], index: row.index };
+    setResult((prev) =>
+      prev
+        ? { ...prev, results: prev.results.map((r) => (r.index === row.index ? answered : r)) }
+        : prev,
+    );
+    if (answered.status === "생성" || answered.status === "기존") {
+      setIssuedCount((prev) => prev + 1);
+    }
   };
 
   const copySecrets = async () => {
@@ -286,7 +343,7 @@ export default function AccountsPage() {
       {result && (
         <Card
           title="발급 결과"
-          aside={`생성 ${result.summary.created}명 · 기존 ${result.summary.existing}명 · 실패 ${result.summary.failed}명 · 학부모 신규 ${result.summary.parents_created}명 · 기존 연결 ${result.summary.parents_linked}명`}
+          aside={countRows(result.results)}
           actions={
             <>
               <Button onClick={() => void copySecrets()}>아이디·비밀번호 복사</Button>
@@ -318,15 +375,8 @@ export default function AccountsPage() {
               {
                 key: "status",
                 header: "결과",
-                width: "5rem",
-                cell: (row) =>
-                  row.status === "실패" ? (
-                    <Badge tone="danger">실패</Badge>
-                  ) : row.status === "기존" ? (
-                    <Badge tone="neutral">기존</Badge>
-                  ) : (
-                    <Badge tone="success">생성</Badge>
-                  ),
+                width: "6rem",
+                cell: (row) => <Badge tone={STATUS_TONE[row.status]}>{row.status}</Badge>,
               },
               {
                 key: "matching_key",
@@ -371,6 +421,44 @@ export default function AccountsPage() {
                     </>
                   );
                 },
+              },
+              {
+                key: "matched",
+                header: "겹치는 학생",
+                cell: (row) =>
+                  row.matched?.length ? (
+                    <div className="ui-stack ui-stack--sm">
+                      {row.matched.map((match) => (
+                        <div className="ui-row" key={match.student_id}>
+                          <span>{match.name}</span>
+                          <span className="num">{match.login_id}</span>
+                          <span className="num">{match.phone || "—"}</span>
+                          <span className="num">{match.parent_phone || "—"}</span>
+                          <Button
+                            size="sm"
+                            loading={answering === row.index}
+                            onClick={() =>
+                              void answer(row, { same_as_student_id: match.student_id })
+                            }
+                          >
+                            같은 사람
+                          </Button>
+                        </div>
+                      ))}
+                      <div className="ui-row">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          loading={answering === row.index}
+                          onClick={() => void answer(row, { force_new: true })}
+                        >
+                          새로 발급
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    ""
+                  ),
               },
               {
                 key: "error",

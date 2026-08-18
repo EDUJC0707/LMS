@@ -12,6 +12,10 @@
 - 원번(2026-07-29 재개정): 입력이 아니라 **(이름, 휴대폰) 파생값** — 손입력
   원번은 거절, **학년은 원번에 관여하지 않는다**(없거나 못 읽어도 발급된다),
   동명이인+같은 뒷4자리 두 명은 둘 다 생성되고 **원번이 같다**(단독 UNIQUE 아님)
+- 전화번호 정규화(FLOW 2-2): 저장·판정이 정규화된 값을 본다 — 엑셀이 떨어뜨린
+  앞자리 0 이 복원되므로 `10…` 과 `010…` 은 같은 학생이다
+- 판정 3갈래(FLOW 2-3): 셋 다 일치 → 기존 / 번호 하나만 일치 → **확인필요**
+  (아무것도 만들지 않는다) / 하나도 안 맞음 → 새 학생
 - 등록 전환: 예비등록→등록 + registered_at (그 외 상태 400)
 """
 import datetime
@@ -132,6 +136,8 @@ class BulkIssueTests(ProvisioningFixtureMixin, TestCase):
         )
 
     def test_duplicate_parent_phone_links_to_existing_parent(self):
+        # 학부모 번호만 겹치는 둘째는 확인필요다(FLOW 2-3) — 조교가 형제라고
+        # 답한 뒤(force_new) 기존 학부모에 붙는지를 본다.
         rows = [
             {
                 "name": "김첫째", "phone": "01011110001",
@@ -140,6 +146,7 @@ class BulkIssueTests(ProvisioningFixtureMixin, TestCase):
             {
                 "name": "김둘째", "phone": "01011110002",
                 "parent_phone": "01099998888", "grade": "고1",
+                "force_new": True,
             },
         ]
         res = self.post_bulk(rows)
@@ -255,7 +262,7 @@ class BulkIssueTests(ProvisioningFixtureMixin, TestCase):
         self.assertFalse(User.objects.filter(name="손입력").exists())
         self.assertEqual(body["results"][1]["status"], "생성")
         self.assertEqual(body["summary"], {
-            "created": 1, "existing": 0, "failed": 1,
+            "created": 1, "existing": 0, "needs_review": 0, "failed": 1,
             "parents_created": 0, "parents_linked": 0,
         })
 
@@ -393,11 +400,153 @@ class BulkEnrollmentTests(ProvisioningFixtureMixin, TestCase):
         self.assertEqual(again["results"][0]["status"], "기존")
         self.assertEqual(again["results"][0]["student_id"], student_id)
 
-    def test_sibling_sharing_a_parent_phone_is_a_new_student(self):
+    def test_sibling_sharing_a_parent_phone_is_asked_about(self):
+        """형제는 묻는다(FLOW 2-3) — 형제일 수도, 남의 번호를 잘못 적었을 수도."""
         self.post_bulk([{"name": "한지우", "parent_phone": "01044440002"}])
         res = self.post_bulk([{"name": "한지호", "parent_phone": "01044440002"}]).json()
+        self.assertEqual(res["results"][0]["status"], "확인필요")
+        self.assertEqual(Student.objects.filter(user__name__startswith="한지").count(), 1)
+
+    def test_sibling_confirmed_as_new_joins_the_same_parent(self):
+        """조교가 형제라고 답하면 **먼저 만들어진 학부모 계정에 붙는다**(FLOW 2-4)."""
+        self.post_bulk([{"name": "한지우", "parent_phone": "01044440003"}])
+        res = self.post_bulk(
+            [{"name": "한지호", "parent_phone": "01044440003", "force_new": True}]
+        ).json()
         self.assertEqual(res["results"][0]["status"], "생성")
+        self.assertFalse(res["results"][0]["parent"]["created"])
+        self.assertEqual(Parent.objects.filter(phone="01044440003").count(), 1)
         self.assertEqual(Student.objects.filter(user__name__startswith="한지").count(), 2)
+
+
+class BulkPhoneNormalizationTests(ProvisioningFixtureMixin, TestCase):
+    """저장도 판정도 정규화된 번호를 본다 — FLOW 2-2."""
+
+    def test_stored_phone_is_normalized(self):
+        self.post_bulk(
+            [{"name": "정규화", "phone": "010-1111-4821", "parent_phone": "+82 10-9999-0000"}]
+        )
+        student = Student.objects.get(user__login_id="정규화4821")
+        self.assertEqual(student.user.phone, "01011114821")
+        self.assertEqual(Parent.objects.get().phone, "01099990000")
+
+    def test_excel_dropped_leading_zero_is_the_same_student(self):
+        """엑셀이 숫자로 읽어 `010…` 이 `10…` 으로 온 파일 — 둘로 갈리면 안 된다."""
+        first = self.post_bulk([{"name": "엑셀생", "phone": "01011114822"}]).json()
+        again = self.post_bulk([{"name": "엑셀생", "phone": "1011114822"}]).json()
+        self.assertEqual(again["results"][0]["status"], "기존")
+        self.assertEqual(again["results"][0]["student_id"], first["results"][0]["student_id"])
+        self.assertEqual(Student.objects.filter(user__name="엑셀생").count(), 1)
+
+
+class BulkMatchVerdictTests(ProvisioningFixtureMixin, TestCase):
+    """번호 3갈래 판정 — FLOW 2-3."""
+
+    def seed(self):
+        return self.post_bulk(
+            [{"name": "원학생", "phone": "01012340001", "parent_phone": "01098760001"}]
+        ).json()["results"][0]
+
+    def test_all_three_match_passes(self):
+        first = self.seed()
+        again = self.post_bulk(
+            [{"name": "원학생", "phone": "01012340001", "parent_phone": "01098760001"}]
+        ).json()
+        self.assertEqual(again["results"][0]["status"], "기존")
+        self.assertEqual(again["results"][0]["student_id"], first["student_id"])
+        self.assertEqual(again["summary"]["existing"], 1)
+
+    def test_one_number_matching_asks(self):
+        self.seed()
+        # 학생번호 오타 — 학부모번호만 맞는다
+        body = self.post_bulk(
+            [{"name": "원학생", "phone": "01012340009", "parent_phone": "01098760001"}]
+        ).json()
+        row = body["results"][0]
+        self.assertEqual(row["status"], "확인필요")
+        self.assertEqual(body["summary"]["needs_review"], 1)
+        # 조교가 오타인지 형제인지 가릴 값이 실려 온다
+        self.assertEqual(
+            [(m["name"], m["login_id"], m["phone"], m["parent_phone"]) for m in row["matched"]],
+            [("원학생", "원학생0001", "01012340001", "01098760001")],
+        )
+
+    def test_both_numbers_match_but_name_differs_asks(self):
+        """이름 오타 — 번호가 둘 다 맞아도 이름이 다르면 묻는다(FLOW 2-3 표)."""
+        self.seed()
+        body = self.post_bulk(
+            [{"name": "원핵생", "phone": "01012340001", "parent_phone": "01098760001"}]
+        ).json()
+        self.assertEqual(body["results"][0]["status"], "확인필요")
+
+    def test_no_number_matches_is_a_new_student(self):
+        """동명이인 — 번호가 하나도 안 맞으면 묻지 않는다."""
+        self.seed()
+        body = self.post_bulk(
+            [{"name": "원학생", "phone": "01055550001", "parent_phone": "01055550002"}]
+        ).json()
+        self.assertEqual(body["results"][0]["status"], "생성")
+        self.assertEqual(Student.objects.filter(user__name="원학생").count(), 2)
+
+    def test_needs_review_row_creates_nothing(self):
+        """확인필요는 **PK 가 할당되지 않는다**(FLOW 2-3) — 반쪽 계정을 남기지 않는다."""
+        self.seed()
+        before = (User.objects.count(), Student.objects.count(), CourseEnrollment.objects.count())
+        body = self.post_bulk(
+            [{"name": "원학생", "phone": "01012340009", "parent_phone": "01098760001"}]
+        ).json()
+        row = body["results"][0]
+        self.assertEqual(row["status"], "확인필요")
+        self.assertNotIn("login_id", row)
+        self.assertNotIn("initial_password", row)
+        self.assertNotIn("student_id", row)
+        self.assertEqual(
+            (User.objects.count(), Student.objects.count(), CourseEnrollment.objects.count()),
+            before,
+        )
+
+    def test_confirming_same_person_adds_the_enrollment_only(self):
+        first = self.seed()
+        other = Class.objects.create(
+            course=self.course, name="금 6.5 대치러셀", start_date=datetime.date(2026, 9, 5)
+        )
+        before = User.objects.count()
+        body = self.post_bulk(
+            [{
+                "name": "원학생", "phone": "01012340009",
+                "parent_phone": "01098760001",
+                "same_as_student_id": first["student_id"],
+            }],
+            class_id=other.class_id,
+        ).json()
+        row = body["results"][0]
+        self.assertEqual(row["status"], "기존")
+        self.assertEqual(row["student_id"], first["student_id"])
+        self.assertEqual(User.objects.count(), before)
+        self.assertEqual(
+            CourseEnrollment.objects.filter(student_id=first["student_id"]).count(), 2
+        )
+
+    def test_confirming_a_missing_student_fails_that_row(self):
+        self.seed()
+        body = self.post_bulk(
+            [{
+                "name": "원학생", "phone": "01012340009",
+                "parent_phone": "01098760001", "same_as_student_id": 999999,
+            }]
+        ).json()
+        self.assertEqual(body["results"][0]["status"], "실패")
+
+    def test_forcing_new_creates_a_separate_student(self):
+        self.seed()
+        body = self.post_bulk(
+            [{
+                "name": "원학생", "phone": "01012340009",
+                "parent_phone": "01098760001", "force_new": True,
+            }]
+        ).json()
+        self.assertEqual(body["results"][0]["status"], "생성")
+        self.assertEqual(Student.objects.filter(user__name="원학생").count(), 2)
 
 
 class RegisterTests(ProvisioningFixtureMixin, TestCase):

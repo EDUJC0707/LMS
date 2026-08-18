@@ -68,16 +68,27 @@ export interface BulkParentBlock {
   initial_password?: string | null;
 }
 
+/** 확인필요 행에 걸린 학생 — 조교가 오타인지 형제인지 가릴 값들(FLOW 2-3). */
+export interface BulkMatchedStudent {
+  student_id: number;
+  name: string;
+  login_id: string;
+  phone: string;
+  parent_phone: string;
+}
+
 export interface BulkResultRow {
   index: number;
   name: string | null;
-  /** 기존 = 이미 계정이 있어 수강만 추가된 행(FLOW 2-4 — 안내가 안 나간다). */
-  status: "생성" | "기존" | "실패";
+  /** 기존 = 이미 계정이 있어 수강만 추가된 행(FLOW 2-4 — 안내가 안 나간다).
+   *  확인필요 = 번호가 하나만 맞아 아무것도 만들지 않은 행(FLOW 2-3). */
+  status: "생성" | "기존" | "확인필요" | "실패";
   login_id?: string;
   initial_password?: string;
   student_id?: number;
   /** 서버가 이름·휴대폰에서 만든 원번(입력값이 아니다). */
   matching_key?: string;
+  matched?: BulkMatchedStudent[];
   parent?: BulkParentBlock | null;
   error?: string;
 }
@@ -87,6 +98,7 @@ export interface BulkResult {
   summary: {
     created: number;
     existing: number;
+    needs_review: number;
     failed: number;
     parents_created: number;
     parents_linked: number;
