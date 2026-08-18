@@ -1,7 +1,8 @@
-"""curriculum 뷰 — 캘린더 홈 API 2차 슬라이스 (PRD 3.2.0·3.4·§4).
+"""curriculum 뷰 — 캘린더 홈(2차) + 반 개설(FLOW 1-2·1-3).
 
 - GET /api/student/home?month=YYYY-MM  로그인 학생 본인 홈 (IsStudent)
 - GET /api/parent/home?student_id=&month=  자녀 홈 조회 (IsParent, 읽기 전용)
+- GET·POST /api/admin/classes          반 목록 · 커리와 반 만들기 (계정관리)
 
 페이로드 조립은 home.build_home_payload 공용 서비스가 담당한다 — 뷰는
 역할 게이트·입력 검증·대상 학생 결정(학부모는 자녀 소유 검증)만 한다.
@@ -12,9 +13,11 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.features import FeatureKey
 from apps.accounts.models import Parent, ParentStudent, Student
-from apps.accounts.permissions import IsParent, IsStudent
+from apps.accounts.permissions import FeatureRequired, IsParent, IsStudent
 
+from . import class_admin
 from .home import build_home_payload
 
 # 404 단일 메시지 — 타인 자녀·미존재를 구분해 주지 않는다(존재 비노출,
@@ -104,3 +107,41 @@ class ParentHomeView(APIView):
             if link.student_id == student_id:
                 return link.student
         return None
+
+
+# --- 관리자: 커리 + 반 개설 (FLOW 1-2·1-3) --------------------------------
+
+
+class AdminClassListView(APIView):
+    """GET·POST /api/admin/classes — 반 목록 · 커리와 반 만들기 (계정관리).
+
+    **커리와 반은 한 화면에서 만든다**(FLOW 1-2). 그래서 POST 하나가 둘 다
+    받는다 — `course_id` 를 주면 이미 있는 커리에 반을 더하고, 안 주면
+    `course_name`·`total_weeks` 로 커리를 새로 만든다.
+
+    만들면 **커리 총주차만큼 회차가 개강일부터 주 단위로 채워진다**(FLOW 1-3).
+    반의 주차는 별도 표가 아니라 `grades.ClassSession` 이고(주 1회라 주차 =
+    회차 — FLOW 1-1), 커리 쪽 주차(`CourseWeek`)는 내용·영상이 붙는 자리라
+    없으면 여기서 만들어 회차에 물린다.
+
+    주차 날짜 수정·반 수정·삭제는 여기 없다 — 생성과 조회까지다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.ACCOUNT_ADMIN)]
+
+    def get(self, request):
+        return Response({"courses": class_admin.list_courses()})
+
+    def post(self, request):
+        body = request.data if isinstance(request.data, dict) else {}
+        try:
+            klass = class_admin.open_class(
+                course_id=body.get("course_id"),
+                course_name=body.get("course_name"),
+                total_weeks=body.get("total_weeks"),
+                name=body.get("name"),
+                start_date=body.get("start_date"),
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(class_admin.class_block(klass), status=status.HTTP_201_CREATED)

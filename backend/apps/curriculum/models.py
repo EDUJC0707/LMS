@@ -23,6 +23,9 @@ class Course(models.Model):
 
     course_id = models.BigAutoField(primary_key=True)
     name = models.CharField("강좌명", max_length=100)
+    # 총주차는 커리의 것이다(FLOW 1-2). 반을 만들 때 이만큼 회차를 채우고
+    # (FLOW 1-3), 그 뒤 반에서 주차를 더하고 지워도 이 값은 안 바뀐다(1-5).
+    total_weeks = models.PositiveSmallIntegerField("총주차", default=0)
     target_grade = models.SmallIntegerField("대상 학년", null=True, blank=True)
     is_active = models.BooleanField("활성", default=True)
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)

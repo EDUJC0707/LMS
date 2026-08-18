@@ -42,6 +42,8 @@ api_urlpatterns = [
     path("", include("apps.accounts.auth_urls")),
     # 캘린더 홈(/api/student/home·/api/parent/home) — 역할 경로 직결(PRD 3.2.0)
     path("", include("apps.curriculum.home_urls")),
+    # 반 개설(/api/admin/classes) — 역할 경로 직결(FLOW 1-2·1-3)
+    path("", include("apps.curriculum.admin_urls")),
     # 관리자 출결(/api/admin/attendance/*) — 역할 경로 직결(PRD 3.1.6)
     path("", include("apps.grades.admin_urls")),
     # 성적·성적표 조회(/api/student/grades* · /api/parent/grades*) — PRD 3.2.1
