@@ -21,6 +21,8 @@
   학생 몫 + 새 학부모 몫, 무전화 학생은 학부모가 대신 받는다
 - 한글 정규화(FLOW 2-2 ①): 맥 파일의 분해형(NFD) 이름이 NFC 와 **같은
   아이디·같은 대조키**를 만들고, 같은 학생으로 판정된다
+- 비밀번호 재발급(FLOW 2-4): 관리자가 임시 비밀번호를 다시 내보낸다 —
+  **그 값으로 실제 로그인이 되고** 변경 강제가 다시 선다. 직원은 대상이 아니다
 """
 import datetime
 import json
@@ -680,3 +682,73 @@ class BulkNameNormalizationTests(ProvisioningFixtureMixin, TestCase):
         again = self.post_bulk([{**row, "name": self.NFD_NAME}]).json()["results"][0]
         self.assertEqual(again["status"], "기존")
         self.assertEqual(Student.objects.filter(matching_key="김서연1234").count(), 1)
+
+
+class PasswordResetTests(ProvisioningFixtureMixin, TestCase):
+    """POST /api/admin/accounts/{user_id}/password — 잊은 사람을 사람이 되돌린다."""
+
+    def setUp(self):
+        self.post_bulk(
+            [{"name": "김학생", "phone": "01011112222", "parent_phone": "01033334444"}]
+        )
+        self.student_user = User.objects.get(login_id="김학생2222")
+        self.parent_user = User.objects.get(login_id="김학생2222p")
+
+    def reset(self, user_id, user=None):
+        self.client.force_login(user or self.admin)
+        return self.client.post(f"/api/admin/accounts/{user_id}/password")
+
+    def test_new_password_actually_logs_in(self):
+        res = self.reset(self.student_user.user_id)
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(body["login_id"], "김학생2222")
+
+        self.client.logout()
+        signed_in = self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"login_id": "김학생2222", "password": body["initial_password"]}),
+            content_type="application/json",
+        )
+        self.assertEqual(signed_in.status_code, 200)
+
+    def test_reset_forces_the_change_again(self):
+        # 임시 비밀번호가 영구 비밀번호로 굳으면 안 된다.
+        self.student_user.must_change_password = False
+        self.student_user.save(update_fields=["must_change_password"])
+        self.reset(self.student_user.user_id)
+        self.student_user.refresh_from_db()
+        self.assertTrue(self.student_user.must_change_password)
+
+    def test_old_password_stops_working(self):
+        self.reset(self.student_user.user_id)
+        self.client.logout()
+        stale = self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"login_id": "김학생2222", "password": PASSWORD}),
+            content_type="application/json",
+        )
+        self.assertEqual(stale.status_code, 401)
+
+    def test_reset_notifies_the_owner_of_the_account(self):
+        before = Notification.objects.filter(type=Notification.Type.ACCOUNT_ISSUED).count()
+        res = self.reset(self.parent_user.user_id)
+        notif = Notification.objects.filter(type=Notification.Type.ACCOUNT_ISSUED).last()
+        self.assertEqual(
+            Notification.objects.filter(type=Notification.Type.ACCOUNT_ISSUED).count(),
+            before + 1,
+        )
+        self.assertEqual(notif.parent, Parent.objects.get(phone="01033334444"))
+        self.assertIn(res.json()["initial_password"], notif.body)
+
+    def test_staff_account_is_not_resettable(self):
+        # 계정관리 키를 받은 조교가 대표 비밀번호를 갈아 끼우는 길을 막는다.
+        self.assertEqual(self.reset(self.owner.user_id).status_code, 404)
+
+    def test_unknown_user_404(self):
+        self.assertEqual(self.reset(999999).status_code, 404)
+
+    def test_assistant_without_feature_gets_403(self):
+        self.assertEqual(
+            self.reset(self.student_user.user_id, user=self.assistant).status_code, 403
+        )

@@ -417,6 +417,33 @@ def _queue_account_issued(*, student=None, parent=None, body, student_id=None):
     )
 
 
+def reset_password(user):
+    """임시 비밀번호 재발급 — **사람이 되돌린다**(FLOW 2-4).
+
+    학생·학부모가 스스로 복구하는 길은 두지 않기로 했으므로(자기 확인 수단이
+    번호 하나뿐이라 탈취에 그대로 열린다), 잊은 사람은 직원에게 말하고 직원이
+    이걸 누른다. 새 비밀번호는 **다시 변경 강제** 상태로 나간다 — 임시값이
+    영구 비밀번호로 굳는 것을 막는다.
+
+    발급 때와 같은 알림을 건다(같은 값이 같은 경로로 나가야 한다). 응답에도
+    1회 실린다 — 해시만 저장되므로 지금이 아니면 볼 수 없다.
+    """
+    password = generate_initial_password()
+    user.set_password(password)
+    user.must_change_password = True
+    user.save(update_fields=["password", "password_changed_at", "must_change_password"])
+    student = Student.objects.filter(user=user).select_related("user").first()
+    if student is not None:
+        _notify_credentials(student, user.login_id, password)
+    else:
+        parent = Parent.objects.filter(user=user).first()
+        _queue_account_issued(
+            parent=parent,
+            body=f"{user.name} 아이디 {user.login_id} 비밀번호 {password}",
+        )
+    return password
+
+
 def register_student(student):
     """예비등록→등록 전환 — 1주차 실제 출석 확인 후 관리자가 누른다(PRD 3.1.5).
 

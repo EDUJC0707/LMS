@@ -37,4 +37,9 @@ urlpatterns = [
         views.AccountRegisterView.as_view(),
         name="accounts-register",
     ),
+    path(
+        "admin/accounts/<int:user_id>/password",
+        views.AccountPasswordResetView.as_view(),
+        name="accounts-password",
+    ),
 ]
