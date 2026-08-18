@@ -3,7 +3,6 @@
  *
  * 호출: GET·PUT /api/admin/attendance/sessions/{id}
  *      · GET  /api/admin/makeup-requests            (동보 지급 여부 확인)
- *      · POST /api/admin/makeup-requests/{id}/approve
  *
  * 설계 요지
  * - 집계 바를 상단에 고정한다. 30명을 훑는 동안에도 "몇 명 남았나"가 늘 보인다.
@@ -206,11 +205,6 @@ export default function AttendanceSessionPage() {
     });
   };
 
-  const [approvingId, setApprovingId] = useState<number | null>(null);
-  const approve = useApiAction(async (makeupId: number) => {
-    await http.post(`/admin/makeup-requests/${makeupId}/approve`);
-  });
-
   const makeupByStudent = useMemo(() => {
     const map = new Map<number, MakeupRow>();
     const date = detail.data?.session.session_date;
@@ -312,29 +306,14 @@ export default function AttendanceSessionPage() {
             key: "makeup",
             header: "동보(복습영상)",
             width: "11rem",
-            // 담임이 `결석(동보)` 를 직접 찍으면 지급까지 자동으로 간다 —
-            // 이 열은 그 결과(지급완료)와, 아직 `결석` 인 학생의 신청 승인만 남는다.
+            // 승인이 없다(FLOW 3-4) — 신청 + 결석 확인이 차면 저장이 곧 지급이다.
+            // 담임이 `결석(동보)` 를 찍든 학생이 신청하든 이 열에는 결과만 뜬다.
             cell: (r: RosterStudent) => {
               const status = r.attendance?.status;
               if (status !== "결석" && status !== "결석(동보)")
                 return <span className="ops-dash">—</span>;
               const row = makeupByStudent.get(r.student_id);
               if (!row) return <span className="ops-sub">신청 없음</span>;
-              if (row.status === "신청")
-                return (
-                  <Button
-                    size="sm"
-                    loading={approve.pending && approvingId === row.makeup_id}
-                    onClick={async () => {
-                      setApprovingId(row.makeup_id);
-                      await approve.run(row.makeup_id);
-                      setApprovingId(null);
-                      void makeups.reload();
-                    }}
-                  >
-                    승인·지급
-                  </Button>
-                );
               return <StatusBadge status={row.status} />;
             },
           },
@@ -403,7 +382,6 @@ export default function AttendanceSessionPage() {
 
       <div className="ui-stack">
         {save.error && <Alert tone="danger">{save.error}</Alert>}
-        {approve.error && <Alert tone="danger">{approve.error}</Alert>}
         {saved && <SavedSummary triggers={saved} onClose={() => setSaved(null)} />}
 
         <Card padding="none" className="ops-tablecard">

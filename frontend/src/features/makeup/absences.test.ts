@@ -68,8 +68,8 @@ test("미신청(null)이면 신청 버튼을 그린다", () => {
   assert.equal(isRequestable({ attendance_id: 243, makeup_status: null }), true);
 });
 
-test("신청·승인·지급완료는 살아있는 신청이라 버튼을 숨긴다", () => {
-  for (const status of ["신청", "승인", "지급완료"]) {
+test("신청·지급완료는 살아있는 신청이라 버튼을 숨긴다", () => {
+  for (const status of ["신청", "지급완료"]) {
     assert.equal(
       isRequestable({ attendance_id: 243, makeup_status: status }),
       false,

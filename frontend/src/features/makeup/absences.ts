@@ -6,9 +6,9 @@
  *   GET /api/parent/home   → absences[]       { date, attendance_id, makeup_status }
  * 두 화면이 같은 판정을 쓰도록 규칙을 여기 한 곳에만 둔다.
  *
- * makeup_status 값집합: null(미신청) · 신청 · 승인 · 지급완료 · 거절.
+ * makeup_status 값집합: null(미신청) · 신청 · 지급완료 · 거절.
  * 서버는 **거절만 재신청을 허용**한다(backend/apps/videos/views.py `_ACTIVE_STATUSES`)
- * — 그래서 거절은 버튼을 다시 띄운다. 신청·승인·지급완료는 살아있는 신청이라 숨긴다.
+ * — 그래서 거절은 버튼을 다시 띄운다. 신청·지급완료는 살아있는 신청이라 숨긴다.
  */
 
 /** 동보 신청 단위 — 결석 하나. attendance_id 가 그대로 신청 body 의 키다. */
@@ -28,7 +28,7 @@ export interface CalendarDayLike {
 }
 
 /** 서버가 "살아있는 신청"으로 보는 상태 — 이때는 신청 버튼을 그리지 않는다. */
-const ACTIVE_STATUSES = ["신청", "승인", "지급완료"];
+const ACTIVE_STATUSES = ["신청", "지급완료"];
 
 /**
  * 동보 축에 있는 출결 값 — 서버 `_MAKEUP_TRACK_STATUSES`(curriculum/home.py)와 같다.

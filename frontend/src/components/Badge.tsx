@@ -3,7 +3,7 @@ import { ReactNode } from "react";
 export type BadgeTone = "neutral" | "accent" | "success" | "warning" | "danger" | "outline";
 
 export interface BadgeProps {
-  /** 상태색은 의미 전용이다 — success=완료/출석/승인, warning=보류/동보,
+  /** 상태색은 의미 전용이다 — success=완료/출석, warning=보류/동보,
    *  danger=결석/거절/삭제, accent=진행중·강조·현보, neutral=중립 라벨. */
   tone?: BadgeTone;
   children: ReactNode;
@@ -17,7 +17,6 @@ export function Badge({ tone = "neutral", children, className = "" }: BadgeProps
 /** 출결·신청 상태 문자열을 톤에 매핑한다. 모르는 값은 중립. */
 const TONE_BY_STATUS: Record<string, BadgeTone> = {
   출석: "success",
-  승인: "success",
   완료: "success",
   등록: "success",
   배정: "success",

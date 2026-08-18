@@ -116,7 +116,7 @@ export default function AdminDashboardPage() {
       <OpsTile
         key="makeup"
         to="/admin/makeup"
-        label="동보 승인 대기"
+        label="동보 신청 대기"
         state={makeup}
       />,
     );
