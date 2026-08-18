@@ -98,7 +98,12 @@ from apps.curriculum.models import CourseEnrollment
 
 # GRANT_DURATION(시청 기간 기본 7일)은 동보 지급 체인과 공유하는 단일 기본값 —
 # videos.makeup 이 원천이다(4차 슬라이스 공용 서비스 추출).
-from apps.videos.makeup import GRANT_DURATION, complete_makeup, published_videos_of
+from apps.videos.makeup import (
+    GRANT_DURATION,
+    complete_makeup,
+    held_video_ids,
+    published_videos_of,
+)
 from apps.videos.models import MakeupGrant, VideoGrant
 
 from .models import Attendance, ClassSession
@@ -353,12 +358,23 @@ def _sync_video_grants(session, attendances, actor, now, triggers):
         (g.attendance_id, g.video_id): g
         for g in VideoGrant.objects.filter(attendance_id__in=[a.id for a in attendances])
     }
+    # 이미 가진 영상은 건너뛴다(FLOW 3-5) — 이 출석 근거로 만든 행이 아니라
+    # **학생이 지금 들고 있는 권한**을 본다. 같은 주차 회차가 둘 이상이거나
+    # 동보로 이미 받은 영상이 여기서 걸린다.
+    held = held_video_ids(
+        [a.student_id for a in attendances],
+        videos,
+        now,
+        exclude_attendances=[a.id for a in attendances],
+    )
     created = []
     for att in attendances:
         if att.status in _REVIEW_VIDEO_STATUSES:
             for video in videos:
                 grant = grant_map.get((att.id, video.video_id))
                 if grant is None:
+                    if (att.student_id, video.video_id) in held:
+                        continue
                     created.append(
                         VideoGrant(
                             student_id=att.student_id,

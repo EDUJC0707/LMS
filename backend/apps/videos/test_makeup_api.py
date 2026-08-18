@@ -407,6 +407,50 @@ class MakeupGrantOnRequestTests(MakeupFixtureMixin, TestCase):
         )
         self.assertEqual(self.request_now(self.att_s1_absent).status_code, 400)
 
+    def test_already_held_video_is_not_granted_again(self):
+        """이미 가진 영상은 건너뛰고 **만료를 뒤로 밀지 않는다** (FLOW 3-5).
+
+        출석으로 받은 영상을 동보로 또 받게 되는 자리다 — 같은 주차 회차가
+        둘이면(보강 회차 등) 한쪽에서 이미 나간 권한이 살아 있다.
+        """
+        earlier = NOW - datetime.timedelta(days=2)
+        held = VideoGrant.objects.create(
+            student=self.s1,
+            video=self.w1_video1,
+            source=VideoGrant.Source.ATTENDANCE_AUTO,
+            granted_at=earlier,
+            expires_at=earlier + GRANT_DURATION,
+        )
+        self.request_now(self.att_s1_absent)
+        makeup = MakeupGrant.objects.get(attendance=self.att_s1_absent)
+        # 아직 없던 2강만 새로 나간다
+        self.assertEqual(
+            list(VideoGrant.objects.filter(makeup=makeup).values_list("video_id", flat=True)),
+            [self.w1_video2.video_id],
+        )
+        held.refresh_from_db()
+        self.assertEqual(held.expires_at, earlier + GRANT_DURATION)
+        self.assertEqual(
+            VideoGrant.objects.filter(student=self.s1, video=self.w1_video1).count(), 1
+        )
+
+    def test_revoked_grant_does_not_block_new_one(self):
+        """회수된 권한은 "가진 것"이 아니다 — 지금 볼 수 없으므로 다시 나간다."""
+        VideoGrant.objects.create(
+            student=self.s1,
+            video=self.w1_video1,
+            source=VideoGrant.Source.ATTENDANCE_AUTO,
+            granted_at=NOW - datetime.timedelta(days=2),
+            expires_at=NOW + GRANT_DURATION,
+            revoked_at=NOW - datetime.timedelta(days=1),
+        )
+        self.request_now(self.att_s1_absent)
+        makeup = MakeupGrant.objects.get(attendance=self.att_s1_absent)
+        self.assertEqual(
+            set(VideoGrant.objects.filter(makeup=makeup).values_list("video_id", flat=True)),
+            {v.video_id for v in self.week1_videos},
+        )
+
     def test_approve_endpoint_is_gone(self):
         """구 승인 엔드포인트는 존재하지 않는다(FLOW 3-4)."""
         self.login(self.admin)
