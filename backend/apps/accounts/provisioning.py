@@ -62,6 +62,7 @@ from .login_id import (
     LoginIdError,
     issue_parent_login_id,
     issue_student_login_id,
+    nfc,
     normalize_phone,
 )
 from .matching_key import build_matching_key
@@ -150,7 +151,9 @@ def _issue_row(row, klass):
     name = row.get("name")
     if not (isinstance(name, str) and name.strip()):
         raise RowError("name이 필요합니다.")
-    name = name.strip()
+    # NFC 로 합쳐서 들어간다 — 맥 파일의 분해형 이름이 저장·판정·아이디에서
+    # 갈리지 않게(FLOW 2-2 ①). `_match_existing` 의 이름 비교도 이 값을 본다.
+    name = nfc(name).strip()
     phone = normalize_phone(row.get("phone"))
     parent_phone = normalize_phone(row.get("parent_phone"))
     if not phone and not parent_phone:

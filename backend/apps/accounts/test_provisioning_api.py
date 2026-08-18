@@ -17,9 +17,12 @@
 - 판정 3갈래(FLOW 2-3): 셋 다 일치 → 기존 / 번호 하나만 일치 → **확인필요**
   (아무것도 만들지 않는다) / 하나도 안 맞음 → 새 학생
 - 등록 전환: 예비등록→등록 + registered_at (그 외 상태 400)
+- 한글 정규화(FLOW 2-2 ①): 맥 파일의 분해형(NFD) 이름이 NFC 와 **같은
+  아이디·같은 대조키**를 만들고, 같은 학생으로 판정된다
 """
 import datetime
 import json
+import unicodedata
 
 from django.test import TestCase
 
@@ -588,3 +591,28 @@ class RegisterTests(ProvisioningFixtureMixin, TestCase):
         self.assertEqual(
             self.register(self.student.student_id, user=self.assistant).status_code, 403
         )
+
+
+class BulkNameNormalizationTests(ProvisioningFixtureMixin, TestCase):
+    """맥에서 만든 파일의 분해형 한글(FLOW 2-2 ①)."""
+
+    NFD_NAME = unicodedata.normalize("NFD", "김서연")
+
+    def test_decomposed_name_makes_the_same_login_id_and_key(self):
+        res = self.post_bulk([{"name": self.NFD_NAME, "phone": "01012341234"}])
+        result = res.json()["results"][0]
+        self.assertEqual(result["status"], "생성")
+        self.assertEqual(result["login_id"], "김서연1234")
+        self.assertEqual(result["matching_key"], "김서연1234")
+        # 저장된 이름도 합쳐진 값이다 — 화면·검색이 NFC 로 도는데 이 행만
+        # 분해형이면 이름으로 찾지 못한다.
+        self.assertEqual(User.objects.get(login_id="김서연1234").name, "김서연")
+
+    def test_reupload_in_the_other_form_is_the_same_student(self):
+        # 1차 NFC · 2차 NFD 로 같은 명단이 올라와도 이름 비교가 어긋나지 않는다
+        # (어긋나면 전 행이 확인필요로 서고 아무것도 진행되지 않는다).
+        row = {"name": "김서연", "phone": "01012341234", "parent_phone": "01043214321"}
+        self.assertEqual(self.post_bulk([row]).json()["results"][0]["status"], "생성")
+        again = self.post_bulk([{**row, "name": self.NFD_NAME}]).json()["results"][0]
+        self.assertEqual(again["status"], "기존")
+        self.assertEqual(Student.objects.filter(matching_key="김서연1234").count(), 1)
