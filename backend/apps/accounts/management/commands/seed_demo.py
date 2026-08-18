@@ -46,7 +46,13 @@ from apps.clinic.models import (
     ClinicRequest,
     ClinicSlot,
 )
-from apps.curriculum.models import Course, CourseEnrollment, CourseWeek, WeekDayPlan
+from apps.curriculum.models import (
+    Class,
+    Course,
+    CourseEnrollment,
+    CourseWeek,
+    WeekDayPlan,
+)
 from apps.grades import attendance_admin
 from apps.grades import media as grades_media
 from apps.grades.models import (
@@ -143,7 +149,7 @@ class Command(BaseCommand):
             WorkbookSubmission, WeaknessCheckPdf, QuestionSimilarMap, QuestionBankItem,
             SheetAnswer, AnswerSheet, Score, Assignment, Attendance,
             Question, ClassSession, Exam,
-            CourseEnrollment, WeekDayPlan, CourseWeek, Course,
+            CourseEnrollment, Class, WeekDayPlan, CourseWeek, Course,
             StaffFeatureGrant, ParentStudent, Parent, Student, User,
         ]
         for model in ordered:
@@ -296,11 +302,18 @@ class Command(BaseCommand):
                     display_order=day_no,
                 )
             weeks.append(week)
+        classes = {
+            name: Class.objects.create(
+                course=course, name=name, start_date=week1_monday
+            )
+            for name in {s.current_class for s in students if s.current_class}
+        }
         for idx, student in enumerate(students):
             CourseEnrollment.objects.create(
                 student=student,
                 course=course,
                 class_name=student.current_class,
+                klass=classes.get(student.current_class),
                 primary_weekday=3 if idx % 2 == 0 else 6,  # 0=일…6=토(수/토)
             )
         return course, weeks
