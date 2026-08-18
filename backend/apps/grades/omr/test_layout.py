@@ -178,3 +178,94 @@ class TestRender:
             assert distance.min() < 0.35, (u, v, distance.min())
             matched += int((distance < 0.35).sum())
         assert matched == len(want), "칸 하나에 링이 둘이면 격자가 겹친 것이다"
+
+
+class TestBarReading:
+    """스캔 원본에서 판형을 읽는다 — 어긋난 스캔에서도, 그리고 **틀리게는 안 읽는다**.
+
+    인코딩이 튼튼한 것과 실제로 읽히는 것은 다른 얘기다. 여기서 재는 것은 후자다.
+    """
+
+    @staticmethod
+    def page(card, dpi=200):
+        import cv2
+        with tempfile.TemporaryDirectory() as tmp:
+            pdf = Path(tmp) / "c.pdf"
+            pdf.write_bytes(generate.render(card))
+            subprocess.run(
+                ["pdftoppm", "-png", "-r", str(dpi), str(pdf), str(Path(tmp) / "x")],
+                check=True, capture_output=True,
+            )
+            return cv2.imread(str(next(Path(tmp).glob("x*.png"))), 0)
+
+    @pytest.mark.skipif(not shutil.which("pdftoppm"), reason="pdftoppm 없음")
+    def test_every_layout_reads_back_off_a_clean_scan(self):
+        pytest.importorskip("cv2")
+        from . import bars
+        for sheet in layout.LAYOUTS:
+            assert bars.read_layout(self.page(sheet)) == sheet.layout_id
+
+    @pytest.mark.skipif(not shutil.which("pdftoppm"), reason="pdftoppm 없음")
+    def test_it_survives_a_crooked_scanner(self):
+        """앵커가 좌표계를 만들므로 배율·평행이동·기울기가 흡수된다."""
+        cv2 = pytest.importorskip("cv2")
+        import numpy as np
+
+        from . import bars
+
+        card = layout.BY_NAME["답안25"]
+        image = self.page(card)
+        height, width = image.shape
+
+        def turn(degrees):
+            matrix = cv2.getRotationMatrix2D((width / 2, height / 2), degrees, 1.0)
+            return cv2.warpAffine(image, matrix, (width, height), borderValue=255)
+
+        cases = {
+            "회전 -2도": turn(-2.0),
+            "회전 +4도": turn(4.0),
+            "축소 92%": cv2.resize(image, None, fx=0.92, fy=0.92),
+            "확대 108%": cv2.resize(image, None, fx=1.08, fy=1.08),
+            "평행이동": cv2.warpAffine(
+                image, np.float32([[1, 0, 30], [0, 1, 18]]), (width, height),
+                borderValue=255,
+            ),
+            "저해상도 100dpi": self.page(card, 100),
+        }
+        for name, degraded in cases.items():
+            assert bars.read_layout(degraded) == card.layout_id, name
+
+    @pytest.mark.skipif(not shutil.which("pdftoppm"), reason="pdftoppm 없음")
+    def test_one_ruined_edge_is_carried_by_the_other(self):
+        """좌우 이중으로 둔 이유다 — 스캔에서 가장자리가 날아가는 일이 있다."""
+        pytest.importorskip("cv2")
+        from . import bars
+
+        card = layout.BY_NAME["답안25"]
+        image = self.page(card)
+        width = image.shape[1]
+        for cut in (slice(0, int(width * 0.08)), slice(int(width * 0.92), width)):
+            damaged = image.copy()
+            damaged[:, cut] = 255
+            assert bars.read_layout(damaged) == card.layout_id
+
+    @pytest.mark.skipif(not shutil.which("pdftoppm"), reason="pdftoppm 없음")
+    def test_disagreeing_edges_are_refused(self):
+        """한쪽이 오염되면 어느 쪽을 믿을지 알 수 없다 — 조용히 고르지 않는다."""
+        pytest.importorskip("cv2")
+        from . import bars
+
+        left = self.page(layout.BY_NAME["답안25"])
+        right = self.page(layout.BY_NAME["성적조사"])
+        width = left.shape[1]
+        spliced = left.copy()
+        spliced[:, int(width * 0.9):] = right[:, int(width * 0.9):]
+        assert bars.read_layout(spliced) is None
+
+    def test_a_sheet_without_bars_reads_as_unknown(self):
+        """옛 튜터시스템 카드다. 판형을 지어내지 않고 `exams.kind` 로 넘긴다."""
+        pytest.importorskip("cv2")
+        import numpy as np
+
+        from . import bars
+        assert bars.read_layout(np.full((1654, 2339), 255, dtype=np.uint8)) is None
