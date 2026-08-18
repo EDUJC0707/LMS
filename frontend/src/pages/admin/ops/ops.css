@@ -412,10 +412,16 @@
   color: var(--color-danger);
 }
 
-/* 값이 넷이 됐다(2026-07-29) — 3rem × 4 는 좁은 폭에서 표를 밀어낸다.
+/* 값이 다섯이 됐다(2026-08-18 미입력) — 3rem × 5 는 좁은 폭에서 표를 밀어낸다.
    칸 이름은 짧게(동보·현보) 가되 저장된 값 열에는 원문이 그대로 뜬다. */
 .ops-seg__opt span {
   min-width: 2.75rem;
+}
+
+/* 미입력도 골라 찍는 값이다 — 상태색은 안 쓰되 눌린 것은 보여야 한다. */
+.ops-seg__opt--blank input:checked + span {
+  background: var(--color-paper-3);
+  color: var(--color-ink);
 }
 
 /* 퇴원 행은 입력칸 자리에 표시만 남는다 — 누를 것이 없다는 게 눈에 보여야 한다. */

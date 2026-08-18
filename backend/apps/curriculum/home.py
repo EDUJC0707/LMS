@@ -80,9 +80,12 @@ def build_home_payload(student, month=None, include_billing=False):
     primary = enrollments[0] if enrollments else None
 
     attendances = list(
+        # `미입력` 은 레코드 없음과 같은 뜻이다(FLOW 3-4) — 캘린더 도장도 찍히지
+        # 않아야 학생·학부모가 "안 왔다"로 읽지 않는다.
         Attendance.objects.filter(
             student=student, session__session_date__range=(first, last)
         )
+        .exclude(status=Attendance.Status.UNENTERED)
         .select_related("session")
         .order_by("session__session_date")
     )
