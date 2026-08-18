@@ -44,11 +44,23 @@
 성공 행은 확정하고 실패 행만 사유와 함께 리포트한다. 같은 요청 안의 선행
 행이 만든 계정은 후행 행의 중복 검사에 그대로 보인다(동일 외부 트랜잭션).
 
-**초기 비밀번호 응답 반환(임시 정책)**: SMS(알림톡) 발송은 채널 연동 대기
-(솔라피 검토 — key_considerations §4)라서, 이번 슬라이스는 초기 비밀번호를
-**응답으로 반환**해 관리자가 수동 전달한다. credentials_sent_at 은 발송
-연동이 붙을 때 스탬프한다(D-1 배치 계약 — Student 모델 docstring). 해시만
-저장되므로 응답의 1회 노출이 비밀번호를 볼 수 있는 유일한 시점이다.
+**아이디·초기 비밀번호는 알림으로도 나간다**(FLOW 3-11 #1). 응답 반환만
+하던 시절에는 화면을 닫는 순간 비밀번호가 사라졌다 — 해시만 저장되므로
+다시 볼 방법이 없고, 학생은 들어올 길이 없었다. 발급마다 `계정발급` 알림을
+**큐에 건다**(notifications.sending.queue).
+
+- **학생 번호가 없으면 학부모에게 간다**(FLOW 2-4) — 학생 계정 안내까지.
+- **학부모 안내는 계정을 만들 때만** 나간다. 둘째 자녀는 연결만 되므로
+  아이디가 그대로이고 안내도 다시 가지 않는다(FLOW 2-4 의 "계정이 있으면
+  안 나간다"와 같은 계약).
+- **템플릿 승인 전이라 실제로는 안 나간다** — `NOTIFICATION_KAKAO_TEMPLATE_CODES`
+  가 비어 있어 발송은 영구 실패로 닫히고 사유가 행에 남는다(8-17 대기).
+  승인분이 들어오면 이 코드는 그대로 두고 설정만 채우면 나간다.
+- credentials_sent_at 은 여전히 스탬프하지 않는다 — 큐에 걸린 것과 학부모
+  손에 닿은 것은 다르다. 발송이 실제로 성공하는 날 그 자리에서 찍는다.
+
+응답의 초기 비밀번호는 그대로 둔다(관리자가 그 자리에서 불러 줄 수 있는
+유일한 값이고, 알림이 못 나가는 동안에는 이것이 유일한 전달 경로다).
 """
 import secrets
 
@@ -57,6 +69,8 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.curriculum.models import CourseEnrollment
+from apps.notifications.models import Notification
+from apps.notifications.sending import queue as queue_notification
 
 from .login_id import (
     LoginIdError,
@@ -190,6 +204,7 @@ def _issue_row(row, klass):
     if parent_phone:
         parent_block = _link_parent(parent_phone, name, login_id, student)
     _enroll(student, klass)
+    _notify_credentials(student, login_id, initial_password, parent_block)
 
     return {
         "status": "생성",
@@ -351,6 +366,55 @@ def _link_parent(parent_phone, student_name, student_login_id, student):
         "created": True,
         "linked": True,
     }
+
+
+def _notify_credentials(student, login_id, password, parent_block=None):
+    """아이디·임시 비밀번호를 큐에 건다(FLOW 3-11 #1 — 모듈 docstring).
+
+    학생 몫은 **번호가 있는 쪽**으로 간다: 학생 번호가 없으면 학부모가 대신
+    받는다(FLOW 2-4). 대상 3분기는 정확히 하나여야 하므로 여기서 가른다.
+
+    학부모 몫은 `parent_block` 이 새 계정일 때만이다 — 기존 학부모는 아이디가
+    바뀌지 않았으니 보낼 것이 없다.
+    """
+    parent = _notify_target_parent(student) if not student.user.phone else None
+    _queue_account_issued(
+        student=None if parent else student,
+        parent=parent,
+        body=f"{student.user.name} 아이디 {login_id} 비밀번호 {password}",
+        student_id=student.student_id,
+    )
+    if parent_block and parent_block.get("created"):
+        _queue_account_issued(
+            parent=Parent.objects.filter(pk=parent_block["parent_id"]).first(),
+            body=(
+                f"{student.user.name} 학부모 아이디 {parent_block['login_id']} "
+                f"비밀번호 {parent_block['initial_password']}"
+            ),
+            student_id=student.student_id,
+        )
+
+
+def _notify_target_parent(student):
+    """무전화 학생의 안내를 대신 받을 학부모 — 없으면 None(학생 앞으로 둔다)."""
+    link = student.parent_students.select_related("parent").order_by("parent_id").first()
+    return link.parent if link else None
+
+
+def _queue_account_issued(*, student=None, parent=None, body, student_id=None):
+    """대상이 없으면(연락처 주인이 아무도 없다) 걸지 않는다 — 대상 3분기 계약."""
+    if student is None and parent is None:
+        return
+    queue_notification(
+        type=Notification.Type.ACCOUNT_ISSUED,
+        channel=Notification.Channel.KAKAO,
+        student=student,
+        parent=parent,
+        title="계정 발급",
+        body=body,
+        ref_type="students" if student_id else None,
+        ref_id=student_id,
+    )
 
 
 def register_student(student):

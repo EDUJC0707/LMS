@@ -17,6 +17,8 @@
 - 판정 3갈래(FLOW 2-3): 셋 다 일치 → 기존 / 번호 하나만 일치 → **확인필요**
   (아무것도 만들지 않는다) / 하나도 안 맞음 → 새 학생
 - 등록 전환: 예비등록→등록 + registered_at (그 외 상태 400)
+- 계정 안내(FLOW 3-11 #1): 발급마다 `계정발급` 알림이 **큐에 쌓인다** —
+  학생 몫 + 새 학부모 몫, 무전화 학생은 학부모가 대신 받는다
 - 한글 정규화(FLOW 2-2 ①): 맥 파일의 분해형(NFD) 이름이 NFC 와 **같은
   아이디·같은 대조키**를 만들고, 같은 학생으로 판정된다
 """
@@ -27,6 +29,7 @@ import unicodedata
 from django.test import TestCase
 
 from apps.curriculum.models import Class, Course, CourseEnrollment
+from apps.notifications.models import Notification
 
 from .features import FeatureKey
 from .models import Parent, ParentStudent, StaffFeatureGrant, Student, User
@@ -591,6 +594,67 @@ class RegisterTests(ProvisioningFixtureMixin, TestCase):
         self.assertEqual(
             self.register(self.student.student_id, user=self.assistant).status_code, 403
         )
+
+
+class BulkCredentialNotificationTests(ProvisioningFixtureMixin, TestCase):
+    """발급 → 계정 안내가 큐에 쌓인다(FLOW 3-11 #1).
+
+    **발송은 아직 안 된다** — 템플릿 승인 전이라(8-17) 행만 쌓이고, 승인분이
+    들어오면 설정만 채워도 그대로 나간다. 여기서 보는 것은 "걸렸는가"다.
+    """
+
+    def issued(self):
+        return Notification.objects.filter(type=Notification.Type.ACCOUNT_ISSUED)
+
+    def test_student_and_new_parent_each_get_one(self):
+        res = self.post_bulk(
+            [{"name": "김학생", "phone": "01011112222", "parent_phone": "01033334444"}]
+        )
+        result = res.json()["results"][0]
+        student = Student.objects.get(user__login_id="김학생2222")
+        parent = Parent.objects.get(phone="01033334444")
+
+        self.assertEqual(self.issued().count(), 2)
+        to_student = self.issued().get(student=student)
+        self.assertEqual(to_student.status, Notification.Status.PENDING)  # 발송은 커밋 뒤
+        self.assertEqual(to_student.channel, Notification.Channel.KAKAO)
+        self.assertIn("김학생2222", to_student.body)
+        self.assertIn(result["initial_password"], to_student.body)
+        to_parent = self.issued().get(parent=parent)
+        self.assertIn("김학생2222p", to_parent.body)
+        self.assertIn(result["parent"]["initial_password"], to_parent.body)
+
+    def test_phoneless_student_credentials_go_to_the_parent(self):
+        # 학생 번호가 없으면 학생 계정 안내까지 학부모 번호로 나간다(FLOW 2-4).
+        self.post_bulk([{"name": "무전화", "parent_phone": "01055556666"}])
+        parent = Parent.objects.get(phone="01055556666")
+        self.assertEqual(self.issued().count(), 2)
+        self.assertEqual(self.issued().filter(student__isnull=False).count(), 0)
+        self.assertEqual(self.issued().filter(parent=parent).count(), 2)
+
+    def test_existing_student_gets_no_notice(self):
+        # 계정은 한 번 만들면 끝이다 — 재업로드에 안내가 다시 나가면 안 된다.
+        row = {"name": "김학생", "phone": "01011112222", "parent_phone": "01033334444"}
+        self.post_bulk([row])
+        self.assertEqual(self.issued().count(), 2)
+        self.assertEqual(self.post_bulk([row]).json()["results"][0]["status"], "기존")
+        self.assertEqual(self.issued().count(), 2)
+
+    def test_second_child_does_not_renotify_the_parent(self):
+        # 둘째는 연결만 된다 — 학부모 아이디가 그대로라 보낼 것이 없다.
+        self.post_bulk([{"name": "첫째", "phone": "01011112222", "parent_phone": "01033334444"}])
+        self.post_bulk(
+            [
+                {
+                    "name": "둘째",
+                    "phone": "01099998888",
+                    "parent_phone": "01033334444",
+                    "force_new": True,
+                }
+            ]
+        )
+        parent = Parent.objects.get(phone="01033334444")
+        self.assertEqual(self.issued().filter(parent=parent).count(), 1)
 
 
 class BulkNameNormalizationTests(ProvisioningFixtureMixin, TestCase):
