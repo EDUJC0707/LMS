@@ -431,6 +431,30 @@
   }
 }
 
+/* 붙여넣은 표 — 열이 몇 개인지는 파일이 정하므로 고정 격자를 못 쓴다.
+   넓으면 이 상자 안에서만 옆으로 밀린다(화면을 밀어내지 않게). */
+.pm-paste {
+  overflow-x: auto;
+}
+
+.pm-paste table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.pm-paste th,
+.pm-paste td {
+  padding: var(--space-3xs) var(--space-2xs);
+  border-bottom: 1px solid var(--color-rule-2);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.pm-paste td {
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+}
+
 /* 초기 비밀번호 — 등폭으로 붙여 읽기 쉽게 */
 .pm-secret {
   display: inline-block;
