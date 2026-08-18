@@ -16,6 +16,7 @@
 from django.test import TestCase
 
 from apps.accounts.models import Parent, ParentStudent, Student, User
+from apps.curriculum.models import Class, Course, CourseEnrollment
 
 from .models import Order, Payment, Product
 
@@ -173,19 +174,43 @@ class ProductListTests(TestCase):
 
     청구 개시가 `product_id` 를 받는데 그 번호를 소비자에게 알려 주는 자리가
     없었다 — 목록이 없으면 구매 버튼을 그릴 수 없다(videos 목록 선례).
-    학생·학부모가 같은 목록을 본다(교재는 학생별로 다르지 않다).
+
+    **목록은 학생마다 다르다**(FLOW 1-6 — 교재는 커리에 붙는다). `is_active`
+    만 보던 동안에는 수능 통합과학 반 화면에 내신 생명과학 교재가 같이 떴고
+    그대로 결제됐다.
     """
 
     URL = "/api/payments/products"
 
     @classmethod
     def setUpTestData(cls):
-        cls.live = Product.objects.create(name="로직엔제 교재 Vol.1", price=45000)
-        cls.retired = Product.objects.create(name="폐기 교재", price=1000, is_active=False)
+        cls.course = Course.objects.create(name="수능 통합과학")
+        cls.klass = Class.objects.create(
+            course=cls.course, name="수요반", uses_payssam=True
+        )
+        cls.live = Product.objects.create(
+            course=cls.course, name="로직엔제 교재 Vol.1", kind=Product.Kind.SET, price=45000
+        )
+        cls.retired = Product.objects.create(
+            course=cls.course, name="폐기 교재", price=1000, is_active=False
+        )
+        # 남의 커리 교재 + 커리가 안 붙은 교재. 둘 다 목록에 오르지 않는다.
+        other_course = Course.objects.create(name="내신 생명과학")
+        cls.other = Product.objects.create(
+            course=other_course, name="내신 생명과학 교재", price=20000
+        )
+        cls.orphan = Product.objects.create(name="커리 미지정 교재", price=10000)
+
         cls.student_user = make_user("prod-stu", User.Role.STUDENT)
-        Student.objects.create(user=cls.student_user, matching_key="3_9001")
+        cls.student = Student.objects.create(
+            user=cls.student_user, matching_key="3_9001"
+        )
+        CourseEnrollment.objects.create(
+            student=cls.student, course=cls.course, klass=cls.klass
+        )
         cls.parent_user = make_user("prod-par", User.Role.PARENT)
-        Parent.objects.create(user=cls.parent_user, phone="01055556666")
+        parent = Parent.objects.create(user=cls.parent_user, phone="01055556666")
+        ParentStudent.objects.create(parent=parent, student=cls.student)
 
     def test_anonymous_is_blocked(self):
         self.assertEqual(self.client.get(self.URL).status_code, 403)
@@ -197,10 +222,27 @@ class ProductListTests(TestCase):
         self.assertEqual(rows[0]["name"], "로직엔제 교재 Vol.1")
         self.assertEqual(rows[0]["price"], 45000)
 
-    def test_parent_sees_the_same_list(self):
+    def test_set_or_single_is_carried(self):
+        # FLOW 1-6 — 포함 관계는 DB 에 없고 이 표시만 있다.
+        self.client.force_login(self.student_user)
+        self.assertEqual(self.client.get(self.URL).json()[0]["kind"], "세트")
+
+    def test_another_course_product_is_not_listed(self):
+        self.client.force_login(self.student_user)
+        names = [r["name"] for r in self.client.get(self.URL).json()]
+        self.assertNotIn("내신 생명과학 교재", names)
+        self.assertNotIn("커리 미지정 교재", names)
+
+    def test_parent_sees_the_child_list(self):
         self.client.force_login(self.parent_user)
         rows = self.client.get(self.URL).json()
         self.assertEqual([r["product_id"] for r in rows], [self.live.product_id])
+
+    def test_a_student_with_no_enrollment_sees_nothing(self):
+        loose = make_user("prod-stu2", User.Role.STUDENT)
+        Student.objects.create(user=loose, matching_key="3_9002")
+        self.client.force_login(loose)
+        self.assertEqual(self.client.get(self.URL).json(), [])
 
 
 class PayUrlExposureTests(TestCase):

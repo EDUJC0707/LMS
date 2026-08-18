@@ -144,6 +144,7 @@ export default function StudentHomePage() {
             empty="구매할 수 있는 교재가 없습니다"
             columns={[
               { key: "name", header: "교재", cell: (row) => row.name },
+              { key: "kind", header: "구성", cell: (row) => row.kind },
               {
                 key: "price",
                 header: "가격",

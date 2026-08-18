@@ -159,25 +159,29 @@ class ParentPaymentListView(APIView):
 
 
 class ProductListView(APIView):
-    """GET /api/payments/products — 살 수 있는 교재 목록(PRD 3.2.5).
+    """GET /api/payments/products — 살 수 있는 교재 목록(PRD 3.2.5, FLOW 1-6).
 
     청구 개시가 `product_id` 를 받는데 그 번호를 소비자에게 알려 주는 자리가
     없었다 — 목록이 없으면 구매 버튼을 그릴 자리 자체가 없다(videos 목록 선례).
 
-    학생·학부모가 **같은 목록**을 본다. 교재는 학생별로 다르지 않다.
+    **목록은 학생마다 다르다.** 교재는 커리에 붙으므로(FLOW 1-6) 자기가 듣는
+    커리의 것만 본다. 학부모는 자녀를 고르고(`student_id`) 그 자녀의 목록을
+    본다 — 자녀마다 커리가 다르면 목록도 다르다.
     이미 산 것을 걸러 내지 않는다 — 화면이 자기 주문 목록과 맞춰 본다.
     """
 
     permission_classes = [IsStudent | IsParent]
 
     def get(self, request):
-        products = Product.objects.filter(is_active=True).order_by("product_id")
-        return Response(
-            [
-                {"product_id": p.product_id, "name": p.name, "price": p.price}
-                for p in products
-            ]
-        )
+        if IsParent().has_permission(request, self):
+            student, error = _resolve_child(request)
+            if error is not None:
+                return error
+        else:
+            student = _my_student(request)
+            if student is None:
+                return Response([])
+        return Response(consumer.purchasable_products(student))
 
 
 class StudentBillView(APIView):
@@ -213,6 +217,41 @@ class ParentBillView(APIView):
             return error
         parent = Parent.objects.filter(user=request.user).first()
         return _bill(request, student, product, parent=parent)
+
+
+class AdminBillView(APIView):
+    """POST /api/admin/payments/bill — 관리자가 청구를 시작한다(FLOW 2-4·2-5).
+
+    이 자리가 없어서 **조교는 청구를 시작할 수 없었다** — `start_billing` 을
+    부르는 곳이 학생·학부모 뷰뿐이었다. FLOW 2-4 는 계정 발급과 함께 결제가
+    나간다고 정했고 2-5 는 언제든 다시 보낼 수 있어야 한다고 정했다.
+
+    게이트는 기능 키 `결제확인` 이다 — 배부 처리와 같은 축(일상 운영)이고,
+    조교 프리셋에는 없으므로 기본 차단이다(key_considerations §2). 돈이
+    되돌아가는 취소·환불만 대표 전용(IsOwner)으로 따로 잠겨 있다.
+
+    **청구서는 학부모에게 간다**(FLOW 2-4). 연결된 학부모가 없으면 학생 본인
+    번호로 떨어진다 — 번호가 아예 없으면 `start_billing` 이 막는다.
+    결제선생을 쓰지 않는 반(FLOW 2-7)도 거기서 막힌다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.PAYMENT_CHECK)]
+
+    def post(self, request):
+        student_id = request.data.get("student_id")
+        student = Student.objects.filter(pk=student_id).select_related("user").first()
+        if student is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        product, error = _resolve_product(request)
+        if error is not None:
+            return error
+        link = (
+            ParentStudent.objects.filter(student=student)
+            .select_related("parent")
+            .order_by("parent_id")
+            .first()
+        )
+        return _bill(request, student, product, parent=link.parent if link else None)
 
 
 class PaymentCallbackView(APIView):

@@ -43,6 +43,8 @@ export interface PaymentOrder {
 export interface PurchasableProduct {
   product_id: number;
   name: string;
+  /** 세트 · 낱개 (FLOW 1-6). 포함 관계는 서버도 모른다 — 표시뿐이다. */
+  kind: string;
   price: number;
 }
 
@@ -129,6 +131,7 @@ export function PaymentPanel({ ordersPath, billPath, studentId }: PaymentPanelPr
             caption="구매할 수 있는 교재"
             columns={[
               { key: "name", header: "교재", cell: (row) => row.name },
+              { key: "kind", header: "구성", cell: (row) => row.kind },
               {
                 key: "price",
                 header: "가격",

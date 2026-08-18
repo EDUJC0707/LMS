@@ -11,7 +11,9 @@
 """
 from django.utils import timezone
 
-from .models import Order
+from apps.curriculum.models import CourseEnrollment
+
+from .models import Order, Product
 
 
 def _iso(value):
@@ -47,4 +49,25 @@ def build_order_list(student):
             "pay_url": order.pay_url or None,
         }
         for order in orders
+    ]
+
+
+def purchasable_products(student):
+    """그 학생이 살 수 있는 교재 — **자기가 듣는 커리의 것만**(FLOW 1-6).
+
+    학생 홈(bare)·소비자 목록 API 가 같은 이 함수를 쓴다. 둘이 각자 거르면
+    한쪽에만 남의 커리 교재가 남는다 — 실제로 `is_active` 만 보던 동안 수능
+    통합과학 반 화면에 내신 생명과학 교재가 떴고 그대로 결제됐다.
+
+    이미 산 것을 걸러 내지 않는다 — 화면이 자기 주문 목록과 맞춰 본다.
+    """
+    course_ids = CourseEnrollment.objects.filter(
+        student=student, status=CourseEnrollment.Status.ENROLLED
+    ).values_list("course_id", flat=True)
+    products = Product.objects.filter(
+        is_active=True, course_id__in=course_ids
+    ).order_by("product_id")
+    return [
+        {"product_id": p.product_id, "name": p.name, "kind": p.kind, "price": p.price}
+        for p in products
     ]
