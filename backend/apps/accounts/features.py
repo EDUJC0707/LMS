@@ -61,10 +61,12 @@ ROLE_PRESETS: dict[str, frozenset[str]] = {
             FeatureKey.ACCOUNT_ADMIN,
         }
     ),
-    # 조교 = 부여된 범위 내 보조 업무(워크북 사진 업로드·클리닉 배정/수행 정도
-    # — PRD 2장). 나머지는 대표가 개별 delta 로 부여.
+    # 조교 = 반별 관리에서 손을 움직이는 사람(FLOW §3). 출결·워크북·클리닉이
+    # 전부 조교의 일이라 출결입력이 없으면 반별 관리 페이지 자체를 못 연다.
+    # 나머지는 대표가 개별 delta 로 부여.
     User.Role.ASSISTANT: frozenset(
         {
+            FeatureKey.ATTENDANCE_ENTRY,
             FeatureKey.WORKBOOK_UPLOAD,
             FeatureKey.CLINIC_ASSIGN,
         }

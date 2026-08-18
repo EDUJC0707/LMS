@@ -98,12 +98,17 @@ class StaffFeatureGrantTests(TestCase):
 class EffectiveFeaturesTests(TestCase):
     """프리셋 ⊕ delta(2026-07-22 확정, PRD §4 직원 기능 권한) 계약."""
 
-    def test_assistant_preset_is_minimal(self):
-        # PRD 2장: 조교 = 워크북 사진 업로드·클리닉 배정 수행 정도
+    def test_assistant_preset_covers_the_class_page(self):
+        # FLOW §3: 반별 관리에서 손을 움직이는 것은 조교다. 출결입력이 없으면
+        # 페이지 자체가 안 열린다(2026-08-18). 결제·성적·권한부여는 여전히 없다.
         assistant = make_staff("as1", User.Role.ASSISTANT)
         self.assertEqual(
             effective_features(assistant),
-            {FeatureKey.WORKBOOK_UPLOAD, FeatureKey.CLINIC_ASSIGN},
+            {
+                FeatureKey.ATTENDANCE_ENTRY,
+                FeatureKey.WORKBOOK_UPLOAD,
+                FeatureKey.CLINIC_ASSIGN,
+            },
         )
 
     def test_admin_preset_covers_operations_but_not_grant_admin(self):
