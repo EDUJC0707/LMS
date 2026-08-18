@@ -3,7 +3,7 @@
 검증 축:
 - 기능 게이트(클리닉배정): 조교 프리셋 포함 — 조교·관리자 허용, 학생 403
 - 대기열 조회: status·date 필터, 학생 노쇼·제한 상태 동봉
-- 승인+배정: 대기→승인배정(assigned_staff·conference_url 수동 입력), 재배정 허용,
+- 승인+배정: 대기→승인배정(assigned_staff 지정, 링크는 서버가 만든다), 재배정 허용,
   비직원 배정 400 / 미승인: 대기→미승인
 - 출석/결석 처리: 결석 = noshow_count 증가, **2회 도달 시 clinic_banned=true**,
   이중 처리 400(노쇼 이중 집계 방지), 학부모 알림(커밋 뒤 발송)
@@ -146,13 +146,14 @@ class ClinicAssignTests(ClinicAdminFixtureMixin, TestCase):
         req = self.make_request()
         res = self.post_json(
             f"{REQUESTS_URL}/{req.clinic_id}/assign",
-            {"assigned_staff_id": self.assistant.user_id, "conference_url": "https://meet.google.com/x"},
+            {"assigned_staff_id": self.assistant.user_id},
         )
         self.assertEqual(res.status_code, 200)
         req.refresh_from_db()
         self.assertEqual(req.status, ClinicRequest.Status.APPROVED)
         self.assertEqual(req.assigned_staff, self.assistant)
-        self.assertEqual(req.conference_url, "https://meet.google.com/x")
+        # 링크는 **서버가 만든다** — 관리자가 넣는 칸은 없앴다(2026-08-18)
+        self.assertTrue(req.conference_url)
 
     def test_reassign_approved_request_allowed(self):
         req = self.make_request(
@@ -162,7 +163,7 @@ class ClinicAssignTests(ClinicAdminFixtureMixin, TestCase):
         )
         res = self.post_json(
             f"{REQUESTS_URL}/{req.clinic_id}/assign",
-            {"assigned_staff_id": self.admin.user_id, "conference_url": "https://meet.google.com/new"},
+            {"assigned_staff_id": self.admin.user_id},
         )
         self.assertEqual(res.status_code, 200)
         req.refresh_from_db()
@@ -173,7 +174,7 @@ class ClinicAssignTests(ClinicAdminFixtureMixin, TestCase):
         self.assertEqual(
             self.post_json(
                 f"{REQUESTS_URL}/{req.clinic_id}/assign",
-                {"assigned_staff_id": self.student_user.user_id, "conference_url": "https://m"},
+                {"assigned_staff_id": self.student_user.user_id},
             ).status_code,
             400,
         )

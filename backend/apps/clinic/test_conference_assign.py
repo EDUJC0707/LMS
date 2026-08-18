@@ -2,9 +2,8 @@
 
 여기서 고정하는 것:
   ① 링크를 주지 않으면 **새 스페이스를 만든다**(관리자가 손으로 붙여넣던 자리)
-  ② 링크를 주면 그것이 이긴다 — 수동 우회는 남는다(§5 현장 대응)
-  ③ 이미 링크가 있으면 재배정해도 **새로 만들지 않는다**(클리닉 1건 = 스페이스 1개)
-  ④ 만들지 못하면 **아무것도 바뀌지 않는다** — 반쯤 배정된 행을 남기지 않는다
+  ② 이미 링크가 있으면 재배정해도 **새로 만들지 않는다**(클리닉 1건 = 스페이스 1개)
+  ③ 만들지 못하면 **아무것도 바뀌지 않는다** — 반쯤 배정된 행을 남기지 않는다
 """
 import datetime
 
@@ -112,37 +111,6 @@ class ConferenceAssignTests(TestCase):
         second.refresh_from_db()
         self.assertNotEqual(first.conference_url, second.conference_url)
 
-    # ② 수동 우회 -----------------------------------------------------------
-
-    @override_settings(CLINIC_CONFERENCE_BACKEND=ADAPTER_PATH)
-    def test_explicit_url_wins_and_skips_the_provider(self):
-        request = self.make_request()
-        clinic_admin.assign(request, self.staff, conference_url="https://zoom.example/9")
-        request.refresh_from_db()
-        self.assertEqual(RecordingAdapter.calls, 0)
-        self.assertEqual(request.conference_url, "https://zoom.example/9")
-        # 우리가 만든 스페이스가 아니므로 provider·ref 는 비어야 한다
-        self.assertIsNone(request.conference_provider)
-        self.assertIsNone(request.conference_ref)
-
-    @override_settings(CLINIC_CONFERENCE_BACKEND=ADAPTER_PATH)
-    def test_manual_url_replaces_an_api_space(self):
-        request = self.make_request()
-        clinic_admin.assign(request, self.staff)
-        clinic_admin.assign(request, self.staff, conference_url="https://zoom.example/9")
-        request.refresh_from_db()
-        self.assertEqual(request.conference_url, "https://zoom.example/9")
-        self.assertIsNone(request.conference_ref)
-
-    @override_settings(CLINIC_CONFERENCE_BACKEND="")
-    def test_manual_url_works_without_any_provider(self):
-        # 연동 전·자격증명 없음에서도 배정은 성립해야 한다(오늘의 동작 유지)
-        request = self.make_request()
-        clinic_admin.assign(request, self.staff, conference_url="https://meet.google.com/x")
-        request.refresh_from_db()
-        self.assertEqual(request.conference_url, "https://meet.google.com/x")
-
-    # ③ 재배정 --------------------------------------------------------------
 
     @override_settings(CLINIC_CONFERENCE_BACKEND=ADAPTER_PATH)
     def test_reassign_keeps_the_same_space(self):
@@ -260,14 +228,6 @@ class SupervisionScheduleTests(TestCase):
         self.assertEqual(url, request.conference_url)
         self.assertEqual(starts_at, supervision.starts_at(request))
         self.assertEqual(minutes, 60)
-
-    @override_settings(CLINIC_CONFERENCE_BACKEND=ADAPTER_PATH)
-    def test_a_manual_link_is_supervised_too(self):
-        # 관리자가 링크를 손으로 넣어도 감독은 붙어야 한다 — 남의 방이어도
-        # 봇은 링크만 있으면 들어간다.
-        request = self.make_request()
-        clinic_admin.assign(request, self.staff, "https://meet.google.com/man-ual-lnk")
-        self.assertEqual(RecordingAdapter.scheduled[0][2], "https://meet.google.com/man-ual-lnk")
 
     @override_settings(CLINIC_CONFERENCE_BACKEND=ADAPTER_PATH)
     def test_cancelling_takes_the_bot_off(self):

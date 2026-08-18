@@ -47,6 +47,16 @@ _RETRYABLE_STATUSES = frozenset({408, 429})
 #: 봇이 더 갈 데가 없는 상태. `done` 은 정상 종료, `fatal` 은 실패다.
 DONE, FATAL = "done", "fatal"
 
+#: 참가자 목록에 뜨는 이름. **되찾기는 `metadata` 가 하므로 여기는 자유다** —
+#: 내부 경로를 넣었더니 학생 화면에 자기 원번이 붙은 문자열이 앉아 있었다
+#: (2026-08-18 실측). 사람이 읽는 자리라 사람 말로 적는다.
+BOT_NAME = "JC 만점봇"
+
+#: 업체 쪽 보관 기간(시간). **7일** — 원본은 회의가 끝나면 우리 드라이브로
+#: 옮기므로 저쪽은 옮기기가 몇 번 실패해도 될 여유만 있으면 된다.
+#: 업체 요금표상 7일까지가 무료 보관이라 그 안에서 끝낸다.
+RETENTION_HOURS = 24 * 7
+
 #: 시작보다 이만큼 일찍 들어간다. 정각에 맞추면 조교·학생이 먼저 들어와
 #: 인사하고 문제를 펴는 동안 봇이 없어서 **그 앞부분이 통째로 안 남는다**.
 #: 빈 방에 혼자 기다려도 안전하다 — 업체가 "아무도 안 들어오면 나간다"로 잡아
@@ -89,10 +99,20 @@ class RecallAdapter(ConferenceAdapter):
             {
                 "meeting_url": url,
                 "join_at": when,
-                "bot_name": title,
+                "bot_name": BOT_NAME,
                 # 되찾을 이름표. 조회가 `metadata__clinic=` 으로 된다.
                 "metadata": {"clinic": key},
-                "recording_config": {"audio_mixed": {}},
+                # **키 이름이 틀리면 조용히 무시된다** — `audio_mixed` 로 보냈더니
+                # 기본값인 영상으로 녹음돼 있었다(2026-08-18 실측). 영상은 우리가
+                # 쓰지 않으므로 명시적으로 끈다(`None` 이 "찍지 마라"다).
+                "recording_config": {
+                    "audio_mixed_mp3": {},
+                    "video_mixed_mp4": None,
+                    # 업체 기본값은 **영구 보관**이다. 원본은 우리 드라이브로
+                    # 옮기므로 저쪽에 무기한 둘 이유가 없고, 남의 저장소에
+                    # 학생 음성이 계속 남는 것도 원하지 않는다.
+                    "retention": {"type": "timed", "hours": RETENTION_HOURS},
+                },
             },
             "감독 예약을 걸지 못했습니다",
         )
@@ -157,8 +177,21 @@ class RecallAdapter(ConferenceAdapter):
         return changes[-1].get("code") if changes else None
 
     def _audio_url(self, found):
-        shortcut = (found.get("media_shortcuts") or {}).get("audio_mixed") or {}
-        return (shortcut.get("data") or {}).get("download_url")
+        """녹음물 내려받을 주소. 아직 없으면 None.
+
+        **봇 최상위가 아니라 `recordings[]` 안에 있다**(2026-08-18 실측 — 봇에는
+        `media_shortcuts` 키 자체가 없다).
+
+        오디오가 없으면 영상으로 물러선다: 설정 키를 틀렸던 기간에 잡힌 회차는
+        영상만 있는데, 전사 엔진은 영상에서도 소리를 읽으므로 버릴 이유가 없다.
+        """
+        for recording in found.get("recordings") or []:
+            shortcuts = recording.get("media_shortcuts") or {}
+            for kind in ("audio_mixed", "video_mixed"):
+                data = (shortcuts.get(kind) or {}).get("data") or {}
+                if data.get("download_url"):
+                    return data["download_url"]
+        return None
 
     # -- HTTP -------------------------------------------------------------
 

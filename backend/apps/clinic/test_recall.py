@@ -27,11 +27,18 @@ def listed(*bots):
     return (200, json.dumps({"results": list(bots)}).encode())
 
 
-def bot(ident="bot-1", state="done", audio="https://cdn.recall/audio.mp4"):
+def bot(ident="bot-1", state="done", audio="https://cdn.recall/audio.mp3", video=None):
+    # **미디어는 봇이 아니라 `recordings[]` 안에 있다**(2026-08-18 실측 —
+    # 봇 최상위에는 media_shortcuts 자체가 없다).
+    shortcuts = {}
+    if audio:
+        shortcuts["audio_mixed"] = {"data": {"download_url": audio}}
+    if video:
+        shortcuts["video_mixed"] = {"data": {"download_url": video}}
     return {
         "id": ident,
         "status_changes": [{"code": "joining_call"}, {"code": state}],
-        "media_shortcuts": {"audio_mixed": {"data": {"download_url": audio}}},
+        "recordings": [{"media_shortcuts": shortcuts}],
     }
 
 
@@ -69,15 +76,36 @@ class ScheduleTests(SimpleTestCase):
         # 우리 이름표 — 되찾을 때 쓴다(그래서 컬럼이 필요 없다)
         self.assertEqual(sent["metadata"]["clinic"], KEY)
 
-    def test_asks_for_audio_not_their_transcript(self):
-        # 전사는 CLOVA 가 한다. 업체 전사를 켜면 돈만 더 나가고 한국어는 더 나쁘다.
+    def test_the_bot_shows_a_name_a_student_can_read(self):
+        # 봇은 **참가자 목록에 뜬다**. 되찾기는 metadata 로 하므로 이름은 자유고,
+        # 내부 경로를 그대로 쓰면 학생 화면에 자기 원번이 붙은 문자열이 앉아
+        # 있게 된다(2026-08-18 실측: "clinic/2026-08/2026-08-18_1720_김하늘0001
+        # is in this call").
         transport = FakeTransport(CREATED)
         RecallAdapter(transport=transport).schedule_supervision(
             "https://x/a", key=KEY, title=TITLE, starts_at=STARTS, minutes=60
         )
-        sent = json.loads(transport.calls[0]["body"])
-        self.assertIn("audio_mixed", json.dumps(sent["recording_config"]))
-        self.assertNotIn("transcript", json.dumps(sent["recording_config"]))
+        name = json.loads(transport.calls[0]["body"])["bot_name"]
+        self.assertNotIn("김하늘0001", name)
+        self.assertNotIn("clinic/", name)
+
+    def test_asks_for_audio_and_turns_video_off(self):
+        # 키 이름이 틀리면 업체가 **조용히 무시하고 기본값(영상)으로 녹음한다**
+        # (2026-08-18 실측: `audio_mixed` 로 보냈더니 video_mixed_mp4 가 왔다).
+        # 영상은 우리가 안 쓰는데 용량만 크다.
+        transport = FakeTransport(CREATED)
+        RecallAdapter(transport=transport).schedule_supervision(
+            "https://x/a", key=KEY, title=TITLE, starts_at=STARTS, minutes=60
+        )
+        config = json.loads(transport.calls[0]["body"])["recording_config"]
+        self.assertEqual(config["audio_mixed_mp3"], {})
+        self.assertIsNone(config["video_mixed_mp4"])
+        # 업체 기본값은 **영구 보관**이다. 원본은 회의가 끝나면 우리 드라이브로
+        # 옮기므로 저쪽은 옮기기가 몇 번 실패해도 될 여유만 있으면 된다.
+        # 7일까지가 업체 무료 보관 구간이라 거기서 끝낸다.
+        self.assertEqual(config["retention"], {"type": "timed", "hours": 24 * 7})
+        # 전사는 CLOVA 가 한다 — 업체 전사를 켜면 돈만 더 나가고 한국어는 더 나쁘다
+        self.assertNotIn("transcript", json.dumps(config))
 
     def test_server_error_is_temporary(self):
         with self.assertRaises(TemporaryConferenceError):
@@ -144,7 +172,7 @@ class FetchTests(SimpleTestCase):
         transport = FakeTransport(listed(bot()))
         adapter = RecallAdapter(transport=transport, transcriber=self.stub_transcriber())
         found = adapter.fetch_supervision("spaces/S1", file_as=TITLE, key=KEY)
-        self.assertEqual(self.asked[0], "https://cdn.recall/audio.mp4")
+        self.assertEqual(self.asked[0], "https://cdn.recall/audio.mp3")
         self.assertEqual(found.transcript_ref, "bot-1")
         self.assertIn("오답 원인", found.summary)
 
@@ -156,3 +184,19 @@ class FetchTests(SimpleTestCase):
             RecallAdapter(transport=transport).fetch_supervision(
                 "spaces/S1", file_as=TITLE, key=KEY
             )
+
+    def test_falls_back_to_the_video_when_only_that_exists(self):
+        # 옛 예약은 영상으로 녹음됐다(설정 키를 틀렸던 기간). 전사 엔진은
+        # 영상에서도 소리를 읽으므로 버리지 않는다.
+        transport = FakeTransport(listed(bot(audio=None, video="https://cdn.recall/v.mp4")))
+        adapter = RecallAdapter(transport=transport, transcriber=self.stub_transcriber())
+        adapter.fetch_supervision("spaces/S1", file_as=TITLE, key=KEY)
+        self.assertEqual(self.asked[0], "https://cdn.recall/v.mp4")
+
+    def test_waits_when_the_media_is_not_ready_yet(self):
+        transport = FakeTransport(listed(bot(audio=None)))
+        self.assertIsNone(
+            RecallAdapter(transport=transport).fetch_supervision(
+                "spaces/S1", file_as=TITLE, key=KEY
+            )
+        )

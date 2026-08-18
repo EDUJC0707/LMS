@@ -141,17 +141,19 @@ def _supervision_block(request):
 _ASSIGNABLE = (ClinicRequest.Status.PENDING, ClinicRequest.Status.APPROVED)
 
 
-def assign(request, staff_user, conference_url=None):
+def assign(request, staff_user):
     """승인+배정(①) — 담당 직원·화상 링크를 걸고 `승인배정`으로 전이.
 
-    링크가 정해지는 순서(위에서 걸리면 아래는 보지 않는다):
-      1. `conference_url` 이 들어왔다 → **그것이 이긴다**. 업체를 부르지 않고
-         provider·ref 는 비운다 — 우리가 만든 스페이스가 아니기 때문이다.
-      2. 이미 링크가 있다(재배정) → **그대로 둔다**. 클리닉 1건 = 스페이스 1개
+    링크가 정해지는 순서:
+      1. 이미 링크가 있다(재배정) → **그대로 둔다**. 클리닉 1건 = 스페이스 1개
          (§4)이고, 조교만 바뀌는데 링크가 갈리면 학생이 이미 받은 링크가 죽는다.
          시간이 바뀐 경우는 `booking.change_booking` 이 셋을 비워 두므로 여기서
          새로 뚫린다.
-      3. 없다 → 화상 어댑터로 **새 스페이스 1개**를 만든다.
+      2. 없다 → 화상 어댑터로 **새 스페이스 1개**를 만든다.
+
+    ~~관리자가 링크를 손으로 넣는 경로~~ 는 없앴다(2026-08-18). 실제로 그렇게
+    배정하는 상황이 없는데 코드 경로만 하나 더 있었고, 그 경로로 들어온 건은
+    `conference_ref` 가 비어 감독 자료를 못 거두는 반쪽 상태가 됐다.
 
     **실패하면 아무것도 바꾸지 않는다.** 스페이스를 먼저 만들고 그 다음에
     필드를 건드리는 순서인 이유다 — `승인배정`인데 링크가 없는 행은 학생에게
@@ -162,7 +164,7 @@ def assign(request, staff_user, conference_url=None):
         raise ClinicError("배정할 수 없는 상태입니다.")
     if staff_user is None or staff_user.role not in STAFF_ROLES or not staff_user.is_active:
         raise ClinicError("배정 대상은 활성 직원이어야 합니다.")
-    conference = _resolve_conference(request, conference_url)
+    conference = _resolve_conference(request)
     request.status = ClinicRequest.Status.APPROVED
     request.assigned_staff = staff_user
     request.conference_provider = conference.provider
@@ -211,10 +213,8 @@ def _book_supervision(request):
         return
 
 
-def _resolve_conference(request, conference_url):
-    """배정에 쓸 화상 3열을 정한다(위 순서 1·2·3). 실패는 ClinicError."""
-    if conference_url:
-        return Conference(provider=None, ref=None, url=conference_url)
+def _resolve_conference(request):
+    """배정에 쓸 화상 3열을 정한다(위 순서 1·2). 실패는 ClinicError."""
     if request.conference_url:
         return Conference(
             provider=request.conference_provider,
@@ -228,7 +228,7 @@ def _resolve_conference(request, conference_url):
         raise ClinicError(str(error), http_status=503) from error
     except PermanentConferenceError as error:
         # 자격증명 없음·스코프 미승인 — 재시도로는 안 풀린다. 사유를 그대로
-        # 올려 보낸다: 감추면 관리자는 링크를 직접 넣어야 한다는 것도 모른다.
+        # 올려 보낸다: 감추면 관리자는 왜 배정이 안 되는지 알 길이 없다.
         raise ClinicError(str(error)) from error
 
 

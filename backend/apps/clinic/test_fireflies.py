@@ -233,16 +233,6 @@ class CreateSpaceTests(SimpleTestCase):
 class ToggleTests(SimpleTestCase):
     """설정 한 줄로 갈아 끼운다 — 구글 코드는 남는다(2026-08-12 지시)."""
 
-    def test_this_is_the_default_now(self):
-        # 2026-08-12 전면 교체. 실제 클리닉으로 전사·화자분리·한국어 요약까지
-        # 확인하고 기본값을 옮겼다. 구글 어댑터는 지우지 않는다 — 설정 한 줄로
-        # 돌아갈 수 있어야 교체가 되돌릴 수 있는 결정으로 남는다.
-        from django.conf import settings
-
-        self.assertEqual(
-            settings.CLINIC_CONFERENCE_BACKEND, "apps.clinic.fireflies.FirefliesAdapter"
-        )
-
     @override_settings(CLINIC_CONFERENCE_BACKEND="apps.clinic.fireflies.FirefliesAdapter")
     def test_the_configured_path_resolves(self):
         # `.env` 가 문자열로 가리키는 자리다. 클래스를 옮기거나 이름을 바꾸면
