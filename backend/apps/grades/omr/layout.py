@@ -134,13 +134,19 @@ ANSWER_FIRST_ROW_MM = Decimal("19.3675")
 #: 열 간격 > 박스 폭 이라 **열 사이에 빈 자리가 생긴다.** 수능 답안지가 열마다
 #: 따로 박스를 세우고 사이를 띄우는 방식이다(대표 2026-08-18). 붙여 놓으면
 #: 21번이 1번 옆줄로 보여 학생이 줄을 잘못 탄다.
-ANSWER_COL_PITCH_MM = Decimal("40.0")
+ANSWER_COL_PITCH_MM = Decimal("42.5")
 ANSWER_BOX_W_MM = Decimal("36.8")
 ANSWER_ROWS_PER_COL = 20
 
-#: 조사 카드 점수칸 — 십의 자리 1~5, 일의 자리 1~9,0.
+#: 조사 카드 점수칸 — **한 열**이다. 십의 자리가 위(1~5), 일의 자리가 아래(1~9,0).
+#: 원본 조사 카드 실측(`card.py`)에서 두 자리의 x 가 **같고**(1161.1) y 만
+#: 다르다: 십 154.5~411.0, 일 793.4~1375.1. 간격을 재 보면 둘 다 답란과 같은
+#: 64px 격자이고, 사이가 정확히 6행이다 — 그래서 **답란과 같은 20행 격자**에
+#: 십을 1~5행, 일을 11~20행으로 얹으면 원본과 같은 지면이 된다.
 SURVEY_TENS = ("1", "2", "3", "4", "5")
 SURVEY_ONES = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
+SURVEY_TENS_ROW0 = 0
+SURVEY_ONES_ROW0 = 10
 
 
 class Layout:
@@ -174,16 +180,31 @@ class Layout:
             ]
         return cells
 
+    def survey_cells(self):
+        """{("십"|"일", 숫자): (u, v)} — 답란과 같은 20행 격자 위 한 열."""
+        u = float(mm_to_u(ANSWER_COL_X_MM + CHOICE_PITCH_MM * 2))
+        cells = {}
+        for place, digits, row0 in (
+            ("십", SURVEY_TENS, SURVEY_TENS_ROW0),
+            ("일", SURVEY_ONES, SURVEY_ONES_ROW0),
+        ):
+            for index, digit in enumerate(digits):
+                y = ANSWER_FIRST_ROW_MM + (row0 + index) * ROW_PITCH_MM
+                cells[(place, digit)] = (u, float(mm_to_v(y)))
+        return cells
+
     def bars(self):
         return encode_bars(self.layout_id)
 
 
+#: 지금 찍는 것은 **두 종뿐**이다(대표 2026-08-18) — 25문항과 성적조사.
+#: 나머지 크기는 나중에 붙이면 되므로 만들지 않는다. 다만 **id 는 비워 둔다**:
+#: 한 번 인쇄한 카드의 판형 번호는 되돌릴 수 없으므로 20/30/35/40 이 나중에
+#: 들어올 때 25 와 조사의 번호가 밀리면 안 된다.
+#:
+#:   1=답안20  2=답안25  3=답안30  4=답안35  5=답안40  6=성적조사
 LAYOUTS = (
-    Layout(1, "답안20", 20),
     Layout(2, "답안25", 25),
-    Layout(3, "답안30", 30),
-    Layout(4, "답안35", 35),
-    Layout(5, "답안40", 40),
     Layout(6, "성적조사"),
 )
 

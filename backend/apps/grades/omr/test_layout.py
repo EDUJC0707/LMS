@@ -62,18 +62,24 @@ class TestBars:
 
 
 class TestGrid:
-    def test_the_20_question_card_keeps_the_328_bubble_checksum(self):
-        """card.py 의 검산값이다 — 성명 188 + 전화 40 + 답란 100."""
-        cells = layout.BY_NAME["답안20"].answer_cells()
-        answers = sum(len(row) for row in cells.values())
+    def test_the_identity_block_keeps_its_228_bubble_checksum(self):
+        """card.py 의 검산값 중 신원란 몫 — 성명 188 + 전화 40."""
         assert len(layout.name_cells()) == 188
         assert len(layout.phone_cells()) == 40
-        assert answers == 100
-        assert len(layout.name_cells()) + len(layout.phone_cells()) + answers == 328
+
+    def test_the_survey_score_is_one_column_tens_over_ones(self):
+        """원본 조사 카드가 그렇다 — 두 열로 갈라 놓으면 지면이 달라진다."""
+        cells = layout.BY_NAME["성적조사"].survey_cells()
+        assert len(cells) == 15
+        us = {round(u, 6) for u, _ in cells.values()}
+        assert len(us) == 1, "점수칸은 한 열이어야 한다"
+        tens = [v for (place, _), (_, v) in cells.items() if place == "십"]
+        ones = [v for (place, _), (_, v) in cells.items() if place == "일"]
+        assert max(tens) < min(ones), "십의 자리가 위에 온다"
 
     def test_column_one_sits_exactly_on_the_old_card(self):
         """1열은 물려받는다 — 어긋나면 옛 스캔과 새 스캔이 다른 격자가 된다."""
-        cells = layout.BY_NAME["답안40"].answer_cells()
+        cells = layout.BY_NAME["답안25"].answer_cells()
         rows = card._even_span(card.ANSWER_ROW_Y, card.ANSWER_QUESTIONS)
         for question in range(1, 21):
             for index, (u, v) in enumerate(cells[question]):
@@ -82,8 +88,7 @@ class TestGrid:
 
     @pytest.mark.parametrize(
         "name,questions,columns",
-        [("답안20", 20, 1), ("답안25", 25, 2), ("답안30", 30, 2),
-         ("답안35", 35, 2), ("답안40", 40, 2)],
+        [("답안25", 25, 2)],
     )
     def test_sizes_and_columns(self, name, questions, columns):
         card_layout = layout.BY_NAME[name]
@@ -124,7 +129,7 @@ class TestRender:
         cv2 = pytest.importorskip("cv2")
         import numpy as np
 
-        card_layout = layout.BY_NAME["답안40"]
+        card_layout = layout.BY_NAME["답안25"]
         with tempfile.TemporaryDirectory() as tmp:
             pdf = Path(tmp) / "card.pdf"
             pdf.write_bytes(generate.render(card_layout))
@@ -135,7 +140,9 @@ class TestRender:
             page = next(Path(tmp).glob("page*.png"))
             image = cv2.imread(str(page), cv2.IMREAD_GRAYSCALE)
 
-        ink = (image < 128).astype(np.uint8)
+        # 카드가 2도 인쇄라 문턱을 색에 맞춘다: 분홍 링은 회색값 약 106,
+        # 연초록 바탕은 217 이다. 128 로 자르면 링이 조각난다.
+        ink = (image < 170).astype(np.uint8)
         count, _, stats, centres = cv2.connectedComponentsWithStats(ink, 8)
 
         solid = [
@@ -152,30 +159,22 @@ class TestRender:
         for got, want_mm in ((mark_x[0], layout.MARK_X_MM[0]), (mark_x[1], layout.MARK_X_MM[1])):
             assert abs(got - float(want_mm) / 25.4 * 200) / 200 * 25.4 < 0.2
 
-        def inside_rules(x, y):
-            """`지켜야 할 사항` 의 잘못된 표기 예시는 장식이지 데이터 칸이 아니다."""
-            u = (x - mark_x[0]) / (mark_x[1] - mark_x[0])
-            v = (y - mark_y[0]) / (mark_y[1] - mark_y[0])
-            u0, v0, u1, v1 = generate.BOX_RULES
-            return u0 <= u <= u1 and v0 <= v <= v1
-
-        rings = [
-            (centres[i][0], centres[i][1])
+        rings = np.array([
+            [(centres[i][0] - mark_x[0]) / (mark_x[1] - mark_x[0]),
+             (centres[i][1] - mark_y[0]) / (mark_y[1] - mark_y[0])]
             for i in range(1, count)
             if 14 < stats[i][2] < 26 and 26 < stats[i][3] < 42
             and stats[i][4] < 0.85 * stats[i][2] * stats[i][3]
-            and not inside_rules(centres[i][0], centres[i][1])
-        ]
-        # 답란 200 + 전화 40. 성명은 정원이라 이 필터에 안 걸린다.
-        assert len(rings) == 240
-
-        found = np.array([
-            [(x - mark_x[0]) / (mark_x[1] - mark_x[0]),
-             (y - mark_y[0]) / (mark_y[1] - mark_y[0])]
-            for x, y in rings
         ])
+
         want = [uv for row in card_layout.answer_cells().values() for uv in row]
         want += list(layout.phone_cells().values())
+
+        # 링을 **설계 칸 기준으로** 센다. 지면 전체를 세면 로고 속 빈 공간이나
+        # 굵은 글자 획까지 링으로 잡힌다 — 그건 결함이 아니라 검출기의 한계다.
+        matched = 0
         for u, v in want:
-            distance = np.hypot((found[:, 0] - u) * sx, (found[:, 1] - v) * sy).min()
-            assert distance < 0.35, (u, v, distance)
+            distance = np.hypot((rings[:, 0] - u) * sx, (rings[:, 1] - v) * sy)
+            assert distance.min() < 0.35, (u, v, distance.min())
+            matched += int((distance < 0.35).sum())
+        assert matched == len(want), "칸 하나에 링이 둘이면 격자가 겹친 것이다"
