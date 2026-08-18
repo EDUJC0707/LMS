@@ -183,7 +183,12 @@ class AttendanceAdminAccessTests(AttendanceAdminFixtureMixin, TestCase):
         )
 
     def test_assistant_without_feature_is_denied(self):
-        # 조교 프리셋에는 출결입력·영상지급관리가 없다(features.ROLE_PRESETS)
+        # 조교 프리셋에 출결입력이 들어간 뒤(2026-08-18)라 delta 로 거둬서 검증한다
+        StaffFeatureGrant.objects.create(
+            user=self.assistant,
+            feature_key=FeatureKey.ATTENDANCE_ENTRY,
+            is_granted=False,
+        )
         self.login(self.assistant)
         self.assertEqual(self.client.get(SESSIONS_URL).status_code, 403)
         self.assertEqual(
@@ -1007,7 +1012,12 @@ class WithdrawTests(AttendanceAdminFixtureMixin, TestCase):
 
     def test_withdraw_requires_attendance_entry_feature(self):
         self.client.logout()
-        self.login(self.assistant)  # 조교 프리셋에 출결입력 없음
+        StaffFeatureGrant.objects.create(
+            user=self.assistant,
+            feature_key=FeatureKey.ATTENDANCE_ENTRY,
+            is_granted=False,
+        )
+        self.login(self.assistant)
         self.assertEqual(
             self.post_withdraw({"student_id": self.s1.student_id}).status_code, 403
         )
