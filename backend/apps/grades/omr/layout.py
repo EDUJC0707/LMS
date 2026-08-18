@@ -234,8 +234,16 @@ NAME_VOWEL_COLUMNS = (2, 5, 8, 11)
 #: 성명 버블은 스타디움이 아니라 지름 ~31px 정원이다.
 NAME_BUBBLE_D_MM = Decimal("31.0") / _AVG_W * SPAN_X_MM
 
+#: 전화 4자리 열 — **균일 간격으로 고친다**(대표 2026-08-19). 옛 카드는
+#: 52.9 / 79.2 / 57.2px 로 가운데만 넓었다(구분선 자리). 우리가 찍는 카드이니
+#: 고르게 둔다 — 두 자리씩 떨어져 보이면 학생이 자리를 헷갈린다.
+#:
+#: 양 끝은 옛 카드 그대로 두고 사이만 4등분했다. 그래서 격자가 차지하는
+#: **폭은 안 변하고** 안쪽 두 열만 움직인다.
+_PHONE_FIRST, _PHONE_LAST = Decimal("706.9"), Decimal("896.1")
 PHONE_COL_U = tuple(
-    Decimal(str(x)) / _AVG_W for x in (706.9, 759.8, 839.0, 896.1)
+    (_PHONE_FIRST + (_PHONE_LAST - _PHONE_FIRST) * Decimal(index) / 3) / _AVG_W
+    for index in range(4)
 )
 PHONE_ROW_V = (Decimal("698.7") / _AVG_H, Decimal("1149.2") / _AVG_H)
 PHONE_DIGITS = 10
