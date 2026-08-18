@@ -16,6 +16,7 @@ from django.db import transaction
 from django.db.models import Count, F, Q, Sum
 
 from apps.accounts import student_directory
+from apps.curriculum.models import class_name_subquery
 
 from . import omr_store, report, scoring
 from .models import AnswerSheet, Exam, Question, Score, SheetAnswer
@@ -69,6 +70,7 @@ def build_exam_detail(exam):
     scores = list(
         Score.objects.filter(exam=exam)
         .select_related("student__user")
+        .annotate(class_name=class_name_subquery("student_id"))
         .order_by(F("total_score").desc(nulls_last=True), "student_id")
     )
     return {
@@ -196,7 +198,7 @@ def _student_rows(scores):
                 "name": student.user.name if student.user else None,
                 "login_id": student.user.login_id if student.user else None,
                 "matching_key": student.matching_key,
-                "current_class": student.current_class,
+                "current_class": score.class_name,
                 "total_score": score.total_score,
                 "max_score": score.max_score,
                 "percentile": score.percentile,  # 저장값 표시만(모듈 docstring)
@@ -332,6 +334,7 @@ def sheet_rows(exam):
                 "answers", filter=Q(answers__issue_reason__in=SheetAnswer.BLOCKING_ISSUES)
             ),
         )
+        .annotate(student_class_name=class_name_subquery("student_id"))
         .annotate(
             settled=Q(is_corrected=True)
             & Q(match_status=AnswerSheet.MatchStatus.MATCHED)
@@ -400,7 +403,11 @@ def _sheet_row(sheet):
         "score_from_handwriting": sheet.score_from_handwriting,
         # 명부와 같은 행 모양으로 낸다 — 보정 화면의 학생 선택기가 명부 API 로
         # 고르는 값과 같아야 "이미 붙은 학생"과 "지금 고른 학생"이 한 자리에 선다.
-        "student": None if sheet.student is None else student_directory.row(sheet.student),
+        "student": (
+            None
+            if sheet.student is None
+            else student_directory.row(sheet.student, sheet.student_class_name)
+        ),
     }
 
 

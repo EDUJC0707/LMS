@@ -39,6 +39,8 @@ from decimal import Decimal
 
 from django.db.models import Count, Max, Min, Q, Sum
 
+from apps.curriculum.models import class_name_of
+
 from . import scoring
 from .models import AnswerSheet, Score, SheetAnswer
 
@@ -205,14 +207,17 @@ def _cut_at_top30(totals):
 
 def _student_block(student):
     """성적표 학생 정보(PRD 3.2.1 — 성명·원번·학교). 홈 블록과 달리 원번을
-    포함한다 — 성적표 스펙이 원번 표기를 명시(오배부 대조 축)."""
+    포함한다 — 성적표 스펙이 원번 표기를 명시(오배부 대조 축).
+
+    반은 학생 1명분이라 여기서 읽는다(학생 목록이 아니므로 쿼리 1회 고정).
+    """
     return {
         "student_id": student.student_id,
         "name": student.user.name if student.user else None,
         "login_id": student.user.login_id if student.user else None,
         "matching_key": student.matching_key,
         "school": student.school,
-        "current_class": student.current_class,
+        "current_class": class_name_of(student),
     }
 
 

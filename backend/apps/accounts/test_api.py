@@ -10,6 +10,8 @@ from rest_framework.response import Response
 from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 from rest_framework.views import APIView
 
+from apps.curriculum.models import Class, Course, CourseEnrollment
+
 from .features import ROLE_PRESETS, FeatureKey
 from .models import Parent, ParentStudent, StaffFeatureGrant, Student, User
 from .permissions import FeatureRequired, IsParent, IsStaffRole, IsStudent
@@ -358,8 +360,14 @@ class MeStudentTests(MeTestBase):
             user=user,
             matching_key="2-1234",
             grade="고2",
-            current_class="일요 3반",
             enrollment_status=Student.EnrollmentStatus.REGISTERED,
+        )
+        # 반 이름은 수강이 가리키는 반에서 온다(사본 없음)
+        course = Course.objects.create(name="로직엔제")
+        CourseEnrollment.objects.create(
+            student=student,
+            course=course,
+            klass=Class.objects.create(course=course, name="일요 3반"),
         )
         data = self.me_as(user).json()
         self.assertEqual(

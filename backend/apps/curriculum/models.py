@@ -40,9 +40,8 @@ class Class(models.Model):
     """`classes` — 반 (FLOW 1-1).
 
     커리(`Course`)는 **무엇을 가르치는가**, 반은 **누가·언제 듣는가**다.
-    같은 `2026 여름 N제` 를 목반과 화반이 같이 듣기 때문에 반을 문자열
-    (`CourseEnrollment.class_name`)로 두면 오타 하나가 반을 둘로 가르고,
-    주차 날짜를 반마다 따로 가질 수 없다.
+    같은 `2026 여름 N제` 를 목반과 화반이 같이 듣기 때문에 반을 문자열로 두면
+    오타 하나가 반을 둘로 가르고, 주차 날짜를 반마다 따로 가질 수 없다.
 
     반이 담는 것은 **학생·출결·성적·주차 날짜**다. 주 1회라 주차와 수업
     회차가 1:1 이므로(FLOW 1-1) 반의 주차는 별도 표가 아니라
@@ -203,8 +202,8 @@ class CourseEnrollment(models.Model):
       (설계 원칙: 값 추가 시 무마이그레이션).
     - 수강 이력은 기록이므로 학생·강좌 삭제로 유실되지 않게 PROTECT.
     - primary_weekday: 0=일…6=토. -- 잠정: 다요일 반복 시 확장(설계 문서 주석)
-    - klass: 진짜 반(`Class`). `class_name` 문자열과 당분간 공존한다 —
-      문자열을 읽는 자리가 아직 여럿이라 제거는 별건이다.
+    - klass: 반(`Class`). 반 이름은 여기서만 읽는다 — 문자열 사본은 2026-08-18
+      제거됐다(이름을 고치면 사본이 옛 이름으로 남았다).
     """
 
     class Status(models.TextChoices):
@@ -227,7 +226,6 @@ class CourseEnrollment(models.Model):
         related_name="enrollments",
         verbose_name="강좌",
     )
-    class_name = models.CharField("반", max_length=30, null=True, blank=True)  # noqa: DJ001
     klass = models.ForeignKey(
         Class,
         on_delete=models.PROTECT,
@@ -270,3 +268,39 @@ class CourseEnrollment(models.Model):
 
     def __str__(self):
         return f"{self.student_id}↔{self.course_id}({self.get_status_display()})"
+
+
+# --- 반 이름 읽기 ---------------------------------------------------------
+#
+# 반 이름은 `Class.name` 하나뿐이다(사본 금지 — key_considerations §6).
+# 학생↔반은 N:M 이라(FLOW 1-1) "그 학생의 반"이 여럿일 수 있어, 문맥이 없는
+# 자리는 활성 수강 중 **가장 먼저 등록한 반**으로 정한다(홈의 primary 와 같은 축).
+
+
+def class_name_subquery(outer="pk", course_id=None):
+    """학생 행에 붙일 반 이름 서브쿼리 — 명단·성적표처럼 학생 수만큼 도는 자리용.
+
+    `outer` 는 학생 FK 를 가리키는 바깥 필드(학생 목록은 "pk", 성적·답안지
+    목록은 "student_id"). `course_id` 를 주면 그 커리의 반으로 좁힌다 —
+    출결표는 그 회차 커리의 반이어야 한다.
+    """
+    enrollments = CourseEnrollment.objects.filter(
+        student=models.OuterRef(outer), status=CourseEnrollment.Status.ENROLLED
+    )
+    if course_id is not None:
+        enrollments = enrollments.filter(course_id=course_id)
+    return models.Subquery(
+        enrollments.order_by("enrollment_id").values("klass__name")[:1]
+    )
+
+
+def class_name_of(student):
+    """학생 1명의 반 이름. 목록은 이 함수 대신 `class_name_subquery` 를 annotate 한다."""
+    return (
+        CourseEnrollment.objects.filter(
+            student=student, status=CourseEnrollment.Status.ENROLLED
+        )
+        .order_by("enrollment_id")
+        .values_list("klass__name", flat=True)
+        .first()
+    )

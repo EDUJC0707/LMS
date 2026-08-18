@@ -146,9 +146,6 @@ class Student(models.Model):
     noshow_count = models.PositiveIntegerField("노쇼 누적", default=0)
     clinic_banned = models.BooleanField("클리닉 이용 정지", default=False)
     credentials_sent_at = models.DateTimeField("계정정보 발송 시각", null=True, blank=True)
-    # 아래 문자열 컬럼들은 설계 문서가 NULL로 명시 — ''와 미입력을 구분한다.
-    # (youtube_email 은 2026-07-22 삭제 — 유튜브 방식 폐기(PRD 3.1.3)의 잔재 정리)
-    current_class = models.CharField("현재 반", max_length=50, null=True, blank=True)  # noqa: DJ001
     enrollment_status = models.CharField(
         "등록 상태",
         max_length=15,
@@ -157,6 +154,7 @@ class Student(models.Model):
     )
     withdrawn_at = models.DateTimeField("퇴원 처리 시각", null=True, blank=True)
     # -- 잠정: '등록 안 한 학생' 정의 확정 필요(설계 문서 §6)
+    # 설계 문서가 NULL로 명시한 문자열 컬럼 — ''와 미입력을 구분한다.
     withdrawn_reason = models.CharField("퇴원 사유", max_length=200, null=True, blank=True)  # noqa: DJ001
     withdrawn_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

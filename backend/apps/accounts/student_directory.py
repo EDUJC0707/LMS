@@ -31,13 +31,14 @@ staff_admin·attendance_admin 선례).
 - `enrollment_status`: 값집합(예비등록/등록/퇴원) 밖은 뷰가 400.
 - `course_id`: **활성 수강(`수강`)** 기준 — 중단·종료 수강은 그 강좌의 현재
   명부가 아니다(출결 명단 load_roster 와 같은 판정).
-- `class_name`: students.current_class 부분일치(반 이름 표기 흔들림 허용).
+- `class_name`: 반 이름(`classes.name`) 부분일치 — 활성 수강의 반 전부가 대상
+  (학생↔반은 N:M — FLOW 1-1).
 - 등록 상태는 **기본 필터 없음** — 예비등록(전환 대상)·퇴원(이력 확인)이
   이 화면의 주 사용처라 좁히면 갭이 남는다. 좁히기는 호출측 선택.
 """
 from django.db.models import Q
 
-from apps.curriculum.models import CourseEnrollment
+from apps.curriculum.models import CourseEnrollment, class_name_subquery
 
 from .models import Student
 
@@ -45,11 +46,13 @@ from .models import Student
 def build_queryset(q=None, enrollment_status=None, course_id=None, class_name=None):
     """명부 쿼리셋 — 검증 통과한 파라미터 전제(뷰가 값집합·형변환 담당).
 
-    `select_related("user")` 로 이름 조인을 한 번에 붙인다(N+1 금지 —
-    페이지 크기와 무관하게 목록 쿼리 1회). 정렬은 student_id 오름차순
-    (페이지네이션 결정성 — 출결 명단 정렬 축과 동일).
+    `select_related("user")` 로 이름 조인을 한 번에 붙이고 반 이름은
+    서브쿼리로 붙인다(N+1 금지 — 페이지 크기와 무관하게 목록 쿼리 1회).
+    정렬은 student_id 오름차순(페이지네이션 결정성 — 출결 명단 정렬 축과 동일).
     """
-    queryset = Student.objects.select_related("user")
+    queryset = Student.objects.select_related("user").annotate(
+        class_name=class_name_subquery()
+    )
     if q:
         queryset = queryset.filter(
             Q(user__name__icontains=q)
@@ -64,17 +67,23 @@ def build_queryset(q=None, enrollment_status=None, course_id=None, class_name=No
             course_enrollments__status=CourseEnrollment.Status.ENROLLED,
         )
     if class_name:
-        queryset = queryset.filter(current_class__icontains=class_name)
+        queryset = queryset.filter(
+            course_enrollments__klass__name__icontains=class_name,
+            course_enrollments__status=CourseEnrollment.Status.ENROLLED,
+        )
     # 수강 조인이 붙는 경우의 행 중복 방어(UQ(student, course)로 실제 중복은
     # 없지만 조인 조건이 늘어도 계약이 깨지지 않게 고정한다).
     return queryset.distinct().order_by("student_id")
 
 
-def row(student):
+def row(student, class_name):
     """명부 행 — 개인정보 최소(연락처·학교·노쇼 등 운영 컬럼 미포함).
 
     name 은 연결된 users 행에서 취한다 — 계정 발급 전 학생은 null
     (students 에 이름 컬럼이 없다는 accounts 설계 계약).
+
+    반 이름은 학생 행에 없으므로(`Class` 가 원천) 호출측이 넘긴다 — 목록은
+    `build_queryset` 의 annotate 값을, 단건은 `class_name_of` 를 쓴다.
     """
     return {
         "student_id": student.student_id,
@@ -82,6 +91,6 @@ def row(student):
         "login_id": student.user.login_id if student.user else None,
         "matching_key": student.matching_key,
         "grade": student.grade,
-        "current_class": student.current_class,
+        "current_class": class_name,
         "enrollment_status": student.enrollment_status,
     }

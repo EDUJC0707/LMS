@@ -24,6 +24,7 @@ from decimal import Decimal
 from django.test import TestCase
 
 from apps.accounts.models import Parent, ParentStudent, Student, User
+from apps.curriculum.models import Class, Course, CourseEnrollment
 from apps.videos.models import Video
 
 from .models import AnswerSheet, Exam, Question, Score, SheetAnswer
@@ -85,8 +86,13 @@ class GradeFixtureMixin:
     def setUpTestData(cls):
         R = SheetAnswer.Result
         ISSUE = SheetAnswer.Issue
-        cls.student_a = make_student(
-            "stu-grd-a", "김서연", school="서연고", current_class="고2 B반"
+        cls.student_a = make_student("stu-grd-a", "김서연", school="서연고")
+        CourseEnrollment.objects.create(
+            student=cls.student_a,
+            course=Course.objects.create(name="2026 여름 N제"),
+            klass=Class.objects.create(
+                course=Course.objects.get(name="2026 여름 N제"), name="고2 B반"
+            ),
         )
         cls.student_z = make_student("stu-grd-z", "박둘째")
         cls.student_b = make_student("stu-grd-b", "이민준")
@@ -370,9 +376,10 @@ class StudentGradeListTests(GradeFixtureMixin, TestCase):
 
     def test_query_budget(self):
         self.login_student()
-        # 세션인증 2 + 학생 1 + 성적목록 1 + E2 집계 1 + E2 상위30 1 + E2 백분위 1
-        # + E3 집계 1 + E3 상위30 1 (E1 은 전부 저장값 — 추가 쿼리 0)
-        with self.assertNumQueries(9):
+        # 세션인증 2 + 학생 1 + 반 이름 1 + 성적목록 1 + E2 집계 1 + E2 상위30 1
+        # + E2 백분위 1 + E3 집계 1 + E3 상위30 1 (E1 은 전부 저장값 — 추가 쿼리 0)
+        # 반 이름은 학생 1명분이라 고정 1회다 — 목록이 아니므로 N+1 이 아니다
+        with self.assertNumQueries(10):
             self.assertEqual(self.client.get(STUDENT_GRADES).status_code, 200)
 
 
@@ -657,10 +664,10 @@ class StudentGradeReportDetailTests(GradeFixtureMixin, TestCase):
 
     def test_query_budget(self):
         self.login_student()
-        # 세션인증 2 + 학생 1 + 성적·시험 1 + 답안지 1 + 대단원 집계 1 + 문항 1
-        # + 내 답안 1 + 오답률 집계 1 + 요약 집계 1 + 상위30 1 + 백분위 1
+        # 세션인증 2 + 학생 1 + 반 이름 1 + 성적·시험 1 + 답안지 1 + 대단원 집계 1
+        # + 문항 1 + 내 답안 1 + 오답률 집계 1 + 요약 집계 1 + 상위30 1 + 백분위 1
         # + 추이 성적 1 + 추이 답안지 1 + 추이 집계 1
-        with self.assertNumQueries(15):
+        with self.assertNumQueries(16):
             self.assertEqual(self.client.get(self.detail_url(self.exam2)).status_code, 200)
 
 

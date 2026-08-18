@@ -238,7 +238,6 @@ class Command(BaseCommand):
                     matching_key=build_matching_key(name, phone),
                     grade=grade,
                     school=_SCHOOLS[(i - 1) % 5],
-                    current_class="수요반" if i % 2 else "토요반",
                     enrollment_status=enrollment,
                     registered_at=(
                         None
@@ -306,15 +305,15 @@ class Command(BaseCommand):
             name: Class.objects.create(
                 course=course, name=name, start_date=week1_monday
             )
-            for name in {s.current_class for s in students if s.current_class}
+            for name in ("수요반", "토요반")
         }
         for idx, student in enumerate(students):
+            wednesday = idx % 2 == 0
             CourseEnrollment.objects.create(
                 student=student,
                 course=course,
-                class_name=student.current_class,
-                klass=classes.get(student.current_class),
-                primary_weekday=3 if idx % 2 == 0 else 6,  # 0=일…6=토(수/토)
+                klass=classes["수요반" if wednesday else "토요반"],
+                primary_weekday=3 if wednesday else 6,  # 0=일…6=토(수/토)
             )
         return course, weeks
 
