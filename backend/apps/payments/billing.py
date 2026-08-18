@@ -13,9 +13,16 @@
 **업체 호출이 실패하면 아무것도 청구된 것으로 남기지 않는다.** 청구서가 안
 나갔는데 `is_billed` 가 서면 1번 방어가 자기 자신을 막아 **그 학생은 영원히
 재청구를 못 받는다**. 그래서 발송 성공 뒤에야 플래그가 선다.
+
+**청구 자격 판정도 여기 있다**(FLOW 1-6·2-7). 학생·학부모·관리자 세 경로가 모두
+이 함수를 지나므로, 목록만 걸러 두면 `product_id` 를 직접 실어 보내는 요청이
+그대로 통과한다. 판정은 둘이다 — ① 그 학생이 듣는 커리의 교재인가 ② 그 반이
+결제선생으로 받는 반인가.
 """
 from django.db import transaction
 from django.utils import timezone
+
+from apps.curriculum.models import CourseEnrollment
 
 from .models import Order, Payment
 from .provider import get_adapter
@@ -38,6 +45,37 @@ def active_order(student, product):
     )
 
 
+def check_billable(student, product):
+    """청구해도 되는 짝인지 본다 — 안 되면 `BillingError`(FLOW 1-6·2-7).
+
+    막는 것 둘:
+    - **다른 커리의 교재**. 목록은 이미 커리로 좁지만 청구는 `product_id` 를
+      본문으로 받으므로 목록을 안 거치고 들어올 수 있다.
+    - **결제선생을 안 쓰는 반**. 러셀은 교재값을 학원이 따로 받는다(FLOW 2-7) —
+      여기서 안 막으면 조교의 기억이 유일한 안전장치가 되고, 한 번 잘못 누르면
+      학부모에게 이중 청구가 나간다.
+
+    반이 안 붙은 수강(`klass` NULL)도 막는다. 결제선생을 쓰는 반이라는 근거가
+    없는 것이지 없어도 된다는 뜻이 아니다.
+    """
+    enrollment = (
+        CourseEnrollment.objects.filter(
+            student=student,
+            course_id=product.course_id,
+            status=CourseEnrollment.Status.ENROLLED,
+        )
+        .select_related("klass")
+        .order_by("enrollment_id")
+        .first()
+        if product.course_id
+        else None
+    )
+    if enrollment is None:
+        raise BillingError("이 학생이 듣는 커리의 교재가 아닙니다.")
+    if enrollment.klass is None or not enrollment.klass.uses_payssam:
+        raise BillingError("결제선생으로 청구하지 않는 반입니다.")
+
+
 def start_billing(student, product, *, actor, parent=None, now=None):
     """청구를 개시하고 (order, created) 를 돌려준다.
 
@@ -49,6 +87,8 @@ def start_billing(student, product, *, actor, parent=None, now=None):
       느릴 때 행 잠금이 그만큼 오래 걸린다.
     """
     now = now or timezone.now()
+
+    check_billable(student, product)
 
     existing = active_order(student, product)
     if existing is not None and existing.is_billed:
@@ -116,10 +156,17 @@ def _build_request(order, recipient_name, phone, product):
 
 
 def _recipient(student, parent):
-    """(청구서에 찍을 이름, 받을 번호). 학부모가 지정되면 학부모 쪽이다."""
+    """(청구서에 찍을 이름, 받을 번호). 학부모가 지정되면 학부모 쪽이다.
+
+    **이름은 언제나 이 건의 학생에서 나온다**(FLOW 2-4). 학부모 계정의
+    `user.name` 은 최초 연결 자녀 기준으로 고정되고(provisioning 의 다자녀 절)
+    `Parent.name` 은 설계상 비어 있어서, 그쪽을 쓰면 **둘째 교재 청구서에 첫째
+    이름이 찍힌다**. 형제를 묶지 않기로 한 이상(아이디마다 따로 청구가 나간다)
+    학부모는 두 건을 이름으로만 가를 수 있고, 같은 교재면 두 문자가 글자 하나
+    다르지 않게 된다. 남의 자녀 이름이 실린 청구서라 개인정보 축도 걸린다.
+    """
+    name = (student.user.name if student.user else "") or student.matching_key
     if parent is not None:
-        name = parent.name or (parent.user.name if parent.user else "") or "학부모"
-        return name, (parent.phone or "").strip()
+        return f"{name} 학부모", (parent.phone or "").strip()
     user = student.user
-    name = (user.name if user else "") or student.matching_key
     return name, ((user.phone if user else "") or "").strip()

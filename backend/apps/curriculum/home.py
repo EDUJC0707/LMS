@@ -36,7 +36,8 @@ from apps.accounts.models import Student
 from apps.clinic.booking import CLINIC_LINK_LEAD
 from apps.clinic.models import ClinicRequest
 from apps.grades.models import Attendance, ClassSession
-from apps.payments.models import Order, Product
+from apps.payments.consumer import purchasable_products
+from apps.payments.models import Order
 from apps.videos.models import MakeupGrant, VideoGrant
 
 from .models import CourseEnrollment, WeekDayPlan, class_name_of
@@ -59,7 +60,7 @@ def build_home_payload(student, month=None, include_billing=False):
     if student.enrollment_status != Student.EnrollmentStatus.REGISTERED:
         payload = {
             "student": _student_block(student),
-            "purchasable_products": _purchasable_products(),
+            "purchasable_products": purchasable_products(student),
         }
         if include_billing:
             # 학부모는 미등록 자녀도 결제 상태는 본다(교재 결제가 유일 개방 액션)
@@ -150,14 +151,6 @@ def _student_block(student, enrollment=None):
         "current_class": class_name,
         "enrollment_status": student.enrollment_status,
     }
-
-
-def _purchasable_products():
-    """구매 가능(판매 중) 교재 목록 — bare 화면의 유일한 콘텐츠."""
-    return [
-        {"product_id": p.product_id, "name": p.name, "price": p.price}
-        for p in Product.objects.filter(is_active=True).order_by("product_id")
-    ]
 
 
 def _orders(student):

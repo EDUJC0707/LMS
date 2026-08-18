@@ -17,14 +17,39 @@ from django.db import models
 
 
 class Product(models.Model):
-    """`products` — 교재/상품 마스터 (baseline 도메인 5, PRD 3.1.5).
+    """`products` — 교재/상품 마스터 (baseline 도메인 5, PRD 3.1.5, FLOW 1-6).
 
     유일한 과금 대상(교재 1회 결제). 판매 종료는 is_active=false
     (soft-off) — 주문 이력이 참조하므로 실삭제 차단(Order.product PROTECT).
+
+    **교재는 커리에 붙는다**(FLOW 1-6) — 반별 교재는 없고, 같은 커리를 듣는 반은
+    같은 교재를 쓴다. 붙일 자리가 없던 동안에는 목록이 `is_active` 만 봤기 때문에
+    수능 통합과학 반 화면에 내신 생명과학 교재가 같이 떴고 그대로 결제됐다.
+    커리가 비어 있는 행은 **아무에게도 안 보인다**(닫힘이 안전 기본값,
+    key_considerations §5).
+
+    **포함 관계는 DB 에 넣지 않는다**(FLOW 1-6). `세트`·`낱개` 표시만 두고 세트에
+    무엇이 들었는지는 조교가 안다고 전제한다 — 세트와 그 안의 낱권을 같이 청구해도
+    시스템은 막지 않는다(감수하기로 한 것).
     """
 
+    class Kind(models.TextChoices):
+        SET = "세트", "세트"
+        SINGLE = "낱개", "낱개"
+
     product_id = models.BigAutoField(primary_key=True)
+    # null 은 층이 생기기 전에 만들어진 행 때문이고, blank=False 라 관리 화면은
+    # 반드시 고르게 한다. NULL 인 행은 어느 학생의 목록에도 오르지 않는다.
+    course = models.ForeignKey(
+        "curriculum.Course",
+        on_delete=models.PROTECT,
+        null=True,
+        db_column="course_id",
+        related_name="products",
+        verbose_name="커리",
+    )
     name = models.CharField("교재명", max_length=200)
+    kind = models.CharField("구성", max_length=10, choices=Kind.choices, default=Kind.SINGLE)
     price = models.IntegerField("가격(원)")
     is_active = models.BooleanField("판매 여부", default=True)
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)

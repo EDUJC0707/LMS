@@ -180,6 +180,8 @@ export type Deadline = ClinicDeadline | VideoDeadline | PaymentDeadline;
 export interface Product {
   product_id: number;
   name: string;
+  /** 세트 · 낱개 (FLOW 1-6). 포함 관계는 서버도 모른다 — 표시뿐이다. */
+  kind: string;
   price: number;
 }
 

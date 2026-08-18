@@ -171,8 +171,22 @@ class StudentHomeBareTests(TestCase):
             "stu-bare", status=Student.EnrollmentStatus.PRE_REGISTERED
         )
         self.client.force_login(self.student.user)
-        Product.objects.create(name="로직엔제 교재", price=45000)
-        Product.objects.create(name="구판 교재", price=30000, is_active=False)
+        # 예비등록도 반에 넣고 시작한다(provisioning.bulk_issue 가 반 단위다).
+        # 교재는 커리에 붙으므로(FLOW 1-6) 수강이 없으면 살 것도 없다.
+        course = Course.objects.create(name="로직엔제")
+        klass = Class.objects.create(course=course, name="수요반", uses_payssam=True)
+        CourseEnrollment.objects.create(
+            student=self.student, course=course, klass=klass
+        )
+        Product.objects.create(course=course, name="로직엔제 교재", price=45000)
+        Product.objects.create(
+            course=course, name="구판 교재", price=30000, is_active=False
+        )
+        Product.objects.create(
+            course=Course.objects.create(name="내신 생명과학"),
+            name="남의 커리 교재",
+            price=20000,
+        )
 
     def test_bare_response_has_no_calendar_or_deadlines(self):
         with freeze_now():
@@ -188,7 +202,8 @@ class StudentHomeBareTests(TestCase):
         with freeze_now():
             data = self.client.get(STUDENT_HOME).json()
         names = [p["name"] for p in data["purchasable_products"]]
-        self.assertEqual(names, ["로직엔제 교재"])  # 판매 중지 교재 미포함
+        # 판매 중지 교재 · 남의 커리 교재 둘 다 빠진다(FLOW 1-6)
+        self.assertEqual(names, ["로직엔제 교재"])
 
     def test_withdrawn_student_also_bare(self):
         # 닫힘이 기본값 — 퇴원 상태도 전체 캘린더를 열지 않는다
@@ -719,7 +734,15 @@ class ParentHomeTests(HomeFixtureMixin, TestCase):
             "stu-parbare", name="김막내", status=Student.EnrollmentStatus.PRE_REGISTERED
         )
         ParentStudent.objects.create(parent=self.parent, student=bare_child)
-        Product.objects.create(name="로직엔제 교재", price=45000)
+        bare_course = Course.objects.create(name="막내 커리")
+        CourseEnrollment.objects.create(
+            student=bare_child,
+            course=bare_course,
+            klass=Class.objects.create(
+                course=bare_course, name="수요반", uses_payssam=True
+            ),
+        )
+        Product.objects.create(course=bare_course, name="로직엔제 교재", price=45000)
         data = self.get_parent_home(f"?student_id={bare_child.student_id}").json()
         self.assertNotIn("calendar", data)
         self.assertNotIn("deadlines", data)

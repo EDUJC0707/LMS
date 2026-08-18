@@ -521,6 +521,7 @@ function NotEnrolled({ data }: { data: ParentHome }) {
             caption="구매 가능 교재"
             columns={[
               { key: "name", header: "교재", cell: (row) => row.name },
+              { key: "kind", header: "구성", cell: (row) => row.kind },
               {
                 key: "price",
                 header: "가격",
