@@ -41,6 +41,6 @@ class WeekDayPlanAdmin(admin.ModelAdmin):
 
 @admin.register(CourseEnrollment)
 class CourseEnrollmentAdmin(admin.ModelAdmin):
-    list_display = ("enrollment_id", "student", "course", "class_name", "status", "enrolled_at")
-    list_filter = ("status", "course", "class_name")
+    list_display = ("enrollment_id", "student", "course", "klass", "status", "enrolled_at")
+    list_filter = ("status", "course", "klass")
     search_fields = ("student__matching_key", "student__user__name", "course__name")

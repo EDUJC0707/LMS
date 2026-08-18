@@ -21,7 +21,7 @@ from apps.grades.models import Attendance, ClassSession
 from apps.payments.models import Order, Product
 from apps.videos.models import MakeupGrant, Video, VideoGrant
 
-from .models import Course, CourseEnrollment, CourseWeek, WeekDayPlan
+from .models import Class, Course, CourseEnrollment, CourseWeek, WeekDayPlan
 
 PASSWORD = "pw-Secret-77!"
 STUDENT_HOME = "/api/student/home"
@@ -72,10 +72,11 @@ class HomeFixtureMixin:
 
     @classmethod
     def setUpTestData(cls):
-        cls.student = make_student("stu-home", current_class="고2 로직엔제 B반")
+        cls.student = make_student("stu-home")
         cls.course = Course.objects.create(name="로직엔제")
+        cls.klass = Class.objects.create(course=cls.course, name="고2 로직엔제 B반")
         cls.enrollment = CourseEnrollment.objects.create(
-            student=cls.student, course=cls.course, class_name="B반", primary_weekday=3
+            student=cls.student, course=cls.course, klass=cls.klass, primary_weekday=3
         )
         starts = {
             1: datetime.date(2026, 6, 28),
@@ -198,8 +199,9 @@ class StudentHomeBareTests(TestCase):
         self.assertNotIn("calendar", data)
 
     def test_bare_query_count(self):
-        with freeze_now(), self.assertNumQueries(4):
-            # 세션 + user + student + products
+        with freeze_now(), self.assertNumQueries(5):
+            # 세션 + user + student + 반 이름 + products
+            # 반 이름은 학생 1명분 고정 1회다 — 미등록이라 결과는 비지만 묻기는 한다
             self.client.get(STUDENT_HOME)
 
 

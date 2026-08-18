@@ -28,6 +28,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.curriculum.models import class_name_subquery
+
 from . import provisioning, staff_admin, student_directory
 from .features import FeatureKey, effective_features
 from .login_id import LoginIdError
@@ -226,14 +228,18 @@ class MeView(APIView):
 
     @staticmethod
     def _student_block(user):
-        student = Student.objects.filter(user=user).first()
+        student = (
+            Student.objects.filter(user=user)
+            .annotate(class_name=class_name_subquery())
+            .first()
+        )
         if student is None:
             return None
         return {
             "student_id": student.student_id,
             "enrollment_status": student.enrollment_status,
             "grade": student.grade,
-            "current_class": student.current_class,
+            "current_class": student.class_name,
         }
 
     @staticmethod
@@ -483,7 +489,7 @@ class StudentDirectoryView(APIView):
         paginator = PageNumberPagination()
         page = paginator.paginate_queryset(queryset, request, view=self)
         return paginator.get_paginated_response(
-            [student_directory.row(student) for student in page]
+            [student_directory.row(student, student.class_name) for student in page]
         )
 
 

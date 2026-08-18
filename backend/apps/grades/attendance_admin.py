@@ -94,7 +94,7 @@ from django.utils import timezone
 
 from apps.accounts.models import Student
 from apps.boards.models import AbsenceCounseling
-from apps.curriculum.models import CourseEnrollment
+from apps.curriculum.models import CourseEnrollment, class_name_subquery
 
 # GRANT_DURATION(시청 기간 기본 7일)은 동보 지급 체인과 공유하는 단일 기본값 —
 # videos.makeup 이 원천이다(4차 슬라이스 공용 서비스 추출).
@@ -133,12 +133,16 @@ def load_roster(session):
     """
     if session.course_week is None:
         return []
+    course = session.course_week.course
     return list(
         Student.objects.filter(
-            course_enrollments__course=session.course_week.course,
+            course_enrollments__course=course,
             course_enrollments__status=CourseEnrollment.Status.ENROLLED,
         )
         .select_related("user")
+        # 반은 **이 회차 커리의 반**이다 — 다른 커리를 같이 듣는 학생이 있어도
+        # 출결표에는 그 반이 뜨면 안 된다(학생↔반 N:M — FLOW 1-1).
+        .annotate(class_name=class_name_subquery(course_id=course.course_id))
         .order_by("student_id")
     )
 
@@ -235,7 +239,7 @@ def build_detail_payload(session, roster, attendance_by_student):
                 "name": student.user.name if student.user else None,
                 "login_id": student.user.login_id if student.user else None,
                 "matching_key": student.matching_key,
-                "current_class": student.current_class,
+                "current_class": student.class_name,
                 "enrollment_status": student.enrollment_status,
                 "is_withdrawn": not entry_target,
                 "attendance_id": att.id if att is not None else None,

@@ -12,7 +12,7 @@
 """
 from django.test import TestCase
 
-from apps.curriculum.models import Course, CourseEnrollment
+from apps.curriculum.models import Class, Course, CourseEnrollment
 
 from .features import FeatureKey
 from .models import Parent, StaffFeatureGrant, Student, User
@@ -52,7 +52,6 @@ class StudentDirectoryFixtureMixin:
             phone="01011112222",
             matching_key="L2601",
             grade="고2",
-            current_class="고2 로직엔제 B반",
             enrollment_status=Student.EnrollmentStatus.REGISTERED,
         )
         cls.s_reg2 = make_student(
@@ -61,7 +60,6 @@ class StudentDirectoryFixtureMixin:
             phone="01033334444",
             matching_key="L2602",
             grade="고2",
-            current_class="고2 로직엔제 A반",
             enrollment_status=Student.EnrollmentStatus.REGISTERED,
         )
         cls.s_reg3 = make_student(
@@ -69,7 +67,6 @@ class StudentDirectoryFixtureMixin:
             "박민지",
             matching_key="F2603",
             grade="고3",
-            current_class="고3 파이널",
             enrollment_status=Student.EnrollmentStatus.REGISTERED,
         )
         cls.s_pre = make_student(
@@ -86,9 +83,14 @@ class StudentDirectoryFixtureMixin:
             grade="고2",
             enrollment_status=Student.EnrollmentStatus.WITHDRAWN,
         )
-        CourseEnrollment.objects.create(student=cls.s_reg1, course=cls.course)
-        CourseEnrollment.objects.create(student=cls.s_reg2, course=cls.course)
-        CourseEnrollment.objects.create(student=cls.s_reg3, course=cls.other_course)
+        b반 = Class.objects.create(course=cls.course, name="고2 로직엔제 B반")
+        a반 = Class.objects.create(course=cls.course, name="고2 로직엔제 A반")
+        파이널 = Class.objects.create(course=cls.other_course, name="고3 파이널")
+        CourseEnrollment.objects.create(student=cls.s_reg1, course=cls.course, klass=b반)
+        CourseEnrollment.objects.create(student=cls.s_reg2, course=cls.course, klass=a반)
+        CourseEnrollment.objects.create(
+            student=cls.s_reg3, course=cls.other_course, klass=파이널
+        )
         # 중단된 수강 — course_id 필터에서 제외되어야 한다
         CourseEnrollment.objects.create(
             student=cls.s_pre,

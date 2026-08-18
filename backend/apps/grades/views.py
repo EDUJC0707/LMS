@@ -48,6 +48,7 @@ from rest_framework.views import APIView
 from apps.accounts.features import FeatureKey
 from apps.accounts.models import Parent, ParentStudent, Student, User
 from apps.accounts.permissions import FeatureRequired, IsParent, IsStudent
+from apps.curriculum.models import class_name_subquery
 from apps.videos.models import MakeupGrant
 
 from . import (
@@ -780,6 +781,9 @@ class AdminSheetView(APIView):
         return (
             AnswerSheet.objects.filter(pk=sheet_id)
             .select_related("student__user", "exam")
+            # 장에 붙은 학생의 반 — 목록(sheet_rows)과 같은 행 모양을 내려면
+            # 상세도 같은 값을 실어야 한다.
+            .annotate(student_class_name=class_name_subquery("student_id"))
             .first()
         )
 

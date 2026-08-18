@@ -38,7 +38,7 @@ from apps.grades.models import Attendance, ClassSession
 from apps.payments.models import Order, Product
 from apps.videos.models import MakeupGrant, VideoGrant
 
-from .models import CourseEnrollment, WeekDayPlan
+from .models import CourseEnrollment, WeekDayPlan, class_name_of
 
 
 def build_home_payload(student, month=None, include_billing=False):
@@ -72,7 +72,7 @@ def build_home_payload(student, month=None, include_billing=False):
         CourseEnrollment.objects.filter(
             student=student, status=CourseEnrollment.Status.ENROLLED
         )
-        .select_related("course")
+        .select_related("course", "klass")
         .order_by("enrollment_id")
     )
     course_ids = [e.course_id for e in enrollments]
@@ -104,7 +104,7 @@ def build_home_payload(student, month=None, include_billing=False):
     week_nos, released_weeks = _load_weeks(primary, now) if primary else ([], [])
 
     payload = {
-        "student": _student_block(student),
+        "student": _student_block(student, primary),
         "month": f"{year:04d}-{month_no:02d}",
         "today": today.isoformat(),
         "course": (
@@ -127,12 +127,20 @@ def build_home_payload(student, month=None, include_billing=False):
 # --- 블록별 조립 ---------------------------------------------------------
 
 
-def _student_block(student):
-    """이름·반·등록상태 최소 노출(개인정보 최소 원칙 — 원번·연락처 미포함)."""
+def _student_block(student, enrollment=None):
+    """이름·반·등록상태 최소 노출(개인정보 최소 원칙 — 원번·연락처 미포함).
+
+    반은 수강(`CourseEnrollment.klass`)에서 읽는다. 캘린더는 수강을 이미 읽어
+    두므로 그걸 넘겨받고, 수강을 싣지 않는 bare 페이로드만 여기서 한 번 읽는다.
+    """
+    if enrollment is not None:
+        class_name = enrollment.klass.name if enrollment.klass else None
+    else:
+        class_name = class_name_of(student)
     return {
         "student_id": student.student_id,
         "name": student.user.name if student.user else None,
-        "current_class": student.current_class,
+        "current_class": class_name,
         "enrollment_status": student.enrollment_status,
     }
 
@@ -183,7 +191,7 @@ def _course_block(primary, enrollments, today, week_nos, released_weeks):
     return {
         "course_id": course.course_id,
         "name": course.name,
-        "class_name": primary.class_name,
+        "class_name": primary.klass.name if primary.klass else None,
         "total_weeks": len(week_nos),
         "current_week": current_week,
         "class_weekdays": sorted(
