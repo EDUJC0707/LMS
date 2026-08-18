@@ -48,7 +48,8 @@ export interface RosterStudent {
   attendance: AttendanceBlock | null;
 }
 
-/** 값 4종 + 미입력의 합이 total. 퇴원은 입력 대상 밖이라 total 에 들지 않는다. */
+/** 값 5종의 합이 total. `미입력` 칸은 레코드 없는 학생과 명시적 `미입력` 행을
+ *  합친 수다(둘은 같은 뜻 — FLOW 3-4). 퇴원은 입력 대상 밖이라 total 에 안 든다. */
 export interface AttendanceSummary {
   출석: number;
   결석: number;

@@ -12,9 +12,19 @@ import {
   shortAttendance,
 } from "./attendance.ts";
 
-test("값집합은 출석 + 결석 3종이다 — 지각은 없다", () => {
-  assert.deepEqual(ATTENDANCE_STATUSES, ["출석", "결석", "결석(동보)", "결석(현보)"]);
+test("값집합은 미입력 + 출석 + 결석 3종이다 — 지각은 없다", () => {
+  assert.deepEqual(ATTENDANCE_STATUSES, [
+    "미입력",
+    "출석",
+    "결석",
+    "결석(동보)",
+    "결석(현보)",
+  ]);
   assert.equal(ATTENDANCE_STATUSES.includes("지각" as never), false);
+});
+
+test("미입력은 결석색을 쓰지 않는다 — 안 왔다가 아니라 모른다", () => {
+  assert.equal(attendanceTone("미입력"), "blank");
 });
 
 test("모든 값에 짧은 이름과 색 토큰이 있다", () => {

@@ -25,7 +25,6 @@ import {
   Loading,
   StatusBadge,
   Table,
-  useToast,
 } from "../../../components";
 import type { Column } from "../../../components";
 import { Fig } from "./Fig";
@@ -41,7 +40,7 @@ import type {
 } from "./types";
 import { ATTENDANCE_STATUSES } from "./types";
 
-type Draft = { status: AttendanceStatus | ""; examTaken: boolean };
+type Draft = { status: AttendanceStatus; examTaken: boolean };
 type DraftMap = Record<number, Draft>;
 
 function draftFrom(students: RosterStudent[]): DraftMap {
@@ -49,7 +48,7 @@ function draftFrom(students: RosterStudent[]): DraftMap {
   for (const student of students) {
     if (student.is_withdrawn) continue;
     next[student.student_id] = {
-      status: student.attendance?.status ?? "",
+      status: student.attendance?.status ?? "미입력",
       examTaken: student.attendance?.exam_taken === true,
     };
   }
@@ -59,7 +58,6 @@ function draftFrom(students: RosterStudent[]): DraftMap {
 export default function AttendanceSessionPage() {
   const { sessionId } = useParams();
   const { hasFeature } = useMe();
-  const toast = useToast();
   const canMakeup = hasFeature("영상지급관리");
 
   const detail = useApi(
@@ -119,7 +117,10 @@ export default function AttendanceSessionPage() {
   const setRow = (studentId: number, patch: Partial<Draft>) =>
     setDraft((prev) => ({
       ...prev,
-      [studentId]: { ...(prev[studentId] ?? { status: "", examTaken: false }), ...patch },
+      [studentId]: {
+        ...(prev[studentId] ?? { status: "미입력", examTaken: false }),
+        ...patch,
+      },
     }));
 
   // 퇴원 행은 입력 대상이 아니라 집계에도 넣지 않는다 — 넣으면 미입력이
@@ -127,11 +128,9 @@ export default function AttendanceSessionPage() {
   const entryTargets = useMemo(() => students.filter((s) => !s.is_withdrawn), [students]);
 
   const live = useMemo(() => {
-    const counts = { 출석: 0, 결석: 0, "결석(동보)": 0, "결석(현보)": 0, 미입력: 0 };
+    const counts = { 미입력: 0, 출석: 0, 결석: 0, "결석(동보)": 0, "결석(현보)": 0 };
     for (const student of entryTargets) {
-      const status = draft[student.student_id]?.status;
-      if (status) counts[status] += 1;
-      else counts.미입력 += 1;
+      counts[draft[student.student_id]?.status ?? "미입력"] += 1;
     }
     return counts;
   }, [entryTargets, draft]);
@@ -140,10 +139,11 @@ export default function AttendanceSessionPage() {
     () =>
       entryTargets.filter((student) => {
         const row = draft[student.student_id];
-        if (!row?.status) return false;
+        if (!row) return false;
         const nextExam = examMode ? row.examTaken : null;
         const savedRow = student.attendance;
-        if (!savedRow) return true;
+        // 기록이 없는데 미입력이면 보낼 것이 없다 — 둘은 같은 뜻이다(FLOW 3-4)
+        if (!savedRow) return row.status !== "미입력";
         return savedRow.status !== row.status || (savedRow.exam_taken ?? null) !== nextExam;
       }),
     [entryTargets, draft, examMode],
@@ -163,7 +163,7 @@ export default function AttendanceSessionPage() {
       const row = draft[student.student_id];
       return {
         student_id: student.student_id,
-        status: row.status as AttendanceStatus,
+        status: row.status,
         exam_taken: examMode ? row.examTaken : null,
       };
     });
@@ -189,22 +189,6 @@ export default function AttendanceSessionPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [runSave]);
 
-  const fillBlanks = () => {
-    const before = draft;
-    const blanks = entryTargets.filter((s) => !draft[s.student_id]?.status);
-    if (blanks.length === 0) return;
-    setDraft((prev) => {
-      const next = { ...prev };
-      for (const student of blanks) {
-        next[student.student_id] = { ...next[student.student_id], status: "출석" };
-      }
-      return next;
-    });
-    toast.show(`미입력 ${blanks.length}명을 출석으로 표시했습니다. 아직 저장 전입니다.`, {
-      action: { label: "되돌리기", onClick: () => setDraft(before) },
-    });
-  };
-
   const makeupByStudent = useMemo(() => {
     const map = new Map<number, MakeupRow>();
     const date = detail.data?.session.session_date;
@@ -223,7 +207,7 @@ export default function AttendanceSessionPage() {
   const session = detail.data.session;
   const summary = detail.data.summary;
   const visible = blankOnly
-    ? entryTargets.filter((s) => !draft[s.student_id]?.status)
+    ? entryTargets.filter((s) => (draft[s.student_id]?.status ?? "미입력") === "미입력")
     : students;
 
   const columns: Column<RosterStudent>[] = [
@@ -261,7 +245,7 @@ export default function AttendanceSessionPage() {
     {
       key: "status",
       header: "출결",
-      width: "13rem",
+      width: "15rem",
       cell: (r) =>
         r.is_withdrawn ? (
           <span className="ops-withdrawn">퇴원</span>
@@ -269,7 +253,7 @@ export default function AttendanceSessionPage() {
           <StatusPicker
             name={`att-${r.student_id}`}
             label={`${r.name ?? r.login_id} 출결`}
-            value={draft[r.student_id]?.status ?? ""}
+            value={draft[r.student_id]?.status ?? "미입력"}
             onChange={(status) => setRow(r.student_id, { status })}
           />
         ),
@@ -365,9 +349,6 @@ export default function AttendanceSessionPage() {
               저장 전 변경 <b className="num">{changed.length}</b>명
             </span>
           )}
-          <Button size="sm" onClick={fillBlanks} disabled={live.미입력 === 0}>
-            {live.미입력 > 0 ? `미입력 ${live.미입력}명 전원 출석` : "미입력 전원 출석"}
-          </Button>
           <Button
             size="sm"
             variant="primary"
@@ -401,7 +382,7 @@ export default function AttendanceSessionPage() {
                 <kbd>Tab</kbd> 다음 학생
               </span>
               <span>
-                <kbd>←</kbd> <kbd>→</kbd> 출석 · 결석 · 동보 · 현보
+                <kbd>←</kbd> <kbd>→</kbd> 미입력 · 출석 · 결석 · 동보 · 현보
               </span>
               <span>
                 <kbd>⌘</kbd>+<kbd>S</kbd> 저장
@@ -462,7 +443,7 @@ function StatusPicker({
 }: {
   name: string;
   label: string;
-  value: AttendanceStatus | "";
+  value: AttendanceStatus;
   onChange: (status: AttendanceStatus) => void;
 }) {
   return (
@@ -478,6 +459,8 @@ function StatusPicker({
             value={status}
             checked={value === status}
             onChange={() => onChange(status)}
+            // 찍은 것을 다시 누르면 해제 — 라디오는 스스로 못 푼다
+            onClick={() => value === status && onChange("미입력")}
             aria-label={status}
           />
           <span aria-hidden="true">{shortAttendance(status)}</span>
