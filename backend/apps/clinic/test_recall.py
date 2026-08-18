@@ -61,8 +61,11 @@ class ScheduleTests(SimpleTestCase):
         self.assertEqual(call["headers"]["Authorization"], "Token rc-key")
         sent = json.loads(call["body"])
         self.assertEqual(sent["meeting_url"], "https://meet.google.com/a-b-c")
-        # 예약이 이 업체를 고른 이유다 — 시각을 업체가 지킨다
-        self.assertEqual(sent["join_at"], "2026-08-13T17:00:00+00:00")
+        # 예약이 이 업체를 고른 이유다 — 시각을 업체가 지킨다.
+        # **시작보다 일찍 들어간다**: 정각에 맞추면 조교·학생이 먼저 들어와
+        # 인사하는 동안 봇이 없어서 그 앞부분이 안 남는다. 빈 방에 혼자
+        # 기다려도 업체 기본값(noone_joined_timeout 1200초)이 훨씬 길어 안전하다.
+        self.assertEqual(sent["join_at"], "2026-08-13T16:50:00+00:00")
         # 우리 이름표 — 되찾을 때 쓴다(그래서 컬럼이 필요 없다)
         self.assertEqual(sent["metadata"]["clinic"], KEY)
 

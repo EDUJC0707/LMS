@@ -11,16 +11,22 @@ Recall 은 **귀**, CLOVA 는 **받아쓰기**.
   ① **예약 참가**(`join_at`). Fireflies 는 진행 중인 회의에만 봇을 넣을 수 있어
      캘린더를 세우고 업체가 그걸 보길 기다려야 했다. 여기는 배정하는 순간
      "그 시각에 이 링크로 들어가"를 꽂아 두면 끝이라 **우리 쪽에 도는 것이 없다**.
-  ② **조직 계정 로그인**. 봇을 `hjcedu.com` 계정으로 로그인시키면 `TRUSTED` 의
-     "조직 멤버는 노크 없이" 에 걸려 **조교가 수락할 것이 없어진다**. Fireflies
-     봇은 익명 게스트 고정이라 구조적으로 로비를 못 벗어난다.
-     자격증명은 **업체 대시보드에 넣는다** — 요청 필드가 아니라서 코드에 없다.
+  ② **봇 퇴장**. Fireflies 는 봇을 빼는 수단이 아예 없어 조교가 나가도 빈 방에
+     앉아 `duration` 을 채웠고 그동안 전사가 안 나왔다. 여기는 사람이 다 나가면
+     봇도 따라 나간다.
   ③ **오디오 원본**. 전사 엔진을 우리가 고를 수 있다.
+
+**로비는 봇이 아니라 스페이스 쪽에서 없앴다.** Recall 에 signed-in 봇(조직 계정
+으로 로그인해 노크를 건너뛰는 방식)이 있지만, 그건 **새 워크스페이스를 따로
+파고 조직 전체 SSO 를 갈아 끼우는** 설정이라 노크 하나를 없애자고 치르기엔
+과하다(2026-08-13 검토). 대신 `accessType` 을 `OPEN` 으로 돌려 **아무도 노크하지
+않게** 했다 — 봇도 학생도. 그래서 익명 봇으로 충분하고 코드에 자격증명이 없다.
 
 **되찾는 열쇠는 `metadata` 다.** 봇을 만들 때 우리 이름(`clinic{번호}`)을 달아
 두고 `metadata__clinic=` 로 조회한다. 그래서 "어느 봇이 그 클리닉 것인지"를
 적어 둘 컬럼이 필요 없다.
 """
+import datetime
 import json
 
 from django.conf import settings
@@ -40,6 +46,13 @@ _RETRYABLE_STATUSES = frozenset({408, 429})
 
 #: 봇이 더 갈 데가 없는 상태. `done` 은 정상 종료, `fatal` 은 실패다.
 DONE, FATAL = "done", "fatal"
+
+#: 시작보다 이만큼 일찍 들어간다. 정각에 맞추면 조교·학생이 먼저 들어와
+#: 인사하고 문제를 펴는 동안 봇이 없어서 **그 앞부분이 통째로 안 남는다**.
+#: 빈 방에 혼자 기다려도 안전하다 — 업체가 "아무도 안 들어오면 나간다"로 잡아
+#: 둔 기본값이 1200초(20분)라 이보다 훨씬 길다. 요금은 초 단위 정산이라
+#: 10분 × 월 30건 = 5시간, $2.5 정도가 더 든다.
+JOIN_EARLY = datetime.timedelta(minutes=10)
 
 
 def base_url():
@@ -67,7 +80,9 @@ class RecallAdapter(ConferenceAdapter):
         **업체 전사를 켜지 않는다.** 오디오만 받아서 CLOVA 로 돌린다 — 켜면
         시간당 요금이 더 붙는데 한국어는 더 나쁘다.
         """
-        when = starts_at.isoformat() if hasattr(starts_at, "isoformat") else starts_at
+        when = starts_at
+        if hasattr(when, "isoformat"):
+            when = (when - JOIN_EARLY).isoformat()
         self._call(
             "POST",
             "/bot",

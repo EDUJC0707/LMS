@@ -96,14 +96,23 @@ class CreateSpaceTests(SimpleTestCase):
         self.assertEqual(space_call["url"], SPACES_ENDPOINT)
         self.assertEqual(space_call["headers"]["Authorization"], "Bearer ya29.token")
 
-    def test_students_have_to_knock(self):
-        # PRD 6-3 '입장 통제' — 링크만 가진 사람은 못 들어온다. 조교가 조직
-        # 계정으로 먼저 들어가 호스트가 되고 학생을 수락한다(조사 문서 §3·§4).
-        # OPEN 이면 링크가 새는 순간 아무나 클리닉에 앉아 있게 된다.
+    def test_nobody_knocks(self):
+        # ~~TRUSTED(노크 → 호스트 수락)~~ → **OPEN**(2026-08-13 사용자 확정).
+        #
+        # 노크는 조교가 매 회차 눌러야 하는 유일한 단계였고, 감독 기록을 남기는
+        # 봇까지 같은 로비에 서면서 **조교가 봇을 안 들이면 그 회차 기록이
+        # 통째로 없어지는** 구조가 됐다(에러도 안 난다). 사람 손을 0 으로
+        # 만드는 것이 감독 체계의 전제라 로비를 없앤다.
+        #
+        # 통제가 사라지는 게 아니라 **한 겹으로 준다**: 클리닉 1건 = 새 스페이스
+        # 1개(재사용 없음) + 링크는 배정된 그 학생에게 시작 5분 전부터만 보인다.
+        # 이 상태에서 링크가 새려면 그 학생이 직접 남에게 넘겨야 하고, 그런
+        # 경우라면 노크가 있어도 조교가 수락해 준다 — 노크가 실제로 막던 것은
+        # "링크를 우연히 주운 외부인" 뿐이었다.
         transport = FakeTransport(TOKEN_OK, SPACE_OK)
         GoogleMeetAdapter(transport=transport).create_space()
         body = json.loads(transport.calls[1]["body"].decode())
-        self.assertEqual(body["config"]["accessType"], "TRUSTED")
+        self.assertEqual(body["config"]["accessType"], "OPEN")
 
     def test_google_records_nothing_now_that_the_bot_does(self):
         # ~~전사·요약 ON~~ → **전부 OFF**(2026-08-12 전면 교체).
