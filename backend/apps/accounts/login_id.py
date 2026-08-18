@@ -43,6 +43,26 @@
 문자열이 될 수 있다. 접미사는 한 글자뿐이므로 학부모 아이디(`…p`, `…ap`)는
 어떤 학생 아이디와도 겹치지 않는다. 25개 소진 시 `LoginIdError`(발급 실패).
 
+### 전화번호 정규화
+
+번호는 **저장 전에** `normalize_phone` 을 통과한다. 아이디·대조키의 뒷4자리도,
+계정 판정(`provisioning._match_existing`)도 같은 값을 봐야 하기 때문에
+규칙이 여기 한 곳에 있다.
+
+| | |
+|---|---|
+| `-` · 공백 · 괄호 · 점 | 뗀다 |
+| `+82` | `0` 으로 바꾼다(`+82 10-…` · `+82 010-…` 둘 다) |
+| 10자리이면서 `10` 으로 시작 | 앞에 `0` 을 되살린다 |
+
+**엑셀이 전화번호를 숫자로 읽으면 `010…` 이 `10…` 이 된다**(FLOW 2-2). 그 한
+자리가 빠진 채 저장되면 같은 학생이 둘로 갈린다.
+
+되살리는 것은 **휴대폰뿐이다.** `02`·`070` 을 어떻게 볼지는 아직 정해지지
+않았고(FLOW 질문 표 — 2-2), 자릿수를 건드리면 되돌릴 수 없다. 그래서 `10`+8자리
+라는 한 가지 모양에만 `0` 을 붙이고 나머지는 자릿수를 그대로 둔다 — 국내 번호에
+`10` 으로 시작하는 10자리는 휴대폰 말고 없다.
+
 ### 이름 정규화
 
 공백·특수문자·구두점을 모두 제거하고 한글·영문·숫자만 남긴다. 영문은 소문자로
@@ -67,6 +87,10 @@ _DIGITS = re.compile(r"\D")
 _NAME_MAX = 20
 _PHONE_TAIL = 4
 
+# 정규화 시 남길 문자 — 숫자와 국가번호 `+`(하이픈·공백·괄호·점을 뗀다).
+_PHONE_KEEP = re.compile(r"[^0-9+]")
+_MOBILE_LEN = 11  # 010 + 8자리
+
 
 class LoginIdError(ValueError):
     """아이디를 만들 수 없다 — 메시지가 발급 리포트의 실패 사유로 나간다."""
@@ -80,6 +104,22 @@ def normalize_name(raw) -> str:
     if not cleaned:
         raise LoginIdError("이름에서 아이디로 쓸 수 있는 글자를 찾지 못했습니다.")
     return cleaned[:_NAME_MAX]
+
+
+def normalize_phone(raw) -> str:
+    """전화번호 정규화 — 구분자 제거 · `+82`→`0` · 사라진 앞자리 `0` 복원.
+
+    읽을 수 없는 값은 빈 문자열이다(호출자가 "번호 없음"으로 다룬다).
+    """
+    if not isinstance(raw, str):
+        return ""
+    value = _PHONE_KEEP.sub("", raw)
+    if value.startswith("+82"):  # +82 10-… 도 +82 010-… 도 국내 표기로 되돌린다
+        value = "0" + value[3:].lstrip("0")
+    digits = _DIGITS.sub("", value)
+    if len(digits) == _MOBILE_LEN - 1 and digits.startswith("10"):
+        digits = "0" + digits  # 엑셀이 숫자로 읽어 떨어뜨린 앞자리
+    return digits
 
 
 def phone_tail4(phone) -> str:
