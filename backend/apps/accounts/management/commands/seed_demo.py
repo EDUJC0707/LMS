@@ -130,7 +130,7 @@ class Command(BaseCommand):
             self._create_makeup_and_counseling(staff, students, now)
             eligible = self._create_clinic(exams[-1], students, staff, now, today)
             self._create_boards(staff, students, weeks, now)
-            self._create_payments(students, parents, staff, now)
+            self._create_payments(students, parents, staff, course, now)
             self._create_workbook(sessions, students, staff, today)
             self._create_notifications(students, parents, staff, exams, now)
         self._print_summary(triggers, eligible)
@@ -308,9 +308,12 @@ class Command(BaseCommand):
                     display_order=day_no,
                 )
             weeks.append(week)
+        # 결제선생을 쓰는 반과 안 쓰는 반을 하나씩 둔다(FLOW 2-7 — 러셀은
+        # 교재값을 학원이 따로 받는다). 토요반에서는 청구가 막힌다.
         classes = {
             name: Class.objects.create(
-                course=course, name=name, start_date=week1_monday
+                course=course, name=name, start_date=week1_monday,
+                uses_payssam=(name == "수요반"),
             )
             for name in ("수요반", "토요반")
         }
@@ -811,9 +814,11 @@ class Command(BaseCommand):
     # --- 결제 -------------------------------------------------------------
 
     @staticmethod
-    def _create_payments(students, parents, staff, now):
+    def _create_payments(students, parents, staff, course, now):
         """교재 1 + 주문 혼합(미결제·결제완료·배부완료) + 결제 트랜잭션."""
-        product = Product.objects.create(name="로직엔제 교재 Vol.1", price=45000)
+        product = Product.objects.create(
+            course=course, name="로직엔제 교재 Vol.1", price=45000
+        )
         parent_by_student = {
             link.student_id: link.parent
             for link in ParentStudent.objects.select_related("parent").all()

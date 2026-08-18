@@ -103,6 +103,13 @@ class Class(models.Model):
     - 커리 삭제로 반과 그에 달린 기록이 유실되지 않게 PROTECT.
     - start_date(개강일)는 반을 만들 때 받지만, 문자열 반을 승격시킨
       백필분은 알 수 없어 NULL 이다.
+    - uses_payssam: 교재값을 결제선생으로 받는 반인가(FLOW 2-7). 미래탐구는
+      결제선생이 받고 **러셀은 학원이 따로 받는다** — 러셀 반에 청구가 나가면
+      학부모는 같은 교재값을 두 번 낸다. **장소로 자동 판정하지 않는다**(FLOW
+      2-7): 장소가 반 이름에 안 적힐 수도 있고 예외도 생기므로 조교가 반 단위로
+      고른다. 기본값이 false 인 이유는 잘못 나간 청구는 되돌려도 학부모가 이미
+      받았고, 안 나간 청구는 켜고 다시 보내면 그만이기 때문이다
+      (key_considerations §5 — 닫힘이 안전 기본값).
     """
 
     class_id = models.BigAutoField(primary_key=True)
@@ -116,6 +123,7 @@ class Class(models.Model):
     name = models.CharField("수강반명", max_length=50)
     start_date = models.DateField("개강일", null=True, blank=True)
     is_active = models.BooleanField("활성", default=True)
+    uses_payssam = models.BooleanField("결제선생 청구", default=False)
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)
 
     class Meta:

@@ -12,6 +12,7 @@ app_name = "payments_admin"
 
 urlpatterns = [
     path("admin/payments", views.AdminPaymentListView.as_view(), name="admin-payments"),
+    path("admin/payments/bill", views.AdminBillView.as_view(), name="admin-bill"),
     # 잔액은 목록보다 앞에 둔다 — <int:order_id> 보다 먼저 매칭돼야 한다.
     path(
         "admin/payments/balance",
