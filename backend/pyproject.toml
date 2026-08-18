@@ -24,6 +24,7 @@ dependencies = [
     "opencv-python-headless>=4.10",
     "numpy>=1.26",
     "pypdf>=6.15.0",
+    "reportlab>=5.0.0",
 ]
 
 # 개발 전용 의존성 (uv sync --no-dev 로 운영 이미지에서는 제외)
