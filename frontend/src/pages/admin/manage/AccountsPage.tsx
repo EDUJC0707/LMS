@@ -2,7 +2,8 @@
  * /admin/accounts — 계정 일괄 발급 · 등록 전환.
  *
  * API
- *   POST /api/admin/accounts/bulk                명단 리스트 → 행별 결과(초기 비번 1회)
+ *   GET  /api/admin/classes                      반 목록(발급 대상 반 고르기)
+ *   POST /api/admin/accounts/bulk                {class_id, rows} → 행별 결과(초기 비번 1회)
  *   POST /api/admin/accounts/{student_id}/register  1주차 출석 확인 후 등록 전환
  *   GET  /api/admin/students?enrollment_status=예비등록  전환 대기 명부(직원 공통 권한)
  *   GET  /api/admin/attendance/sessions(/{id})   판단 근거가 되는 1주차 출석부(출결입력 권한)
@@ -10,6 +11,10 @@
  * 화면 설계
  * - 명단은 엑셀에서 그대로 붙여넣는 게 현실이라 “붙여넣기 → 행 격자”가 기본이고,
  *   한두 명만 추가할 때를 위해 행을 직접 채울 수도 있다.
+ * - **반은 격자 밖에 있다**(FLOW 2-1). 파일에는 어느 반인지가 없고 조교가 고르는
+ *   것이라, 행마다 받지 않고 명단 전체에 하나를 건다. 안 고르면 발급하지 않는다.
+ * - 이미 계정이 있는 학생은 그 반 수강만 추가되고 아이디·비밀번호가 다시 나오지
+ *   않는다(FLOW 2-4) — 결과 표에 `기존` 으로 뜬다.
  * - **원번 입력칸은 없다**(2026-07-29 개정). 원번은 이름·휴대폰에서 서버가
  *   계산하는 값이라 입력하면 그 행이 거절된다 — 대신 발급 결과 표에 실려 온다.
  *   학년은 원번의 재료가 아니므로(재개정) 비어 있어도 행이 통과한다.
@@ -45,7 +50,7 @@ import {
   mergePreRegistered,
 } from "./directory";
 import "./manage.css";
-import type { BulkResult, BulkResultRow, SessionDetail, SessionRow } from "./types";
+import type { BulkResult, BulkResultRow, ClassList, SessionDetail, SessionRow } from "./types";
 
 interface EntryRow {
   key: number;
@@ -102,12 +107,18 @@ export default function AccountsPage() {
   const toast = useToast();
 
   const [rows, setRows] = useState<EntryRow[]>(() => [blankRow(), blankRow(), blankRow()]);
+  const [classId, setClassId] = useState("");
   const [pasted, setPasted] = useState("");
   const [result, setResult] = useState<BulkResult | null>(null);
   // 발급에 성공할 때마다 올린다 — 아래 전환 대기 명부가 새 학생을 바로 집어 온다.
   const [issuedCount, setIssuedCount] = useState(0);
 
-  const issue = useApiAction(async (body: Omit<EntryRow, "key">[]) => {
+  const classes = useApi(async () => {
+    const { data } = await http.get<ClassList>("/admin/classes");
+    return data.courses.flatMap((course) => course.classes);
+  }, []);
+
+  const issue = useApiAction(async (body: { class_id: number; rows: Omit<EntryRow, "key">[] }) => {
     const { data } = await http.post<BulkResult>("/admin/accounts/bulk", body);
     return data;
   });
@@ -118,9 +129,9 @@ export default function AccountsPage() {
     setRows((prev) => prev.map((row) => (row.key === key ? { ...row, [field]: value } : row)));
 
   const submit = async () => {
-    if (filled.length === 0) return;
+    if (filled.length === 0 || !classId) return;
     const payload = filled.map(({ key: _key, ...rest }) => rest);
-    const data = await issue.run(payload);
+    const data = await issue.run({ class_id: Number(classId), rows: payload });
     if (!data) return;
     setResult(data);
     if (data.summary.created > 0) setIssuedCount((prev) => prev + 1);
@@ -163,7 +174,12 @@ export default function AccountsPage() {
         actions={
           <>
             <Button onClick={() => setRows((prev) => [...prev, blankRow()])}>행 추가</Button>
-            <Button variant="primary" loading={issue.pending} onClick={() => void submit()}>
+            <Button
+              variant="primary"
+              loading={issue.pending}
+              disabled={!classId}
+              onClick={() => void submit()}
+            >
               {filled.length > 0 ? `${filled.length}명 계정 발급` : "계정 발급"}
             </Button>
           </>
@@ -171,6 +187,28 @@ export default function AccountsPage() {
       >
         <div className="ui-stack ui-stack--md">
           {issue.error && <Alert tone="danger">{issue.error}</Alert>}
+          {classes.error && <Alert tone="danger">{classes.error}</Alert>}
+
+          <div className="pm-toolbar">
+            <div className="pm-toolbar__wide">
+              <Field label="반" required>
+                {(props) => (
+                  <Select
+                    {...props}
+                    value={classId}
+                    onChange={(e) => setClassId(e.target.value)}
+                  >
+                    <option value="">선택</option>
+                    {(classes.data ?? []).map((klass) => (
+                      <option key={klass.class_id} value={klass.class_id}>
+                        {klass.course_name} · {klass.name}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+            </div>
+          </div>
 
           {/* 머리줄과 입력 행은 한 격자다 — 행 간격을 칸 간격(8px)과 맞춰야
               세로도 가로도 같은 눈금으로 읽힌다. */}
@@ -248,7 +286,7 @@ export default function AccountsPage() {
       {result && (
         <Card
           title="발급 결과"
-          aside={`생성 ${result.summary.created}명 · 실패 ${result.summary.failed}명 · 학부모 신규 ${result.summary.parents_created}명 · 기존 연결 ${result.summary.parents_linked}명`}
+          aside={`생성 ${result.summary.created}명 · 기존 ${result.summary.existing}명 · 실패 ${result.summary.failed}명 · 학부모 신규 ${result.summary.parents_created}명 · 기존 연결 ${result.summary.parents_linked}명`}
           actions={
             <>
               <Button onClick={() => void copySecrets()}>아이디·비밀번호 복사</Button>
@@ -282,10 +320,12 @@ export default function AccountsPage() {
                 header: "결과",
                 width: "5rem",
                 cell: (row) =>
-                  row.status === "생성" ? (
-                    <Badge tone="success">생성</Badge>
-                  ) : (
+                  row.status === "실패" ? (
                     <Badge tone="danger">실패</Badge>
+                  ) : row.status === "기존" ? (
+                    <Badge tone="neutral">기존</Badge>
+                  ) : (
+                    <Badge tone="success">생성</Badge>
                   ),
               },
               {
@@ -313,7 +353,7 @@ export default function AccountsPage() {
                 key: "parent",
                 header: "학부모",
                 cell: (row) => {
-                  if (row.status === "실패") return "—";
+                  if (row.status !== "생성") return "—";
                   if (!row.parent) return "연결 안 함";
                   if (row.parent.created) {
                     return (

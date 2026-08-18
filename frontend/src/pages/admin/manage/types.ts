@@ -33,6 +33,33 @@ export interface StaffCreated extends StaffRow {
   initial_password: string;
 }
 
+/* ── /api/admin/classes ───────────────────────────────────────────── */
+
+export interface ClassRow {
+  class_id: number;
+  course_id: number;
+  course_name: string;
+  name: string;
+  /** 개강일. 반을 만들 때 받지만 옛 반은 비어 있다. */
+  start_date: string | null;
+  /** 이 반이 가진 회차 수 = 반의 주차 수(커리 총주차와 다를 수 있다). */
+  week_count: number;
+  /** 오늘까지 지난 회차 수. */
+  current_week: number;
+  student_count: number;
+}
+
+export interface CourseGroup {
+  course_id: number;
+  name: string;
+  total_weeks: number;
+  classes: ClassRow[];
+}
+
+export interface ClassList {
+  courses: CourseGroup[];
+}
+
 /* ── /api/admin/accounts/bulk ─────────────────────────────────────── */
 
 export interface BulkParentBlock {
@@ -44,7 +71,8 @@ export interface BulkParentBlock {
 export interface BulkResultRow {
   index: number;
   name: string | null;
-  status: "생성" | "실패";
+  /** 기존 = 이미 계정이 있어 수강만 추가된 행(FLOW 2-4 — 안내가 안 나간다). */
+  status: "생성" | "기존" | "실패";
   login_id?: string;
   initial_password?: string;
   student_id?: number;
@@ -58,6 +86,7 @@ export interface BulkResult {
   results: BulkResultRow[];
   summary: {
     created: number;
+    existing: number;
     failed: number;
     parents_created: number;
     parents_linked: number;
