@@ -13,24 +13,29 @@
 - POST /api/student/makeup-request      학생 본인 결석의 동보 신청 (IsStudent)
 - POST /api/parent/makeup-request       자녀 결석의 동보 신청 (IsParent)
 - GET  /api/admin/makeup-requests       신청 목록 (영상지급관리)
-- POST /api/admin/makeup-requests/{id}/approve  승인 = 지급완료 + VideoGrant(동보)
 - POST /api/admin/makeup-requests/{id}/reject   거절 전환
+
+**승인이 없다**(FLOW 3-4, 2026-08-18). 결석했다는 근거가 이미 출결 SSOT 에 있어
+사람이 한 번 더 볼 것이 없다. 지급 조건은 **신청 + 결석 확인** 둘뿐이고 순서는
+상관없다 — 여기 오는 신청은 결석이 이미 확정된 것이라 받는 자리에서 바로 지급되고
+(grades.attendance_admin.grant_makeup), 결석이 아직이면 출결표 저장이 낸다
+(트리거 ③). 구 `POST /admin/makeup-requests/{id}/approve` 와 `승인` 값은 제거됐다.
+**클리닉은 그대로 승인제**다(FLOW 3-7) — 자리를 배정하는 일이라 별개다.
 
 **자격 강제(§4 상태 기반 노출)**: 동보 신청은 결석생에게만 존재한다 — 본인
 (자녀)의 `결석` 출결이 아니면 이 API 자체가 4xx 다. 소유 밖 출결은 존재
 여부와 무관하게 404(2차 슬라이스 자녀 소유 검증 패턴 — 존재 비노출),
 소유 안이지만 결석이 아니면 400.
 
-**중복 계약**: 같은 결석에 신청/승인/지급완료가 하나라도 있으면 400 —
+**중복 계약**: 같은 결석에 신청/지급완료가 하나라도 있으면 400 —
 거절된 신청만 재신청을 허용한다(관리자 재검토 경로).
 
 지급 체인은 apps.videos.makeup.complete_makeup 공용 서비스가 담당한다
-(관리자체크 경로와 단일 구현 — 3차 슬라이스 grant_makeup 과 공유).
+(관리자체크·담임 입력 경로와 단일 구현).
 
 재생의 권한 판정·워터마크 조립은 apps.videos.playback 이 담당하고 여기서는
 None → 404 매핑만 한다(권한 원천·404 판단 근거는 그 모듈 docstring).
 """
-from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -43,16 +48,11 @@ from apps.grades import attendance_admin
 from apps.grades.models import Attendance
 
 from . import playback, video_admin
-from .makeup import complete_makeup
 from .models import MakeupGrant, Video, WatermarkTamper
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
-# 거절만 재신청 허용 — 신청/승인/지급완료는 살아있는 신청으로 본다(중복 400).
-_ACTIVE_STATUSES = (
-    MakeupGrant.Status.REQUESTED,
-    MakeupGrant.Status.APPROVED,
-    MakeupGrant.Status.GRANTED,
-)
+# 거절만 재신청 허용 — 신청/지급완료는 살아있는 신청으로 본다(중복 400).
+_ACTIVE_STATUSES = (MakeupGrant.Status.REQUESTED, MakeupGrant.Status.GRANTED)
 
 
 def _iso(value):
@@ -61,7 +61,7 @@ def _iso(value):
 
 
 def _makeup_block(makeup):
-    """동보 요약 블록 — 신청·승인·거절 응답 공용(프런트 재조회 불필요 계약).
+    """동보 요약 블록 — 신청·거절 응답 공용(프런트 재조회 불필요 계약).
 
     호출측은 attendance__session__course_week__course 를 select_related 로
     로드해 둔다(쿼리 수 계약).
@@ -119,6 +119,12 @@ def _create_makeup_request(request, source, owner_filter):
         source=source,
         requested_by=request.user,
     )
+    # 결석은 위 검사로 이미 확정돼 있다 — 조건 둘이 다 찼으므로 여기서 나간다
+    # (FLOW 3-4). 지급 처리자·출결 입력자는 비운다: 신청을 받아 준 사람이 없다.
+    attendance_admin.grant_makeup(attendance, None)
+    # fields 를 주면 그 필드만 다시 읽는다 — select_related 로 잡아 둔 회차·주차가
+    # 살아 있어야 아래 블록이 추가 쿼리를 내지 않는다.
+    makeup.refresh_from_db(fields=["status", "granted_at"])
     return Response({"makeup": _makeup_block(makeup)}, status=status.HTTP_201_CREATED)
 
 
@@ -227,7 +233,7 @@ class AdminMakeupRequestListView(APIView):
         if raw_status:
             if raw_status not in MakeupGrant.Status.values:
                 return Response(
-                    {"detail": "status 값이 올바르지 않습니다(신청/승인/지급완료/거절)."},
+                    {"detail": "status 값이 올바르지 않습니다(신청/지급완료/거절)."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             rows = rows.filter(status=raw_status)
@@ -245,80 +251,6 @@ class AdminMakeupRequestListView(APIView):
         }
         block["requested_by"] = makeup.requested_by.name if makeup.requested_by else None
         return block
-
-
-class AdminMakeupApproveView(APIView):
-    """POST /api/admin/makeup-requests/{id}/approve — 지급완료 + VideoGrant 체인."""
-
-    permission_classes = [FeatureRequired(FeatureKey.VIDEO_GRANT_ADMIN)]
-
-    def post(self, request, makeup_id):
-        makeup = (
-            MakeupGrant.objects.select_related("attendance__session__course_week__course")
-            .filter(pk=makeup_id)
-            .first()
-        )
-        if makeup is None:
-            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
-        if makeup.status != MakeupGrant.Status.REQUESTED:
-            return Response(
-                {"detail": "이미 처리된 신청입니다."}, status=status.HTTP_400_BAD_REQUEST
-            )
-        attendance = makeup.attendance
-        if attendance is None:
-            return Response(
-                {"detail": "결석 근거 회차가 없는 신청입니다."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if attendance.status != Attendance.Status.ABSENT:
-            # 출결 정정으로 결석이 아니게 된 신청 — 출석자동 지급과 이중 지급 차단
-            return Response(
-                {"detail": "결석 출결이 아니어서 지급할 수 없습니다(출결 정정됨)."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if attendance.session.course_week is None:
-            return Response(
-                {"detail": "커리큘럼 주차가 매핑되지 않은 회차입니다."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if (
-            MakeupGrant.objects.filter(
-                attendance=attendance, status=MakeupGrant.Status.GRANTED
-            )
-            .exclude(pk=makeup.pk)
-            .exists()
-        ):
-            # 관리자체크(1차 경로)가 선행 지급한 결석 — 이중 지급 차단
-            return Response(
-                {"detail": "이미 동보가 지급된 결석입니다."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        now = timezone.now()
-        with transaction.atomic():
-            grants = complete_makeup(makeup, request.user, now)
-            # 승인도 출결 SSOT 를 `결석(동보)` 로 올린다(2026-07-29 입구 단일화 —
-            # attendance_admin 모듈 docstring). 지급은 났는데 출결은 `결석` 이면
-            # 담임이 그 결석을 상담 대기열에서 다시 만나고, 출결만 보고는 이
-            # 학생이 동보인지 알 수 없다. 같은 트랜잭션이어야 갈리지 않는다.
-            attendance_admin.promote_to_makeup_absence(attendance, request.user, now)
-        return Response(
-            {
-                "makeup": _makeup_block(makeup),
-                # 지급 단위가 영상이라 행이 여러 개다(2026-08-04). 응답은 만든
-                # 행 전부를 싣는다 — 하나만 실으면 "몇 개 지급됐나"가 사라진다.
-                "video_grants": [
-                    {
-                        "grant_id": g.grant_id,
-                        "student_id": g.student_id,
-                        "video_id": g.video_id,
-                        "source": g.source,
-                        "granted_at": _iso(g.granted_at),
-                        "expires_at": _iso(g.expires_at),
-                    }
-                    for g in grants
-                ],
-            }
-        )
 
 
 class AdminMakeupRejectView(APIView):

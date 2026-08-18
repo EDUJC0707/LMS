@@ -630,6 +630,76 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
         self.assertEqual(grants.count(), len(self.w2_videos))
         self.assertEqual({g.granted_at for g in grants}, {later})
 
+    def test_pending_request_is_granted_when_absence_is_confirmed(self):
+        """미리 신청해 둔 결석이 출결표 저장으로 확정되면 **그때** 지급된다(FLOW 3-4).
+
+        지급 조건은 신청 + 결석 확인 둘이고 순서는 상관없다. 승인 단계가
+        없으므로 결석이 확정되는 이 자리가 곧 지급 시점이다.
+        """
+        att = Attendance.objects.create(
+            session=self.session_w2, student=self.s1, status=Attendance.Status.PRESENT
+        )
+        pending = MakeupGrant.objects.create(
+            student=self.s1,
+            attendance=att,
+            source=MakeupGrant.Source.STUDENT_REQUEST,
+            requested_by=self.s1.user,
+        )
+        self.assertFalse(VideoGrant.objects.filter(makeup=pending).exists())
+
+        self.put_attendance(
+            self.session_w2.session_id, [{"student_id": self.s1.student_id, "status": "결석"}]
+        )
+
+        pending.refresh_from_db()
+        self.assertEqual(pending.status, MakeupGrant.Status.GRANTED)
+        self.assertEqual(pending.granted_at, NOW)
+        self.assertEqual(pending.source, MakeupGrant.Source.STUDENT_REQUEST)  # 이력 보존
+        grants = VideoGrant.objects.filter(makeup=pending).order_by("video__sequence_no")
+        self.assertEqual([g.video_id for g in grants], self.w2_video_ids())
+        self.assertEqual({g.expires_at for g in grants}, {NOW + GRANT_DURATION})
+        # 출결도 `결석(동보)` 로 올라간다 — 지급됐는데 `결석` 인 갈린 상태를 안 남긴다
+        att.refresh_from_db()
+        self.assertEqual(att.status, Attendance.Status.ABSENT_MAKEUP)
+        # 보강 방법이 확정됐으므로 상담 대기열에도 올리지 않는다
+        self.assertEqual(AbsenceCounseling.objects.filter(attendance=att).count(), 0)
+        # 결석이므로 출석 근거 자동지급은 회수된 채로 남는다
+        self.assertFalse(
+            VideoGrant.objects.filter(attendance=att, revoked_at__isnull=True).exists()
+        )
+
+    def test_absence_without_request_grants_nothing(self):
+        """신청이 없으면 결석만으로는 안 나간다 — 조건 둘 중 하나가 비었다."""
+        self.put_attendance(
+            self.session_w2.session_id, [{"student_id": self.s1.student_id, "status": "결석"}]
+        )
+        att = Attendance.objects.get(session=self.session_w2, student=self.s1)
+        self.assertEqual(att.status, Attendance.Status.ABSENT)
+        self.assertFalse(MakeupGrant.objects.filter(attendance=att).exists())
+        self.assertFalse(VideoGrant.objects.filter(attendance=att).exists())
+        self.assertEqual(AbsenceCounseling.objects.filter(attendance=att).count(), 1)
+
+    def test_rejected_request_is_not_granted_by_absence(self):
+        """거절된 신청은 살아있는 신청이 아니다 — 결석이 확정돼도 나가지 않는다."""
+        att = Attendance.objects.create(
+            session=self.session_w2, student=self.s1, status=Attendance.Status.PRESENT
+        )
+        rejected = MakeupGrant.objects.create(
+            student=self.s1,
+            attendance=att,
+            source=MakeupGrant.Source.STUDENT_REQUEST,
+            requested_by=self.s1.user,
+            status=MakeupGrant.Status.REJECTED,
+        )
+        self.put_attendance(
+            self.session_w2.session_id, [{"student_id": self.s1.student_id, "status": "결석"}]
+        )
+        rejected.refresh_from_db()
+        self.assertEqual(rejected.status, MakeupGrant.Status.REJECTED)
+        self.assertFalse(VideoGrant.objects.filter(makeup=rejected).exists())
+        att.refresh_from_db()
+        self.assertEqual(att.status, Attendance.Status.ABSENT)
+
     def test_absent_to_makeup_absence_removes_untouched_counseling(self):
         self.put_attendance(
             self.session_w2.session_id, [{"student_id": self.s2.student_id, "status": "결석"}]

@@ -1,9 +1,10 @@
 """동보 지급 체인 공용 서비스 (PRD 3.2.3, MakeupGrant 모델 계약).
 
 MakeupGrant 가 `지급완료` 로 전이될 때 VideoGrant(source=동보) 를 생성하는
-지급 체인의 **단일 구현**이다. 두 경로가 공유한다:
-  - 관리자 체크(1차 경로) — grades.attendance_admin.grant_makeup (3차 슬라이스)
-  - 신청 승인(예비 경로) — videos.views 관리자 approve (4차 슬라이스)
+지급 체인의 **단일 구현**이다. 세 경로가 공유한다:
+  - 관리자 체크 — grades.attendance_admin.grant_makeup
+  - 담임의 `결석(동보)` 입력 — grades.attendance_admin 트리거 ③
+  - 학생·학부모 신청 — videos.views (승인 없이 조건이 차면 바로 — FLOW 3-4)
 
 호출측 계약:
   - 트랜잭션은 호출측이 소유한다(출결·신청 상태 갱신과 같은 트랜잭션).

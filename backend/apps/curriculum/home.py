@@ -20,7 +20,7 @@ include_billing 플래그로 추가된다.
 `attendance_id`(동보 신청 API 의 body 키)와 `makeup_status`(중복 신청 차단 근거)를
 함께 내린다 — 프런트가 결석 칸에서 신청을 완결할 수 있게. 동보 상태는
 makeup_grants 를 **참조만** 하며(사본 금지 — key_considerations §6) 학생·학부모
-양쪽이 같은 필드명·값집합(신청/승인/지급완료/거절, 미신청은 null)을 쓴다.
+양쪽이 같은 필드명·값집합(신청/지급완료/거절, 미신청은 null)을 쓴다.
 """
 import calendar as pycalendar
 import datetime
