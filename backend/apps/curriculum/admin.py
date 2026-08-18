@@ -1,7 +1,7 @@
-"""curriculum 관리자 등록 — Course/CourseWeek/WeekDayPlan/CourseEnrollment."""
+"""curriculum 관리자 등록 — Subject/Course/Class/CourseWeek/WeekDayPlan/CourseEnrollment."""
 from django.contrib import admin
 
-from .models import Course, CourseEnrollment, CourseWeek, WeekDayPlan
+from .models import Class, Course, CourseEnrollment, CourseWeek, Subject, WeekDayPlan
 
 
 class CourseWeekInline(admin.TabularInline):
@@ -12,6 +12,23 @@ class CourseWeekInline(admin.TabularInline):
 class WeekDayPlanInline(admin.TabularInline):
     model = WeekDayPlan
     extra = 0
+
+
+@admin.register(Subject)
+class SubjectAdmin(admin.ModelAdmin):
+    list_display = ("subject_id", "track", "name")
+    list_filter = ("track",)
+    search_fields = ("name",)
+
+
+@admin.register(Class)
+class ClassAdmin(admin.ModelAdmin):
+    """반. `uses_payssam` 이 여기 있는 유일한 이유는 러셀이다(FLOW 2-7) —
+    켜지 않으면 그 반에서는 청구가 나가지 않는다."""
+
+    list_display = ("class_id", "course", "name", "start_date", "uses_payssam", "is_active")
+    list_filter = ("uses_payssam", "is_active", "course")
+    search_fields = ("name", "course__name")
 
 
 @admin.register(Course)
