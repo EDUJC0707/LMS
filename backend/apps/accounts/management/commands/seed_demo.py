@@ -51,6 +51,7 @@ from apps.curriculum.models import (
     Course,
     CourseEnrollment,
     CourseWeek,
+    Subject,
     WeekDayPlan,
 )
 from apps.grades import attendance_admin
@@ -273,7 +274,13 @@ class Command(BaseCommand):
 
     def _create_course(self, students, today):
         """강좌 1 + 주차 10 + Day 계획. 이번 주 = 4주차(5주차부터 미공개)."""
-        course = Course.objects.create(name="로직엔제", total_weeks=10, target_grade=2)
+        # 과목은 마이그레이션이 넣는 기준값이라 _wipe 대상이 아니다(FLOW 1-2).
+        subject, _ = Subject.objects.get_or_create(
+            track=Subject.Track.SUNEUNG, name="통합과학"
+        )
+        course = Course.objects.create(
+            name="로직엔제", total_weeks=10, target_grade=2, subject=subject
+        )
         week1_monday = today - datetime.timedelta(days=today.weekday(), weeks=3)
         weeks = []
         for no in range(1, 11):

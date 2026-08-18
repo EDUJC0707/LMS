@@ -15,6 +15,44 @@ from django.db import models
 from django.utils import timezone
 
 
+class Subject(models.Model):
+    """`subjects` — 과목 + 과목구분 (FLOW 1-1·1-2).
+
+    커리 위의 두 층이다. 층이 둘인데 표가 하나인 것은 **구분이 과목의 속성**이기
+    때문이다 — 과목 하나가 두 구분에 걸치지 않는다(`통합과학` 은 언제나 수능).
+
+    **구분은 값집합으로 잠근다**(FLOW 1-2). 안 늘어나는 값이고, 신규 입력을
+    열어 두면 `수능`·`수능(재종)` 처럼 표기가 흔들려 아래 층 분류가 지저분해진다.
+    **과목은 늘어나므로 행이다** — 커리가 아직 없는 과목도 골라야 해서 문자열
+    사본이 아니라 표로 둔다.
+
+    잠금은 API 입구(`class_admin.open_class`)가 건다. DB CHECK 는 두지 않는다
+    (key_considerations §6 — 값 추가 시 무마이그레이션).
+    """
+
+    class Track(models.TextChoices):
+        SUNEUNG = "수능", "수능"
+        NAESIN = "내신", "내신"
+
+    subject_id = models.BigAutoField(primary_key=True)
+    track = models.CharField("과목구분", max_length=10, choices=Track.choices)
+    name = models.CharField("과목명", max_length=50)
+
+    class Meta:
+        db_table = "subjects"
+        verbose_name = "과목"
+        verbose_name_plural = "과목"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["track", "name"],
+                name="uq_subjects_track_name",
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 class Course(models.Model):
     """`courses` — 강좌 마스터 (설계 문서 도메인 3 `courses`).
 
@@ -22,6 +60,17 @@ class Course(models.Model):
     """
 
     course_id = models.BigAutoField(primary_key=True)
+    # 과목은 커리의 위층이다(FLOW 1-1). 옛 커리는 층이 생기기 전에 만들어져
+    # 비어 있다 — 커리를 지우지 않으려고 NULL 을 허용한다.
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        db_column="subject_id",
+        related_name="courses",
+        verbose_name="과목",
+    )
     name = models.CharField("강좌명", max_length=100)
     # 총주차는 커리의 것이다(FLOW 1-2). 반을 만들 때 이만큼 회차를 채우고
     # (FLOW 1-3), 그 뒤 반에서 주차를 더하고 지워도 이 값은 안 바뀐다(1-5).
