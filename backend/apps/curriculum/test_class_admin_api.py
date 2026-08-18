@@ -133,6 +133,41 @@ class OpenClassTests(ClassAdminFixtureMixin, TestCase):
             datetime.date(2026, 9, 2),
         )
 
+    def test_open_class_fills_the_week_dates(self):
+        """주차 날짜가 비면 학생 홈이 통째로 잠긴다 — 반을 열 때 같이 채운다."""
+        body = self.post_class(self.BODY).json()
+        course = Course.objects.get(pk=body["course_id"])
+        weeks = list(CourseWeek.objects.filter(course=course).order_by("week_no"))
+        self.assertEqual(weeks[0].start_date, datetime.date(2026, 9, 4))
+        self.assertEqual(weeks[0].end_date, datetime.date(2026, 9, 10))
+        self.assertEqual(weeks[-1].start_date, datetime.date(2026, 11, 6))
+        # 개강 전에도 보여야 한다 — 공개 시점은 개강일이 아니라 반을 연 시각
+        self.assertEqual(CourseWeek.objects.released().count(), 10)
+
+    def test_second_class_keeps_the_first_class_week_dates(self):
+        """커리 주차는 하나뿐이라 먼저 연 반의 날짜가 남는다(반별 날짜는 회차)."""
+        first = self.post_class(self.BODY).json()
+        self.post_class(
+            {
+                "course_id": first["course_id"],
+                "name": "화 6.5 대치러셀",
+                "start_date": "2026-09-02",
+            }
+        )
+        week1 = CourseWeek.objects.get(course_id=first["course_id"], week_no=1)
+        self.assertEqual(week1.start_date, datetime.date(2026, 9, 4))
+
+    def test_open_class_fills_dates_left_empty_on_an_old_week(self):
+        """날짜 없이 만들어진 주차 — 반을 열 때 채워야 잠긴 채로 남지 않는다."""
+        course = Course.objects.create(name="옛 커리", total_weeks=2)
+        CourseWeek.objects.create(course=course, week_no=1)
+        self.post_class(
+            {"course_id": course.course_id, "name": "목반", "start_date": "2026-09-04"}
+        )
+        week1 = CourseWeek.objects.get(course=course, week_no=1)
+        self.assertEqual(week1.start_date, datetime.date(2026, 9, 4))
+        self.assertIsNotNone(week1.release_at)
+
     def test_same_name_in_one_course_is_rejected(self):
         first = self.post_class(self.BODY).json()
         res = self.post_class(

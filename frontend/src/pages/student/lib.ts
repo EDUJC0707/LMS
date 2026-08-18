@@ -132,8 +132,9 @@ export interface OpenWeek {
   locked: false;
   label: string;
   title: string;
-  start_date: string;
-  end_date: string;
+  // 주차 날짜는 비어 있을 수 있다 — 관리자가 아직 안 채운 주차.
+  start_date: string | null;
+  end_date: string | null;
   offline_notice: string | null;
   day_plans: DayPlan[];
 }

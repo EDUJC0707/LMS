@@ -306,9 +306,10 @@ export default function StudentHomePage() {
 }
 
 function WeekPanel({ week, open }: { week: OpenWeek; open: boolean }) {
-  const period = `${week.start_date.slice(5).replace("-", ".")}~${week.end_date
-    .slice(5)
-    .replace("-", ".")}`;
+  const period =
+    week.start_date && week.end_date
+      ? `${week.start_date.slice(5).replace("-", ".")}~${week.end_date.slice(5).replace("-", ".")}`
+      : undefined;
   return (
     <DetailsPanel
       defaultOpen={open}
