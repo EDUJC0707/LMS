@@ -182,13 +182,9 @@ class AttendanceAdminAccessTests(AttendanceAdminFixtureMixin, TestCase):
             403,
         )
 
-    def test_assistant_without_feature_is_denied(self):
-        # 조교 프리셋에는 출결입력·영상지급관리가 없다(features.ROLE_PRESETS)
+    def test_assistant_without_video_grant_feature_is_denied(self):
+        # 조교 프리셋에 영상지급관리는 없다(features.ROLE_PRESETS) — 키 분리
         self.login(self.assistant)
-        self.assertEqual(self.client.get(SESSIONS_URL).status_code, 403)
-        self.assertEqual(
-            self.client.get(self.detail_url(self.session_w2.session_id)).status_code, 403
-        )
         self.assertEqual(self.post_makeup({}).status_code, 403)
 
     def test_admin_and_owner_are_allowed(self):
@@ -199,13 +195,24 @@ class AttendanceAdminAccessTests(AttendanceAdminFixtureMixin, TestCase):
                 self.client.get(self.detail_url(self.session_w2.session_id)).status_code, 200
             )
 
-    def test_assistant_with_delta_grant_is_allowed(self):
-        # 프리셋 ⊕ delta — 대표가 개별 부여하면 조교도 출결입력 가능
-        StaffFeatureGrant.objects.create(
-            user=self.assistant, feature_key=FeatureKey.ATTENDANCE_ENTRY, is_granted=True
-        )
+    def test_assistant_preset_covers_attendance_entry(self):
+        # 조교 프리셋에 출결입력이 있다 — 반별 관리가 조교의 일이다(FLOW §3)
         self.login(self.assistant)
         self.assertEqual(self.client.get(SESSIONS_URL).status_code, 200)
+        self.assertEqual(
+            self.client.get(self.detail_url(self.session_w2.session_id)).status_code, 200
+        )
+
+    def test_assistant_with_feature_revoked_is_denied(self):
+        # 프리셋 ⊕ delta — 대표가 개별 회수하면 조교도 못 연다
+        StaffFeatureGrant.objects.create(
+            user=self.assistant, feature_key=FeatureKey.ATTENDANCE_ENTRY, is_granted=False
+        )
+        self.login(self.assistant)
+        self.assertEqual(self.client.get(SESSIONS_URL).status_code, 403)
+        self.assertEqual(
+            self.client.get(self.detail_url(self.session_w2.session_id)).status_code, 403
+        )
 
     def test_makeup_requires_video_grant_feature(self):
         # 출결입력만 delta 로 받은 조교는 동보(영상지급관리) 불가 — 키 분리 검증
@@ -1007,7 +1014,11 @@ class WithdrawTests(AttendanceAdminFixtureMixin, TestCase):
 
     def test_withdraw_requires_attendance_entry_feature(self):
         self.client.logout()
-        self.login(self.assistant)  # 조교 프리셋에 출결입력 없음
+        # 조교 프리셋에는 출결입력이 있다 — 게이트를 보려면 delta 로 회수해야 한다
+        StaffFeatureGrant.objects.create(
+            user=self.assistant, feature_key=FeatureKey.ATTENDANCE_ENTRY, is_granted=False
+        )
+        self.login(self.assistant)
         self.assertEqual(
             self.post_withdraw({"student_id": self.s1.student_id}).status_code, 403
         )
