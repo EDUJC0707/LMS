@@ -245,6 +245,28 @@ class StudentHomeCalendarTests(HomeFixtureMixin, TestCase):
         # 아무 일도 없는 날은 항목 자체가 없다(희소 리스트)
         self.assertNotIn("2026-07-10", days)
 
+    def test_days_skip_another_class_on_the_same_course(self):
+        """같은 커리의 다른 반 수업일은 내 달력에 안 찍힌다(FLOW 1-1)."""
+        other = Class.objects.create(course=self.course, name="고2 로직엔제 A반")
+        ClassSession.objects.create(
+            session_date=datetime.date(2026, 7, 9),
+            course_week=self.weeks[2],
+            klass=other,
+            week_no=2,
+        )
+        ClassSession.objects.create(
+            session_date=datetime.date(2026, 7, 10),
+            course_week=self.weeks[2],
+            klass=self.klass,
+            week_no=2,
+        )
+        self.login_student()
+        days = {d["date"] for d in self.get_home().json()["calendar"]["days"]}
+        self.assertNotIn("2026-07-09", days)
+        self.assertIn("2026-07-10", days)
+        # 반이 없는 옛 회차는 종전대로 보인다
+        self.assertIn("2026-07-08", days)
+
     def test_days_carry_attendance_id_for_makeup_request(self):
         # 동보 신청(POST /api/student/makeup-request)의 body 키 — 화면에서
         # 결석 칸을 눌러 바로 신청하려면 이 값이 응답에 있어야 한다

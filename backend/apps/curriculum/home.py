@@ -25,6 +25,7 @@ makeup_grants 를 **참조만** 하며(사본 금지 — key_considerations §6)
 import calendar as pycalendar
 import datetime
 
+from django.db import models
 from django.db.models import Prefetch
 from django.utils import timezone
 
@@ -89,9 +90,15 @@ def build_home_payload(student, month=None, include_billing=False):
         .select_related("session")
         .order_by("session__session_date")
     )
+    # 수업일은 반의 것이다(FLOW 1-1) — 같은 커리에 목반·화반이 붙으므로 커리로만
+    # 좁히면 목반 학생 달력에 화반 수업일이 찍힌다. 반이 없는 옛 회차는 좁힐
+    # 근거가 없어 종전대로 커리 기준으로 남긴다.
+    klass_ids = [e.klass_id for e in enrollments if e.klass_id is not None]
     session_dates = set(
         ClassSession.objects.filter(
-            session_date__range=(first, last), course_week__course_id__in=course_ids
+            models.Q(klass_id__isnull=True) | models.Q(klass_id__in=klass_ids),
+            session_date__range=(first, last),
+            course_week__course_id__in=course_ids,
         ).values_list("session_date", flat=True)
     )
     orders = _orders(student)

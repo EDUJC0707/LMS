@@ -9,9 +9,9 @@
 자리**라 반마다 갖지 않고 커리에 하나씩만 있으면 되며, 회차가 그것을 가리킨다.
 없으면 여기서 만든다 — 총주차가 곧 커리의 주차 수이기 때문이다.
 
-만든 `CourseWeek` 은 `start_date`·`release_at` 이 비어 있어 **학생에게 안
-보인다**(`CourseWeekQuerySet.released()` — 닫힘이 안전 기본값,
-key_considerations §5). 내용과 공개 시점은 커리 편집에서 채운다.
+만든 `CourseWeek` 에는 **날짜도 같이 채운다** — 비워 두면 학생·학부모 홈이
+`released()` 로 전 주차를 걸러 내 반을 연 첫날 화면이 텅 빈다. 내용(제목·
+학습계획)은 여전히 커리 편집에서 채운다.
 
 **과목은 없으면 만든다**(FLOW 1-2 — 과목은 신규 입력이 되는 드롭다운).
 반대로 **구분은 값집합 밖을 거절한다** — 열어 두면 표기가 흔들려 아래 층
@@ -22,6 +22,7 @@ key_considerations §5). 내용과 공개 시점은 커리 편집에서 채운�
 import datetime
 
 from django.db import IntegrityError, models, transaction
+from django.utils import timezone
 
 from apps.grades.models import ClassSession
 
@@ -154,13 +155,35 @@ def _resolve_subject(track, name):
 
 
 def _fill_sessions(klass, total_weeks, start_date):
-    """개강일에서 주 단위로 총주차만큼 — 1주차 9/4 · 2주차 9/11 · … (FLOW 1-3)."""
+    """개강일에서 주 단위로 총주차만큼 — 1주차 9/4 · 2주차 9/11 · … (FLOW 1-3).
+
+    `CourseWeek` 의 날짜도 같이 채운다. 커리의 주차는 반이 여럿이라 어느 반의
+    날짜를 담을지가 원래 모호한데, 지금 학생·학부모 홈이 그 날짜를 보고
+    `released()` 로 거르기 때문에(home.py) 비워 두면 반을 열자마자 전 주차가
+    잠긴다. **먼저 연 반의 날짜를 담고, 이미 날짜가 있는 주차는 건드리지
+    않는다** — 뒤에 붙는 반의 진짜 날짜는 `ClassSession.session_date` 에 있고
+    소비자 화면이 그쪽으로 옮겨 가면 이 값은 지워도 된다.
+    """
+    now = timezone.now()
     for week_no in range(1, total_weeks + 1):
-        week, _ = CourseWeek.objects.get_or_create(course=klass.course, week_no=week_no)
+        week_start = start_date + datetime.timedelta(weeks=week_no - 1)
+        dates = {
+            "start_date": week_start,
+            "end_date": week_start + datetime.timedelta(days=6),
+            # 날짜는 아무것도 발동시키지 않는다(FLOW 1-4). 개강 전에도 일정이
+            # 보여야 하므로 공개 시점은 개강일이 아니라 반을 연 시각이다.
+            "release_at": now,
+        }
+        week, created = CourseWeek.objects.get_or_create(
+            course=klass.course, week_no=week_no, defaults=dates
+        )
+        if not created and week.start_date is None and week.release_at is None:
+            # 날짜 없이 만들어진 주차 — 잠긴 채로 남지 않게 채운다
+            CourseWeek.objects.filter(pk=week.pk).update(**dates)
         ClassSession.objects.create(
             klass=klass,
             week_no=week_no,
-            session_date=start_date + datetime.timedelta(weeks=week_no - 1),
+            session_date=week_start,
             course_week=week,
         )
 
