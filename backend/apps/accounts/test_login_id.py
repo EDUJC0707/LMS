@@ -3,6 +3,7 @@
 검증 축:
 - 이름 정규화: 공백·특수문자 제거, 영문 소문자화, 길이 상한
 - 휴대폰 뒷4자리: 구분자 제거 후 마지막 4자리, 자릿수 부족은 오류
+- 전화번호 정규화: 구분자 제거 · +82→0 · 사라진 앞자리 0 복원(휴대폰만)
 - 학생: {이름}{뒷4자리} / 무전화 학생은 학부모 번호 뒷4자리
 - 학부모: {학생 아이디}p — 같은 뒷4자리를 공유해도 p 로 구분
 - 충돌: 접미사 a·b·… (p 제외 — 학부모 아이디와 충돌 불가), 소진 시 오류
@@ -19,6 +20,7 @@ from .login_id import (
     issue_staff_login_id,
     issue_student_login_id,
     normalize_name,
+    normalize_phone,
     person_base,
     phone_tail4,
     student_phone_tail4,
@@ -56,6 +58,37 @@ class NormalizeNameTests(SimpleTestCase):
     def test_long_name_truncated(self):
         # login_id max_length=50 을 접미사까지 포함해 넘지 않도록 상한을 둔다
         self.assertEqual(len(normalize_name("가" * 40)), 20)
+
+
+class NormalizePhoneTests(SimpleTestCase):
+    """FLOW 2-2 정규화 표 — 들어온 값과 저장될 값을 그대로 박는다."""
+
+    def test_table(self):
+        table = [
+            ("010-1234-5678", "01012345678"),
+            ("10 12345678", "01012345678"),
+            ("+82 10-1234-5678", "01012345678"),
+            ("(010)1234-5678", "01012345678"),
+            ("02-555-1234", "025551234"),
+            ("070-1234-5678", "07012345678"),
+        ]
+        for raw, expected in table:
+            with self.subTest(raw=raw):
+                self.assertEqual(normalize_phone(raw), expected)
+
+    def test_country_code_with_leading_zero(self):
+        # +82 뒤에 0 을 그대로 적어 오는 표기도 있다
+        self.assertEqual(normalize_phone("+82 010-1234-5678"), "01012345678")
+
+    def test_non_mobile_digit_count_untouched(self):
+        # 070·02 를 어떻게 볼지는 미정(FLOW 질문 표) — 자릿수를 건드리지 않는다
+        self.assertEqual(normalize_phone("7012345678"), "7012345678")
+        self.assertEqual(normalize_phone("25551234"), "25551234")
+
+    def test_unreadable_becomes_blank(self):
+        for raw in ("", "   ", None, 1012345678):
+            with self.subTest(raw=raw):
+                self.assertEqual(normalize_phone(raw), "")
 
 
 class PhoneTailTests(SimpleTestCase):
