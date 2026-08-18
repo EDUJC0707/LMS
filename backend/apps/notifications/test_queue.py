@@ -4,6 +4,8 @@
 같은 트랜잭션 안에서 만들어진다. 커밋 전에 태스크를 걸면 워커가 아직 없는 행을
 집어 `DoesNotExist` 로 죽고, 롤백되면 일어나지도 않은 일의 알림이 나간다.
 """
+from unittest.mock import patch
+
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.test import TestCase, override_settings
@@ -116,6 +118,26 @@ class QueueTests(TestCase):
         with self.assertRaises(ValidationError):
             queue(type=Notification.Type.GRADE, channel=Notification.Channel.KAKAO)
         self.assertFalse(Notification.objects.exists())
+
+    def test_broker_failure_does_not_undo_the_work(self):
+        # 브로커가 없으면 delay 가 터지는데, 그 예외는 **커밋 뒤**에 올라와
+        # 이미 끝난 업무를 500 으로 만든다(계정 발급이면 초기 비밀번호가
+        # 응답째로 사라진다). 행은 남고 재발송 배치가 집는다.
+        from .tasks import send_notification
+
+        def refuse(*args, **kwargs):
+            raise OSError("브로커에 연결할 수 없습니다.")
+
+        with patch.object(send_notification, "delay", side_effect=refuse):
+            with self.captureOnCommitCallbacks(execute=True):
+                notif = queue(
+                    type=Notification.Type.GRADE,
+                    channel=Notification.Channel.KAKAO,
+                    student=self.student,
+                )
+
+        notif.refresh_from_db()
+        self.assertEqual(notif.status, Notification.Status.PENDING)
 
     def test_unknown_channel_is_rejected(self):
         # 채널은 값집합이다 — 오타가 행으로 굳으면 발송이 조용히 실패한다.

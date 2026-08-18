@@ -13,6 +13,7 @@ GET /api/auth/csrf 로 쿠키를 먼저 받는다.
 - POST     /api/admin/accounts/bulk            계정 일괄 발급 (계정관리)
                                                본문 {class_id, rows} — 반은 조교가 고른다(FLOW 2-1)
 - POST     /api/admin/accounts/{id}/register   예비등록→등록 전환 (계정관리)
+- POST     /api/admin/accounts/{user_id}/password  임시 비밀번호 재발급 (계정관리)
 - GET      /api/admin/students                 학생 명부 조회 (직원 공통)
 
 게이트·입력 검증·상태 코드만 여기서, DB 쓰기·페이로드 조립은 staff_admin·
@@ -465,6 +466,36 @@ class AccountRegisterView(APIView):
                 "student_id": student.student_id,
                 "enrollment_status": student.enrollment_status,
                 "registered_at": timezone.localtime(student.registered_at).isoformat(),
+            }
+        )
+
+
+class AccountPasswordResetView(APIView):
+    """POST /api/admin/accounts/{user_id}/password — 임시 비밀번호 재발급 (계정관리).
+
+    **잊으면 사람이 되돌린다**(FLOW 2-4) — 학생·학부모가 스스로 복구하는 길은
+    두지 않았고, 그동안 되돌릴 수단도 Django admin 수퍼유저뿐이었다.
+
+    대상은 **학생·학부모뿐**이다. 직원은 404 로 막는다 — 계정관리 키를 받은
+    조교가 대표 비밀번호를 갈아 끼우고 그 계정으로 들어가는 길을 열지 않는다
+    (직원 계정 관리는 대표 전용 — staff_admin 모듈 docstring). 없는 대상과
+    같은 404 로 답하는 것은 존재를 특정하지 않기 위해서다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.ACCOUNT_ADMIN)]
+    RESETTABLE_ROLES = frozenset({User.Role.STUDENT, User.Role.PARENT})
+
+    def post(self, request, user_id):
+        target = User.objects.filter(pk=user_id).first()
+        if target is None or target.role not in self.RESETTABLE_ROLES:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        password = provisioning.reset_password(target)
+        return Response(
+            {
+                "user_id": target.user_id,
+                "login_id": target.login_id,
+                "name": target.name,
+                "initial_password": password,
             }
         )
 

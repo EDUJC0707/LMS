@@ -65,6 +65,11 @@
 
 ### 이름 정규화
 
+**먼저 NFC 로 합친다**(FLOW 2-2 ①). 맥에서 만든 파일의 한글은 자모가 분해된
+NFD 로 오는데(`김` = `ᄀ`+`ᅵ`+`ᆷ`), 그 자모는 아래 문자류에 없어 통째로 지워진다 —
+이름이 빈 문자열이 되어 행이 실패하거나, 같은 학생이 NFC·NFD 두 벌로 갈린다.
+눈에 같은 글자는 같은 값이어야 한다.
+
 공백·특수문자·구두점을 모두 제거하고 한글·영문·숫자만 남긴다. 영문은 소문자로
 통일한다(대소문자만 다른 아이디가 갈라지는 것을 막는다). 정규화 후 20자로
 자른다 — `users.login_id` 가 50자이고 뒷4자리+`p`+접미사가 붙기 때문.
@@ -76,6 +81,7 @@
 테스트가 DB 없이 성립한다.
 """
 import re
+import unicodedata
 
 # 충돌 접미사 — p 는 학부모 표식이라 제외(모듈 docstring 충돌 처리 절).
 COLLISION_SUFFIXES = "abcdefghijklmnoqrstuvwxyz"
@@ -96,11 +102,16 @@ class LoginIdError(ValueError):
     """아이디를 만들 수 없다 — 메시지가 발급 리포트의 실패 사유로 나간다."""
 
 
+def nfc(raw) -> str:
+    """맥에서 오는 분해형(NFD) 한글을 합친다 — 이름이 들어오는 자리마다 통과시킨다."""
+    return unicodedata.normalize("NFC", raw) if isinstance(raw, str) else raw
+
+
 def normalize_name(raw) -> str:
-    """이름 정규화 — 공백·특수문자 제거, 영문 소문자화, 20자 상한."""
+    """이름 정규화 — NFC 합성 · 공백·특수문자 제거 · 영문 소문자화 · 20자 상한."""
     if not isinstance(raw, str):
         raise LoginIdError("이름이 필요합니다.")
-    cleaned = _KEEP.sub("", raw.strip().lower())
+    cleaned = _KEEP.sub("", nfc(raw).strip().lower())
     if not cleaned:
         raise LoginIdError("이름에서 아이디로 쓸 수 있는 글자를 찾지 못했습니다.")
     return cleaned[:_NAME_MAX]

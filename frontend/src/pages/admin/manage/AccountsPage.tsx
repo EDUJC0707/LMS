@@ -11,6 +11,9 @@
  * 화면 설계
  * - 명단은 엑셀에서 그대로 붙여넣는 게 현실이라 “붙여넣기 → 행 격자”가 기본이고,
  *   한두 명만 추가할 때를 위해 행을 직접 채울 수도 있다.
+ * - **붙여넣은 표의 열은 조교가 지정한다**(FLOW 2-1·2-2, paste.ts). 파일은 학원이
+ *   주는 것이라 열 순서가 매번 다르고, 고정 순서로 자르면 학교명이 폰 칸에 들어가
+ *   그 값으로 아이디가 만들어진다 — 조용히 틀리고 되돌릴 수 없다.
  * - **반은 격자 밖에 있다**(FLOW 2-1). 파일에는 어느 반인지가 없고 조교가 고르는
  *   것이라, 행마다 받지 않고 명단 전체에 하나를 건다. 안 고르면 발급하지 않는다.
  * - 이미 계정이 있는 학생은 그 반 수강만 추가되고 아이디·비밀번호가 다시 나오지
@@ -54,6 +57,15 @@ import {
   mergePreRegistered,
 } from "./directory";
 import "./manage.css";
+import {
+  ColumnChoice,
+  EntryField,
+  PastedTable,
+  assignColumn,
+  isMapped,
+  readPasted,
+  toEntries,
+} from "./paste";
 import type { BulkResult, BulkResultRow, ClassList, SessionDetail, SessionRow } from "./types";
 
 interface EntryRow {
@@ -71,6 +83,13 @@ type BulkRow = Omit<EntryRow, "key"> & {
   force_new?: boolean;
 };
 
+/** 붙여넣은 표 + 원문 — 원문이 바뀌면 열 지정도 다시 읽는다. */
+interface PasteState extends PastedTable {
+  text: string;
+}
+
+const emptyPaste = (): PasteState => ({ text: "", ...readPasted("") });
+
 let nextKey = 1;
 const blankRow = (): EntryRow => ({
   key: nextKey++,
@@ -81,7 +100,7 @@ const blankRow = (): EntryRow => ({
   school: "",
 });
 
-const COLUMNS: { field: keyof Omit<EntryRow, "key">; label: string; placeholder: string }[] = [
+const COLUMNS: { field: EntryField; label: string; placeholder: string }[] = [
   { field: "name", label: "이름", placeholder: "홍길동" },
   { field: "phone", label: "학생 휴대폰", placeholder: "01012345678" },
   { field: "parent_phone", label: "학부모 휴대폰", placeholder: "01087654321" },
@@ -98,19 +117,6 @@ const ROW_ERROR_KO: Record<string, string> = {
   "phone 또는 parent_phone이 필요합니다.":
     "학생 휴대폰이나 학부모 휴대폰 중 하나는 있어야 합니다.",
 };
-
-/** 엑셀·메모장에서 복사한 덩어리를 행으로 쪼갠다(탭·쉼표 모두 허용). */
-function parsePasted(text: string): EntryRow[] {
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .map((line) => {
-      const cells = line.split(/\t|,/).map((cell) => cell.trim());
-      const [name = "", phone = "", parentPhone = "", grade = "", school = ""] = cells;
-      return { ...blankRow(), name, phone, parent_phone: parentPhone, grade, school };
-    });
-}
 
 const STATUS_TONE: Record<BulkResultRow["status"], "success" | "neutral" | "warning" | "danger"> = {
   생성: "success",
@@ -139,7 +145,7 @@ export default function AccountsPage() {
 
   const [rows, setRows] = useState<EntryRow[]>(() => [blankRow(), blankRow(), blankRow()]);
   const [classId, setClassId] = useState("");
-  const [pasted, setPasted] = useState("");
+  const [paste, setPaste] = useState<PasteState>(emptyPaste);
   const [result, setResult] = useState<BulkResult | null>(null);
   // 확인필요 행에 답을 달아 다시 보내려면 그 행이 무엇이었는지가 있어야 한다.
   const [submitted, setSubmitted] = useState<BulkRow[]>([]);
@@ -309,29 +315,28 @@ export default function AccountsPage() {
 
           <DetailsPanel summary="엑셀에서 붙여넣기" aside="한 줄에 한 명">
             <div className="ui-stack ui-stack--sm">
-              <Field label="이름 · 학생 휴대폰 · 학부모 휴대폰 · 학년 · 학교">
-                {(props) => (
-                  <Textarea
-                    {...props}
-                    rows={6}
-                    value={pasted}
-                    onChange={(e) => setPasted(e.target.value)}
-                    placeholder={"홍길동\t01099990001\t01088880001\t고2\t세화고"}
-                  />
-                )}
-              </Field>
+              <Textarea
+                rows={6}
+                aria-label="붙여넣기"
+                value={paste.text}
+                onChange={(e) => setPaste({ text: e.target.value, ...readPasted(e.target.value) })}
+              />
+
+              {paste.cells.length > 0 && <PasteColumns paste={paste} onChange={setPaste} />}
+
               <div className="ui-row">
                 <Button
+                  disabled={!isMapped(paste.mapping)}
                   onClick={() => {
-                    const parsed = parsePasted(pasted);
-                    if (parsed.length === 0) return;
-                    setRows(parsed);
-                    setPasted("");
+                    const entries = toEntries(paste);
+                    if (entries.length === 0) return;
+                    setRows(entries.map((entry) => ({ ...blankRow(), ...entry })));
+                    setPaste(emptyPaste());
                   }}
                 >
                   위 격자로 옮기기
                 </Button>
-                <Button variant="ghost" onClick={() => setPasted("")}>
+                <Button variant="ghost" onClick={() => setPaste(emptyPaste())}>
                   지우기
                 </Button>
               </div>
@@ -476,6 +481,65 @@ export default function AccountsPage() {
       )}
 
       <PreRegisteredPanel canReadRoster={hasFeature("출결입력")} reloadToken={issuedCount} />
+    </div>
+  );
+}
+
+/* ── 붙여넣은 표의 열 지정 ──────────────────────────────────────────── */
+
+/** 미리 보기 줄 수 — 열이 맞았는지는 몇 줄만 봐도 안다. */
+const PREVIEW_ROWS = 3;
+
+function PasteColumns({
+  paste,
+  onChange,
+}: {
+  paste: PasteState;
+  onChange: (next: PasteState) => void;
+}) {
+  const body = paste.headerRow ? paste.cells.slice(1) : paste.cells;
+  return (
+    <div className="pm-paste">
+      <table>
+        <thead>
+          <tr>
+            {paste.mapping.map((choice, index) => (
+              <th key={index}>
+                <Select
+                  value={choice}
+                  aria-label={`${index + 1}번째 열`}
+                  onChange={(e) =>
+                    onChange({
+                      ...paste,
+                      mapping: assignColumn(
+                        paste.mapping,
+                        index,
+                        e.target.value as ColumnChoice,
+                      ),
+                    })
+                  }
+                >
+                  <option value="">선택</option>
+                  {COLUMNS.map((column) => (
+                    <option key={column.field} value={column.field}>
+                      {column.label}
+                    </option>
+                  ))}
+                </Select>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {body.slice(0, PREVIEW_ROWS).map((row, index) => (
+            <tr key={index}>
+              {paste.mapping.map((_, column) => (
+                <td key={column}>{row[column] ?? ""}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -1,7 +1,8 @@
 """로그인 아이디 생성 규칙 전수 테스트 — PRD 8-4 개정(2026-07-28 한글 전환).
 
 검증 축:
-- 이름 정규화: 공백·특수문자 제거, 영문 소문자화, 길이 상한
+- 이름 정규화: **NFC 합성(맥 파일의 분해형 한글)** · 공백·특수문자 제거,
+  영문 소문자화, 길이 상한
 - 휴대폰 뒷4자리: 구분자 제거 후 마지막 4자리, 자릿수 부족은 오류
 - 전화번호 정규화: 구분자 제거 · +82→0 · 사라진 앞자리 0 복원(휴대폰만)
 - 학생: {이름}{뒷4자리} / 무전화 학생은 학부모 번호 뒷4자리
@@ -10,6 +11,8 @@
 - 직원: 학생과 동일 축(이름+뒷4자리)
 - 순수성: is_taken 주입만으로 DB 없이 전 규칙이 성립
 """
+import unicodedata
+
 from django.test import SimpleTestCase, TestCase
 
 from .login_id import (
@@ -54,6 +57,13 @@ class NormalizeNameTests(SimpleTestCase):
     def test_blank_rejected(self):
         with self.assertRaises(LoginIdError):
             normalize_name("   ")
+
+    def test_mac_decomposed_name_is_composed_first(self):
+        # 맥에서 만든 파일은 한글이 자모로 쪼개져 온다(NFD). 그 자모는 남길
+        # 문자류에 없어서, 합치지 않으면 이름이 통째로 사라진다.
+        decomposed = unicodedata.normalize("NFD", "김서연")
+        self.assertNotEqual(decomposed, "김서연")  # 눈에는 같고 값은 다르다
+        self.assertEqual(normalize_name(decomposed), "김서연")
 
     def test_long_name_truncated(self):
         # login_id max_length=50 을 접미사까지 포함해 넘지 않도록 상한을 둔다
