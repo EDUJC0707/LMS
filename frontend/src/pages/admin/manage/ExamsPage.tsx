@@ -1,7 +1,7 @@
 /**
  * /admin/exams — 시험 회차 목록.
  *
- * API  GET /api/admin/exams  → {exams: [...]}
+ * API  GET /api/admin/exams  → {exams: [...], classes: [...]}
  *
  * 화면 설계
  * - 회차·응시자·평균·처리 상태를 한 표에서 비교하는 게 이 화면의 전부다.
@@ -29,7 +29,7 @@ import {
   Table,
 } from "../../../components";
 import "./manage.css";
-import type { ExamKind, ExamListRow } from "./types";
+import type { ExamKind, ExamList, ExamListRow } from "./types";
 
 const EXAM_KINDS: ExamKind[] = ["미니테스트", "모의고사"];
 
@@ -42,7 +42,7 @@ export function score(value: number | null | undefined): string {
 export default function ExamsPage() {
   const navigate = useNavigate();
   const exams = useApi(
-    () => http.get<{ exams: ExamListRow[] }>("/admin/exams").then((r) => r.data.exams),
+    () => http.get<ExamList>("/admin/exams").then((r) => r.data),
     [],
   );
   const [query, setQuery] = useState("");
@@ -51,6 +51,8 @@ export default function ExamsPage() {
   const [examDate, setExamDate] = useState("");
   const [kind, setKind] = useState<ExamKind>("미니테스트");
   const [fullScore, setFullScore] = useState("");
+  const [classId, setClassId] = useState("");
+  const [sessionId, setSessionId] = useState("");
 
   const create = useApiAction(async () => {
     const { data } = await http.post<{ exam_id: number }>("/admin/exams", {
@@ -58,12 +60,20 @@ export default function ExamsPage() {
       exam_date: examDate,
       kind,
       full_score: fullScore || null,
+      session_id: sessionId || null,
     });
     return data.exam_id;
   });
 
+  const classes = exams.data?.classes ?? [];
+  // 이미 시험이 걸린 회차는 고를 수 없다 — 회차 하나에 시험 하나다.
+  const weeks =
+    classes.find((row) => String(row.class_id) === classId)?.sessions.filter(
+      (session) => session.exam_id === null,
+    ) ?? [];
+
   const rows = useMemo(() => {
-    const list = exams.data ?? [];
+    const list = exams.data?.exams ?? [];
     const needle = query.trim();
     if (!needle) return list;
     return list.filter(
@@ -192,6 +202,8 @@ export default function ExamsPage() {
               setExamDate("");
               setKind("미니테스트");
               setFullScore("");
+              setClassId("");
+              setSessionId("");
               navigate(String(id));
             }}
           >
@@ -233,6 +245,44 @@ export default function ExamsPage() {
             </Select>
           )}
         </Field>
+        {/* 시험은 반도 주차도 모른다 — 이 연결이 명단·출결·미제출을 낸다. */}
+        <Field label="반">
+          {(props) => (
+            <Select
+              {...props}
+              value={classId}
+              onChange={(e) => {
+                setClassId(e.target.value);
+                setSessionId("");
+              }}
+            >
+              <option value="">선택</option>
+              {classes.map((row) => (
+                <option key={row.class_id} value={row.class_id}>
+                  {row.course_name} · {row.name}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        {classId && (
+          <Field label="주차">
+            {(props) => (
+              <Select
+                {...props}
+                value={sessionId}
+                onChange={(e) => setSessionId(e.target.value)}
+              >
+                <option value="">선택</option>
+                {weeks.map((session) => (
+                  <option key={session.session_id} value={session.session_id}>
+                    {session.week_no ? `${session.week_no}주차` : session.session_date}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+        )}
         {/* 모의고사는 문항이 없어 만점을 딴 데서 못 구한다. */}
         {kind === "모의고사" && (
           <Field label="만점">

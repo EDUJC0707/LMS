@@ -136,10 +136,10 @@ class ExamAdminListTests(ExamAdminFixtureMixin, TestCase):
 
     def test_query_budget(self):
         self.login_admin()
-        # 세션인증 2 + 기능키 1 + 시험·성적 annotate 1 + 보정대기 1 + 익명 장 1.
-        # 익명 집계는 **시험 수와 무관한 한 쿼리**다 — 시험마다 summary_stats 를
-        # 부르면 여기가 시험 수만큼 늘어난다.
-        with self.assertNumQueries(6):
+        # 세션인증 2 + 기능키 1 + 시험·성적 annotate 1 + 보정대기 1 + 익명 장 1
+        # + 반·회차 드롭다운 1. 익명 집계와 회차 목록은 **시험 수와 무관한 한
+        # 쿼리씩**이다 — 시험마다 summary_stats 를 부르면 시험 수만큼 늘어난다.
+        with self.assertNumQueries(7):
             self.assertEqual(self.client.get(ADMIN_EXAMS).status_code, 200)
 
 

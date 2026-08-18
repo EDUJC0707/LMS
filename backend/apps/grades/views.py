@@ -610,14 +610,18 @@ class AdminExamListView(APIView):
                 {"detail": f"시험 종류는 {'·'.join(Exam.Kind.values)} 중 하나입니다."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        exam = exam_admin.create_exam(
-            name,
-            exam_date,
-            round_no=request.data.get("round_no") or None,
-            target_grade=request.data.get("target_grade") or None,
-            kind=kind,
-            full_score=request.data.get("full_score") or None,
-        )
+        try:
+            exam = exam_admin.create_exam(
+                name,
+                exam_date,
+                round_no=request.data.get("round_no") or None,
+                target_grade=request.data.get("target_grade") or None,
+                kind=kind,
+                full_score=request.data.get("full_score") or None,
+                session_id=request.data.get("session_id") or None,
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"exam_id": exam.pk}, status=status.HTTP_201_CREATED)
 
 
