@@ -12,11 +12,9 @@
  *     ├ /parent/*                   RequireRole 학부모
  *     ├ /admin/*                    RequireRole 직원 + 화면별 RequireFeature
  *     └ /boards /notifications /password   전 역할 공통
- *   /bare/*                         기능 검증용 bare 프런트(보존 — 손대지 않는다)
  */
 import { Navigate, createBrowserRouter } from "react-router-dom";
 
-import BareApp from "../bare/BareApp";
 import { RedirectIfSignedIn, RequireAuth, RequireFeature, RequireRole } from "../auth/guards";
 import { RoleHome } from "./RoleHome";
 import { AdminLoginPage, ConsumerLoginPage } from "../pages/auth/LoginPage";
@@ -62,8 +60,6 @@ import { NotFoundPage } from "../pages/common/NotFoundPage";
 const STAFF = ["대표", "관리자", "조교"] as const;
 
 export const router = createBrowserRouter([
-  // 기능 검증용 bare 프런트 — 보존 구역. 절대 수정하지 않는다.
-  { path: "/bare/*", element: <BareApp /> },
 
   // 로그인 — 소비자는 한 화면, 직원만 별도 주소.
   {

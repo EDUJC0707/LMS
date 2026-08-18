@@ -4,8 +4,6 @@
  * - baseURL 은 "/api" 고정. 개발에서는 vite 프록시가 localhost:8000 으로
  *   넘긴다(vite.config.ts). 같은 오리진이므로 세션·CSRF 쿠키가 그대로 붙는다.
  * - Django CSRF 계약: 쿠키 csrftoken → 헤더 X-CSRFToken.
- * - /bare 는 별도 인스턴스(src/api/client.ts)를 쓴다. 이 파일과 분리돼 있으니
- *   여기를 고쳐도 /bare 는 영향받지 않는다.
  */
 import axios from "axios";
 
