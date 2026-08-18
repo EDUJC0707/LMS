@@ -209,9 +209,12 @@ def build_detail_payload(session, roster, attendance_by_student):
 
     - `students` 에는 **퇴원생도 들어온다**. `is_withdrawn` 이 true 인 행은
       출결 입력칸 대신 `퇴원` 을 표시하고 PUT 대상에서 뺀다(보내면 400).
-    - `summary` 는 **입력 대상만** 센다: 값 4종 + `미입력` 의 합이 `total` 과
-      같고, 퇴원생은 그 밖의 `퇴원` 칸에만 잡힌다. 퇴원생을 `미입력` 에 넣으면
-      "아직 n명 남았다"가 영원히 0이 되지 않는 거짓 신호가 된다.
+    - `summary` 는 **입력 대상만** 센다: 값 5종의 합이 `total` 과 같고, 퇴원생은
+      그 밖의 `퇴원` 칸에만 잡힌다. 퇴원생을 `미입력` 에 넣으면 "아직 n명
+      남았다"가 영원히 0이 되지 않는 거짓 신호가 된다.
+    - `미입력` 칸은 **레코드 없는 학생 + 명시적 `미입력` 행**을 합친 수다. 둘은
+      같은 뜻인데(FLOW 3-4) 명시적 행을 빼면 조교가 해제한 만큼 "아직 n명" 이
+      적게 떠서 다 봤다고 착각하게 된다.
     - `attendance_id` 는 동보 즉시 지급(POST /api/admin/attendance/makeup)의
       body 키다 — 명단에서 결석 학생에게 바로 지급하려면 기존 출결의 PK 가
       응답에 있어야 한다(2026-07-28 보강). 미입력 학생은 null(키는 항상 존재).
@@ -241,7 +244,9 @@ def build_detail_payload(session, roster, attendance_by_student):
         )
     total = len(roster) - withdrawn
     summary = dict(counts)
-    summary["미입력"] = total - sum(counts.values())
+    summary["미입력"] = (
+        total - sum(counts.values()) + counts[Attendance.Status.UNENTERED]
+    )
     summary["퇴원"] = withdrawn
     summary["total"] = total
     return {"session": session_block(session), "students": students, "summary": summary}

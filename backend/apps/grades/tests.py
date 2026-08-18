@@ -102,13 +102,18 @@ class AttendanceTests(TestCase):
             )
 
     def test_status_value_set_follows_design(self):
-        # 2026-07-29 사용자 확정: 출석/결석/결석(동보)/결석(현보) 4종.
+        # 2026-08-18 대표 지시로 `미입력` 추가 — 5종.
         # 결석 3종은 "왔는가"가 아니라 "보강이 어떻게 됐는가"로 갈린다 —
         # 미정(결석) / 동영상 보강(동보) / 현장 보강(현보).
         self.assertEqual(
             set(Attendance.Status.values),
-            {"출석", "결석", "결석(동보)", "결석(현보)"},
+            {"미입력", "출석", "결석", "결석(동보)", "결석(현보)"},
         )
+
+    def test_unentered_is_not_an_absence(self):
+        # "안 왔다"가 아니라 "모른다"다 — 결석 계열에 들어가면 결석 문자·동보·
+        # 상담 대기열이 아직 안 본 학생에게 걸린다(FLOW 3-4).
+        self.assertNotIn(Attendance.Status.UNENTERED, Attendance.ABSENT_STATUSES)
 
     def test_status_has_no_late_value(self):
         # 2026-07-29 사용자 확정 — 지각 제거. 시험을 수업 **초반**에 보므로

@@ -325,6 +325,28 @@ class SessionDetailTests(AttendanceAdminFixtureMixin, TestCase):
             },
         )
 
+    def test_summary_counts_explicit_unentered_rows_and_missing_ones(self):
+        # 해제해서 찍힌 `미입력` 행과 아예 레코드가 없는 학생은 같은 뜻이라
+        # 한 칸에서 같이 센다(FLOW 3-4). 명시적 행을 빼면 "아직 n명" 이 그만큼
+        # 적게 떠서 조교가 다 봤다고 착각한다.
+        Attendance.objects.create(session=self.session_w2, student=self.s1, status="출석")
+        Attendance.objects.create(
+            session=self.session_w2, student=self.s2, status="미입력"
+        )
+        body = self.client.get(self.detail_url(self.session_w2.session_id)).json()
+        self.assertEqual(
+            body["summary"],
+            {
+                "출석": 1,
+                "결석": 0,
+                "결석(동보)": 0,
+                "결석(현보)": 0,
+                "미입력": 2,  # 명시적 미입력(s2) + 레코드 없음(s3)
+                "퇴원": 1,
+                "total": 3,
+            },
+        )
+
     def test_roster_rows_carry_attendance_id_for_makeup_grant(self):
         # 즉시 동보 지급(POST /api/admin/attendance/makeup)의 body 키 —
         # 명단 행에서 바로 지급하려면 기존 출결의 PK 가 응답에 있어야 한다
@@ -859,6 +881,53 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
             self.assertIsNone(grant.revoked_at)
             self.assertEqual(grant.granted_at, t2)
             self.assertEqual(grant.expires_at, t2 + GRANT_DURATION)
+
+    def test_unentered_releases_every_trigger(self):
+        # 해제(`미입력`)는 아무것도 남기지 않는다 — 트리거 ①②③ 의 해제 경로.
+        # `미입력` 에서는 결석 문자도 동보도 결석생 연락 목록도 안 걸린다(FLOW 3-4).
+        self.put_attendance(
+            self.session_w2.session_id,
+            [
+                {"student_id": self.s1.student_id, "status": "출석"},
+                {"student_id": self.s2.student_id, "status": "결석"},
+                {"student_id": self.s3.student_id, "status": "결석(동보)"},
+            ],
+        )
+        later = NOW + datetime.timedelta(hours=1)
+        res = self.put_attendance(
+            self.session_w2.session_id,
+            [
+                {"student_id": student.student_id, "status": "미입력"}
+                for student in (self.s1, self.s2, self.s3)
+            ],
+            at=later,
+        )
+        self.assertEqual(res.status_code, 200)
+        atts = {a.student_id: a for a in Attendance.objects.filter(session=self.session_w2)}
+        for student in (self.s1, self.s2, self.s3):
+            att = atts[student.student_id]
+            self.assertEqual(att.status, "미입력")
+            # ② 결석이 아니므로 상담 대기열에 남지 않는다
+            self.assertEqual(AbsenceCounseling.objects.filter(attendance=att).count(), 0)
+
+        # ① 출석 근거 자동지급 — 전 행 회수
+        auto = VideoGrant.objects.filter(attendance=atts[self.s1.student_id])
+        self.assertEqual(auto.count(), len(self.w2_videos))
+        # ③ 동보 근거 지급 — 전 행 회수(attendance 가 아니라 makeup 으로 달린다)
+        makeup_grants = VideoGrant.objects.filter(
+            makeup__attendance=atts[self.s3.student_id]
+        )
+        self.assertEqual(makeup_grants.count(), len(self.w2_videos))
+        for grant in list(auto) + list(makeup_grants):
+            self.assertEqual(grant.revoked_at, later)
+            self.assertNotIn(grant, VideoGrant.objects.active(at=later))
+        # 결석에는 애초에 지급이 없다 — 회수할 것도 없다
+        self.assertEqual(
+            VideoGrant.objects.filter(attendance=atts[self.s2.student_id]).count(), 0
+        )
+        self.assertEqual(
+            res.json()["triggers"]["video_grants_revoked"], len(self.w2_videos) * 2
+        )
 
     # --- 트리거 ② 결석 → 상담 대기열 -------------------------------------
 
