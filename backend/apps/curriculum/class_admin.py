@@ -13,6 +13,10 @@
 보인다**(`CourseWeekQuerySet.released()` — 닫힘이 안전 기본값,
 key_considerations §5). 내용과 공개 시점은 커리 편집에서 채운다.
 
+**과목은 없으면 만든다**(FLOW 1-2 — 과목은 신규 입력이 되는 드롭다운).
+반대로 **구분은 값집합 밖을 거절한다** — 열어 두면 표기가 흔들려 아래 층
+분류가 지저분해진다.
+
 주차 날짜 수정·반 수정·삭제는 여기 없다 — 생성과 조회까지다.
 """
 import datetime
@@ -21,7 +25,7 @@ from django.db import IntegrityError, models, transaction
 
 from apps.grades.models import ClassSession
 
-from .models import Class, Course, CourseEnrollment, CourseWeek
+from .models import Class, Course, CourseEnrollment, CourseWeek, Subject
 
 # 총주차 상한 — 1년치. 오타로 60000 이 들어오면 회차가 그만큼 생긴다.
 MAX_TOTAL_WEEKS = 52
@@ -34,7 +38,7 @@ def list_courses(today=None):
     """
     today = today or datetime.date.today()
     rows = (
-        Class.objects.select_related("course")
+        Class.objects.select_related("course__subject")
         .annotate(
             week_count=models.Count("sessions", distinct=True),
             current_week=models.Count(
@@ -58,6 +62,7 @@ def list_courses(today=None):
             group = {
                 "course_id": klass.course_id,
                 "name": klass.course.name,
+                "subject": klass.course.subject.name if klass.course.subject else None,
                 "total_weeks": klass.course.total_weeks,
                 "classes": [],
             }
@@ -65,6 +70,14 @@ def list_courses(today=None):
             courses.append(group)
         group["classes"].append(class_block(klass))
     return courses
+
+
+def list_subjects():
+    """구분↔과목 — 새 커리를 만들 때 고르는 값 (FLOW 1-2).
+
+    커리가 하나도 없는 과목도 골라야 해서 `list_courses` 와 따로 센다.
+    """
+    return list(Subject.objects.order_by("track", "name").values("track", "name"))
 
 
 def class_block(klass):
@@ -94,13 +107,13 @@ def class_block(klass):
 
 
 @transaction.atomic
-def open_class(*, course_id, course_name, total_weeks, name, start_date):
+def open_class(*, course_id, course_name, total_weeks, track, subject, name, start_date):
     """커리(있으면 재사용) + 반 + 회차를 만든다. 입력 오류는 ValueError."""
     name = (name or "").strip() if isinstance(name, str) else ""
     if not name:
         raise ValueError("수강반명을 적어 주세요.")
     start_date = _parse_date(start_date)
-    course = _resolve_course(course_id, course_name, total_weeks)
+    course = _resolve_course(course_id, course_name, total_weeks, track, subject)
     try:
         klass = Class.objects.create(course=course, name=name, start_date=start_date)
     except IntegrityError as exc:  # UQ(course, name)
@@ -109,7 +122,7 @@ def open_class(*, course_id, course_name, total_weeks, name, start_date):
     return klass
 
 
-def _resolve_course(course_id, course_name, total_weeks):
+def _resolve_course(course_id, course_name, total_weeks, track, subject):
     if course_id is not None:
         course = Course.objects.filter(pk=_as_int(course_id, "커리")).first()
         if course is None:
@@ -121,7 +134,23 @@ def _resolve_course(course_id, course_name, total_weeks):
     weeks = _as_int(total_weeks, "총주차")
     if not 1 <= weeks <= MAX_TOTAL_WEEKS:
         raise ValueError(f"총주차는 1 이상 {MAX_TOTAL_WEEKS} 이하여야 합니다.")
-    return Course.objects.create(name=course_name, total_weeks=weeks)
+    return Course.objects.create(
+        name=course_name, total_weeks=weeks, subject=_resolve_subject(track, subject)
+    )
+
+
+def _resolve_subject(track, name):
+    """구분은 골라야만 하고, 과목은 없으면 만든다 (FLOW 1-2).
+
+    구분에 새 값을 넣지 못하게 막는 자리가 여기다 — 값집합 밖은 거절한다.
+    """
+    if track not in Subject.Track.values:
+        raise ValueError("과목구분을 골라 주세요.")
+    name = (name or "").strip() if isinstance(name, str) else ""
+    if not name:
+        raise ValueError("과목을 적어 주세요.")
+    subject, _ = Subject.objects.get_or_create(track=track, name=name)
+    return subject
 
 
 def _fill_sessions(klass, total_weeks, start_date):

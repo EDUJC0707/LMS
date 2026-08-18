@@ -19,6 +19,7 @@ from apps.accounts.permissions import FeatureRequired, IsParent, IsStudent
 
 from . import class_admin
 from .home import build_home_payload
+from .models import Subject
 
 # 404 단일 메시지 — 타인 자녀·미존재를 구분해 주지 않는다(존재 비노출,
 # 로그인 실패 단일 메시지와 같은 방향).
@@ -117,7 +118,9 @@ class AdminClassListView(APIView):
 
     **커리와 반은 한 화면에서 만든다**(FLOW 1-2). 그래서 POST 하나가 둘 다
     받는다 — `course_id` 를 주면 이미 있는 커리에 반을 더하고, 안 주면
-    `course_name`·`total_weeks` 로 커리를 새로 만든다.
+    `track`·`subject`·`course_name`·`total_weeks` 로 커리를 새로 만든다.
+    `subject` 는 이름이라 없으면 만들어지고, `track` 은 값집합 밖이면 400 이다.
+    GET 이 그 둘의 고를 값(`tracks`·`subjects`)을 같이 내린다.
 
     만들면 **커리 총주차만큼 회차가 개강일부터 주 단위로 채워진다**(FLOW 1-3).
     반의 주차는 별도 표가 아니라 `grades.ClassSession` 이고(주 1회라 주차 =
@@ -130,7 +133,13 @@ class AdminClassListView(APIView):
     permission_classes = [FeatureRequired(FeatureKey.ACCOUNT_ADMIN)]
 
     def get(self, request):
-        return Response({"courses": class_admin.list_courses()})
+        return Response(
+            {
+                "courses": class_admin.list_courses(),
+                "tracks": Subject.Track.values,
+                "subjects": class_admin.list_subjects(),
+            }
+        )
 
     def post(self, request):
         body = request.data if isinstance(request.data, dict) else {}
@@ -139,6 +148,8 @@ class AdminClassListView(APIView):
                 course_id=body.get("course_id"),
                 course_name=body.get("course_name"),
                 total_weeks=body.get("total_weeks"),
+                track=body.get("track"),
+                subject=body.get("subject"),
                 name=body.get("name"),
                 start_date=body.get("start_date"),
             )

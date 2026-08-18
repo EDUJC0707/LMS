@@ -5,6 +5,7 @@
   delta 부여 시 허용. 학생·비로그인은 차단
 - 개설: 커리와 반을 한 번에 / 이미 있는 커리에 반만 더하기 / 같은 커리에
   같은 반 이름은 거절
+- 구분·과목(FLOW 1-2): 과목은 없으면 만들어지고, 구분은 값집합 밖을 거절한다
 - 회차: 개강일에서 주 단위로 총주차만큼 — 1주차 9/4 · 2주차 9/11 · … ·
   10주차 11/6. 반의 주차가 곧 회차라 `ClassSession(klass, week_no)` 다
 - 목록: 커리로 묶고, 반마다 진행 주차와 수강생 수
@@ -18,7 +19,7 @@ from apps.accounts.features import FeatureKey
 from apps.accounts.models import StaffFeatureGrant, Student, User
 from apps.grades.models import ClassSession
 
-from .models import Class, Course, CourseEnrollment, CourseWeek
+from .models import Class, Course, CourseEnrollment, CourseWeek, Subject
 
 PASSWORD = "pw-Secret-77!"
 URL = "/api/admin/classes"
@@ -81,6 +82,8 @@ class OpenClassTests(ClassAdminFixtureMixin, TestCase):
     """POST /api/admin/classes — 커리 + 반 + 회차."""
 
     BODY = {
+        "track": "수능",
+        "subject": "통합과학",
         "course_name": "2026 여름 N제",
         "total_weeks": 10,
         "name": "목 6.5 대치러셀",
@@ -152,19 +155,87 @@ class OpenClassTests(ClassAdminFixtureMixin, TestCase):
             {**self.BODY, "total_weeks": 53},
             {**self.BODY, "total_weeks": "열"},
             {**self.BODY, "course_id": 999999},
+            # 구분은 잠겨 있다(FLOW 1-2) — 값집합 밖은 새 값이 되지 않는다
+            {**self.BODY, "track": "수능(재종)"},
+            {**self.BODY, "track": ""},
+            {**self.BODY, "track": None},
+            {**self.BODY, "subject": " "},
         ):
             with self.subTest(body=body):
                 self.assertEqual(self.post_class(body).status_code, 400)
         self.assertEqual(Course.objects.count(), 0)
         self.assertEqual(Class.objects.count(), 0)
         self.assertEqual(ClassSession.objects.count(), 0)
+        self.assertFalse(Subject.objects.filter(track="수능(재종)").exists())
+
+
+class SubjectTests(ClassAdminFixtureMixin, TestCase):
+    """구분·과목 — 과목은 신규 입력이 되고 구분은 잠겨 있다 (FLOW 1-2)."""
+
+    def test_migration_seeded_the_flow_table(self):
+        self.assertEqual(
+            sorted(Subject.objects.values_list("track", "name")),
+            sorted(
+                [
+                    ("수능", "통합과학"),
+                    ("내신", "일반선택 생명과학"),
+                    ("내신", "진로선택 생명과학 — 세포와 물질대사"),
+                    ("내신", "진로선택 생명과학 — 생물의 유전"),
+                ]
+            ),
+        )
+
+    def test_new_course_carries_the_chosen_subject(self):
+        res = self.post_class(
+            {**OpenClassTests.BODY, "track": "내신", "subject": "일반선택 생명과학"}
+        )
+        self.assertEqual(res.status_code, 201)
+        course = Course.objects.get(pk=res.json()["course_id"])
+        self.assertEqual(course.subject.name, "일반선택 생명과학")
+        self.assertEqual(course.subject.track, "내신")
+        self.assertEqual(Subject.objects.count(), 4)  # 있던 과목을 다시 만들지 않는다
+
+    def test_unknown_subject_name_creates_it(self):
+        res = self.post_class({**OpenClassTests.BODY, "subject": "물리학Ⅰ"})
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(Subject.objects.count(), 5)
+        self.assertEqual(Subject.objects.get(name="물리학Ⅰ").track, "수능")
+
+    def test_same_name_under_the_other_track_is_a_different_subject(self):
+        self.post_class(OpenClassTests.BODY)
+        res = self.post_class(
+            {**OpenClassTests.BODY, "track": "내신", "course_name": "내신 통합과학"}
+        )
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(Subject.objects.filter(name="통합과학").count(), 2)
+
+    def test_adding_a_class_to_an_existing_course_keeps_its_subject(self):
+        first = self.post_class(OpenClassTests.BODY).json()
+        res = self.post_class(
+            {
+                "course_id": first["course_id"],
+                "name": "화 6.5 대치러셀",
+                "start_date": "2026-09-02",
+            }
+        )
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(Course.objects.get(pk=first["course_id"]).subject.name, "통합과학")
+
+    def test_list_serves_the_choices(self):
+        body = self.get_classes().json()
+        self.assertEqual(body["tracks"], ["수능", "내신"])
+        self.assertIn({"track": "수능", "name": "통합과학"}, body["subjects"])
 
 
 class ClassListTests(ClassAdminFixtureMixin, TestCase):
     """GET /api/admin/classes — 커리로 묶은 목록."""
 
     def test_groups_classes_under_their_course_with_counts(self):
-        course = Course.objects.create(name="2026 여름 N제", total_weeks=10)
+        course = Course.objects.create(
+            name="2026 여름 N제",
+            total_weeks=10,
+            subject=Subject.objects.get(track="수능", name="통합과학"),
+        )
         klass = Class.objects.create(
             course=course, name="목 6.5 대치러셀", start_date=datetime.date(2026, 9, 4)
         )
@@ -189,6 +260,7 @@ class ClassListTests(ClassAdminFixtureMixin, TestCase):
         self.assertEqual(len(body["courses"]), 1)
         group = body["courses"][0]
         self.assertEqual(group["name"], "2026 여름 N제")
+        self.assertEqual(group["subject"], "통합과학")
         self.assertEqual(group["total_weeks"], 10)
         self.assertEqual(
             [c["name"] for c in group["classes"]], ["목 6.5 대치러셀", "화 6.5 대치러셀"]
@@ -201,4 +273,4 @@ class ClassListTests(ClassAdminFixtureMixin, TestCase):
 
     def test_empty_when_no_class_exists(self):
         Course.objects.create(name="반 없는 커리", total_weeks=4)
-        self.assertEqual(self.get_classes().json(), {"courses": []})
+        self.assertEqual(self.get_classes().json()["courses"], [])
