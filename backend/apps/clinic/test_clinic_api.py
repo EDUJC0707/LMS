@@ -28,7 +28,12 @@ import threading
 from unittest import mock
 
 from django.db import connection
-from django.test import SimpleTestCase, TestCase, TransactionTestCase
+from django.test import (
+    SimpleTestCase,
+    TestCase,
+    TransactionTestCase,
+    override_settings,
+)
 from django.utils import timezone
 
 from apps.accounts.models import Student, User
@@ -297,6 +302,8 @@ class ClinicHomeTests(ClinicFixtureMixin, TestCase):
         self.assertEqual(self.client.get(CLINIC_URL).status_code, 403)
 
 
+# dev 의 테스트용 구멍과 무관하게 운영 규칙을 고정한다
+@override_settings(CLINIC_ALLOW_SAME_DAY=False)
 class ClinicBookingCreateTests(ClinicFixtureMixin, TestCase):
     """POST /api/student/clinic/requests — 자격·정원·창구·노쇼·중복 강제."""
 
@@ -476,6 +483,8 @@ class ClinicBookingCreateTests(ClinicFixtureMixin, TestCase):
         self.assertEqual(self.book(self.slot_thu, THU).status_code, 403)
 
 
+# dev 의 테스트용 구멍과 무관하게 운영 규칙을 고정한다
+@override_settings(CLINIC_ALLOW_SAME_DAY=False)
 class ClinicBookingChangeTests(ClinicFixtureMixin, TestCase):
     """PATCH /api/student/clinic/requests/{id} — 같은 규칙 재검증 + 본인 것만."""
 
@@ -623,6 +632,8 @@ class ClinicBookingChangeTests(ClinicFixtureMixin, TestCase):
         self.assertEqual(res.status_code, 403)
 
 
+# dev 의 테스트용 구멍과 무관하게 운영 규칙을 고정한다
+@override_settings(CLINIC_ALLOW_SAME_DAY=False)
 class ClinicBookingCancelTests(ClinicFixtureMixin, TestCase):
     """POST /api/student/clinic/requests/{id}/cancel — 취소는 노쇼가 아니다."""
 
@@ -838,3 +849,26 @@ class ClinicHistoryTests(ClinicFixtureMixin, TestCase):
         # 회차 선택이 사라졌으니 어느 회차 것인지는 줄마다 붙어야 한다
         self.make(self.exam, datetime.date(2026, 7, 29))
         self.assertEqual(self.history()[0]["exam_name"], self.exam.name)
+
+
+class SameDayEscapeTests(TestCase):
+    """당일 신청 구멍 — **꺼져 있는 것이 기본**이어야 한다.
+
+    감독 흐름(봇 입장 → 녹음 → 전사)을 신청·배정 경로 그대로 확인하려고 뚫어
+    둔 자리다(dev 전용). 운영에서 켜지면 당일 배정 인력을 확정할 수 없어진다 —
+    그게 전날 마감의 이유다(PRD 3.2.4, 2026-07-29 확정).
+    """
+
+    def test_it_is_off_unless_something_turns_it_on(self):
+        from .booking import same_day_allowed
+
+        # 설정 키가 아예 없는 환경에서도 닫혀 있어야 한다
+        with override_settings(CLINIC_ALLOW_SAME_DAY=False):
+            self.assertFalse(same_day_allowed())
+
+    def test_production_settings_never_turn_it_on(self):
+        # dev.py 에만 있어야 한다. prod 로 새면 여기서 걸린다.
+        import pathlib
+
+        prod = pathlib.Path(__file__).resolve().parents[2] / "config" / "settings" / "prod.py"
+        self.assertNotIn("CLINIC_ALLOW_SAME_DAY", prod.read_text())

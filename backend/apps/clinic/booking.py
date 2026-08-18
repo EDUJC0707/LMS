@@ -35,6 +35,7 @@ attendance_status·noshow_count·clinic_banned 를 건드리지 않는다.
 """
 import datetime
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -104,6 +105,19 @@ def booking_window_end(exam_date):
     return exam_date + datetime.timedelta(days=WINDOW_DAYS)
 
 
+def same_day_allowed():
+    """⚠ **테스트 전용 구멍.** 켜면 당일 신청이 열린다.
+
+    감독(봇 입장 → 녹음 → 전사)을 사람 흐름 그대로 확인하려면 **오늘 안에
+    끝나는 클리닉**이 있어야 하는데, 전날 마감(2026-07-29 확정) 때문에 만들
+    방법이 없다. DB 를 손으로 고치면 신청·배정 경로를 안 타서 테스트가 되지 않는다.
+
+    **기본값은 꺼짐이고 운영에서 켜면 안 된다** — 켜는 순간 당일 배정 인력을
+    확정할 수 없어진다(그게 전날 마감의 이유다). dev 설정에서만 켠다.
+    """
+    return bool(getattr(settings, "CLINIC_ALLOW_SAME_DAY", False))
+
+
 def _check_date_open(target_date, now):
     """③ 창구 앞쪽 끝 — 오늘·지난 날짜 차단(신청·변경·취소 공통).
 
@@ -112,7 +126,7 @@ def _check_date_open(target_date, now):
     today = timezone.localdate(now)
     if target_date < today:
         raise ClinicError("지난 날짜에는 신청·변경·취소할 수 없습니다.")
-    if target_date == today:
+    if target_date == today and not same_day_allowed():
         raise ClinicError("오늘 클리닉은 신청·변경·취소할 수 없습니다.")
 
 
@@ -360,7 +374,8 @@ def availability(student, exam, date_from=None, date_to=None):
     if date_to is not None and date_to < date_from:
         raise ClinicError("조회 시작일이 종료일보다 늦습니다.")
     window_end = booking_window_end(exam.exam_date)
-    start = max(date_from, today + datetime.timedelta(days=1))  # 오늘은 항상 뺀다
+    # 오늘은 항상 뺀다 — 단 감독 테스트에서만 연다(`same_day_allowed`).
+    start = max(date_from, today if same_day_allowed() else today + datetime.timedelta(days=1))
     end = min(date_to, window_end) if date_to is not None else window_end
     return {
         "exam_id": exam.exam_id,
