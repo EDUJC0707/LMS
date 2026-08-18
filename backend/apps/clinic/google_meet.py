@@ -288,7 +288,7 @@ class GoogleMeetAdapter(ConferenceAdapter):
 
     # -- 감독 자료 수집 ----------------------------------------------------
 
-    def fetch_supervision(self, ref, *, file_as=None):
+    def fetch_supervision(self, ref, *, file_as=None, key=None):
         """끝난 회의의 요약·문서 링크. 아직 없으면 None(`conferencing` 계약).
 
         스페이스 하나에 회의 기록이 여러 개일 수 있다 — 모두 나갔다가 다시

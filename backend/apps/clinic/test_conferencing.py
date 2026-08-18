@@ -19,7 +19,7 @@ class StubAdapter(ConferenceAdapter):
     def create_space(self):
         return Conference(provider="google_meet", ref="spaces/STUB", url="https://x/stub")
 
-    def fetch_supervision(self, ref, *, file_as=None):
+    def fetch_supervision(self, ref, *, file_as=None, key=None):
         return None
 
 
@@ -65,7 +65,7 @@ class StartSupervisionDefaultTests(SimpleTestCase):
             def create_space(self):
                 return Conference(provider="p", ref="r", url="u")
 
-            def fetch_supervision(self, ref, *, file_as=None):
+            def fetch_supervision(self, ref, *, file_as=None, key=None):
                 return None
 
         self.assertIsNone(Bare().start_supervision("https://x/a", title="t", minutes=60))
@@ -76,7 +76,7 @@ class StartSupervisionDefaultTests(SimpleTestCase):
             def create_space(self):
                 return Conference(provider="p", ref="r", url="u")
 
-            def fetch_supervision(self, ref, *, file_as=None):
+            def fetch_supervision(self, ref, *, file_as=None, key=None):
                 return None
 
         bare = Bare()

@@ -115,7 +115,7 @@ class FirefliesAdapter(ConferenceAdapter):
             "감독 봇을 넣지 못했습니다",
         )
 
-    def fetch_supervision(self, ref, *, file_as=None):
+    def fetch_supervision(self, ref, *, file_as=None, key=None):
         """우리가 붙인 제목으로 전사를 되찾는다. 아직 없으면 None(계약).
 
         `ref`(스페이스 이름)는 쓰지 않는다 — Fireflies 는 구글 스페이스를 모르고

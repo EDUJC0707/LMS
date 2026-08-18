@@ -47,7 +47,7 @@ class RecordingAdapter(ConferenceAdapter):
             url=f"https://meet.google.com/s-{RecordingAdapter.calls}",
         )
 
-    def fetch_supervision(self, ref, *, file_as=None):
+    def fetch_supervision(self, ref, *, file_as=None, key=None):
         return None
 
     def schedule_supervision(self, url, *, key, title, starts_at, minutes):

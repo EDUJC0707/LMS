@@ -25,6 +25,7 @@ import datetime
 from django.db import transaction
 from django.utils import timezone
 
+from .clinic_admin import supervision_key
 from .conferencing import ConferenceError, get_adapter
 from .models import ClinicEvaluation, ClinicRequest
 
@@ -106,7 +107,9 @@ def collect(now=None, adapter=None):
     for request in pending(now):
         try:
             found = adapter.fetch_supervision(
-                request.conference_ref, file_as=artifact_path(request)
+                request.conference_ref,
+                file_as=artifact_path(request),
+                key=supervision_key(request),
             )
         except ConferenceError:
             # 일시적이든 영구적이든 이 건만 건너뛴다. 영구 실패도 다음 차례에

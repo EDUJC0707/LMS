@@ -114,13 +114,18 @@ class ConferenceAdapter(ABC):
         return None
 
     @abstractmethod
-    def fetch_supervision(self, ref: str, *, file_as: str | None = None) -> "Supervision | None":
+    def fetch_supervision(
+        self, ref: str, *, file_as: str | None = None, key: str | None = None
+    ) -> "Supervision | None":
         """끝난 회의의 감독 자료. **아직 없으면 None**(실패가 아니다).
 
         None 이 나오는 경우가 여럿이고 전부 정상이다 — 아무도 안 들어왔거나,
         회의가 방금 끝나 자료가 아직 안 만들어졌거나, 전사가 애초에 돌지
         않았거나(호스트가 웹이 아닌 기기로 들어온 경우). 호출측은 그냥 다음
         차례에 다시 물어본다.
+
+        `key` 는 예약할 때 준 그 이름이다(`schedule_supervision`). 업체가 우리
+        이름을 달고 있으면 그것으로 되찾고, 예약을 안 쓰는 업체는 무시한다.
 
         `file_as` 는 **정리해 두고 싶은 논리 경로**다(`clinic/2026-08/…`).
         저장소가 폴더를 모르는 업체면 무시해도 된다 — 계약은 "가능하면 여기

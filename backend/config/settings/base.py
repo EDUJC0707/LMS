@@ -293,6 +293,20 @@ CLINIC_CONFERENCE_BACKEND = env(
 
 # 비면 봇 투입·수집이 "API 키가 설정되지 않았습니다" 로 실패한다(조용한 성공 없음).
 FIREFLIES_API_KEY = env("FIREFLIES_API_KEY", default="")
+
+# --- 감독 = Recall(귀) + CLOVA(받아쓰기) -----------------------------------
+# 회의에 들어가는 일과 한국어를 받아쓰는 일을 **다른 업체가 한다**. 한국어를
+# 제일 잘하는 엔진은 회의에 못 들어가고(오디오를 주면 전사하는 물건이다),
+# 회의에 들어가는 업체들은 한국어 정확도 근거가 없기 때문이다.
+# 봇을 조직 계정으로 로그인시키는 자격증명은 **Recall 대시보드**에 있다 —
+# 요청 필드가 아니라 여기 없다. 그게 있어야 `TRUSTED` 로비를 건너뛴다.
+RECALL_API_KEY = env("RECALL_API_KEY", default="")
+RECALL_REGION = env("RECALL_REGION", default="ap-northeast-1")  # 도쿄
+
+# 네이버 클라우드 콘솔의 CLOVA Speech 도메인에서 발급한다. Invoke URL 은
+# 도메인마다 다르고, 시크릿과 짝이라 둘 중 하나만 있으면 안 된다.
+CLOVA_SPEECH_INVOKE_URL = env("CLOVA_SPEECH_INVOKE_URL", default="")
+CLOVA_SPEECH_SECRET = env("CLOVA_SPEECH_SECRET", default="")
 # 구글 미트는 **사용자 인증만** 받는다(서비스 계정은 워크스페이스 도메인 위임
 # 한정) — 계정 1개로 한 번 동의받은 갱신 토큰을 서버가 들고 쓴다.
 # 발급: `manage.py meet_authorize`. 셋 중 하나라도 비면 스페이스 생성은

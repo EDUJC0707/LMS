@@ -40,7 +40,7 @@ class StubAdapter(ConferenceAdapter):
     def create_space(self):
         return Conference(provider="google_meet", ref="spaces/S", url="https://x/s")
 
-    def fetch_supervision(self, ref, *, file_as=None):
+    def fetch_supervision(self, ref, *, file_as=None, key=None):
         StubAdapter.asked.append(ref)
         StubAdapter.filed_as.append(file_as)
         return StubAdapter.result
