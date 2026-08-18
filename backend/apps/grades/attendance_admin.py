@@ -130,13 +130,22 @@ def load_roster(session):
     담임 화면이 4종 값 + 퇴원 표시로 5종처럼 보여야 하기 때문이며, 대신 그
     행은 표시 전용이다(`is_entry_target` 이 False → 쓰기 400). 주차 미매핑
     회차는 명단 산정 불가([]) — 쓰기는 뷰에서 400 처리.
+
+    **반이 붙은 회차는 그 반만 본다**(2026-08-18). 같은 커리를 목반·화반이
+    같이 듣기 때문에(FLOW 1-1) 커리로만 거르면 목반 출결표에 화반 학생이
+    뜬다. 반이 없는 옛 회차는 종전대로 커리 전체다.
     """
     if session.course_week is None:
         return []
     course = session.course_week.course
+    scope = (
+        {"course_enrollments__klass": session.klass_id}
+        if session.klass_id
+        else {"course_enrollments__course": course}
+    )
     return list(
         Student.objects.filter(
-            course_enrollments__course=course,
+            **scope,
             course_enrollments__status=CourseEnrollment.Status.ENROLLED,
         )
         .select_related("user")

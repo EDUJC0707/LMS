@@ -14,9 +14,12 @@
   동명이인+같은 뒷4자리 두 명은 둘 다 생성되고 **원번이 같다**(단독 UNIQUE 아님)
 - 등록 전환: 예비등록→등록 + registered_at (그 외 상태 400)
 """
+import datetime
 import json
 
 from django.test import TestCase
+
+from apps.curriculum.models import Class, Course, CourseEnrollment
 
 from .features import FeatureKey
 from .models import Parent, ParentStudent, StaffFeatureGrant, Student, User
@@ -37,11 +40,22 @@ class ProvisioningFixtureMixin:
         cls.owner = make_user("pv-own", User.Role.OWNER, name="대표")
         cls.admin = make_user("pv-adm", User.Role.ADMIN, name="관리자")
         cls.assistant = make_user("pv-ast", User.Role.ASSISTANT, name="조교")
+        # 발급은 반을 골라서 한다(FLOW 2-1) — 명단에는 반이 없다.
+        cls.course = Course.objects.create(name="2026 여름 N제", total_weeks=10)
+        cls.klass = Class.objects.create(
+            course=cls.course,
+            name="목 6.5 대치러셀",
+            start_date=datetime.date(2026, 9, 4),
+        )
 
-    def post_bulk(self, rows, user=None):
+    def post_bulk(self, rows, user=None, class_id=-1):
         self.client.force_login(user or self.admin)
+        body = {
+            "class_id": self.klass.class_id if class_id == -1 else class_id,
+            "rows": rows,
+        }
         return self.client.post(
-            BULK_URL, data=json.dumps(rows), content_type="application/json"
+            BULK_URL, data=json.dumps(body), content_type="application/json"
         )
 
 
@@ -241,7 +255,8 @@ class BulkIssueTests(ProvisioningFixtureMixin, TestCase):
         self.assertFalse(User.objects.filter(name="손입력").exists())
         self.assertEqual(body["results"][1]["status"], "생성")
         self.assertEqual(body["summary"], {
-            "created": 1, "failed": 1, "parents_created": 0, "parents_linked": 0
+            "created": 1, "existing": 0, "failed": 1,
+            "parents_created": 0, "parents_linked": 0,
         })
 
     def test_row_without_grade_is_issued(self):
@@ -312,6 +327,77 @@ class BulkIssueTests(ProvisioningFixtureMixin, TestCase):
     def test_non_list_or_empty_body_rejected(self):
         self.assertEqual(self.post_bulk({"name": "딕셔너리"}).status_code, 400)
         self.assertEqual(self.post_bulk([]).status_code, 400)
+
+    def test_unknown_or_missing_class_rejected(self):
+        rows = [{"name": "반없음", "phone": "01055550000"}]
+        self.assertEqual(self.post_bulk(rows, class_id=None).status_code, 400)
+        self.assertEqual(self.post_bulk(rows, class_id=999999).status_code, 400)
+        self.assertFalse(User.objects.filter(phone="01055550000").exists())
+
+
+class BulkEnrollmentTests(ProvisioningFixtureMixin, TestCase):
+    """발급이 학생을 **반에 넣는다** — FLOW 2-1·2-4."""
+
+    def test_issued_student_is_enrolled_in_the_chosen_class(self):
+        res = self.post_bulk([{"name": "박서준", "phone": "01033330001"}])
+        student_id = res.json()["results"][0]["student_id"]
+        enrollment = CourseEnrollment.objects.get(student_id=student_id)
+        self.assertEqual(enrollment.klass_id, self.klass.class_id)
+        self.assertEqual(enrollment.course_id, self.course.course_id)
+        # 요일은 개강일에서 얻는다(FLOW 1-2) — 2026-09-04 는 금요일(0=일…6=토)
+        self.assertEqual(enrollment.primary_weekday, 5)
+
+    def test_existing_account_gets_enrollment_only(self):
+        first = self.post_bulk([{"name": "최유진", "phone": "01033330002"}]).json()
+        student_id = first["results"][0]["student_id"]
+
+        again = self.post_bulk([{"name": "최유진", "phone": "01033330002"}]).json()
+        row = again["results"][0]
+        self.assertEqual(row["status"], "기존")
+        self.assertEqual(row["student_id"], student_id)
+        self.assertNotIn("initial_password", row)  # 안내가 안 나간다(FLOW 2-4)
+        self.assertEqual(again["summary"], {**again["summary"], "created": 0, "existing": 1})
+        self.assertEqual(User.objects.filter(phone="01033330002").count(), 1)
+        self.assertEqual(CourseEnrollment.objects.filter(student_id=student_id).count(), 1)
+
+    def test_existing_account_in_another_class_adds_a_second_enrollment(self):
+        first = self.post_bulk([{"name": "정하윤", "phone": "01033330003"}]).json()
+        student_id = first["results"][0]["student_id"]
+        other = Class.objects.create(
+            course=Course.objects.create(name="내신 파이널", total_weeks=6),
+            name="화 8.0 대치러셀",
+            start_date=datetime.date(2026, 9, 1),
+        )
+
+        again = self.post_bulk(
+            [{"name": "정하윤", "phone": "01033330003"}], class_id=other.class_id
+        ).json()
+        self.assertEqual(again["results"][0]["status"], "기존")
+        self.assertEqual(
+            sorted(
+                CourseEnrollment.objects.filter(student_id=student_id).values_list(
+                    "klass_id", flat=True
+                )
+            ),
+            sorted([self.klass.class_id, other.class_id]),
+        )
+        self.assertEqual(Student.objects.filter(user__phone="01033330003").count(), 1)
+
+    def test_phoneless_student_is_matched_by_parent_phone_and_name(self):
+        first = self.post_bulk(
+            [{"name": "한지우", "parent_phone": "01044440001"}]
+        ).json()
+        student_id = first["results"][0]["student_id"]
+
+        again = self.post_bulk([{"name": "한지우", "parent_phone": "01044440001"}]).json()
+        self.assertEqual(again["results"][0]["status"], "기존")
+        self.assertEqual(again["results"][0]["student_id"], student_id)
+
+    def test_sibling_sharing_a_parent_phone_is_a_new_student(self):
+        self.post_bulk([{"name": "한지우", "parent_phone": "01044440002"}])
+        res = self.post_bulk([{"name": "한지호", "parent_phone": "01044440002"}]).json()
+        self.assertEqual(res["results"][0]["status"], "생성")
+        self.assertEqual(Student.objects.filter(user__name__startswith="한지").count(), 2)
 
 
 class RegisterTests(ProvisioningFixtureMixin, TestCase):

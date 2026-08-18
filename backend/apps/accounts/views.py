@@ -11,6 +11,7 @@ GET /api/auth/csrf 로 쿠키를 먼저 받는다.
 - PATCH    /api/admin/staff/{id}/deactivate    직원 비활성 (대표 전용)
 - PATCH    /api/admin/staff/{id}/activate      직원 재활성 (대표 전용)
 - POST     /api/admin/accounts/bulk            계정 일괄 발급 (계정관리)
+                                               본문 {class_id, rows} — 반은 조교가 고른다(FLOW 2-1)
 - POST     /api/admin/accounts/{id}/register   예비등록→등록 전환 (계정관리)
 - GET      /api/admin/students                 학생 명부 조회 (직원 공통)
 
@@ -28,7 +29,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.curriculum.models import class_name_subquery
+from apps.curriculum.models import Class, class_name_subquery
 
 from . import provisioning, staff_admin, student_directory
 from .features import FeatureKey, effective_features
@@ -407,24 +408,43 @@ class StaffActivateView(APIView):
         return Response(staff_admin.matrix_row(target))
 
 
+def _find_class(raw_class_id):
+    """반 조회 — 값이 없거나 숫자가 아니면 None(뷰가 400 으로 옮긴다)."""
+    try:
+        class_id = int(raw_class_id)
+    except (TypeError, ValueError):
+        return None
+    return Class.objects.select_related("course").filter(pk=class_id).first()
+
+
 class AccountBulkIssueView(APIView):
     """POST /api/admin/accounts/bulk — 학생 명단 일괄 발급 (계정관리).
 
-    본문은 행 리스트(출결 PUT 선례). 행 내부 오류(중복·누락)는 400 이 아니라
-    **행 단위 실패 리포트**로 나간다 — 형식 오류(리스트 아님·빈 명단)만 400.
-    초기 비밀번호는 응답으로 1회 반환(임시 정책 — provisioning 모듈 docstring).
+    본문은 `{class_id, rows}` 다. **반은 조교가 고른 것이지 파일에 있는 것이
+    아니다**(FLOW 2-1) — 그래서 명단 밖에 따로 있고, 없으면 발급하지 않는다.
+    반을 안 받던 시절에는 계정을 만들어도 그 학생이 어느 명단에도 뜨지 않았다.
+
+    행 내부 오류(중복·누락)는 400 이 아니라 **행 단위 실패 리포트**로 나간다 —
+    형식 오류(리스트 아님·빈 명단·반 미지정)만 400. 초기 비밀번호는 응답으로
+    1회 반환(임시 정책 — provisioning 모듈 docstring).
     """
 
     permission_classes = [FeatureRequired(FeatureKey.ACCOUNT_ADMIN)]
 
     def post(self, request):
-        rows = request.data
+        body = request.data if isinstance(request.data, dict) else {}
+        rows = body.get("rows")
         if not isinstance(rows, list) or not rows:
             return Response(
-                {"detail": "요청 본문은 학생 명단 리스트여야 합니다."},
+                {"detail": "요청 본문은 반(class_id)과 학생 명단(rows)이어야 합니다."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        return Response(provisioning.bulk_issue(rows))
+        klass = _find_class(body.get("class_id"))
+        if klass is None:
+            return Response(
+                {"detail": "반을 선택해 주세요."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(provisioning.bulk_issue(rows, klass))
 
 
 class AccountRegisterView(APIView):

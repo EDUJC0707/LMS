@@ -40,6 +40,8 @@ import secrets
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from apps.curriculum.models import CourseEnrollment
+
 from .login_id import LoginIdError, issue_parent_login_id, issue_student_login_id
 from .matching_key import build_matching_key
 from .models import Parent, ParentStudent, Student, User
@@ -63,19 +65,28 @@ class RowError(Exception):
         self.reason = reason
 
 
-def bulk_issue(rows):
+def bulk_issue(rows, klass):
     """명단 일괄 발급 — 행별 결과 리스트와 집계를 반환한다(모듈 docstring).
 
-    행 결과: {index, name, status 생성|실패, login_id, initial_password,
+    행 결과: {index, name, status 생성|기존|실패, login_id, initial_password,
     student_id, parent{...}|None, error}. 실패 행은 savepoint 롤백으로
     잔재(User/Student 반쪽 생성)를 남기지 않는다.
+
+    **어느 반인지는 조교가 고른 것이지 파일에 있는 것이 아니다**(FLOW 2-1) —
+    그래서 명단이 아니라 인자로 받고, 모든 행이 그 반에 등록된다.
     """
     results = []
-    summary = {"created": 0, "failed": 0, "parents_created": 0, "parents_linked": 0}
+    summary = {
+        "created": 0,
+        "existing": 0,
+        "failed": 0,
+        "parents_created": 0,
+        "parents_linked": 0,
+    }
     for index, row in enumerate(rows):
         try:
             with transaction.atomic():  # 행 단위 savepoint
-                result = _issue_row(row)
+                result = _issue_row(row, klass)
         except RowError as exc:
             summary["failed"] += 1
             results.append(
@@ -87,16 +98,21 @@ def bulk_issue(rows):
                 }
             )
             continue
-        summary["created"] += 1
+        summary["created" if result["status"] == "생성" else "existing"] += 1
         if result.get("parent"):
             key = "parents_created" if result["parent"]["created"] else "parents_linked"
             summary[key] += 1
-        results.append({"index": index, "status": "생성", **result})
+        results.append({"index": index, **result})
     return {"results": results, "summary": summary}
 
 
-def _issue_row(row):
-    """행 1건 처리 — 학생 User+Student 생성, 학부모 생성/연결. 실패는 RowError."""
+def _issue_row(row, klass):
+    """행 1건 처리 — 학생 User+Student 생성, 학부모 생성/연결, 반 등록.
+
+    **이미 계정이 있으면 수강만 추가한다**(FLOW 2-4) — 계정은 한 번 만들면
+    끝이고, 다른 반이어도 새 계정을 만들지 않는다. 그 행은 아이디·비밀번호를
+    싣지 않는다(안내가 나갈 자리가 없다). 실패는 RowError.
+    """
     if not isinstance(row, dict):
         raise RowError("행 형식이 올바르지 않습니다.")
     if str(row.get("matching_key") or "").strip():
@@ -110,6 +126,18 @@ def _issue_row(row):
     if not phone and not parent_phone:
         raise RowError("phone 또는 parent_phone이 필요합니다.")
     grade = (row.get("grade") or "").strip()
+
+    existing = _find_existing_student(name, phone, parent_phone)
+    if existing is not None:
+        _enroll(existing, klass)
+        return {
+            "status": "기존",
+            "name": existing.user.name,
+            "login_id": existing.user.login_id,
+            "student_id": existing.student_id,
+            "matching_key": existing.matching_key,
+            "parent": None,
+        }
 
     try:
         login_id = issue_student_login_id(name, phone, parent_phone)
@@ -127,8 +155,10 @@ def _issue_row(row):
     parent_block = None
     if parent_phone:
         parent_block = _link_parent(parent_phone, name, login_id, student)
+    _enroll(student, klass)
 
     return {
+        "status": "생성",
         "name": name,
         "login_id": login_id,
         "initial_password": initial_password,
@@ -142,6 +172,43 @@ def _clean_phone(value):
     if not isinstance(value, str):
         return ""
     return value.strip()
+
+
+def _find_existing_student(name, phone, parent_phone):
+    """이미 계정이 있는 학생인가 — **번호로 본다**(FLOW 2-3: 이름은 판정에 쓰지
+    않는다. 이름만 같은 것은 동명이인이라 물어봐야 소용이 없다).
+
+    번호가 하나만 맞는 경우(오타·형제)는 FLOW 2-3 이 "묻는다" 로 정했고 그
+    확인 화면은 아직 없다 — 여기서는 새 학생으로 본다.
+
+    본인 번호가 없는 학생만 학부모 번호로 찾되 이름까지 본다. 형제가 학부모
+    번호를 공유하므로 번호만 보면 동생이 형으로 붙는다.
+    """
+    if phone:
+        return Student.objects.select_related("user").filter(user__phone=phone).first()
+    if parent_phone:
+        return (
+            Student.objects.select_related("user")
+            .filter(user__name=name, parent_students__parent__phone=parent_phone)
+            .first()
+        )
+    return None
+
+
+def _enroll(student, klass):
+    """반에 등록한다 — 같은 반 재업로드는 멱등, 다른 반이면 수강이 하나 는다.
+
+    학생↔반은 N:M 이고(FLOW 1-1) UQ 도 (student, klass) 라 반마다 한 행이다.
+    요일은 개강일에서 얻는다(FLOW 1-2) — 0=일…6=토 로 옮겨 담는다.
+    """
+    weekday = None
+    if klass.start_date:
+        weekday = (klass.start_date.weekday() + 1) % 7
+    CourseEnrollment.objects.get_or_create(
+        student=student,
+        klass=klass,
+        defaults={"course": klass.course, "primary_weekday": weekday},
+    )
 
 
 def _create_user(login_id, role, name, phone):
