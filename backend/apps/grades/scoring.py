@@ -14,8 +14,25 @@
 **답안지가 안 들어온 학생의 성적 행을 `is_taken=False` 로 만든다.** 그 전에는
 그 행을 아무도 안 만들어서(시드 제외) 미제출 학생이 성적 화면에 아예 없었다.
 
-명단은 **그 시험을 본 회차의 출결**에서 온다(`class_sessions.exam`). 회차가
-안 매여 있으면 명단을 알 수 없으므로 아무것도 만들지 않는다 — 지어내지 않는다.
+명단은 **그 시험을 묶은 회차의 반**에서 온다(`class_sessions.exam` → `klass`).
+회차가 안 매여 있으면 명단을 알 수 없으므로 아무것도 만들지 않는다 —
+지어내지 않는다. 출결 행이 있는 학생도 함께 센다: 현보로 온 학생은 이 반에
+수강이 없지만 그 자리에서 시험을 봤다(FLOW 3-4).
+
+## OMR 이 대조되면 출석이 찍힌다 (2026-08-19)
+
+FLOW 3-2 는 **OMR → 출결표 한 방향**이다. 대조가 `정상` 인 장은 그 학생이
+그 자리에 앉아 답안지를 냈다는 물증이므로 출결을 `출석` 으로 올린다 —
+조교가 같은 명단을 OMR 에서 한 번, 출결표에서 또 한 번 찍고 있었다.
+
+**사람이 찍은 값은 안 건드린다.** 가르는 근거는 `attendances.marked_by` 다 —
+사람이 지나간 행에는 그 사람이 남아 있고, OMR 이 만든 행은 비어 있다. 그래서
+조교가 `출석` 을 `결석` 으로 고쳐도, 눌렀던 것을 해제해 `미입력` 로 되돌려도
+다시 판독을 돌린 OMR 이 그것을 뒤집지 못한다.
+
+**되돌리지도 않는다.** 재판독으로 어떤 장이 보류가 되어 주인을 잃어도 이미
+찍힌 `출석` 은 그대로 둔다 — 출결을 지우면 영상 권한이 회수되고 상담 대기열이
+움직인다. 잘못 붙은 출결을 걷는 것은 사람이 할 일이다(파괴적 작업은 수동).
 
 ## 익명 점수 — 누군지는 안 알려주고 점수만 준 학생
 
@@ -42,7 +59,8 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from apps.accounts.models import Student
 
-from .models import AnswerSheet, ClassSession, Score
+from . import attendance_admin
+from .models import AnswerSheet, Attendance, ClassSession, Score
 
 _CENT = Decimal("0.01")
 
@@ -61,11 +79,60 @@ def anonymous_totals(exam):
 
 
 def finalize_exam(exam):
-    """미제출 표기 + 백분위·석차. (미제출 생성 수, 순위 갱신 수).
+    """출석 표기 + 미제출 표기 + 백분위·석차. (미제출 생성 수, 순위 갱신 수).
 
     채점이 끝나는 자리마다 부른다 — 업로드·재판독·정답 키 수정·보정 저장.
+    출석을 먼저 찍는다: 조교 보정으로 주인이 정해진 장도 같은 자리에서 출결에
+    닿아야 하고, 그래야 미제출 명단이 같은 스냅샷 위에서 나온다.
     """
+    mark_present(exam)
     return mark_missing(exam), rank(exam)
+
+
+def mark_present(exam):
+    """대조가 `정상` 인 학생을 그 회차 출결 `출석` 으로 올린다. (찍은 수)
+
+    **출결 저장 경로를 그대로 탄다**(`attendance_admin.apply_entries`) — 출결이
+    바뀌면 복습영상 지급·상담 대기열이 따라 움직이므로 직접 UPDATE 하면 그게
+    다 안 돈다. 입력자(`marked_by`)는 비운다: 사람이 아니라 판독이 찍은 값이고,
+    그 빈칸이 곧 "OMR 이 다시 덮어도 되는 자리"의 표시다(모듈 docstring).
+
+    `미입력` 이 기본값이므로(FLOW 3-4) 대조되지 않은 학생은 건드리지 않는다 —
+    결석으로 찍으면 그 학부모에게 결석 문자가 나간다.
+    """
+    sessions = list(ClassSession.objects.filter(exam=exam))
+    if not sessions:
+        return 0
+    matched = set(
+        AnswerSheet.objects.filter(exam=exam, match_status=AnswerSheet.MatchStatus.MATCHED)
+        .exclude(student=None)
+        .values_list("student_id", flat=True)
+    )
+    if not matched:
+        return 0
+    marked = 0
+    for session in sessions:
+        roster_ids = attendance_admin.entry_target_ids(attendance_admin.load_roster(session))
+        targets = [sid for sid in roster_ids if sid in matched]
+        if not targets:
+            continue
+        att_map = attendance_admin.load_attendance_map(session, targets)
+        entries = [
+            {"student_id": sid, "status": Attendance.Status.PRESENT}
+            for sid in targets
+            if _untouched(att_map.get(sid))
+        ]
+        if entries:
+            attendance_admin.apply_entries(session, entries, None, roster_ids)
+            marked += len(entries)
+    return marked
+
+
+def _untouched(att):
+    """사람이 손대지 않은 자리인가 — OMR 이 써도 되는 조건(모듈 docstring)."""
+    return att is None or (
+        att.status == Attendance.Status.UNENTERED and att.marked_by_id is None
+    )
 
 
 def mark_missing(exam):
@@ -80,6 +147,14 @@ def mark_missing(exam):
     roster = set(
         Student.objects.filter(attendances__session__in=sessions).values_list("pk", flat=True)
     )
+    # 출결 행만 보면 **아무도 안 걸린다** — 조교가 출결표를 열기 전이면 행이
+    # 없고, OMR 이 찍은 행은 제출한 학생뿐이라 빼고 나면 남는 것이 없다.
+    # 봤어야 할 사람은 그 회차 반의 명단이다(퇴원생 제외 — 입력 대상이 아니다).
+    roster |= {
+        sid
+        for session in sessions
+        for sid in attendance_admin.entry_target_ids(attendance_admin.load_roster(session))
+    }
     submitted = set(
         AnswerSheet.objects.filter(exam=exam)
         .exclude(student=None)

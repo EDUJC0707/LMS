@@ -209,6 +209,27 @@ export interface ExamListRow {
   pending_sheet_count: number;
 }
 
+/** 시험을 묶을 회차 — 시험은 반도 주차도 모른다. 이 연결이 명단을 만든다. */
+export interface ExamSessionOption {
+  session_id: number;
+  week_no: number | null;
+  session_date: string;
+  /** 이미 다른 시험이 걸린 회차. */
+  exam_id: number | null;
+}
+
+export interface ExamClassOption {
+  class_id: number;
+  name: string;
+  course_name: string;
+  sessions: ExamSessionOption[];
+}
+
+export interface ExamList {
+  exams: ExamListRow[];
+  classes: ExamClassOption[];
+}
+
 export interface ExamStudentRow {
   student_id: number;
   name: string;

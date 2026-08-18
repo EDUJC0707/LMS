@@ -19,7 +19,7 @@ from apps.accounts import student_directory
 from apps.curriculum.models import class_name_subquery
 
 from . import omr_store, report, scoring
-from .models import AnswerSheet, Exam, Question, Score, SheetAnswer
+from .models import AnswerSheet, ClassSession, Exam, Question, Score, SheetAnswer
 
 
 def load_exam(exam_id):
@@ -37,6 +37,7 @@ def build_exam_list():
     pending = _pending_sheet_counts()
     anonymous = _anonymous_stats([exam.exam_id for exam in exams])
     return {
+        "classes": class_session_options(),
         "exams": [
             {
                 "exam_id": exam.exam_id,
@@ -258,21 +259,72 @@ def _question_stat_rows(exam):
 # --- 시험 만들기 · 정답 키 입력 (PRD 3.1.1 문항 정보 입력) -------------------
 
 
-def create_exam(name, exam_date, round_no=None, target_grade=None, kind=None, full_score=None):
+def class_session_options(today=None):
+    """반 → 주차 드롭다운 근거 — 시험을 어느 회차에 묶을지 고르는 자리.
+
+    시험은 반도 주차도 모른다. 회차가 그 연결이므로(`class_sessions.exam`)
+    묶이지 않은 시험은 **미제출 명단도 출결도 낼 수 없다** — 누가 봤어야 할
+    사람인지 알 방법이 없다(scoring.mark_missing · mark_present).
+    """
+    rows = (
+        ClassSession.objects.filter(klass__isnull=False, klass__is_active=True)
+        .select_related("klass__course")
+        .order_by("-klass__course_id", "klass_id", "week_no", "session_date")
+    )
+    classes, by_class = [], {}
+    for session in rows:
+        block = by_class.get(session.klass_id)
+        if block is None:
+            block = {
+                "class_id": session.klass_id,
+                "name": session.klass.name,
+                "course_name": session.klass.course.name,
+                "sessions": [],
+            }
+            by_class[session.klass_id] = block
+            classes.append(block)
+        block["sessions"].append(
+            {
+                "session_id": session.session_id,
+                "week_no": session.week_no,
+                "session_date": session.session_date.isoformat(),
+                "exam_id": session.exam_id,
+            }
+        )
+    return classes
+
+
+def create_exam(
+    name, exam_date, round_no=None, target_grade=None, kind=None, full_score=None,
+    session_id=None,
+):
     """시험 한 건. 문항은 따로 넣는다 — 시험을 먼저 만들고 키는 나중에 채운다.
 
     kind 는 **어느 카드가 들어오는지**를 정한다(omr_ingest) — 모의고사는
     문항 없이 자기보고 점수만 오므로 정답 키를 채울 일이 없다.
+
+    session_id 를 주면 그 회차에 묶는다. 회차 하나에 시험 하나이므로 이미 다른
+    시험이 걸린 회차는 거절한다 — 덮으면 앞 시험의 명단이 조용히 사라진다.
     """
-    return Exam.objects.create(
-        name=name,
-        exam_date=exam_date,
-        round_no=round_no,
-        target_grade=target_grade,
-        kind=kind or Exam.Kind.MINI,
-        # 만점은 모의고사에만 필요하다 — 미니테스트는 문항 배점의 합이다.
-        full_score=full_score,
-    )
+    with transaction.atomic():
+        exam = Exam.objects.create(
+            name=name,
+            exam_date=exam_date,
+            round_no=round_no,
+            target_grade=target_grade,
+            kind=kind or Exam.Kind.MINI,
+            # 만점은 모의고사에만 필요하다 — 미니테스트는 문항 배점의 합이다.
+            full_score=full_score,
+        )
+        if session_id is not None:
+            session = ClassSession.objects.filter(pk=session_id).first()
+            if session is None:
+                raise ValueError("회차를 찾을 수 없습니다.")
+            if session.exam_id is not None:
+                raise ValueError("이 회차에는 이미 시험이 묶여 있습니다.")
+            session.exam = exam
+            session.save(update_fields=["exam"])
+    return exam
 
 
 def save_questions(exam, rows):
