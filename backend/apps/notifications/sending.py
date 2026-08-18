@@ -26,6 +26,8 @@ Celery 를 모른다. 태스크는 이 함수를 부르고 재시도 정책만 �
 **이미 나간 건은 다시 보내지 않는다.** 행을 `select_for_update` 로 잠그고 상태를
 다시 확인하므로, 재시도와 재발송 배치가 같은 행에 겹쳐도 발송은 한 번이다.
 """
+import logging
+
 from django.db import transaction
 from django.utils import timezone
 
@@ -36,6 +38,8 @@ from .channels import (
     get_adapter,
 )
 from .models import Notification
+
+logger = logging.getLogger(__name__)
 
 #: 이미 끝난 상태 — 재발송 대상이 아니다.
 _TERMINAL = {Notification.Status.SUCCESS, Notification.Status.CONFIRMED}
@@ -85,11 +89,29 @@ def queue(
     )
     notification.full_clean()
     notification.save()
-    # tasks 가 이 모듈의 deliver 를 쓰므로 여기서 위로 import 하면 순환이 된다.
+    transaction.on_commit(lambda: _dispatch(notification.notif_id))
+    return notification
+
+
+def _dispatch(notif_id):
+    """태스크를 건다 — **거는 데 실패해도 업무를 뒤엎지 않는다.**
+
+    브로커가 없으면(운영에 Redis·워커가 아직 없다 — `infra/DEPLOY.md` 6장)
+    `delay` 가 터지는데, 이 콜백은 **커밋 뒤**에 돌기 때문에 그 예외는 이미
+    끝난 업무 위로 올라간다. 2026-08-12 에 결제 취소가 그렇게 터졌다: 돈은
+    돌아갔는데 화면에는 500 이 떴다. 계정 발급은 더 나쁘다 — 초기 비밀번호는
+    응답에만 실리므로 응답이 사라지면 **만들어진 계정에 아무도 못 들어간다.**
+
+    삼켜도 조용한 실패가 아니다: 행은 `대기` 로 남아 재발송 배치가 집어 간다
+    (`tasks.retry_failed_notifications`). 여기서는 사유만 남긴다.
+    """
+    # tasks 가 이 모듈의 deliver 를 쓰므로 위로 import 하면 순환이 된다.
     from .tasks import send_notification
 
-    transaction.on_commit(lambda: send_notification.delay(notification.notif_id))
-    return notification
+    try:
+        send_notification.delay(notif_id)
+    except Exception:
+        logger.exception("알림 %s 발송을 걸지 못했습니다 — 재발송 배치가 집습니다.", notif_id)
 
 
 def build_message(notification):
