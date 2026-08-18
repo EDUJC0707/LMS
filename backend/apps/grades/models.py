@@ -29,6 +29,11 @@ class ClassSession(models.Model):
     - exam: 그날 본 시험(없으면 NULL). 시험 삭제 시 회차 기록은 유지(SET_NULL).
     - course_week: 수업회차 ↔ 커리큘럼 주차 매핑(캘린더 커리큘럼 표시,
       PRD 3.2.0). 주차 삭제 시 회차 기록은 유지(SET_NULL).
+    - klass·week_no: **반의 주차가 곧 이 회차다**(FLOW 1-1 — 주 1회라 주차와
+      회차가 1:1). 그래서 반별 주차 표를 따로 두지 않는다. 주차를 더하고
+      지우는 것은 반에서만 하고 커리 총주차는 안 바뀌며(FLOW 1-3), 반별
+      주차 날짜는 `session_date` 다. 번호는 안 움직이고 날짜만 밀린다.
+      기록이 달린 반이 지워지지 않게 PROTECT.
     """
 
     session_id = models.BigAutoField(primary_key=True)
@@ -54,11 +59,28 @@ class ClassSession(models.Model):
         related_name="class_sessions",
         verbose_name="커리큘럼 주차",
     )
+    klass = models.ForeignKey(
+        "curriculum.Class",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        db_column="class_id",
+        related_name="sessions",
+        verbose_name="반",
+    )
+    week_no = models.SmallIntegerField("주차 번호", null=True, blank=True)
 
     class Meta:
         db_table = "class_sessions"
         verbose_name = "수업 회차"
         verbose_name_plural = "수업 회차"
+        constraints = [
+            # 반 안에서 주차 번호는 하나뿐 — 목반 3주차와 화반 3주차는 다른 행
+            models.UniqueConstraint(
+                fields=["klass", "week_no"],
+                name="uq_class_sessions_class_week_no",
+            ),
+        ]
         indexes = [
             # 설계 §4.4: 캘린더 월 단위 날짜 범위 스캔
             models.Index(fields=["session_date"], name="idx_class_sessions_date"),

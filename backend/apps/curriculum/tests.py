@@ -4,14 +4,16 @@
 PRD 3.2.0(캘린더 홈 데이터 소스), PRD §4 상태 기반 노출 원칙(주차 공개 게이팅).
 """
 import datetime
+from importlib import import_module
 
+from django.apps import apps as django_apps
 from django.db import IntegrityError
 from django.test import TestCase
 from django.utils import timezone
 
 from apps.accounts.models import Student
 
-from .models import Course, CourseEnrollment, CourseWeek, WeekDayPlan
+from .models import Class, Course, CourseEnrollment, CourseWeek, WeekDayPlan
 
 
 class CourseTests(TestCase):
@@ -165,12 +167,94 @@ class CourseEnrollmentTests(TestCase):
         self.assertIsNotNone(enrollment.enrolled_at)
         self.assertIsNone(enrollment.ended_at)
 
-    def test_student_course_unique(self):
-        # 설계: UQ(student_id, course_id) — 캘린더 렌더 근거의 유일성
-        CourseEnrollment.objects.create(student=self.student, course=self.course)
+    def test_student_class_unique(self):
+        # UQ(student_id, class_id) — 구 UQ(student, course) 를 반 단위로 옮겼다
+        klass = Class.objects.create(course=self.course, name="목 6.5 대치러셀")
+        CourseEnrollment.objects.create(
+            student=self.student, course=self.course, klass=klass
+        )
         with self.assertRaises(IntegrityError):
-            CourseEnrollment.objects.create(student=self.student, course=self.course)
+            CourseEnrollment.objects.create(
+                student=self.student, course=self.course, klass=klass
+            )
+
+    def test_student_can_join_two_classes(self):
+        # FLOW 1-1: 학생↔반은 N:M — 수능 반과 내신 반을 같이 듣는다
+        for name in ("목 6.5 대치러셀", "화 6.5 대치러셀"):
+            CourseEnrollment.objects.create(
+                student=self.student,
+                course=self.course,
+                klass=Class.objects.create(course=self.course, name=name),
+            )
+        self.assertEqual(self.student.course_enrollments.count(), 2)
 
     def test_table_and_pk_column_follow_design(self):
         self.assertEqual(CourseEnrollment._meta.db_table, "course_enrollments")
         self.assertEqual(CourseEnrollment._meta.pk.column, "enrollment_id")
+
+
+class ClassTests(TestCase):
+    """FLOW 1-1 — 반은 문자열이 아니라 행이다."""
+
+    def setUp(self):
+        self.course = Course.objects.create(name="2026 여름 N제")
+
+    def test_table_and_pk_column(self):
+        self.assertEqual(Class._meta.db_table, "classes")
+        self.assertEqual(Class._meta.pk.column, "class_id")
+
+    def test_name_unique_per_course(self):
+        # UQ(course_id, name) — 같은 커리 안에 같은 이름의 반은 하나
+        Class.objects.create(course=self.course, name="목 6.5 대치러셀")
+        with self.assertRaises(IntegrityError):
+            Class.objects.create(course=self.course, name="목 6.5 대치러셀")
+
+    def test_same_name_allowed_across_courses(self):
+        other = Course.objects.create(name="2026 가을 N제")
+        Class.objects.create(course=self.course, name="목 6.5 대치러셀")
+        Class.objects.create(course=other, name="목 6.5 대치러셀")
+        self.assertEqual(Class.objects.filter(name="목 6.5 대치러셀").count(), 2)
+
+
+class ClassBackfillTests(TestCase):
+    """`class_name` 문자열 → `Class` 승격 (마이그레이션 curriculum 0003)."""
+
+    def setUp(self):
+        self.course = Course.objects.create(name="2026 여름 N제")
+        self.backfill = import_module(
+            "apps.curriculum.migrations.0003_make_class_a_real_entity"
+        ).backfill_classes
+
+    def enroll(self, matching_key, class_name):
+        return CourseEnrollment.objects.create(
+            student=Student.objects.create(matching_key=matching_key),
+            course=self.course,
+            class_name=class_name,
+        )
+
+    def test_same_name_collapses_to_one_class(self):
+        self.enroll("24-001", "목 6.5 대치러셀")
+        self.enroll("24-002", "목 6.5 대치러셀")
+        self.backfill(django_apps, None)
+        self.assertEqual(Class.objects.count(), 1)
+        self.assertEqual(Class.objects.get().enrollments.count(), 2)
+
+    def test_typo_splits_the_class_in_two(self):
+        # 오타 하나가 반을 가른다 — 문자열 세계의 문제가 그대로 승격된다
+        self.enroll("24-001", "목 6.5 대치러셀")
+        self.enroll("24-002", "목 6.5 대치리셀")
+        self.backfill(django_apps, None)
+        self.assertEqual(Class.objects.count(), 2)
+
+    def test_blank_name_leaves_klass_null(self):
+        self.enroll("24-001", None)
+        self.enroll("24-002", "   ")
+        self.backfill(django_apps, None)
+        self.assertEqual(Class.objects.count(), 0)
+        self.assertEqual(CourseEnrollment.objects.filter(klass__isnull=True).count(), 2)
+
+    def test_rerun_creates_nothing_new(self):
+        self.enroll("24-001", "목 6.5 대치러셀")
+        self.backfill(django_apps, None)
+        self.backfill(django_apps, None)
+        self.assertEqual(Class.objects.count(), 1)

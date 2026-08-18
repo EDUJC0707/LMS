@@ -12,6 +12,7 @@ from django.test import TestCase
 
 from apps.accounts.matching_key import build_matching_key
 from apps.accounts.models import Student
+from apps.curriculum.models import Class, Course
 
 from .models import (
     AnswerSheet,
@@ -38,6 +39,11 @@ def make_session(**kwargs):
     return ClassSession.objects.create(**kwargs)
 
 
+def make_class(name, course_name="2026 여름 N제"):
+    course, _ = Course.objects.get_or_create(name=course_name)
+    return Class.objects.create(course=course, name=name)
+
+
 def make_exam(**kwargs):
     kwargs.setdefault("name", "오메가 1회")
     kwargs.setdefault("exam_date", datetime.date(2026, 7, 22))
@@ -54,6 +60,23 @@ class ClassSessionTests(TestCase):
         session = make_session()
         self.assertIsNone(session.exam)
         self.assertIsNone(session.course_week)
+
+    def test_week_no_unique_per_class(self):
+        # UQ(class_id, week_no) — 한 반의 3주차는 하나
+        klass = make_class("목 6.5 대치러셀")
+        make_session(klass=klass, week_no=3)
+        with self.assertRaises(IntegrityError):
+            make_session(klass=klass, week_no=3, session_date=datetime.date(2026, 7, 29))
+
+    def test_same_week_no_across_classes(self):
+        # FLOW 1-1: 목반 3주차와 화반 3주차는 다른 회차이고 날짜도 따로 간다
+        make_session(klass=make_class("목 6.5 대치러셀"), week_no=3)
+        make_session(
+            klass=make_class("화 6.5 대치러셀"),
+            week_no=3,
+            session_date=datetime.date(2026, 7, 20),
+        )
+        self.assertEqual(ClassSession.objects.filter(week_no=3).count(), 2)
 
 
 class AttendanceTests(TestCase):

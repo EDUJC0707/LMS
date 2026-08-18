@@ -36,6 +36,52 @@ class Course(models.Model):
         return self.name
 
 
+class Class(models.Model):
+    """`classes` — 반 (FLOW 1-1).
+
+    커리(`Course`)는 **무엇을 가르치는가**, 반은 **누가·언제 듣는가**다.
+    같은 `2026 여름 N제` 를 목반과 화반이 같이 듣기 때문에 반을 문자열
+    (`CourseEnrollment.class_name`)로 두면 오타 하나가 반을 둘로 가르고,
+    주차 날짜를 반마다 따로 가질 수 없다.
+
+    반이 담는 것은 **학생·출결·성적·주차 날짜**다. 주 1회라 주차와 수업
+    회차가 1:1 이므로(FLOW 1-1) 반의 주차는 별도 표가 아니라
+    `grades.ClassSession` 이다 — 반별 주차 날짜가 곧 `session_date`.
+    `CourseWeek` 에는 내용(제목·학습계획·영상)만 남는다.
+
+    - 커리 삭제로 반과 그에 달린 기록이 유실되지 않게 PROTECT.
+    - start_date(개강일)는 반을 만들 때 받지만, 문자열 반을 승격시킨
+      백필분은 알 수 없어 NULL 이다.
+    """
+
+    class_id = models.BigAutoField(primary_key=True)
+    course = models.ForeignKey(
+        Course,
+        on_delete=models.PROTECT,
+        db_column="course_id",
+        related_name="classes",
+        verbose_name="커리",
+    )
+    name = models.CharField("수강반명", max_length=50)
+    start_date = models.DateField("개강일", null=True, blank=True)
+    is_active = models.BooleanField("활성", default=True)
+    created_at = models.DateTimeField("생성 시각", auto_now_add=True)
+
+    class Meta:
+        db_table = "classes"
+        verbose_name = "반"
+        verbose_name_plural = "반"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["course", "name"],
+                name="uq_classes_course_name",
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 class CourseWeekQuerySet(models.QuerySet):
     """CourseWeek 소비자 노출 게이팅 쿼리셋 (PRD §4 상태 기반 노출 원칙)."""
 
@@ -157,6 +203,8 @@ class CourseEnrollment(models.Model):
       (설계 원칙: 값 추가 시 무마이그레이션).
     - 수강 이력은 기록이므로 학생·강좌 삭제로 유실되지 않게 PROTECT.
     - primary_weekday: 0=일…6=토. -- 잠정: 다요일 반복 시 확장(설계 문서 주석)
+    - klass: 진짜 반(`Class`). `class_name` 문자열과 당분간 공존한다 —
+      문자열을 읽는 자리가 아직 여럿이라 제거는 별건이다.
     """
 
     class Status(models.TextChoices):
@@ -180,6 +228,15 @@ class CourseEnrollment(models.Model):
         verbose_name="강좌",
     )
     class_name = models.CharField("반", max_length=30, null=True, blank=True)  # noqa: DJ001
+    klass = models.ForeignKey(
+        Class,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        db_column="class_id",
+        related_name="enrollments",
+        verbose_name="반",
+    )
     primary_weekday = models.SmallIntegerField("주 수업 요일", null=True, blank=True)
     status = models.CharField(
         "수강 상태",
@@ -195,10 +252,11 @@ class CourseEnrollment(models.Model):
         verbose_name = "수강"
         verbose_name_plural = "수강"
         constraints = [
-            # 설계: UQ(student_id, course_id)
+            # 학생↔반은 N:M(FLOW 1-1) — 수능 반과 내신 반을 같이 듣는 학생이
+            # 있다. 구 UQ(student, course)는 그걸 막았으므로 반 단위로 옮긴다.
             models.UniqueConstraint(
-                fields=["student", "course"],
-                name="uq_course_enrollments_student_course",
+                fields=["student", "klass"],
+                name="uq_course_enrollments_student_class",
             ),
         ]
         indexes = [
