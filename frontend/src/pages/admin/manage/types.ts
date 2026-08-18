@@ -52,12 +52,22 @@ export interface ClassRow {
 export interface CourseGroup {
   course_id: number;
   name: string;
+  /** 과목명. 과목 층이 생기기 전에 만들어진 커리는 비어 있다. */
+  subject: string | null;
   total_weeks: number;
   classes: ClassRow[];
 }
 
+/** 구분↔과목. 구분은 값집합이라 늘지 않고, 과목은 새 커리를 만들 때 늘어난다. */
+export interface SubjectRow {
+  track: string;
+  name: string;
+}
+
 export interface ClassList {
   courses: CourseGroup[];
+  tracks: string[];
+  subjects: SubjectRow[];
 }
 
 /* ── /api/admin/accounts/bulk ─────────────────────────────────────── */

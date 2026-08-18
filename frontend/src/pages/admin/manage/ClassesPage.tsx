@@ -14,6 +14,8 @@
  *   무엇으로 두느냐만 다르다.
  * - 개강일은 브라우저 날짜 칸(type=date)이다. 요일은 여기서 얻고(FLOW 1-2)
  *   회차 날짜는 서버가 주 단위로 채운다(FLOW 1-3).
+ * - 과목은 고르기와 새로 적기가 둘 다 되어야 해서(FLOW 1-2) datalist 를 단
+ *   입력 칸이다. 구분은 늘지 않으므로 그냥 select 다.
  */
 import { FormEvent, useState } from "react";
 
@@ -31,7 +33,7 @@ import {
   Table,
 } from "../../../components";
 import "./manage.css";
-import type { ClassList, ClassRow, CourseGroup } from "./types";
+import type { ClassList, ClassRow, CourseGroup, SubjectRow } from "./types";
 
 /** 표에 깔 한 줄 — 반에 그 반이 속한 커리와 "묶음의 첫 줄인가"를 얹는다. */
 interface Line extends ClassRow {
@@ -78,6 +80,11 @@ export default function ClassesPage() {
             caption="커리별 반 목록"
             columns={[
               {
+                key: "subject",
+                header: "과목",
+                cell: (row) => (row.first ? (row.course.subject ?? "") : ""),
+              },
+              {
                 key: "course",
                 header: "커리",
                 cell: (row) => (row.first ? row.course.name : ""),
@@ -105,6 +112,8 @@ export default function ClassesPage() {
       <CreateClassModal
         open={creating}
         courses={courses}
+        tracks={list.data?.tracks ?? []}
+        subjects={list.data?.subjects ?? []}
         onClose={() => setCreating(false)}
         onCreated={() => {
           setCreating(false);
@@ -123,15 +132,21 @@ const NEW_COURSE = "new";
 function CreateClassModal({
   open,
   courses,
+  tracks,
+  subjects,
   onClose,
   onCreated,
 }: {
   open: boolean;
   courses: CourseGroup[];
+  tracks: string[];
+  subjects: SubjectRow[];
   onClose: () => void;
   onCreated: () => void;
 }) {
   const [courseKey, setCourseKey] = useState<string>(NEW_COURSE);
+  const [track, setTrack] = useState("");
+  const [subject, setSubject] = useState("");
   const [courseName, setCourseName] = useState("");
   const [totalWeeks, setTotalWeeks] = useState("");
   const [name, setName] = useState("");
@@ -149,6 +164,8 @@ function CreateClassModal({
     const created = await create.run(
       isNewCourse
         ? {
+            track,
+            subject: subject.trim(),
             course_name: courseName.trim(),
             total_weeks: Number(totalWeeks),
             name: name.trim(),
@@ -157,6 +174,8 @@ function CreateClassModal({
         : { course_id: Number(courseKey), name: name.trim(), start_date: startDate },
     );
     if (!created) return;
+    setTrack("");
+    setSubject("");
     setCourseName("");
     setTotalWeeks("");
     setName("");
@@ -200,6 +219,38 @@ function CreateClassModal({
 
         {isNewCourse && (
           <>
+            <Field label="과목구분" required>
+              {(props) => (
+                <Select {...props} value={track} onChange={(e) => setTrack(e.target.value)}>
+                  <option value="" />
+                  {tracks.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+            <Field label="과목" required>
+              {(props) => (
+                <>
+                  <Input
+                    {...props}
+                    list="class-create-subjects"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    autoComplete="off"
+                  />
+                  <datalist id="class-create-subjects">
+                    {subjects
+                      .filter((row) => row.track === track)
+                      .map((row) => (
+                        <option key={row.name} value={row.name} />
+                      ))}
+                  </datalist>
+                </>
+              )}
+            </Field>
             <Field label="커리명" required>
               {(props) => (
                 <Input
