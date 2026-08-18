@@ -42,6 +42,12 @@ from . import layout as L
 FONT = "HYGothic-Medium"
 _FONT_READY = False
 
+#: 버블 안 글자 크기 — 옛 카드 200dpi 렌더의 글리프 높이에서 역산했다
+#: (답란·전화 숫자 7px = 3.5pt, 성명 자모 12px = 6.0pt). 처음엔 3.0/3.5pt 로
+#: 그렸는데 옛 카드보다 눈에 띄게 작았다. 학생이 읽는 글자다 — 줄이지 말 것.
+CELL_GLYPH_PT = 3.6
+NAME_GLYPH_PT = 5.6
+
 #: 옛 카드 실측 색. 초록 색조는 라벨칸·안내 박스에만 쓴다.
 TINT = Color(195 / 255, 233 / 255, 194 / 255)
 INK = Color(35 / 255, 31 / 255, 32 / 255)
@@ -53,6 +59,10 @@ BOX_RULES = (0.294, 0.069, 0.420, 0.312)
 BOX_PHONE = (0.294, 0.329, 0.421, 0.812)
 BOX_PHONE_HOW = (0.295, 0.823, 0.421, 0.967)
 BOX_ANSWER_V = (0.022, 0.967)
+#: 머리말 — 옛 카드에선 회차명이 위, 과목 로고가 아래였다.
+HEAD_EXAM_V = 0.030
+HEAD_LOGO_V = 0.112
+HEAD_U = 0.012
 DIVIDER_U = (0.448, 0.462)
 
 #: 옛 카드 문구 그대로.
@@ -67,6 +77,16 @@ RULES = [
     ("(잘못된 표기 예시)", 3),
 ]
 RULES_TAIL = [("3. 수정시에는 수정테이프만을", 0), ("사용하여 깨끗하게 수정합니다.", 1)]
+
+SURVEY_HOW_TITLE = "점수 마킹방법"
+SURVEY_HOW = [
+    ("1. 학교에서 본 모의고사 점수를", 0),
+    ("십의 자리·일의 자리로 나눠 마킹", 1),
+    ("합니다.", 1),
+    ("", 0),
+    ("2. 버블을 칠하지 않으면 위 칸의", 0),
+    ("손글씨로 읽습니다.", 1),
+]
 
 PHONE_HOW_TITLE = "전화번호 마킹방법"
 PHONE_HOW = [
@@ -288,7 +308,7 @@ def _name_block(pen):
     for (col, row), (u, v) in L.name_cells().items():
         letters = L.VOWELS if col in L.NAME_VOWEL_COLUMNS else L.CONSONANTS
         _bubble(pen, u, v, diameter, diameter)
-        _text(pen, u, v, letters[row - 1], size=3.5)
+        _text(pen, u, v, letters[row - 1], size=NAME_GLYPH_PT)
 
 
 def _phone_block(pen):
@@ -296,7 +316,7 @@ def _phone_block(pen):
     _titled_grid_box(pen, BOX_PHONE, "전화번호  끝  네  자리", float(L.PHONE_ROW_V[0]))
     for (_pos, digit), (u, v) in L.phone_cells().items():
         _bubble(pen, u, v, L.BUBBLE_W_MM, L.BUBBLE_H_MM)
-        _text(pen, u, v, str(digit), size=3.4)
+        _text(pen, u, v, str(digit), size=CELL_GLYPH_PT)
 
     u0, v0, u1, v1 = BOX_PHONE_HOW
     _rect(pen, u0, v0, u1, v1, fill=TINT, radius=3.0)
@@ -323,11 +343,12 @@ def _divider(pen):
 def _answer_block(pen, card):
     """답란 — 20행이 차면 다음 열(수능 방식). 열 1은 옛 카드와 같은 자리다."""
     cells = card.answer_cells()
-    width = float(L.mm_to_u(L.ANSWER_COL_PITCH_MM))
+    pitch = float(L.mm_to_u(L.ANSWER_COL_PITCH_MM))
+    box_w = float(L.mm_to_u(L.ANSWER_BOX_W_MM))
     first_u = float(L.mm_to_u(L.ANSWER_COL_X_MM))
     for col in range(card.columns):
-        u0 = first_u - 0.041 + col * width
-        u1 = u0 + width
+        u0 = first_u - 0.041 + col * pitch
+        u1 = u0 + box_w
         _rect(pen, u0, BOX_ANSWER_V[0], u1, BOX_ANSWER_V[1])
         header_v = BOX_ANSWER_V[0] + 0.040
         _rect(pen, u0, BOX_ANSWER_V[0], u1, header_v, fill=TINT, radius=1.0)
@@ -342,41 +363,108 @@ def _answer_block(pen, card):
     for question, choices in cells.items():
         for index, (u, v) in enumerate(choices, start=1):
             _bubble(pen, u, v, L.BUBBLE_W_MM, L.BUBBLE_H_MM)
-            _text(pen, u, v, str(index), size=3.0)
+            _text(pen, u, v, str(index), size=CELL_GLYPH_PT)
         _text(pen, choices[0][0] - 0.0245, choices[0][1], str(question), size=5.4)
 
 
 def _survey_block(pen):
-    """성적 조사 — 점수 두 자리(십 1~5 · 일 1~9,0) + ★내 점수★ 손글씨 칸."""
-    width = float(L.mm_to_u(L.ANSWER_COL_PITCH_MM))
-    u0 = float(L.mm_to_u(L.ANSWER_COL_X_MM)) - 0.041
-    u1 = u0 + width
-    _rect(pen, u0, BOX_ANSWER_V[0], u1, BOX_ANSWER_V[1])
-    header_v = BOX_ANSWER_V[0] + 0.040
-    _rect(pen, u0, BOX_ANSWER_V[0], u1, header_v, fill=TINT, radius=1.0)
-    _text(pen, (u0 + u1) / 2, (BOX_ANSWER_V[0] + header_v) / 2, "점        수", size=6.4)
+    """성적 조사 — 왼쪽은 답안 카드와 똑같고 오른쪽만 다르다(대표 2026-08-18).
 
-    top_v = float(L.mm_to_v(L.ANSWER_FIRST_ROW_MM)) + 0.030
+    오른쪽은 원래 조사 카드가 담던 것 그대로다: 점수 두 자리와 ★내 점수★ 손글씨
+    칸. 여기에 **마킹 예시**를 붙인다 — 실물 94장 중 34장이 버블을 아예 안 칠하고
+    손글씨만 남겼다. 안내가 멀면 안 읽는다.
+    """
+    box_w = float(L.mm_to_u(L.ANSWER_BOX_W_MM))
+    pitch = float(L.mm_to_u(L.ANSWER_COL_PITCH_MM))
+    u0 = float(L.mm_to_u(L.ANSWER_COL_X_MM)) - 0.041
+    u1 = u0 + box_w
+    top, bottom = BOX_ANSWER_V
+    header_v = top + 0.040
     step_v = float(L.mm_to_v(L.ROW_PITCH_MM))
+
+    # --- 왼쪽 열: 점수 두 자리. 격자를 박스 안에 세로 가운데로 앉힌다 ---
+    _rect(pen, u0, top, u1, bottom)
+    _rect(pen, u0, top, u1, header_v, fill=TINT, radius=1.0)
+    _text(pen, (u0 + u1) / 2, (top + header_v) / 2, "점        수", size=6.4)
+
+    span = (len(L.SURVEY_ONES) - 1) * step_v
+    grid_v = header_v + ((bottom - header_v) - span) / 2 + 0.010
     centre = (u0 + u1) / 2
-    gap = float(L.mm_to_u(L.CHOICE_PITCH_MM)) * 2.2
+    gap = float(L.mm_to_u(L.CHOICE_PITCH_MM)) * 2.6
     for column, digits in enumerate((L.SURVEY_TENS, L.SURVEY_ONES)):
         u = centre + (column - 0.5) * gap
-        _text(pen, u, top_v - 0.026, "십" if column == 0 else "일", size=6.0)
+        _text(pen, u, grid_v - 0.034, "십" if column == 0 else "일", size=6.6)
         for row, digit in enumerate(digits):
-            v = top_v + row * step_v
-            _bubble(pen, u, v, L.BUBBLE_W_MM, L.BUBBLE_H_MM)
-            _text(pen, u, v, digit, size=3.4)
+            _bubble(pen, u, grid_v + row * step_v, L.BUBBLE_W_MM, L.BUBBLE_H_MM)
+            _text(pen, u, grid_v + row * step_v, digit, size=CELL_GLYPH_PT)
 
-    # ★내 점수★ — 94장 중 34장이 버블을 안 칠하고 여기에만 적었다(설계 문서 §7).
-    bu0, bu1 = u1 + 0.030, u1 + 0.030 + width
-    _rect(pen, bu0, BOX_ANSWER_V[0], bu1, BOX_ANSWER_V[0] + 0.040, fill=TINT, radius=1.0)
-    _rect(pen, bu0, BOX_ANSWER_V[0], bu1, BOX_ANSWER_V[0] + 0.320)
-    _text(pen, (bu0 + bu1) / 2, BOX_ANSWER_V[0] + 0.020, "★ 내 점수 ★", size=7.0)
+    # --- 오른쪽 열: 손글씨 칸 + 마킹방법 ---
+    bu0 = u0 + pitch
+    bu1 = bu0 + box_w
+    hand_bottom = top + 0.300
+    _rect(pen, bu0, top, bu1, hand_bottom)
+    _rect(pen, bu0, top, bu1, header_v, fill=TINT, radius=1.0)
+    _text(pen, (bu0 + bu1) / 2, (top + header_v) / 2, "★  내 점수  ★", size=6.8)
+
+    line_step = 0.021
+    body = [line for line, _ in SURVEY_HOW]
+    how_v0 = hand_bottom + 0.034
+    how_v1 = how_v0 + 0.070 + len(body) * line_step + 0.075
+    _rect(pen, bu0, how_v0, bu1, how_v1, fill=TINT, radius=3.0)
+    _text(pen, (bu0 + bu1) / 2, how_v0 + 0.026, SURVEY_HOW_TITLE, size=7.4)
+    x0, _ = _xy(bu0 + 0.018, 0)
+    x1, y = _xy(bu1 - 0.018, how_v0 + 0.038)
+    pen.setLineWidth(_stroke())
+    pen.line(x0, y, x1, y)
+
+    v = how_v0 + 0.062
+    for line, indent in SURVEY_HOW:
+        if line:
+            start_u = bu0 + (0.012, 0.024, 0.018)[indent]
+            _fitted(pen, start_u, v, line, 5.4, bu1 - start_u - 0.010)
+        v += line_step
+    _survey_example(pen, bu0, bu1, v + 0.030, step_v)
 
 
-def render(card, title="한종철 생명과학", subtitle=""):
-    """카드 한 장을 PDF 바이트로. `card` 는 `layout.Layout`."""
+def _survey_example(pen, bu0, bu1, v, step_v):
+    """43점이면 십 4, 일 3 — 그림 한 줄이 문장 두 줄보다 빨리 읽힌다."""
+    # 박스 안에서 **왼쪽부터** 쌓는다. 가운데 기준으로 두면 오른쪽 칸이 박스를 넘는다.
+    gap = float(L.mm_to_u(L.CHOICE_PITCH_MM)) * 2.4
+    _text(pen, bu0 + 0.014, v, "예시)  43점", size=5.6, anchor="left")
+    first = bu1 - 0.022 - gap
+    for column, (label, digit) in enumerate((("십", "4"), ("일", "3"))):
+        u = first + column * gap
+        _text(pen, u, v - 0.026, label, size=5.2)
+        _filled_bubble(pen, u, v)
+        pen.setFillColor(white)
+        _text(pen, u, v, digit, size=CELL_GLYPH_PT)
+        pen.setFillColor(INK)
+
+
+def _header(pen, card, title, exam):
+    """회차명 + 과목 로고 — 옛 카드의 좌상단 그대로.
+
+    회차는 **시험을 만들 때 채워 넣는다**(대표 2026-08-18). 온라인 대량 인쇄라
+    장마다 다르게 찍을 수 없다는 것은 미리 찍어 둘 때의 얘기고, 시험마다 카드를
+    생성해 주면 그 자리에 회차가 박힌다. 비워서 발주할 수도 있어야 하므로
+    **값이 없으면 손으로 적을 줄**을 남긴다.
+    """
+    if exam:
+        _text(pen, HEAD_U, HEAD_EXAM_V, exam, size=10.5, anchor="left")
+    else:
+        x0, _ = _xy(HEAD_U, 0)
+        x1, y = _xy(HEAD_U + 0.185, HEAD_EXAM_V + 0.012)
+        pen.setLineWidth(_stroke())
+        pen.line(x0, y, x1, y)
+        _text(pen, HEAD_U + 0.193, HEAD_EXAM_V, "회차", size=6.5, anchor="left")
+    _text(pen, HEAD_U, HEAD_LOGO_V, title, size=13, anchor="left")
+
+
+def render(card, title="한종철 생명과학", exam=""):
+    """카드 한 장을 PDF 바이트로.
+
+    `card` 는 `layout.Layout`, `exam` 은 회차명(`2027 OMEGA black 3회`).
+    """
     buffer = io.BytesIO()
     page = (float(L.PAGE_W_MM) * MM_UNIT, float(L.PAGE_H_MM) * MM_UNIT)
     pen = canvas.Canvas(buffer, pagesize=page)
@@ -398,10 +486,8 @@ def render(card, title="한종철 생명과학", subtitle=""):
     else:
         _answer_block(pen, card)
 
-    _text(pen, 0.010, 0.030, title, size=11, anchor="left")
-    if subtitle:
-        _text(pen, 0.010, 0.066, subtitle, size=7.5, anchor="left")
-    _text(pen, 0.992, 0.030, card.name, size=7.5, anchor="right")
+    _header(pen, card, title, exam)
+    _text(pen, 0.992, HEAD_EXAM_V, card.name, size=7.5, anchor="right")
 
     pen.showPage()
     pen.save()

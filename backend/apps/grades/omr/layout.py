@@ -131,7 +131,11 @@ def decode_bars(slots):
 #: **1열은 옛 카드와 같은 자리에 찍힌다.** 늘어나는 것은 2열부터다.
 ANSWER_COL_X_MM = Decimal("147.0025")
 ANSWER_FIRST_ROW_MM = Decimal("19.3675")
-ANSWER_COL_PITCH_MM = Decimal("36.8")
+#: 열 간격 > 박스 폭 이라 **열 사이에 빈 자리가 생긴다.** 수능 답안지가 열마다
+#: 따로 박스를 세우고 사이를 띄우는 방식이다(대표 2026-08-18). 붙여 놓으면
+#: 21번이 1번 옆줄로 보여 학생이 줄을 잘못 탄다.
+ANSWER_COL_PITCH_MM = Decimal("40.0")
+ANSWER_BOX_W_MM = Decimal("36.8")
 ANSWER_ROWS_PER_COL = 20
 
 #: 조사 카드 점수칸 — 십의 자리 1~5, 일의 자리 1~9,0.
