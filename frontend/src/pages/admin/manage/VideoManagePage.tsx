@@ -37,6 +37,7 @@ import {
   Table,
 } from "../../../components";
 import "./manage.css";
+import { VideoGrantsModal } from "./VideoGrantsModal";
 import { VideoPreview } from "./VideoPreview";
 
 interface CourseWeekBlock {
@@ -129,6 +130,7 @@ export default function VideoManagePage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [query, setQuery] = useState("");
   const [preview, setPreview] = useState<VideoRow | null>(null);
+  const [grantsOf, setGrantsOf] = useState<VideoRow | null>(null);
 
   const rows = list.data ?? [];
   const weekRows = weeks.data ?? [];
@@ -305,7 +307,7 @@ export default function VideoManagePage() {
             {
               key: "actions",
               header: "",
-              width: "17rem",
+              width: "21rem",
               cell: (row) => (
                 <div className="pm-rowactions">
                   <Button
@@ -318,6 +320,9 @@ export default function VideoManagePage() {
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => openEdit(row)}>
                     수정
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setGrantsOf(row)}>
+                    권한
                   </Button>
                   {row.status !== "공개" && (
                     <Button
@@ -345,6 +350,14 @@ export default function VideoManagePage() {
           ]}
         />
       </Card>
+
+      {grantsOf && (
+        <VideoGrantsModal
+          videoId={grantsOf.video_id}
+          title={grantsOf.title}
+          onClose={() => setGrantsOf(null)}
+        />
+      )}
 
       {preview && (
         <VideoPreview
