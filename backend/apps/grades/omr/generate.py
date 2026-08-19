@@ -77,11 +77,24 @@ NAME_GLYPH_PT = 5.2
 #: 박스 자리 — 옛 카드 200dpi 렌더에서 잰 정규좌표 그대로.
 BOX_SCHOOL = (0.025, 0.210, 0.272, 0.310)
 BOX_NAME = (0.025, 0.326, 0.273, 0.967)
-BOX_RULES = (0.294, 0.069, 0.420, 0.312)
-BOX_PHONE = (0.294, 0.329, 0.421, 0.812)
-BOX_PHONE_HOW = (0.295, 0.823, 0.421, 0.967)
-BOX_ANSWER_V = (0.022, 0.967)
-DIVIDER_U = (0.448, 0.462)
+#: 가로 간격은 **하나로 푼다**. 신원란 끝(0.273)과 답란 시작(0.4796)은 고정이고
+#: 그 사이에 안내 박스와 구분바가 들어간다 — 남는 자리를 셋으로 나누면
+#: 6.27mm 가 나온다. 눈으로 맞추던 때는 5.93 / 7.91 / 4.96mm 로 벌어져 있었다.
+COLUMN_GAP = 0.02219
+BOX_RULES = (0.2952, 0.069, 0.4212, 0.312)
+BOX_PHONE = (0.2952, 0.329, 0.4212, 0.812)
+BOX_PHONE_HOW = (0.2952, 0.823, 0.4212, 0.967)
+DIVIDER_U = (0.4434, 0.4574)
+
+#: 답란 1번 위와 20번 아래의 여백을 **같게** 둔다(대표 2026-08-19). 행 자리는
+#: 옛 카드에서 물려받아 고정이므로, 머리칸 아래와 박스 아래를 행에서 역산한다.
+#: 예전에는 위 7.61mm 아래 8.35mm 로 0.7mm 어긋나 있었다.
+ANSWER_ROW_MARGIN_MM = 7.98
+_ROW1_V = float(L.mm_to_v(L.ANSWER_FIRST_ROW_MM))
+_ROW_LAST_V = float(L.mm_to_v(L.ANSWER_FIRST_ROW_MM + 19 * L.ROW_PITCH_MM))
+_ROW_MARGIN_V = float(L.mm_to_v(Decimal(str(ANSWER_ROW_MARGIN_MM))))
+ANSWER_HEADER_V = _ROW1_V - _ROW_MARGIN_V
+BOX_ANSWER_V = (0.022, _ROW_LAST_V + _ROW_MARGIN_V)
 NUMBER_COL_U = 0.030
 
 HEAD_EXAM_V = 0.030
@@ -575,7 +588,7 @@ def _grid_column(pen, u0, header, rows_v, numbers, bottom=None):
     u1 = u0 + box_w
     top, full_bottom = BOX_ANSWER_V
     bottom = full_bottom if bottom is None else bottom
-    header_v = top + 0.040
+    header_v = ANSWER_HEADER_V
     number_u = u0 + NUMBER_COL_U
 
     _rect(pen, u0, top, u1, bottom)
@@ -640,7 +653,7 @@ def _score_column(pen, u0, card):
     box_w = float(L.mm_to_u(L.ANSWER_BOX_W_MM))
     u1 = u0 + box_w
     top, bottom = BOX_ANSWER_V
-    header_v = top + 0.040
+    header_v = ANSWER_HEADER_V
     number_u = u0 + NUMBER_COL_U
     cells = card.survey_cells()
 

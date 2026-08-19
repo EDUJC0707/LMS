@@ -240,7 +240,7 @@ NAME_BUBBLE_H_MM = Decimal("3.94")
 #: (대표 2026-08-19). 앞서 간격만 균일하게 했더니 열이 박스 안에서 좌우로
 #: 치우쳐, 손글씨 줄의 칸막이를 열 사이 중앙에 그었을 때 **바깥 두 칸이
 #: 안쪽보다 넓어졌다.** 칸에서 출발해 열을 놓으면 둘 다 균일해진다.
-_PHONE_BOX_U = (Decimal("0.294"), Decimal("0.421"))
+_PHONE_BOX_U = (Decimal("0.2952"), Decimal("0.4212"))
 PHONE_CELLS = 4
 PHONE_COL_U = tuple(
     _PHONE_BOX_U[0]
