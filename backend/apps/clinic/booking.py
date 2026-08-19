@@ -20,8 +20,12 @@
      403. 취소는 허용(자원 반납 행위).
   ⑤ 중복: 같은 시험에 활성 신청 1건만.
 
-취소는 노쇼로 집계하지 않는다(PRD 3.2.4) — cancelled_at 스탬프만 남기고
-attendance_status·noshow_count·clinic_banned 를 건드리지 않는다.
+전날까지의 취소는 노쇼로 집계하지 않는다(PRD 3.2.4) — cancelled_at 스탬프만
+남기고 attendance_status·noshow_count·clinic_banned 를 건드리지 않는다.
+**다만 당일 취소는 노쇼다**(FLOW 3-7, 2026-08-19 대표): 자리는 이미 비워 둘 수
+없는 시점이라 전날까지 무르는 것과 같이 셀 수 없다. 그래서 당일에는 취소가
+막히는 것이 아니라 **열리고 노쇼로 세진다** — 막아 두면 학생은 그냥 안 오고,
+결과(노쇼 1회)는 어차피 같은데 조교만 자리가 빈다는 것을 모른 채 기다린다.
 **취소에는 창구 끝을 걸지 않는다**(2026-07-29): 신청·변경은 자리를 잡는
 행위라 배정 계획 안에 들어와야 하지만, 취소는 이미 잡은 자리를 반납하는
 행위다 — 막으면 안 올 학생의 자리가 잠긴 채 남는다(운영이 잃기만 한다).
@@ -38,6 +42,8 @@ import datetime
 from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
+
+from apps.accounts.models import ParentStudent
 
 from .conferencing import ConferenceError, get_adapter
 from .models import ClinicEligibility, ClinicRequest, ClinicSlot
@@ -105,15 +111,17 @@ def booking_window_end(exam_date):
 
 
 def _check_date_open(target_date, now):
-    """③ 창구 앞쪽 끝 — 오늘·지난 날짜 차단(신청·변경·취소 공통).
+    """③ 창구 앞쪽 끝 — 오늘·지난 날짜 차단(신청·변경).
 
     오늘은 시각을 보지 않는다 — 자정이든 밤이든 오늘 날짜면 닫혀 있다.
+    취소는 이 문을 안 쓴다: 당일에도 열려 있고 대신 노쇼로 세진다
+    (`cancel_booking`).
     """
     today = timezone.localdate(now)
     if target_date < today:
-        raise ClinicError("지난 날짜에는 신청·변경·취소할 수 없습니다.")
+        raise ClinicError("지난 날짜에는 신청·변경할 수 없습니다.")
     if target_date == today:
-        raise ClinicError("오늘 클리닉은 신청·변경·취소할 수 없습니다.")
+        raise ClinicError("오늘 클리닉은 신청·변경할 수 없습니다.")
 
 
 def _check_in_window(target_date, exam):
@@ -231,14 +239,35 @@ def change_booking(request, slot, requested_date):
 
 
 def cancel_booking(request):
-    """취소 — cancelled_at 스탬프만. **노쇼로 집계하지 않는다**(PRD 3.2.4)."""
+    """취소 — cancelled_at 스탬프. **당일이면 노쇼 1회를 같이 센다**(FLOW 3-7).
+
+    **"당일" 을 무엇으로 재나.** 마감(그 슬롯의 전날)이 지났는가로 잰다 —
+    `requested_date <= 오늘`. 슬롯 시각은 보지 않는다: 마감이 날짜 단위라
+    (`_check_date_open`) 취소만 시각으로 재면 같은 날 아침 9시 취소는 공짜인데
+    오후 3시 취소는 노쇼가 되고, 그 경계는 조교의 배정 계획과 아무 관계가 없다.
+    자리를 다시 채울 수 있었느냐가 기준이고, 그 답이 갈리는 지점이 전날 마감이다.
+
+    지나간 날짜도 같은 자리다 — 안 온 뒤에 무르는 것이라 당일 취소보다 무르지
+    않다. 조교가 이미 결석으로 찍었으면 그 건은 `승인배정` 이 아니라 출결이
+    끝난 건이지만, 상태는 그대로 `승인배정` 이라 여기로 들어올 수 있다.
+    이중 집계는 `mark_attendance` 가 막는다 — `취소` 는 출결 처리 대상이 아니다.
+    """
+    from .clinic_admin import count_noshow
+
     now = timezone.now()
     if request.status not in ACTIVE_STATUSES:
         raise ClinicError("취소할 수 없는 상태입니다.")
-    _check_date_open(request.requested_date, now)
-    request.status = ClinicRequest.Status.CANCELLED
-    request.cancelled_at = now
-    request.save(update_fields=["status", "cancelled_at"])
+    counts_as_noshow = request.requested_date <= timezone.localdate(now)
+    with transaction.atomic():
+        request.status = ClinicRequest.Status.CANCELLED
+        request.cancelled_at = now
+        request.save(update_fields=["status", "cancelled_at"])
+        if counts_as_noshow:
+            student = request.student
+            parents = [
+                link.parent for link in ParentStudent.objects.filter(student=student)
+            ]
+            count_noshow(request, student, parents)
     _drop_supervision(request)
     return request, now
 

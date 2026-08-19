@@ -275,20 +275,31 @@ def mark_attendance(request, value, actor):
                 parent=parent,
             )
         if value == ClinicRequest.AttendanceStatus.ABSENT:
-            student.noshow_count = F("noshow_count") + 1
-            student.save(update_fields=["noshow_count"])
-            student.refresh_from_db(fields=["noshow_count"])
-            if student.noshow_count >= NOSHOW_BAN_THRESHOLD and not student.clinic_banned:
-                student.clinic_banned = True
-                student.save(update_fields=["clinic_banned"])
-            _pending_notification(
-                Notification.Type.NOSHOW_WARNING, "클리닉 노쇼 경고", request, student=student
-            )
-            for parent in parents:
-                _pending_notification(
-                    Notification.Type.NOSHOW_WARNING, "클리닉 노쇼 경고", request, parent=parent
-                )
+            count_noshow(request, student, parents)
     return request, student
+
+
+def count_noshow(request, student, parents):
+    """노쇼 1회 — 누적 +1, 임계값에서 제한, 경고 알림(③).
+
+    **부르는 곳이 둘이다**: 조교가 결석으로 찍을 때와 학생이 **당일에 취소**할
+    때(FLOW 3-7 — "당일 취소는 노쇼와 같다"). 세는 규칙을 두 벌 쓰면 한쪽만
+    임계값이 바뀌어 제한이 갈린다. 호출부가 트랜잭션을 연다.
+    """
+    student.noshow_count = F("noshow_count") + 1
+    student.save(update_fields=["noshow_count"])
+    student.refresh_from_db(fields=["noshow_count"])
+    if student.noshow_count >= NOSHOW_BAN_THRESHOLD and not student.clinic_banned:
+        student.clinic_banned = True
+        student.save(update_fields=["clinic_banned"])
+    _pending_notification(
+        Notification.Type.NOSHOW_WARNING, "클리닉 노쇼 경고", request, student=student
+    )
+    for parent in parents:
+        _pending_notification(
+            Notification.Type.NOSHOW_WARNING, "클리닉 노쇼 경고", request, parent=parent
+        )
+    return student
 
 
 def _pending_notification(type_, title, request, student=None, parent=None):

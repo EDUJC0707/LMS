@@ -351,11 +351,11 @@ class ClinicBookingCreateTests(ClinicFixtureMixin, TestCase):
     def test_today_and_past_dates_say_which_one(self):
         self.assertEqual(
             self.book(self.slot_wed, TODAY, at=NOW_0800).json()["detail"],
-            "오늘 클리닉은 신청·변경·취소할 수 없습니다.",
+            "오늘 클리닉은 신청·변경할 수 없습니다.",
         )
         self.assertEqual(
             self.book(self.slot_wed, PAST_WED).json()["detail"],
-            "지난 날짜에는 신청·변경·취소할 수 없습니다.",
+            "지난 날짜에는 신청·변경할 수 없습니다.",
         )
 
     def test_past_date_400(self):
@@ -381,7 +381,7 @@ class ClinicBookingCreateTests(ClinicFixtureMixin, TestCase):
         # 걸리고, 먼저 걸리는 쪽(당일)의 사실을 말한다.
         res = self.book(self.slot_wed, TODAY)
         self.assertEqual(res.status_code, 400)
-        self.assertEqual(res.json()["detail"], "오늘 클리닉은 신청·변경·취소할 수 없습니다.")
+        self.assertEqual(res.json()["detail"], "오늘 클리닉은 신청·변경할 수 없습니다.")
 
     def test_nothing_is_bookable_once_the_window_closed(self):
         # 창구 끝 당일(화)에는 내일(수)부터가 이미 창구 밖 — 잡을 날짜가 없다.
@@ -664,14 +664,49 @@ class ClinicBookingCancelTests(ClinicFixtureMixin, TestCase):
         other = self.make_request_row(self.s_target2, self.slot_thu, THU)
         self.assertEqual(self.cancel_booking(other.clinic_id).status_code, 404)
 
-    def test_cancel_today_400_at_every_hour(self):
+    def test_cancel_today_is_a_noshow_at_every_hour(self):
+        """당일 취소는 막지 않고 노쇼로 센다(FLOW 3-7) — 시각은 보지 않는다."""
+        for at in ALL_DAY:
+            req = self.make_request_row(self.s_target2, self.slot_wed, TODAY)
+            self.login(self.s_target2.user)
+            self.assertEqual(self.cancel_booking(req.clinic_id, at=at).status_code, 200, at)
+            req.refresh_from_db()
+            self.assertEqual(req.status, ClinicRequest.Status.CANCELLED)
+            self.s_target2.refresh_from_db()
+            self.assertEqual(self.s_target2.noshow_count, 1, at)
+            # 다음 회를 위해 되돌린다 — 세는 것은 취소 1건당 1회다
+            self.s_target2.noshow_count = 0
+            self.s_target2.clinic_banned = False
+            self.s_target2.save(update_fields=["noshow_count", "clinic_banned"])
+
+    def test_cancel_past_date_is_a_noshow(self):
+        """지나간 날짜도 같다 — 안 온 뒤에 무르는 것이라 더 무르지 않다."""
         req = self.make_request_row(self.s_target2, self.slot_wed, TODAY)
         self.login(self.s_target2.user)
-        for at in ALL_DAY:
-            self.assertEqual(self.cancel_booking(req.clinic_id, at=at).status_code, 400, at)
-        req.refresh_from_db()
-        self.assertEqual(req.status, ClinicRequest.Status.PENDING)
-        self.assertIsNone(req.cancelled_at)
+        self.assertEqual(
+            self.cancel_booking(req.clinic_id, at=NOW_AFTER_END).status_code, 200
+        )
+        self.s_target2.refresh_from_db()
+        self.assertEqual(self.s_target2.noshow_count, 1)
+
+    def test_second_same_day_cancel_bans(self):
+        """노쇼 2회면 신청이 막힌다 — 조교가 찍은 결석과 같은 셈법이다."""
+        self.login(self.s_target2.user)
+        for _ in range(2):
+            req = self.make_request_row(self.s_target2, self.slot_wed, TODAY)
+            self.assertEqual(self.cancel_booking(req.clinic_id).status_code, 200)
+        self.s_target2.refresh_from_db()
+        self.assertEqual(self.s_target2.noshow_count, 2)
+        self.assertTrue(self.s_target2.clinic_banned)
+
+    def test_cancel_before_the_deadline_is_still_clean(self):
+        """전날까지 무른 것은 그대로 깨끗하다 — 자리를 다시 채울 수 있었다."""
+        req = self.make_request_row(self.s_target2, self.slot_thu, THU)
+        self.login(self.s_target2.user)
+        self.assertEqual(self.cancel_booking(req.clinic_id).status_code, 200)
+        self.s_target2.refresh_from_db()
+        self.assertEqual(self.s_target2.noshow_count, 0)
+        self.assertFalse(self.s_target2.clinic_banned)
 
     def test_cancel_tomorrow_200_even_late_at_night(self):
         req = self.make_request_row(self.s_target2, self.slot_thu, THU)
