@@ -86,10 +86,8 @@ BUBBLE_RV = mm_to_v(BUBBLE_H_MM / 2)
 #: 여백이 0.99mm 라 리더의 65% 표본(±0.76mm)을 침범하지 않는다.
 STROKE_MM = Decimal("0.18")
 
-#: 격자 간격 — 옛 카드 실측을 **span 에서 역산**한 값이다(65px 는 반올림된
-#: 어림이고 실제는 (1467-241)/19 = 64.53px). 어림을 쓰면 20행째에서 0.75mm 밀린다.
+#: 행 간격 — 옛 카드 실측을 span 에서 역산한 값(65px 는 어림이고 실제는 64.53px).
 ROW_PITCH_MM = Decimal("8.1948")
-CHOICE_PITCH_MM = Decimal("5.2070")
 
 
 # --- 판형 막대 -------------------------------------------------------------
@@ -133,30 +131,27 @@ def decode_bars(slots):
 
 
 # --- 판형 계열 -------------------------------------------------------------
-#: 답란 1열 **1번 선택지의 중심**. 아래 mm 값은 전부 **좌상 마커 기준**이다
-#: (지면 모서리 기준이 아니다 — `mm_to_u/v` 가 마커 기준 거리를 받는다. 지면
-#: 모서리로 적으면 u 가 4.5mm, v 가 11.2mm 밀린다 — 버블 폭보다 큰 오차다).
-#: 옛 카드 실측 `ANSWER_CHOICE_X[0]`·`ANSWER_ROW_Y[0]` 에서 마커 원점을 뺀 값이라
-#: **1열은 옛 카드와 같은 자리에 찍힌다.** 늘어나는 것은 2열부터다.
-ANSWER_COL_X_MM = Decimal("147.0025")
-ANSWER_FIRST_ROW_MM = Decimal("19.3675")
-#: 열 간격 > 박스 폭 이라 **열 사이에 빈 자리가 생긴다.** 수능 답안지가 열마다
-#: 따로 박스를 세우고 사이를 띄우는 방식이다(대표 2026-08-18). 붙여 놓으면
-#: 21번이 1번 옆줄로 보여 학생이 줄을 잘못 탄다.
-ANSWER_COL_PITCH_MM = Decimal("50.0")
-ANSWER_BOX_W_MM = Decimal("44.3")
+#: 답란 — **25문항이 최대**라 오른쪽에 자리가 남는다. 남기지 않고 쓴다
+#: (대표 2026-08-19). 옛 카드에서 물려받던 5.21mm 간격은 촘촘했고, 판독기는
+#: 새 판형에 맞춰 갈면 된다(대표: "판독기를 바꾸면 되고").
+#:
+#: 한 열 = 문번 9.5 + 답란 34.0 + 약점체크 14.5 = 58.0mm.
+#: 두 열을 놓아도 오른쪽 마커까지 24.7mm 가 남는다.
+ANSWER_COL_LEFT_MM = Decimal("135.42")
+NUMBER_COL_W_MM = Decimal("9.5")
+ANSWER_FIELD_W_MM = Decimal("34.0")
+EXTRA_COL_W_MM = Decimal("14.5")
+ANSWER_BOX_W_MM = NUMBER_COL_W_MM + ANSWER_FIELD_W_MM + EXTRA_COL_W_MM
+ANSWER_COL_PITCH_MM = ANSWER_BOX_W_MM + Decimal("6.27")
 
-#: 추가 마킹란 — 문번·답란 오른쪽의 **한 칸짜리 열**이다.
-#:
-#: 학생이 "이런 문제 더 받고 싶다"를 표시하는 자리다. **맞았든 틀렸든 상관없이**
-#: 체크하면 약점체크 대상이 된다(`SheetAnswer.extra_practice_marked`,
-#: 약점체크 = 오답 OR 추가마킹). 옛 튜터시스템 카드에는 없던 칸이라 우리가
-#: 찍는 카드부터 생긴다.
-#:
-#: 답란 폭은 건드리지 않고 **박스만 오른쪽으로 넓혔다** — 답 버블이 한 칸이라도
-#: 움직이면 리더 좌표가 통째로 어긋난다.
-EXTRA_COL_W_MM = Decimal("7.5")
-ANSWER_FIELD_W_MM = ANSWER_BOX_W_MM - EXTRA_COL_W_MM
+CHOICE_PITCH_MM = Decimal("6.4")
+#: 1번 선택지 중심 — 답란 안에서 5칸을 가운데로 앉힌 자리.
+ANSWER_COL_X_MM = (
+    ANSWER_COL_LEFT_MM + NUMBER_COL_W_MM
+    + (ANSWER_FIELD_W_MM - (4 * CHOICE_PITCH_MM + BUBBLE_W_MM)) / 2
+    + BUBBLE_W_MM / 2
+)
+ANSWER_FIRST_ROW_MM = Decimal("19.3675")
 ANSWER_ROWS_PER_COL = 20
 
 #: 조사 카드 점수칸 — **한 열**이다. 십의 자리가 위(1~5), 일의 자리가 아래(1~9,0).
@@ -208,7 +203,8 @@ class Layout:
         답란 한가운데(구분선+10.4mm)에 두어 문번과 칸 사이가 벌어졌고, 어느
         줄인지 눈으로 잇기 어려웠다.
         """
-        u = float(mm_to_u(ANSWER_COL_X_MM - Decimal("0.24")))
+        u = float(mm_to_u(ANSWER_COL_LEFT_MM + NUMBER_COL_W_MM + Decimal("2.3")
+                          + BUBBLE_W_MM / 2))
         cells = {}
         for place, digits, row0 in (
             ("십", SURVEY_TENS, SURVEY_TENS_ROW0),
@@ -223,7 +219,8 @@ class Layout:
         """{문항번호: (u, v)} — 추가 마킹란. 답란과 같은 행 위에 한 칸씩."""
         if self.is_survey:
             return {}
-        centre = ANSWER_COL_X_MM - Decimal("11.6") + ANSWER_FIELD_W_MM + EXTRA_COL_W_MM / 2
+        centre = (ANSWER_COL_LEFT_MM + NUMBER_COL_W_MM + ANSWER_FIELD_W_MM
+                  + EXTRA_COL_W_MM / 2)
         per = ANSWER_ROWS_PER_COL
         cells = {}
         for index in range(self.questions or 0):

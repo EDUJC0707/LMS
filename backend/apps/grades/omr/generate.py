@@ -96,8 +96,6 @@ _ROW_LAST_V = float(L.mm_to_v(L.ANSWER_FIRST_ROW_MM + 19 * L.ROW_PITCH_MM))
 _ROW_MARGIN_V = float(L.mm_to_v(Decimal(str(ANSWER_ROW_MARGIN_MM))))
 ANSWER_HEADER_V = _ROW1_V - _ROW_MARGIN_V
 BOX_ANSWER_V = (0.022, _ROW_LAST_V + _ROW_MARGIN_V)
-#: 문번 칸 폭 — 원본 실측 7.88mm. 8.97mm 로 두었을 때 1.10mm 넓었다.
-NUMBER_COL_U = 0.0279
 
 #: 머리말 자리 — 옛 카드 실측(지면 왼쪽 끝 기준 제목 14.4mm, 로고 22.5mm).
 #: 눈으로 맞추던 때는 둘 다 11.4mm 에 붙어 있어 제목이 3mm, 로고가 11mm
@@ -602,11 +600,11 @@ def _divider(pen):
     _rect(pen, u0, BOX_ANSWER_V[0], u1, BOX_ANSWER_V[1], fill=TINT)
 
 
-#: 추가 마킹란 머리글(대표 2026-08-19). 칸이 좁아 **두 줄**로 앉힌다.
+#: 추가 마킹란 머리글(대표 2026-08-19). 칸을 14.5mm 로 넓혀 **한 줄**로 앉는다.
 #:
 #: 이 칸이 실제로 물리는 곳이 약점체크다 — `약점체크 = 오답 OR 추가마킹`
 #: (`SheetAnswer.extra_practice_marked`). 맞은 문제에 체크해도 들어간다.
-EXTRA_HEADER = ("약점", "체크")
+EXTRA_HEADER = "약점 체크"
 
 
 def _grid_column(pen, u0, header, rows_v, numbers, bottom=None, extra=False):
@@ -616,13 +614,13 @@ def _grid_column(pen, u0, header, rows_v, numbers, bottom=None, extra=False):
     끝까지 늘이지 않는다 — 수능 답안지도 45문항의 마지막 5문항 열은 짧다.
     빈 칸을 끝까지 그려 두면 학생이 아직 못 푼 문제가 있는 줄 안다.
     """
-    box_w = float(L.mm_to_u(L.ANSWER_BOX_W_MM if extra else L.ANSWER_FIELD_W_MM))
-    u1 = u0 + box_w
-    field_u = u0 + float(L.mm_to_u(L.ANSWER_FIELD_W_MM))
+    number_w = float(L.mm_to_u(L.NUMBER_COL_W_MM))
+    field_u = u0 + number_w + float(L.mm_to_u(L.ANSWER_FIELD_W_MM))
+    u1 = field_u + float(L.mm_to_u(L.EXTRA_COL_W_MM)) if extra else field_u
     top, full_bottom = BOX_ANSWER_V
     bottom = full_bottom if bottom is None else bottom
     header_v = ANSWER_HEADER_V
-    number_u = u0 + NUMBER_COL_U
+    number_u = u0 + number_w
 
     _rect(pen, u0, top, u1, bottom)
     # 문번 칸은 위·아래가 박스 테두리에 닿는다 — 왼쪽 두 모서리만 둥글다.
@@ -635,11 +633,8 @@ def _grid_column(pen, u0, header, rows_v, numbers, bottom=None, extra=False):
     if extra:
         # 추가 마킹란 — 답란과 세로선 하나로 갈린다.
         _line(pen, field_u, top, field_u, bottom)
-        middle = (field_u + u1) / 2
-        line = float(L.mm_to_v(Decimal("2.7")))
-        base = (top + header_v) / 2 - line / 2
-        for order, word in enumerate(EXTRA_HEADER):
-            _text(pen, middle, base + order * line, word, size=6.6, bold=True)
+        _text(pen, (field_u + u1) / 2, (top + header_v) / 2, EXTRA_HEADER,
+              size=8.6, bold=True)
 
     for index, v in enumerate(rows_v):
         if v > bottom:
@@ -661,7 +656,7 @@ def _answer_block(pen, card):
     """답란 — 20행이 차면 다음 열(수능 방식). 열 1은 옛 카드와 같은 자리다."""
     cells = card.answer_cells()
     pitch = float(L.mm_to_u(L.ANSWER_COL_PITCH_MM))
-    first_u = float(L.mm_to_u(L.ANSWER_COL_X_MM)) - 0.041
+    first_u = float(L.mm_to_u(L.ANSWER_COL_LEFT_MM))
     step_v = float(L.mm_to_v(L.ROW_PITCH_MM))
     per = L.ANSWER_ROWS_PER_COL
     for col in range(card.columns):
@@ -688,7 +683,7 @@ def _survey_block(pen, card):
     두 덩어리(십·일) 사이에 설명이 들어가고 화살표가 어느 쪽인지 가리킨다.
     """
     pitch = float(L.mm_to_u(L.ANSWER_COL_PITCH_MM))
-    first_u = float(L.mm_to_u(L.ANSWER_COL_X_MM)) - 0.041
+    first_u = float(L.mm_to_u(L.ANSWER_COL_LEFT_MM))
     _score_column(pen, first_u, card)
     _survey_side(pen, first_u + pitch, card)
 
@@ -704,7 +699,7 @@ def _score_column(pen, u0, card):
     u1 = u0 + box_w
     top, bottom = BOX_ANSWER_V
     header_v = ANSWER_HEADER_V
-    number_u = u0 + NUMBER_COL_U
+    number_u = u0 + float(L.mm_to_u(L.NUMBER_COL_W_MM))
     cells = card.survey_cells()
     half = float(L.mm_to_v(L.ROW_PITCH_MM)) / 2
 

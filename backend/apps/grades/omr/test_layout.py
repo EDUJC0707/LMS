@@ -77,14 +77,24 @@ class TestGrid:
         ones = [v for (place, _), (_, v) in cells.items() if place == "일"]
         assert max(tens) < min(ones), "십의 자리가 위에 온다"
 
-    def test_column_one_sits_exactly_on_the_old_card(self):
-        """1열은 물려받는다 — 어긋나면 옛 스캔과 새 스캔이 다른 격자가 된다."""
+    def test_the_answer_grid_no_longer_matches_the_old_card(self):
+        """옛 카드와의 일치는 **의도적으로 깼다**(대표 2026-08-19).
+
+        25문항이 최대라 지면 오른쪽이 남았고, 옛 카드의 5.21mm 간격은 촘촘했다.
+        6.4mm 로 벌리면서 답 버블이 옛 좌표를 떠났다 — 그래서 **새 카드는
+        `card.py` 로 읽으면 안 된다.** 무엇이 가르는지는 가장자리 막대다.
+
+        이 테스트는 그 사실을 못 박아 둔다: 둘이 우연히 다시 같아지면
+        (누가 간격을 되돌리면) 여기서 걸려 리더 배선을 다시 보게 된다.
+        """
         cells = layout.BY_NAME["답안25"].answer_cells()
-        rows = card._even_span(card.ANSWER_ROW_Y, card.ANSWER_QUESTIONS)
-        for question in range(1, 21):
-            for index, (u, v) in enumerate(cells[question]):
-                assert abs(u - card._u_avg(card.ANSWER_CHOICE_X[index] - 56.5)) * sx < 0.01
-                assert abs(v - card._v_avg(rows[question - 1] - 88.5)) * sy < 0.01
+        drift = abs(cells[1][0][0] - card._u_avg(card.ANSWER_CHOICE_X[0] - 56.5)) * sx
+        assert drift > 1.0, (
+            "답 버블이 옛 카드 좌표로 돌아왔다 — 리더 배선을 확인할 것"
+        )
+
+    def test_the_choice_pitch_is_the_wider_one(self):
+        assert float(layout.CHOICE_PITCH_MM) > 6.0
 
     @pytest.mark.parametrize(
         "name,questions,columns",
@@ -257,11 +267,14 @@ class TestBarReading:
         pytest.importorskip("cv2")
         from . import bars
 
-        left = self.page(layout.BY_NAME["답안25"])
-        right = self.page(layout.BY_NAME["성적조사"])
-        width = left.shape[1]
-        spliced = left.copy()
-        spliced[:, int(width * 0.9):] = right[:, int(width * 0.9):]
+        sheet = self.page(layout.BY_NAME["답안25"])
+        other = self.page(layout.BY_NAME["성적조사"])
+        width = sheet.shape[1]
+        # **왼쪽 가장자리만** 갈아 끼운다. 오른쪽을 덮으면 막대가 깨져 읽기
+        # 실패로 떨어지고, 그건 "한쪽이 망가지면 반대쪽으로 읽는다"는 다른
+        # 경로다. 여기서 재려는 건 **둘 다 읽히는데 서로 다른** 경우다.
+        spliced = sheet.copy()
+        spliced[:, : int(width * 0.05)] = other[:, : int(width * 0.05)]
         assert bars.read_layout(spliced) is None
 
     def test_a_sheet_without_bars_reads_as_unknown(self):
