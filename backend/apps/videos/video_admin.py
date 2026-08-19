@@ -25,7 +25,7 @@ from django.utils import timezone
 from apps.curriculum.models import CourseWeek
 
 from . import mux
-from .models import Video
+from .models import Video, VideoGrant
 
 #: 값 없음을 뜻하는 입력(빈 문자열)을 NULL 로 접는 대상 — 폼이 빈 칸을 "" 로 보낸다.
 _BLANK = ("", None)
@@ -336,3 +336,54 @@ def sync_pending(queryset=None):
             sync_upload(video)
         except Exception:  # noqa: BLE001 — 목록 조회가 우선이다
             continue
+
+
+# --- 영상 권한 (FLOW §5 — 묶음 지급 + 개별 회수) ---------------------------
+
+
+def grant_row(grant):
+    """지급 한 줄. 호출측이 `select_related("student__user", "video")` 를 걸 것."""
+    student = grant.student
+    return {
+        "grant_id": grant.grant_id,
+        "student": {
+            "student_id": student.student_id,
+            "name": (student.user.name if student.user else "") or student.matching_key,
+            "matching_key": student.matching_key,
+        },
+        "video_id": grant.video_id,
+        "video_title": grant.video.title,
+        "source": grant.source,
+        "granted_at": _iso(grant.granted_at),
+        "expires_at": _iso(grant.expires_at),
+        "revoked_at": _iso(grant.revoked_at),
+    }
+
+
+def list_grants(video_id=None, student_id=None):
+    """지급 내역 — 회수된 것도 보인다(관리 경로는 상태를 가리지 않는다).
+
+    **회수는 개별이다**(FLOW §5). 지급은 `출결 확정` 이 묶음으로 하고 손으로
+    하는 것은 회수뿐이라, 이 목록의 유일한 쓰기가 회수 하나다.
+    """
+    rows = VideoGrant.objects.select_related("student__user", "video").order_by("-grant_id")
+    if video_id is not None:
+        rows = rows.filter(video_id=video_id)
+    if student_id is not None:
+        rows = rows.filter(student_id=student_id)
+    return [grant_row(grant) for grant in rows]
+
+
+def revoke_grant(grant, now=None):
+    """권한 하나를 회수한다 — `revoked_at` 스탬프.
+
+    **행을 지우지 않는다.** 지급·회수는 이력이고, 소비자 진입은
+    `VideoGrant.objects.active()` 하나라 스탬프만으로 시청이 끊긴다
+    (VideoGrant 계약). attendance_admin 의 출결 정정 회수와 같은 자리다.
+
+    **이미 회수된 것은 시각을 안 덮는다** — 기록은 처음 회수한 때다.
+    """
+    if grant.revoked_at is None:
+        grant.revoked_at = now or timezone.now()
+        grant.save(update_fields=["revoked_at"])
+    return grant

@@ -48,7 +48,7 @@ from apps.grades import attendance_admin
 from apps.grades.models import Attendance
 
 from . import playback, video_admin
-from .models import MakeupGrant, Video, WatermarkTamper
+from .models import MakeupGrant, Video, VideoGrant, WatermarkTamper
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
 # 거절만 재신청 허용 — 신청/지급완료는 살아있는 신청으로 본다(중복 400).
@@ -58,6 +58,16 @@ _ACTIVE_STATUSES = (MakeupGrant.Status.REQUESTED, MakeupGrant.Status.GRANTED)
 def _iso(value):
     """aware datetime → Asia/Seoul 로컬 ISO 문자열(2차 슬라이스 표기 선례)."""
     return timezone.localtime(value).isoformat() if value else None
+
+
+def _optional_int(raw, label="값"):
+    """빈 값은 None, 숫자가 아니면 ValueError(뷰가 400 으로 옮긴다)."""
+    if raw in (None, ""):
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"{label}이 올바르지 않습니다.") from None
 
 
 def _makeup_block(makeup):
@@ -278,6 +288,40 @@ class AdminMakeupRejectView(APIView):
 # ── 복습영상 등록·관리 ────────────────────────────────────────────────
 # 판정·조립은 video_admin 이 끝내고 여기서는 게이트·입력 형태·상태코드 매핑만
 # 한다(모듈 docstring 에 관리 경로 계약이 있다).
+
+
+class AdminVideoGrantListView(APIView):
+    """GET /api/admin/videos/grants?video_id=&student_id= — 지급 내역(FLOW §5)."""
+
+    permission_classes = [FeatureRequired(FeatureKey.VIDEO_GRANT_ADMIN)]
+
+    def get(self, request):
+        try:
+            video_id = _optional_int(request.query_params.get("video_id"), "video_id")
+            student_id = _optional_int(request.query_params.get("student_id"), "student_id")
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"grants": video_admin.list_grants(video_id, student_id)})
+
+
+class AdminVideoGrantRevokeView(APIView):
+    """POST /api/admin/videos/grants/{grant_id}/revoke — 개별 회수(FLOW §5).
+
+    **수동 지급의 짝이 아니다.** 지급은 `출결 확정` 이 묶음으로 하고 손으로 하는
+    것은 회수뿐이다 — 여기에 대응하는 지급 API 는 만들지 않는다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.VIDEO_GRANT_ADMIN)]
+
+    def post(self, request, grant_id):
+        grant = (
+            VideoGrant.objects.select_related("student__user", "video")
+            .filter(pk=grant_id)
+            .first()
+        )
+        if grant is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"grant": video_admin.grant_row(video_admin.revoke_grant(grant))})
 
 
 class AdminVideoListView(APIView):

@@ -19,6 +19,16 @@ urlpatterns = [
         name="admin-video-course-weeks",
     ),
     path(
+        "admin/videos/grants",
+        views.AdminVideoGrantListView.as_view(),
+        name="admin-video-grants",
+    ),
+    path(
+        "admin/videos/grants/<int:grant_id>/revoke",
+        views.AdminVideoGrantRevokeView.as_view(),
+        name="admin-video-grant-revoke",
+    ),
+    path(
         "admin/videos/uploads",
         views.AdminVideoUploadView.as_view(),
         name="admin-video-upload",
