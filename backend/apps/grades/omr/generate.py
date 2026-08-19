@@ -105,8 +105,8 @@ HEAD_U = 0.0256
 #: 로고는 제목보다 더 안으로 들어간다.
 LOGO_U = 0.0542
 LOGO_V = 0.1094
-#: 제목 크기도 실측에서 역산했다 — 15.0pt 는 원본보다 19% 넓게 나왔다.
-HEAD_EXAM_PT = 12.6
+#: 제목 크기 — 원본은 12.6pt 상당이지만 **더 크게 간다**(대표 2026-08-19).
+HEAD_EXAM_PT = 15.4
 
 #: 안내 문구 — **원본 줄폭에서 역산한 값**이다. 옛 카드의 줄 하나하나를 재
 #: 폭을 얻고, 같은 문구가 그 폭이 되는 크기를 구했다. 블록 안에서는 값이
@@ -379,11 +379,16 @@ def _filled_bubble(pen, u, v):
 
 
 def _fiducials(pen):
+    """네 귀퉁이 마커 — **위가 아래보다 크다.**
+
+    리더가 방향을 그걸로 정한다. 넷을 같게 그리면 카드가 어느 쪽이 위인지
+    알 수 없어 전부 보류된다.
+    """
     pen.setFillColor(black)
     w = float(L.MARK_W_MM) * MM_UNIT
-    h = float(L.MARK_H_MM) * MM_UNIT
-    for u in (0.0, 1.0):
-        for v in (0.0, 1.0):
+    for v, height_mm in ((0.0, L.MARK_TOP_H_MM), (1.0, L.MARK_BOTTOM_H_MM)):
+        h = float(height_mm) * MM_UNIT
+        for u in (0.0, 1.0):
             x, y = _xy(u, v)
             pen.rect(x - w / 2, y - h / 2, w, h, stroke=0, fill=1)
     pen.setFillColor(INK)
@@ -633,8 +638,9 @@ def _answer_block(pen, card):
     for col in range(card.columns):
         questions = sorted(q for q in cells if (q - 1) // per == col)
         rows_v = [cells[q][0][1] for q in questions]
-        # 덜 찬 열은 마지막 문항 바로 아래에서 닫는다.
-        short = None if len(questions) == per else rows_v[-1] + step_v * 0.62
+        # 덜 찬 열은 **1열의 5줄 구분선과 같은 높이**에서 닫는다. 0.62 로 두었을
+        # 때 25번 박스 하단이 5번 구분선보다 0.98mm 아래로 내려가 어긋나 보였다.
+        short = None if len(questions) == per else rows_v[-1] + step_v * 0.5
         _grid_column(pen, first_u + col * pitch, "답    란", rows_v,
                      dict(enumerate(questions)), bottom=short)
     for choices in cells.values():

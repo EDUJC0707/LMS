@@ -148,8 +148,9 @@ class TestRender:
         solid = [
             (centres[i][0], centres[i][1])
             for i in range(1, count)
+            # 위 마커는 아래보다 키가 크다(4.95 대 2.79mm) — 둘 다 들어오게 잡는다.
             if stats[i][4] > 0.85 * stats[i][2] * stats[i][3]
-            and 6 < stats[i][2] < 25 and 10 < stats[i][3] < 30
+            and 12 < stats[i][2] < 30 and 15 < stats[i][3] < 48
         ]
         edge = [m for m in solid if m[0] < image.shape[1] * 0.1 or m[0] > image.shape[1] * 0.9]
         mark_x = (min(m[0] for m in edge), max(m[0] for m in edge))
@@ -333,3 +334,31 @@ class TestTextFits:
         used += 2.1  # 마지막 줄 글자 높이
         room = (bottom - top) * span
         assert used <= room, f"세로로 {used - room:.2f}mm 넘친다"
+
+
+class TestJamoMatchesTheReader:
+    """지면에 찍는 자모와 리더가 읽는 자모는 **같은 목록이어야 한다**.
+
+    두 벌로 두었을 때 실제로 갈렸다: 지면은 유니코드 순서, 리더는 카드 순서
+    (홑모음 10 → 이중모음 4 → 복합모음 5)라 2행을 칠하면 `ㅐ` 가 `ㅑ` 로
+    읽혔고, 유니코드 19칸에는 `ㅣ` 가 안 들어가 **이·기·니 가 든 이름은
+    마킹할 칸조차 없었다.**
+    """
+
+    def test_the_printed_vowels_are_the_readers_vowels(self):
+        from . import decode
+        assert "".join(layout.VOWELS) == decode.CARD_VOWELS
+
+    def test_the_printed_consonants_are_the_readers_consonants(self):
+        from . import decode
+        assert "".join(layout.CONSONANTS) == decode.CARD_CONSONANTS
+
+    def test_every_vowel_a_name_can_need_is_on_the_card(self):
+        """`ㅣ` 가 빠져 있었다 — 흔한 이름이 통째로 마킹 불가였다."""
+        for vowel in "ㅏㅑㅓㅕㅗㅛㅜㅠㅡㅣ":
+            assert vowel in layout.VOWELS, vowel
+
+    def test_the_grid_has_a_row_for_every_letter(self):
+        """행 수가 자모 수보다 적으면 뒤쪽 자모가 지면에서 잘린다."""
+        assert len(layout.VOWELS) == layout.NAME_ROWS
+        assert len(layout.CONSONANTS) == layout.NAME_CONSONANT_ROWS

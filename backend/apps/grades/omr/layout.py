@@ -29,6 +29,8 @@
 """
 from decimal import Decimal
 
+from . import decode
+
 MM = Decimal("25.4")
 
 # --- 용지·프레임 -----------------------------------------------------------
@@ -42,9 +44,16 @@ PAGE_H_MM = Decimal("210")
 MARK_X_MM = (Decimal("7.176"), Decimal("289.560"))
 MARK_Y_MM = (Decimal("11.240"), Decimal("200.914"))
 
-#: 마커 자체의 크기(옛 카드와 동일 — 검출기가 이 크기에 맞춰져 있다).
-MARK_W_MM = Decimal("1.27")
-MARK_H_MM = Decimal("2.41")
+#: 마커 크기 — 옛 카드 실측(200dpi: 위 20x39px, 아래 19x22px).
+#:
+#: **위아래가 일부러 다르다.** 리더는 큰 마커 둘이 이웃한 변을 카드 위쪽으로
+#: 보고 방향을 정한다(`normalize._roll_to_card_top_left`, 면적비 1.8 이 필요).
+#: 넷을 같은 크기로 그렸더니 방향을 영영 못 정해 모든 장이 보류로 갔고,
+#: 게다가 1.27x2.41mm 는 검출기의 최소 폭(15px)·면적(250)에 못 미쳐
+#: **마커 자체가 안 잡혔다** — 그 카드는 아예 읽히지 않는다.
+MARK_W_MM = Decimal("2.47")
+MARK_TOP_H_MM = Decimal("4.95")
+MARK_BOTTOM_H_MM = Decimal("2.79")
 
 SPAN_X_MM = MARK_X_MM[1] - MARK_X_MM[0]
 SPAN_Y_MM = MARK_Y_MM[1] - MARK_Y_MM[0]
@@ -251,11 +260,17 @@ PHONE_COL_U = tuple(
 PHONE_ROW_V = (Decimal("698.7") / _AVG_H, Decimal("1149.2") / _AVG_H)
 PHONE_DIGITS = 10
 
-#: 초성·종성 14자 / 중성 19자 — 지면에 찍는 글자.
-CONSONANTS = ("ㄱ", "ㄴ", "ㄷ", "ㄹ", "ㅁ", "ㅂ", "ㅅ",
-              "ㅇ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ")
-VOWELS = ("ㅏ", "ㅐ", "ㅑ", "ㅒ", "ㅓ", "ㅔ", "ㅕ", "ㅖ", "ㅗ", "ㅘ",
-          "ㅙ", "ㅚ", "ㅛ", "ㅜ", "ㅝ", "ㅞ", "ㅟ", "ㅠ", "ㅡ")
+#: 지면에 찍는 자모 — **리더가 읽는 순서 그대로**(`decode.CARD_CONSONANTS`
+#: ·`decode.CARD_VOWELS`)를 가져다 쓴다.
+#:
+#: 한때 여기에 유니코드 자모 순서를 따로 적어 뒀는데, 리더의 순서(홑모음 10 →
+#: 이중모음 4 → 복합모음 5)와 **완전히 달랐다.** 학생이 2행을 칠하면 `ㅐ` 로
+#: 적었는데 `ㅑ` 로 읽히고, 게다가 유니코드 목록에는 19칸에 `ㅣ` 가 안 들어가
+#: **이·기·니 가 든 이름은 마킹할 칸조차 없었다.**
+#:
+#: 두 벌을 두면 언제든 다시 갈린다. 한 벌만 두고 테스트로 못 박는다.
+CONSONANTS = tuple(decode.CARD_CONSONANTS)
+VOWELS = tuple(decode.CARD_VOWELS)
 
 
 def _even(span, count):
