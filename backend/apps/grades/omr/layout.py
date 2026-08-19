@@ -160,26 +160,17 @@ ANSWER_COL_X_MM = (
 ANSWER_FIRST_ROW_MM = Decimal("19.3675")
 ANSWER_ROWS_PER_COL = 20
 
-#: 조사 카드 점수칸 — **한 열**이다. 십의 자리가 위(1~5), 일의 자리가 아래(1~9,0).
-#: 원본 조사 카드 실측(`card.py`)에서 두 자리의 x 가 **같고**(1161.1) y 만
-#: 다르다: 십 154.5~411.0, 일 793.4~1375.1. 간격을 재 보면 둘 다 답란과 같은
-#: 64px 격자이고, 사이가 정확히 6행이다 — 그래서 **답란과 같은 20행 격자**에
-#: 십을 1~5행, 일을 11~20행으로 얹으면 원본과 같은 지면이 된다.
+#: 조사 카드 점수칸 — **두 열, 둘 다 0~9**(대표 2026-08-19).
 #:
-#: 다만 **설명 문구가 그 빈 구간에서 나왔다**(대표 2026-08-19). 문번 초록칸과
-#: 세로줄이 위에서 아래까지 끊기지 않게 두고, 설명은 각 덩어리 **끝의 빈 두 줄**
-#: 답란 쪽에 앉는다. 그래서 십 1~5행 · 빈 2행 · 일 8~17행 · 빈 2행이다.
-SURVEY_TENS = ("1", "2", "3", "4", "5")
-SURVEY_ONES = ("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
-SURVEY_TENS_ROW0 = 0
-SURVEY_ONES_ROW0 = 7
-#: 설명이 들어가는 빈 줄 수 — 덩어리 끝마다.
-SURVEY_NOTE_ROWS = 2
-
-#: 조사 카드 답란은 **칸이 하나뿐**이라 34mm 를 다 쓰지 않는다(대표 2026-08-19).
-#: 26 → 20mm 로 한 번 더 줄였다. 안내문은 답란 폭이 아니라 **박스 폭 전체**를 쓴다.
-SURVEY_FIELD_W_MM = Decimal("20.0")
-SURVEY_BOX_W_MM = NUMBER_COL_W_MM + SURVEY_FIELD_W_MM
+#: 원본은 십의 자리를 1~5 로만 두었다. 그래서 0 점대를 마킹할 칸이 없었고
+#: "점수의 10의 자리 숫자에 마킹 (42점이면 4에 마킹)" 같은 설명을 지면에
+#: 붙여야 했다. 십도 0~9 로 두면 그 설명이 통째로 없어진다 — 08점은 0 과 8 이다.
+#: 판은 같은 지면의 전화번호 블록과 같다: 손으로 적는 줄 아래에 자리마다 한 열.
+SURVEY_PLACES = ("십", "일")
+SURVEY_DIGITS = tuple(str(digit) for digit in range(10))
+#: 답란 격자에서 마킹이 시작하는 줄 — 위 두 줄은 손으로 점수를 적는 자리다.
+SURVEY_ROW0 = 2
+SURVEY_BOX_W_MM = ANSWER_BOX_W_MM
 
 
 class Layout:
@@ -214,22 +205,19 @@ class Layout:
         return cells
 
     def survey_cells(self):
-        """{("십"|"일", 숫자): (u, v)} — 답란과 같은 20행 격자 위 한 열.
+        """{("십"|"일", 숫자): (u, v)} — 자리마다 한 열, 각 열에 0~9.
 
-        칸은 답란 **왼쪽에 붙는다** — 구분선에서 2.3mm 다(원본 실측). 예전에는
-        답란 한가운데(구분선+10.4mm)에 두어 문번과 칸 사이가 벌어졌고, 어느
-        줄인지 눈으로 잇기 어려웠다.
+        열 중심은 전화번호 블록과 같은 방식으로 잡는다 — 박스를 자리 수만큼
+        나눈 칸의 한가운데. 손으로 적는 줄의 점선도 같은 자리에서 갈린다.
         """
-        u = float(mm_to_u(ANSWER_COL_LEFT_MM + NUMBER_COL_W_MM + Decimal("2.3")
-                          + BUBBLE_W_MM / 2))
         cells = {}
-        for place, digits, row0 in (
-            ("십", SURVEY_TENS, SURVEY_TENS_ROW0),
-            ("일", SURVEY_ONES, SURVEY_ONES_ROW0),
-        ):
-            for index, digit in enumerate(digits):
-                y = ANSWER_FIRST_ROW_MM + (row0 + index) * ROW_PITCH_MM
-                cells[(place, digit)] = (u, float(mm_to_v(y)))
+        places = len(SURVEY_PLACES)
+        for index, place in enumerate(SURVEY_PLACES):
+            x = (ANSWER_COL_LEFT_MM
+                 + SURVEY_BOX_W_MM * Decimal(2 * index + 1) / Decimal(2 * places))
+            for row, digit in enumerate(SURVEY_DIGITS):
+                y = ANSWER_FIRST_ROW_MM + (SURVEY_ROW0 + row) * ROW_PITCH_MM
+                cells[(place, digit)] = (float(mm_to_u(x)), float(mm_to_v(y)))
         return cells
 
     def extra_cells(self):

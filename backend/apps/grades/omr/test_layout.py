@@ -67,15 +67,24 @@ class TestGrid:
         assert len(layout.name_cells()) == 188
         assert len(layout.phone_cells()) == 40
 
-    def test_the_survey_score_is_one_column_tens_over_ones(self):
-        """원본 조사 카드가 그렇다 — 두 열로 갈라 놓으면 지면이 달라진다."""
+    def test_the_survey_score_marks_both_places_zero_through_nine(self):
+        """0 점대를 칠할 칸이 있어야 한다 — 원본에는 없었다.
+
+        원본은 십의 자리가 1~5 뿐이라 08점을 어떻게 칠하는지 지면에 글로
+        설명해야 했다. 십도 0~9 면 설명할 것이 없다. 이 테스트가 무너지면
+        그 설명 문구가 다시 필요해진다는 뜻이다.
+        """
         cells = layout.BY_NAME["성적조사"].survey_cells()
-        assert len(cells) == 15
-        us = {round(u, 6) for u, _ in cells.values()}
-        assert len(us) == 1, "점수칸은 한 열이어야 한다"
-        tens = [v for (place, _), (_, v) in cells.items() if place == "십"]
-        ones = [v for (place, _), (_, v) in cells.items() if place == "일"]
-        assert max(tens) < min(ones), "십의 자리가 위에 온다"
+        assert len(cells) == 20
+        for place in ("십", "일"):
+            digits = {d for (p, d) in cells if p == place}
+            assert digits == {str(n) for n in range(10)}, f"{place}의 자리"
+        us = sorted({round(u, 6) for u, _ in cells.values()})
+        assert len(us) == 2, "자리마다 한 열"
+        tens_u = {round(u, 6) for (p, _), (u, _v) in cells.items() if p == "십"}
+        assert tens_u == {us[0]}, "십의 자리가 왼쪽에 온다"
+        rows = {round(v, 6) for _u, v in cells.values()}
+        assert len(rows) == 10, "두 열이 같은 줄을 쓴다"
 
     def test_the_answer_grid_no_longer_matches_the_old_card(self):
         """옛 카드와의 일치는 **의도적으로 깼다**(대표 2026-08-19).
