@@ -218,7 +218,15 @@ class SettingsWiringTests(SimpleTestCase):
         self.assertEqual(base.PAYMENT_PROVIDER_BACKEND, "")
 
     def test_prod_wires_the_real_vendor_not_the_fake(self):
-        from config.settings import prod
+        # 운영은 오브젝트 스토리지 없이는 부팅을 거부하므로 버킷을 채우고 읽는다
+        # (`notifications.test_channels` 의 같은 테스트와 같은 처리). 그냥 import 하면
+        # 앞선 테스트가 환경을 남겨 준 실행에서만 통과한다.
+        import importlib
+        import os
+        from unittest import mock
+
+        with mock.patch.dict(os.environ, {"AWS_STORAGE_BUCKET_NAME": "test-bucket"}):
+            prod = importlib.reload(importlib.import_module("config.settings.prod"))
 
         self.assertIn("payssam", prod.PAYMENT_PROVIDER_BACKEND.lower())
         self.assertNotIn("Fake", prod.PAYMENT_PROVIDER_BACKEND)
