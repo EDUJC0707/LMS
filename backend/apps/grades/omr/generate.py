@@ -62,6 +62,12 @@ LOGO = pathlib.Path(__file__).parent / "assets" / "logo.png"
 PINK = Color(0xEE / 255, 0x26 / 255, 0x6D / 255)
 GREEN = Color(0x1D / 255, 0x75 / 255, 0x3F / 255)
 TINT = Color(0xC3 / 255, 0xE9 / 255, 0xC2 / 255)
+#: 약점 체크 열의 머리칸 — 연한 살구(대표 2026-08-19). 답을 적는 자리와 "더 받고
+#: 싶다"를 말하는 자리는 하는 일이 다르니 색으로도 갈라 준다.
+#:
+#: 초록 머리칸(#C3E9C2)과 **밝기를 맞췄다**(220 대 217) — 나란히 놓아도 한쪽이
+#: 먼저 눈에 들어오지 않는다. 인쇄를 직접 하므로 색 하나 더 쓰는 데 비용이 없다.
+EXTRA_TINT = Color(0xFA / 255, 0xD6 / 255, 0xAA / 255)
 INK = Color(0x23 / 255, 0x1F / 255, 0x20 / 255)
 
 #: 버블 안 글자 — 옛 카드에서 링 높이의 약 40% 다. 작게 그렸더니 원본보다
@@ -643,8 +649,7 @@ def _grid_column(pen, u0, header, rows_v, numbers, bottom=None, extra=False):
     빈 칸을 끝까지 그려 두면 학생이 아직 못 푼 문제가 있는 줄 안다.
     """
     number_w = float(L.mm_to_u(L.NUMBER_COL_W_MM))
-    field_u = u0 + number_w + float(L.mm_to_u(L.ANSWER_FIELD_W_MM))
-    u1 = field_u + float(L.mm_to_u(L.EXTRA_COL_W_MM)) if extra else field_u
+    u1 = u0 + float(L.mm_to_u(L.ANSWER_BOX_W_MM))
     top, full_bottom = BOX_ANSWER_V
     bottom = full_bottom if bottom is None else bottom
     header_v = ANSWER_HEADER_V
@@ -655,14 +660,11 @@ def _grid_column(pen, u0, header, rows_v, numbers, bottom=None, extra=False):
     _rect(pen, u0, top, number_u, bottom, fill=TINT, corners=LEFT_ONLY)
     _rect(pen, u0, top, u1, header_v, fill=TINT, corners=TOP_ONLY)
     _text(pen, (u0 + number_u) / 2, (top + header_v) / 2, "문번", size=8.6, bold=True)
-    _text(pen, (number_u + field_u) / 2, (top + header_v) / 2, header, size=9.4, bold=True)
+    _text(pen, (number_u + u1) / 2, (top + header_v) / 2, header, size=9.4, bold=True)
     _line(pen, u0, header_v, u1, header_v)
     _line(pen, number_u, top, number_u, bottom)
     if extra:
-        # 추가 마킹란 — 답란과 세로선 하나로 갈린다.
-        _line(pen, field_u, top, field_u, bottom)
-        _text(pen, (field_u + u1) / 2, (top + header_v) / 2, EXTRA_HEADER,
-              size=8.6, bold=True)
+        _extra_column(pen, u1 + float(L.mm_to_u(L.EXTRA_SEP_MM)), top, bottom, header_v)
 
     for index, v in enumerate(rows_v):
         if v > bottom:
@@ -678,6 +680,15 @@ def _grid_column(pen, u0, header, rows_v, numbers, bottom=None, extra=False):
             gap = (rows_v[index] - rows_v[index - 1]) / 2
             _line(pen, u0, v - gap, u1, v - gap, colour=GREEN, weight=1.2)
     return u1
+
+
+def _extra_column(pen, u0, top, bottom, header_v):
+    """약점 체크 — 답란과 **떨어져 선 열**. 머리칸만 분홍 색조로 갈라 준다."""
+    u1 = u0 + float(L.mm_to_u(L.EXTRA_COL_W_MM))
+    _rect(pen, u0, top, u1, bottom)
+    _rect(pen, u0, top, u1, header_v, fill=EXTRA_TINT, corners=TOP_ONLY)
+    _text(pen, (u0 + u1) / 2, (top + header_v) / 2, EXTRA_HEADER, size=8.6, bold=True)
+    _line(pen, u0, header_v, u1, header_v)
 
 
 def _answer_block(pen, card):

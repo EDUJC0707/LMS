@@ -141,8 +141,14 @@ ANSWER_COL_LEFT_MM = Decimal("135.42")
 NUMBER_COL_W_MM = Decimal("9.5")
 ANSWER_FIELD_W_MM = Decimal("34.0")
 EXTRA_COL_W_MM = Decimal("14.5")
-ANSWER_BOX_W_MM = NUMBER_COL_W_MM + ANSWER_FIELD_W_MM + EXTRA_COL_W_MM
-ANSWER_COL_PITCH_MM = ANSWER_BOX_W_MM + Decimal("6.27")
+#: 약점 체크는 답란에 붙지 않고 **따로 선 열**이다(대표 2026-08-19). 답을 적는
+#: 자리와 "더 받고 싶다"를 말하는 자리는 하는 일이 다르다 — 붙여 두면 6지선다처럼
+#: 보인다. 사이는 열 간격의 1/3 만 띄운다(2.09mm) — 완전히 떼면 어느 줄의 칸인지
+#: 눈으로 잇기 어렵다.
+COLUMN_GAP_MM = Decimal("6.27")
+EXTRA_SEP_MM = COLUMN_GAP_MM / 3
+ANSWER_BOX_W_MM = NUMBER_COL_W_MM + ANSWER_FIELD_W_MM
+ANSWER_COL_PITCH_MM = ANSWER_BOX_W_MM + EXTRA_SEP_MM + EXTRA_COL_W_MM + COLUMN_GAP_MM
 
 CHOICE_PITCH_MM = Decimal("6.4")
 #: 1번 선택지 중심 — 답란 안에서 5칸을 가운데로 앉힌 자리.
@@ -219,7 +225,7 @@ class Layout:
         """{문항번호: (u, v)} — 추가 마킹란. 답란과 같은 행 위에 한 칸씩."""
         if self.is_survey:
             return {}
-        centre = (ANSWER_COL_LEFT_MM + NUMBER_COL_W_MM + ANSWER_FIELD_W_MM
+        centre = (ANSWER_COL_LEFT_MM + ANSWER_BOX_W_MM + EXTRA_SEP_MM
                   + EXTRA_COL_W_MM / 2)
         per = ANSWER_ROWS_PER_COL
         cells = {}
