@@ -3,6 +3,8 @@
 - GET /api/student/home?month=YYYY-MM  로그인 학생 본인 홈 (IsStudent)
 - GET /api/parent/home?student_id=&month=  자녀 홈 조회 (IsParent, 읽기 전용)
 - GET·POST /api/admin/classes          반 목록 · 커리와 반 만들기 (계정관리)
+- GET  /api/admin/classes/{id}         반 하나 — 주차와 명단
+- POST·PATCH·DELETE .../sessions       반별 주차 추가 · 날짜 수정 · 삭제
 
 페이로드 조립은 home.build_home_payload 공용 서비스가 담당한다 — 뷰는
 역할 게이트·입력 검증·대상 학생 결정(학부모는 자녀 소유 검증)만 한다.
@@ -19,7 +21,7 @@ from apps.accounts.permissions import FeatureRequired, IsParent, IsStudent
 
 from . import class_admin
 from .home import build_home_payload
-from .models import Subject
+from .models import Class, Subject
 
 # 404 단일 메시지 — 타인 자녀·미존재를 구분해 주지 않는다(존재 비노출,
 # 로그인 실패 단일 메시지와 같은 방향).
@@ -127,7 +129,7 @@ class AdminClassListView(APIView):
     회차 — FLOW 1-1), 커리 쪽 주차(`CourseWeek`)는 내용·영상이 붙는 자리라
     없으면 여기서 만들어 회차에 물린다.
 
-    주차 날짜 수정·반 수정·삭제는 여기 없다 — 생성과 조회까지다.
+    주차 날짜 수정·추가·삭제는 `AdminClassSessionView` 다.
     """
 
     permission_classes = [FeatureRequired(FeatureKey.ACCOUNT_ADMIN)]
@@ -156,3 +158,61 @@ class AdminClassListView(APIView):
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(class_admin.class_block(klass), status=status.HTTP_201_CREATED)
+
+
+def _load_class(class_id):
+    """반 1건 + 커리. 없으면 None — 뷰가 404 로 바꾼다."""
+    return Class.objects.select_related("course").filter(pk=class_id).first()
+
+
+class AdminClassDetailView(APIView):
+    """GET /api/admin/classes/{class_id} — 반 하나: 주차와 명단 (계정관리).
+
+    주차 편집(FLOW 1-3)과 반 이동(FLOW 3-9)이 같은 자리에서 일어나므로 한 번에
+    내린다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.ACCOUNT_ADMIN)]
+
+    def get(self, request, class_id):
+        klass = _load_class(class_id)
+        if klass is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return Response(class_admin.class_detail(klass))
+
+
+class AdminClassSessionView(APIView):
+    """반별 주차 — 추가 · 날짜 수정 · 삭제 (FLOW 1-3, 계정관리).
+
+    - POST   /api/admin/classes/{class_id}/sessions            마지막 다음 주차를 더한다
+    - PATCH  /api/admin/classes/{class_id}/sessions/{week_no}  {session_date} — 뒤가 따라 밀린다
+    - DELETE /api/admin/classes/{class_id}/sessions/{week_no}  마지막 주차만, 기록 없을 때만
+
+    셋 다 반의 주차 목록을 돌려준다 — 날짜 하나를 고치면 뒤가 전부 바뀌므로
+    바뀐 줄만 내리면 화면이 서버와 갈린다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.ACCOUNT_ADMIN)]
+
+    def post(self, request, class_id):
+        return self._run(class_id, lambda klass: class_admin.add_week(klass))
+
+    def patch(self, request, class_id, week_no):
+        body = request.data if isinstance(request.data, dict) else {}
+        return self._run(
+            class_id,
+            lambda klass: class_admin.move_week(klass, week_no, body.get("session_date")),
+        )
+
+    def delete(self, request, class_id, week_no):
+        return self._run(class_id, lambda klass: class_admin.remove_week(klass, week_no))
+
+    @staticmethod
+    def _run(class_id, action):
+        klass = _load_class(class_id)
+        if klass is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            return Response({"sessions": action(klass)})
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)

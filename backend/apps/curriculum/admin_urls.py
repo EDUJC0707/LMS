@@ -11,4 +11,19 @@ app_name = "curriculum_admin"
 
 urlpatterns = [
     path("admin/classes", views.AdminClassListView.as_view(), name="class-list"),
+    path(
+        "admin/classes/<int:class_id>",
+        views.AdminClassDetailView.as_view(),
+        name="class-detail",
+    ),
+    path(
+        "admin/classes/<int:class_id>/sessions",
+        views.AdminClassSessionView.as_view(),
+        name="class-session-add",
+    ),
+    path(
+        "admin/classes/<int:class_id>/sessions/<int:week_no>",
+        views.AdminClassSessionView.as_view(),
+        name="class-session",
+    ),
 ]

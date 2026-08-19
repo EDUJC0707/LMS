@@ -109,20 +109,20 @@ def build_home_payload(student, month=None, include_billing=False):
 
     # 주차 데이터는 1회 로드해 진행 표기(_course_block)와 주차 목록(_weeks)이
     # 공유한다 — released() 이중 실행 방지(쿼리 수 계약).
-    week_nos, released_weeks = _load_weeks(primary, now) if primary else ([], [])
+    week_dates, released_weeks = _load_weeks(primary, now) if primary else ({}, [])
 
     payload = {
         "student": _student_block(student, primary),
         "month": f"{year:04d}-{month_no:02d}",
         "today": today.isoformat(),
         "course": (
-            _course_block(primary, enrollments, today, week_nos, released_weeks)
+            _course_block(primary, enrollments, today, week_dates)
             if primary
             else None
         ),
         "calendar": {
             "days": _days(attendances, session_dates, makeup_status_map),
-            "weeks": _weeks(primary.course, week_nos, released_weeks) if primary else [],
+            "weeks": _weeks(primary.course, week_dates, released_weeks) if primary else [],
         },
         "deadlines": _deadlines(student, orders, today, now),
     }
@@ -161,12 +161,23 @@ def _orders(student):
 
 
 def _load_weeks(primary, now):
-    """주차 축 1회 로드 — (전체 week_no 목록, 공개 주차 목록[학습계획 prefetch]).
+    """주차 축 1회 로드 — (week_no→수업일, 공개 주차 목록[학습계획 prefetch]).
+
+    **주차 축은 반의 것이다**(FLOW 1-3). 주차를 더하고 지우는 것도, 날짜를 미는
+    것도 반에서 하므로 학생이 보는 주차 목록과 날짜는 `ClassSession` 에서 온다 —
+    커리 주차를 보면 한 커리에 반이 둘일 때 한쪽이 남의 일정을 본다.
+    반이 붙지 않은 옛 수강만 커리 주차로 되돌아간다(날짜는 그쪽에 남아 있다).
 
     공개 판정은 `CourseWeek.objects.released()` 가 유일 계약(PRD §4).
     """
     course = primary.course
-    week_nos = list(course.weeks.order_by("week_no").values_list("week_no", flat=True))
+    session_dates = {}
+    if primary.klass_id is not None:
+        session_dates = dict(
+            ClassSession.objects.filter(
+                klass_id=primary.klass_id, week_no__isnull=False
+            ).values_list("week_no", "session_date")
+        )
     released_weeks = list(
         course.weeks.released(at=now).prefetch_related(
             Prefetch(
@@ -174,25 +185,24 @@ def _load_weeks(primary, now):
             )
         )
     )
-    return week_nos, released_weeks
+    if session_dates:
+        return session_dates, released_weeks
+    legacy = course.weeks.order_by("week_no").values_list("week_no", "start_date")
+    return dict(legacy), released_weeks
 
 
-def _course_block(primary, enrollments, today, week_nos, released_weeks):
-    """진행 표기(현재 주차/전체 주차)·반·수업 요일."""
+def _course_block(primary, enrollments, today, week_dates):
+    """진행 표기(현재 주차/전체 주차)·반·수업 요일 — 날짜는 이 학생 반의 것이다."""
     course = primary.course
     current_week = max(
-        (
-            w.week_no
-            for w in released_weeks
-            if w.start_date is not None and w.start_date <= today
-        ),
+        (no for no, date in week_dates.items() if date is not None and date <= today),
         default=None,
     )
     return {
         "course_id": course.course_id,
         "name": course.name,
         "class_name": primary.klass.name if primary.klass else None,
-        "total_weeks": len(week_nos),
+        "total_weeks": len(week_dates),
         "current_week": current_week,
         "class_weekdays": sorted(
             {e.primary_weekday for e in enrollments if e.primary_weekday is not None}
@@ -223,27 +233,33 @@ def _days(attendances, session_dates, makeup_status_map):
     ]
 
 
-def _weeks(course, week_nos, released_weeks):
+def _weeks(course, week_dates, released_weeks):
     """주차 목록 — released() 만 내용 노출, 미공개는 잠김 스텁(PRD §4).
 
     잠김 스텁은 `{week_no, locked}` 두 키뿐이다 — 제목·날짜·공지·계획을
     내리면 미래 커리큘럼이 유출된다(경쟁사 정찰 방지 목적 자체가 무너짐).
+
+    날짜는 이 학생 반의 수업일이다(FLOW 1-3). 주 1회라 주차 = 회차이므로
+    끝나는 날은 수업일 + 6일이다.
     """
     released_by_no = {w.week_no: w for w in released_weeks}
     weeks = []
-    for no in week_nos:
+    for no in sorted(week_dates):
         week = released_by_no.get(no)
         if week is None:
             weeks.append({"week_no": no, "locked": True})
             continue
+        start = week_dates[no]
         weeks.append(
             {
                 "week_no": no,
                 "locked": False,
                 "label": f"{course.name} {no}주차",
                 "title": week.title,
-                "start_date": week.start_date.isoformat() if week.start_date else None,
-                "end_date": week.end_date.isoformat() if week.end_date else None,
+                "start_date": start.isoformat() if start else None,
+                "end_date": (
+                    (start + datetime.timedelta(days=6)).isoformat() if start else None
+                ),
                 "offline_notice": week.offline_notice,
                 "day_plans": [
                     {"day_no": p.day_no, "title": p.title, "content": p.content}
