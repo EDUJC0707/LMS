@@ -89,7 +89,7 @@ DB 레벨에서 이중 생성을 차단한다(get_or_create 패턴 — 조회 �
 선례 — Asia/Seoul). 만료 = 지급 + 7일 기본(2026-07-15 회의, 관리자 설정 변경은
 후순위 — 기본값 산정은 앱 레이어 몫이라는 VideoGrant 모델 계약 이행).
 """
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from apps.accounts.models import Student
@@ -134,20 +134,26 @@ def load_roster(session):
     **반이 붙은 회차는 그 반만 본다**(2026-08-18). 같은 커리를 목반·화반이
     같이 듣기 때문에(FLOW 1-1) 커리로만 거르면 목반 출결표에 화반 학생이
     뜬다. 반이 없는 옛 회차는 종전대로 커리 전체다.
+
+    **이 회차에 출결 행이 있는 학생은 수강이 없어도 명단에 든다**(2026-08-19).
+    현보로 온 학생이 그렇다 — 이 반 수강생이 아닌데 여기 와서 수업을 들었고,
+    출결표에 보여야 조교가 그 자리에서 왜 이 학생이 있는지 안다(FLOW 3-4).
+    반 칸에는 원래 반이 뜬다(이 커리의 반을 읽으므로 — 아래 annotate).
     """
     if session.course_week is None:
         return []
     course = session.course_week.course
     scope = (
-        {"course_enrollments__klass": session.klass_id}
+        models.Q(course_enrollments__klass=session.klass_id)
         if session.klass_id
-        else {"course_enrollments__course": course}
+        else models.Q(course_enrollments__course=course)
     )
     return list(
         Student.objects.filter(
-            **scope,
-            course_enrollments__status=CourseEnrollment.Status.ENROLLED,
+            (scope & models.Q(course_enrollments__status=CourseEnrollment.Status.ENROLLED))
+            | models.Q(attendances__session=session)
         )
+        .distinct()
         .select_related("user")
         # 반은 **이 회차 커리의 반**이다 — 다른 커리를 같이 듣는 학생이 있어도
         # 출결표에는 그 반이 뜨면 안 된다(학생↔반 N:M — FLOW 1-1).
@@ -619,6 +625,72 @@ def promote_to_makeup_absence(attendance, actor, now):
     """
     if _mark_makeup_absence(attendance, actor, now):
         _sync_counseling_queue([attendance], empty_triggers())
+
+
+# --- 현보(다른 반 학생이 여기로 보강을 왔다) ------------------------------
+
+
+def origin_session(session, student):
+    """현보로 온 학생의 **원래 반 같은 주차 회차**. 못 찾으면 None.
+
+    **반의 주차가 곧 회차다**(FLOW 1-1 — 주 1회라 1:1). 그래서 원래 반만 알면
+    회차는 `week_no` 로 바로 집힌다: `UQ(klass, week_no)` 가 반마다 그 주차를
+    하나로 못박으므로 고를 것이 없다. 날짜로 찾지 않는다 — 목반과 화반은 같은
+    주차라도 날짜가 다르고(그래서 현보가 성립한다), 휴강으로 밀리면 더 벌어진다.
+
+    원래 반은 **이 회차 커리를 듣는 다른 반**이다. 학생↔반이 N:M 이라(FLOW 1-1)
+    수능 반과 내신 반을 같이 듣는 학생이 있는데, 현보는 같은 커리의 다른 요일로
+    가는 것이므로 커리로 좁히면 갈래가 하나만 남는다. 그 커리를 아예 안 듣는
+    학생이면 현보가 아니라 새 학생이다(FLOW 3-4 의 두 갈래 중 조교의 판단).
+    """
+    if session.week_no is None or session.course_week is None:
+        return None
+    origin_class_id = (
+        CourseEnrollment.objects.filter(
+            student=student,
+            course=session.course_week.course,
+            status=CourseEnrollment.Status.ENROLLED,
+        )
+        .exclude(klass_id=session.klass_id)
+        .order_by("enrollment_id")
+        .values_list("klass_id", flat=True)
+        .first()
+    )
+    if origin_class_id is None:
+        return None
+    return ClassSession.objects.filter(
+        klass_id=origin_class_id, week_no=session.week_no
+    ).first()
+
+
+def mark_onsite(session, student, origin, actor):
+    """현보 확정 — 방문한 반에 `출석`, 원래 반에 `결석(현보)` (FLOW 3-4).
+
+    **행은 두 반에 다 생긴다.** 방문한 반은 실제로 와서 들었으니 `출석` 이고,
+    원래 반은 그 수업에 안 왔으니 결석이되 보강이 끝났으므로 `결석(현보)` 다.
+    원래 반을 그냥 `결석` 으로 두면 결석생 연락 대기열이 생겨 보강을 이미 끝낸
+    학생의 학부모에게 전화가 나간다(FLOW 3-12).
+
+    **영상은 그래도 한 번만 나간다.** 방문한 반을 먼저 저장하고 원래 반이 뒤를
+    잇는데, 뒤쪽의 `_sync_video_grants` 가 `held_video_ids` 로 **학생이 지금 들고
+    있는 권한**을 보므로 앞에서 나간 그 주차 영상을 건너뛴다(FLOW 3-5). 반 평균은
+    출결이 아니라 `Score` 에서 세고 그쪽은 시험당 학생당 한 줄이다.
+
+    두 반의 트리거 카운터는 합쳐서 돌려준다 — 화면이 "복습영상 n건 지급"으로
+    옮기는 값이라 한쪽만 실으면 거짓을 말한다.
+    """
+    entry = [{"student_id": student.pk, "status": Attendance.Status.PRESENT}]
+    with transaction.atomic():
+        _, triggers = apply_entries(session, entry, actor, [student.pk])
+        _, origin_triggers = apply_entries(
+            origin,
+            [{"student_id": student.pk, "status": Attendance.Status.ABSENT_ONSITE}],
+            actor,
+            [student.pk],
+        )
+    for key, value in origin_triggers.items():
+        triggers[key] += value
+    return triggers
 
 
 # --- 퇴원 처리 -------------------------------------------------------------

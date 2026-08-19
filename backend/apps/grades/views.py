@@ -4,6 +4,7 @@
 - GET  /api/admin/attendance/sessions            회차 목록 (출결입력)
 - GET  /api/admin/attendance/sessions/{id}       회차 명단 + 출결 + 집계 (출결입력)
 - PUT  /api/admin/attendance/sessions/{id}       출결 upsert + 파생 트리거 (출결입력)
+- POST /api/admin/attendance/sessions/{id}/onsite 명단 밖 학생 현보 (출결입력)
 - POST /api/admin/attendance/makeup              동보 관리자 체크 (영상지급관리)
 
 5차(PRD 3.2.1·3.1.1·§4 — 전부 조회 전용):
@@ -175,6 +176,67 @@ def _validate_entries(data, roster_ids, withdrawn_ids):
         ):
             return "exam_taken 값이 올바르지 않습니다."
     return None
+
+
+class AttendanceOnsiteView(APIView):
+    """POST /api/admin/attendance/sessions/{id}/onsite — 명단 밖 학생을 현보로.
+
+    조교가 출결표에 직접 더하는 자리다(FLOW 3-4) — OMR 이 이 반 명단에 없는
+    이름을 물고 왔을 때, 새 학생이 아니라 다른 반 학생이라고 조교가 판단하면
+    여기로 넣는다. 자동으로 하지 않는 이유가 그 판단이다.
+
+    받는 값은 **원번**(`login_id`)이다 — 조교가 손에 든 것이 학생 PK 가 아니라
+    지면에 적힌 이름·번호이고, 원번이 곧 그것이다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.ATTENDANCE_ENTRY)]
+
+    def post(self, request, session_id):
+        session = attendance_admin.load_session(session_id)
+        if session is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        if session.course_week is None:
+            return Response(
+                {"detail": "커리큘럼 주차가 매핑되지 않은 회차입니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        body = request.data if isinstance(request.data, dict) else {}
+        login_id = body.get("login_id")
+        if not isinstance(login_id, str) or not login_id.strip():
+            return Response(
+                {"detail": "원번이 필요합니다."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        student = (
+            Student.objects.select_related("user")
+            .filter(user__login_id=login_id.strip())
+            .first()
+        )
+        if student is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        if student.enrollment_status == Student.EnrollmentStatus.WITHDRAWN:
+            return Response(
+                {"detail": "퇴원 학생에게는 출결을 입력할 수 없습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if student.pk in {s.student_id for s in attendance_admin.load_roster(session)}:
+            return Response(
+                {"detail": "이미 이 회차 명단에 있는 학생입니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        origin = attendance_admin.origin_session(session, student)
+        if origin is None:
+            return Response(
+                {"detail": "이 커리를 듣는 다른 반의 같은 주차 회차를 찾을 수 없습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        triggers = attendance_admin.mark_onsite(session, student, origin, request.user)
+        roster = attendance_admin.load_roster(session)
+        att_map = attendance_admin.load_attendance_map(
+            session, [s.student_id for s in roster]
+        )
+        payload = attendance_admin.build_detail_payload(session, roster, att_map)
+        payload["triggers"] = triggers
+        return Response(payload, status=status.HTTP_201_CREATED)
 
 
 class MakeupCheckView(APIView):
