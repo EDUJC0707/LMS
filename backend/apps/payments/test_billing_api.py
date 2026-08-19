@@ -14,6 +14,7 @@ from django.test import TestCase, override_settings
 
 from apps.accounts.models import Parent, ParentStudent, Student, User
 from apps.curriculum.models import Class, Course, CourseEnrollment
+from apps.notifications.models import Notification
 
 from .models import Order, Payment, Product
 from .provider import (
@@ -190,6 +191,38 @@ class BillingTests(TestCase):
         response = self.client.post(PARENT_URL, {"product_id": self.product.product_id})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(RecordingAdapter.sent), 1)
+
+    # -- 청구 알림(FLOW 3-11 #2) --------------------------------------------
+
+    def test_billing_tells_the_recipient_what_the_bill_is_for(self):
+        # 결제선생 문자에는 금액과 링크만 있고 어느 교재인지가 없다.
+        self.client.force_login(self.parent_user)
+        self.client.post(PARENT_URL, {"product_id": self.product.product_id})
+        order = Order.objects.get(student=self.student)
+        row = Notification.objects.get(type=Notification.Type.BILLING)
+        self.assertEqual(row.parent_id, self.parent.parent_id)
+        self.assertIsNone(row.student_id)
+        self.assertIn(self.product.name, row.body)
+        self.assertEqual((row.ref_type, row.ref_id), ("orders", order.order_id))
+
+    def test_a_student_paying_for_himself_is_the_one_told(self):
+        self.client.force_login(self.student_user)
+        self.start()
+        row = Notification.objects.get(type=Notification.Type.BILLING)
+        self.assertEqual(row.student_id, self.student.student_id)
+
+    def test_the_second_click_does_not_queue_a_second_notification(self):
+        self.client.force_login(self.student_user)
+        self.start()
+        self.start()
+        self.assertEqual(Notification.objects.filter(type=Notification.Type.BILLING).count(), 1)
+
+    def test_a_refused_bill_tells_nobody(self):
+        # 청구서가 안 나갔는데 "청구했습니다" 가 가면 안 된다.
+        with override_settings(PAYMENT_PROVIDER_BACKEND=FAILING_PERMANENT):
+            self.client.force_login(self.student_user)
+            self.start()
+        self.assertFalse(Notification.objects.filter(type=Notification.Type.BILLING).exists())
 
     def test_cancelled_order_can_be_billed_again(self):
         Order.objects.create(
