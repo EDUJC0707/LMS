@@ -127,6 +127,13 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.clinic.tasks.dispatch_clinic_supervision",
         "schedule": 60,
     },
+    # 클리닉 시작 5분 전·5분 후 알림(FLOW 3-7). 1분인 이유는 "5분 전"이 5분
+    # 전이어야 하기 때문이다 — 주기가 성기면 그만큼 일찍 나간다. 이미 건
+    # 건은 태스크가 (type, ref_type, ref_id) 로 걸러 두 번 안 나간다.
+    "clinic-reminders": {
+        "task": "apps.clinic.tasks.send_clinic_reminders",
+        "schedule": 60,
+    },
 }
 
 # --- 알림 채널 (PRD 6-8 채널 추상화 — apps/notifications/channels.py) --------
