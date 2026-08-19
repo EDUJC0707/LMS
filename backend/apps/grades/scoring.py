@@ -49,6 +49,18 @@ NOT NULL 이라 만들 수 없으므로, 평균·백분위의 모집단을 낼 �
 다른 말을 한다. 확정은 보정 화면의 `익명으로 확정` 이고(주인을 고른 장에서는
 같은 자리가 `확인` 이다), 그러면 보정 대기에서도 빠진다.
 
+## 클리닉 대상도 여기서 정해진다 (2026-08-19)
+
+판정을 만드는 코드가 시드 말고는 없었다. 신청 화면은 판정이 없는 학생을 403 으로
+막으므로(`clinic.booking._ensure_can_book`) 시드 밖에서는 아무도 클리닉을 못 잡는다.
+첫 수업에서 시험을 보니 오픈 첫 주에 걸린다.
+
+조건 셋은 FLOW 3-7 이 정한 그대로 — **출석 + 응시 + 평균 미달**. 원천은 전부 밖에
+있고(`attendances` · `scores`) 이 표에는 결과와 쓴 기준점만 남는다(모델 계약).
+
+**사람이 판정한 행은 안 건드린다** — `determined_by` 가 차 있으면 넘어간다.
+출석을 찍을 때와 같은 축이다.
+
 ## 백분위는 저장값이지만 파생값이다
 
 `report`·`exam_admin` 은 저장된 백분위를 **표시만** 한다(N+1 회피). 그 값을
@@ -57,7 +69,10 @@ NOT NULL 이라 만들 수 없으므로, 평균·백분위의 모집단을 낼 �
 """
 from decimal import ROUND_HALF_UP, Decimal
 
+from django.utils import timezone
+
 from apps.accounts.models import Student
+from apps.clinic.models import ClinicEligibility
 
 from . import attendance_admin
 from .models import AnswerSheet, Attendance, ClassSession, Score
@@ -79,14 +94,17 @@ def anonymous_totals(exam):
 
 
 def finalize_exam(exam):
-    """출석 표기 + 미제출 표기 + 백분위·석차. (미제출 생성 수, 순위 갱신 수).
+    """출석 · 미제출 · 백분위·석차 · 클리닉 대상. (미제출 생성 수, 순위 갱신 수).
 
     채점이 끝나는 자리마다 부른다 — 업로드·재판독·정답 키 수정·보정 저장.
-    출석을 먼저 찍는다: 조교 보정으로 주인이 정해진 장도 같은 자리에서 출결에
-    닿아야 하고, 그래야 미제출 명단이 같은 스냅샷 위에서 나온다.
+    순서가 곧 의존이다: 출석을 먼저 찍어야 조교 보정으로 주인이 정해진 장도 같은
+    자리에서 출결에 닿고, 미제출 행이 있어야 "봤어야 할 사람" 전원이 클리닉
+    판정에 들어오며, 기준점은 그 시험 전체 점수가 다 모인 뒤에야 나온다.
     """
     mark_present(exam)
-    return mark_missing(exam), rank(exam)
+    missing, ranked = mark_missing(exam), rank(exam)
+    mark_clinic_targets(exam)
+    return missing, ranked
 
 
 def mark_present(exam):
@@ -213,3 +231,74 @@ def rank(exam):
 
 def _cent(value):
     return Decimal(value).quantize(_CENT, rounding=ROUND_HALF_UP)
+
+
+def mark_clinic_targets(exam):
+    """출석 + 응시 + 평균 미달 → `ClinicEligibility`. (대상자 수)
+
+    미대상도 행을 남긴다 — 사유(`결석`·`미응시`·`평균이상`)가 화면이 "왜 나는
+    신청을 못 하나"에 답하는 유일한 값이고, 행이 없는 것과 대상이 아닌 것을
+    가르지 못하면 판정이 아직 안 돈 것인지 알 수 없다.
+
+    **출석은 이 시험이 걸린 회차의 `출석` 이다.** 현보로 온 학생은 방문한 반
+    회차에 `출석` 이 찍혀 있으므로 그대로 걸리고, 그 반의 점수로 판정된다
+    (FLOW 3-4 "클리닉은 이 반의 평균을 따른다") — 따로 갈라 볼 것이 없다.
+    """
+    scores = list(Score.objects.filter(exam=exam))
+    if not scores:
+        return 0
+    threshold = _threshold(exam, scores)
+    if threshold is None:
+        return 0
+    present = set(
+        Attendance.objects.filter(
+            session__exam=exam, status=Attendance.Status.PRESENT
+        ).values_list("student_id", flat=True)
+    )
+    decided = set(
+        ClinicEligibility.objects.filter(
+            exam=exam, determined_by__isnull=False
+        ).values_list("student_id", flat=True)
+    )
+    now = timezone.now()
+    targets = 0
+    for score in scores:
+        if score.student_id in decided:
+            continue
+        if score.student_id not in present:
+            is_target, reason = False, ClinicEligibility.Reason.ABSENT
+        elif not score.is_taken or score.total_score is None:
+            is_target, reason = False, ClinicEligibility.Reason.NOT_TAKEN
+        elif score.total_score >= threshold:
+            is_target, reason = False, ClinicEligibility.Reason.ABOVE_AVG
+        else:
+            is_target, reason = True, None
+        ClinicEligibility.objects.update_or_create(
+            exam=exam,
+            student_id=score.student_id,
+            defaults={
+                "is_target": is_target,
+                "reason": reason,
+                "cutoff_score": threshold,
+                "determined_at": now,
+            },
+        )
+        targets += is_target
+    return targets
+
+
+def _threshold(exam, scores):
+    """평균 미달의 기준점 — 관리자 컷이 있으면 그것, 없으면 그 시험 전체 평균.
+
+    컷을 담는 자리가 아직 없어서(미결 8-10) 지금은 언제나 평균이다. 평균은
+    `exam_admin._average` 와 같은 축으로 낸다 — 저장 캐시 우선, 없으면 응시 점수와
+    익명 확정 장을 합쳐서. 화면이 보여 주는 평균과 판정에 쓴 기준점이 갈리면
+    "평균 아래인데 왜 대상이 아니냐"를 설명할 수 없다.
+    """
+    if exam.avg_score is not None:
+        return exam.avg_score
+    totals = [s.total_score for s in scores if s.is_taken and s.total_score is not None]
+    totals += [Decimal(total) for total in anonymous_totals(exam)]
+    # 저장 자리가 소수 둘째 자리까지다 — 여기서 맞춰 두지 않으면 판정에 쓴 값과
+    # 행에 남은 값이 갈려 "기준점 56.67 인데 왜 미달이 아니냐"가 된다.
+    return _cent(sum(totals) / len(totals)) if totals else None

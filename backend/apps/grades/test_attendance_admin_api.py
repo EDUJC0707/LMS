@@ -31,7 +31,7 @@ from django.utils import timezone
 from apps.accounts.features import FeatureKey
 from apps.accounts.models import StaffFeatureGrant, Student, User
 from apps.boards.models import AbsenceCounseling
-from apps.curriculum.models import Course, CourseEnrollment, CourseWeek
+from apps.curriculum.models import Class, Course, CourseEnrollment, CourseWeek
 from apps.videos.models import MakeupGrant, Video, VideoGrant
 
 from .models import Attendance, ClassSession
@@ -1213,3 +1213,154 @@ class WithdrawTests(AttendanceAdminFixtureMixin, TestCase):
         self.assertEqual(
             self.post_withdraw({"student_id": self.s1.student_id}).status_code, 403
         )
+
+
+class OnsiteMakeupTests(TestCase):
+    """현보 — 다른 반 학생이 여기로 보강을 왔다 (FLOW 3-4).
+
+    출결 레코드는 **두 반에 다 생기고 값이 반대편끼리 다르다**: 방문한 반은
+    `출석`, 원래 반은 `결석(현보)`. 원래 반을 그냥 `결석` 으로 두면 결석생 연락
+    대기열이 생겨 보강을 이미 끝낸 학생의 학부모에게 전화가 나간다(FLOW 3-12).
+
+    행이 둘이어도 **영상은 한 번만** 나간다.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = make_user("onsite-admin", User.Role.ADMIN, name="관리자")
+        course = Course.objects.create(name="2026 여름 N제", total_weeks=3)
+        cls.thursday = Class.objects.create(course=course, name="목 6.5 대치러셀")
+        cls.tuesday = Class.objects.create(course=course, name="화 6.5 대치러셀")
+        week = CourseWeek.objects.create(
+            course=course, week_no=3, start_date=datetime.date(2026, 7, 20)
+        )
+        cls.videos = [
+            Video.objects.create(
+                course_week=week, title=f"3주차 {n}강",
+                status=Video.Status.PUBLISHED, sequence_no=n,
+            )
+            for n in (1, 2)
+        ]
+        cls.thu_session = ClassSession.objects.create(
+            session_date=datetime.date(2026, 7, 23),
+            course_week=week, klass=cls.thursday, week_no=3,
+        )
+        cls.tue_session = ClassSession.objects.create(
+            session_date=datetime.date(2026, 7, 21),
+            course_week=week, klass=cls.tuesday, week_no=3,
+        )
+        cls.local = make_student("stu-thu", "김하늘")
+        cls.visitor = make_student("stu-tue", "박지우")
+        cls.stranger = make_student("stu-none", "최유진")
+        CourseEnrollment.objects.create(
+            student=cls.local, course=course, klass=cls.thursday
+        )
+        CourseEnrollment.objects.create(
+            student=cls.visitor, course=course, klass=cls.tuesday
+        )
+
+    def onsite_url(self, session):
+        return f"{SESSIONS_URL}/{session.session_id}/onsite"
+
+    def post_onsite(self, session, login_id, at=NOW):
+        with freeze_now(at):
+            return self.client.post(
+                self.onsite_url(session),
+                data=json.dumps({"login_id": login_id}),
+                content_type="application/json",
+            )
+
+    def add_visitor(self):
+        self.client.force_login(self.admin)
+        return self.post_onsite(self.thu_session, "stu-tue")
+
+    def test_the_two_classes_get_opposite_values(self):
+        self.assertEqual(self.add_visitor().status_code, 201)
+
+        visited = Attendance.objects.get(session=self.thu_session, student=self.visitor)
+        origin = Attendance.objects.get(session=self.tue_session, student=self.visitor)
+        self.assertEqual(visited.status, Attendance.Status.PRESENT)
+        self.assertEqual(origin.status, Attendance.Status.ABSENT_ONSITE)
+
+    def test_the_video_goes_out_once(self):
+        """행이 둘이어도 학생이 들고 있는 권한은 그 주차 영상 수만큼이다(FLOW 3-5)."""
+        response = self.add_visitor()
+
+        grants = VideoGrant.objects.filter(student=self.visitor, revoked_at__isnull=True)
+        self.assertEqual(grants.count(), len(self.videos))
+        self.assertEqual(
+            response.json()["triggers"]["video_grants_created"], len(self.videos)
+        )
+
+    def test_nobody_calls_the_parent(self):
+        """보강을 이미 끝냈다 — 결석생 연락 대기열에 들어가면 안 된다(FLOW 3-12)."""
+        self.add_visitor()
+
+        self.assertFalse(AbsenceCounseling.objects.filter(student=self.visitor).exists())
+
+    def test_the_visited_roster_shows_the_original_class(self):
+        """조교가 그 자리에서 왜 이 학생이 여기 있는지 알아야 한다(FLOW 3-4)."""
+        payload = self.add_visitor().json()
+
+        row = next(
+            s for s in payload["students"] if s["student_id"] == self.visitor.student_id
+        )
+        self.assertEqual(row["current_class"], "화 6.5 대치러셀")
+        self.assertEqual(row["attendance"]["status"], "출석")
+
+    def test_the_visitor_can_be_edited_like_anyone_else(self):
+        """올린 뒤에는 명단의 한 줄이다 — 저장이 400 으로 튕기면 고칠 수가 없다."""
+        self.add_visitor()
+
+        with freeze_now():
+            response = self.client.put(
+                f"{SESSIONS_URL}/{self.thu_session.session_id}",
+                data=json.dumps(
+                    [{"student_id": self.visitor.student_id, "status": "결석"}]
+                ),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_an_absence_already_marked_in_the_origin_class_is_cleaned_up(self):
+        """조교가 먼저 `결석` 을 찍어 둔 뒤 현보로 올리는 순서도 실제로 온다."""
+        self.client.force_login(self.admin)
+        with freeze_now():
+            self.client.put(
+                f"{SESSIONS_URL}/{self.tue_session.session_id}",
+                data=json.dumps(
+                    [{"student_id": self.visitor.student_id, "status": "결석"}]
+                ),
+                content_type="application/json",
+            )
+        self.assertTrue(AbsenceCounseling.objects.filter(student=self.visitor).exists())
+
+        self.post_onsite(self.thu_session, "stu-tue")
+
+        self.assertFalse(AbsenceCounseling.objects.filter(student=self.visitor).exists())
+
+    def test_a_student_of_this_class_is_refused(self):
+        self.client.force_login(self.admin)
+
+        response = self.post_onsite(self.thu_session, "stu-thu")
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_a_student_who_takes_no_other_class_is_refused(self):
+        """이 커리를 아예 안 듣는 학생은 현보가 아니라 새 학생이다(FLOW 3-4·3-8)."""
+        self.client.force_login(self.admin)
+
+        response = self.post_onsite(self.thu_session, "stu-none")
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_an_unknown_login_id_is_not_found(self):
+        self.client.force_login(self.admin)
+
+        self.assertEqual(self.post_onsite(self.thu_session, "없는번호").status_code, 404)
+
+    def test_a_student_cannot_do_it(self):
+        self.client.force_login(self.local.user)
+
+        self.assertEqual(self.post_onsite(self.thu_session, "stu-tue").status_code, 403)

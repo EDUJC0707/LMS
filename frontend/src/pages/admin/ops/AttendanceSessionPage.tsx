@@ -78,6 +78,7 @@ export default function AttendanceSessionPage() {
   const [examMode, setExamMode] = useState(false);
   const [blankOnly, setBlankOnly] = useState(false);
   const [saved, setSaved] = useState<AttendanceTriggers | null>(null);
+  const [onsiteId, setOnsiteId] = useState("");
 
   const students = useMemo(() => detail.data?.students ?? [], [detail.data]);
 
@@ -176,6 +177,24 @@ export default function AttendanceSessionPage() {
     // detail/makeups 는 매 렌더 새 객체라 의존성에서 뺀다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [changed, draft, examMode, canMakeup]);
+
+  // 명단 밖 학생을 이 반 출결표에 올린다(FLOW 3-4) — 원래 반에는 `결석(현보)` 가
+  // 같이 찍힌다. 조교가 지면을 보고 "다른 반 학생"이라고 판단한 뒤 누르는 자리다.
+  const onsite = useApiAction(async (loginId: string) => {
+    const { data } = await http.post<SessionDetail>(
+      `/admin/attendance/sessions/${sessionId}/onsite`,
+      { login_id: loginId },
+    );
+    return data;
+  });
+
+  const runOnsite = async () => {
+    const data = await onsite.run(onsiteId.trim());
+    if (!data) return;
+    detail.setData(data);
+    setSaved(data.triggers ?? null);
+    setOnsiteId("");
+  };
 
   // ⌘S · Ctrl+S 로 저장 — 명단을 훑다가 손을 떼지 않고 저장한다.
   useEffect(() => {
@@ -363,6 +382,7 @@ export default function AttendanceSessionPage() {
 
       <div className="ui-stack">
         {save.error && <Alert tone="danger">{save.error}</Alert>}
+        {onsite.error && <Alert tone="danger">{onsite.error}</Alert>}
         {saved && <SavedSummary triggers={saved} onClose={() => setSaved(null)} />}
 
         <Card padding="none" className="ops-tablecard">
@@ -377,6 +397,30 @@ export default function AttendanceSessionPage() {
               onChange={(event) => setBlankOnly(event.target.checked)}
               label={`미입력한 학생만 보기 (${live.미입력}명)`}
             />
+            <form
+              className="ui-row"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void runOnsite();
+              }}
+            >
+              <label className="ops-toolbar__field">
+                <span className="ops-toolbar__label">원번</span>
+                <input
+                  className="ui-input"
+                  value={onsiteId}
+                  onChange={(event) => setOnsiteId(event.target.value)}
+                />
+              </label>
+              <Button
+                size="sm"
+                type="submit"
+                loading={onsite.pending}
+                disabled={onsiteId.trim() === ""}
+              >
+                현보 추가
+              </Button>
+            </form>
             <p className="ops-keys">
               <span>
                 <kbd>Tab</kbd> 다음 학생

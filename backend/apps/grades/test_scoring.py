@@ -10,6 +10,7 @@ from decimal import Decimal
 from django.test import TestCase
 
 from apps.accounts.models import User
+from apps.clinic.models import ClinicEligibility
 from apps.curriculum.models import Class, Course, CourseEnrollment, CourseWeek
 
 from . import scoring
@@ -278,3 +279,125 @@ class AnonymousScoreTests(TestCase):
         scoring.finalize_exam(self.exam)
 
         self.assertEqual(Score.objects.filter(exam=self.exam).count(), 1)
+
+
+class ClinicTargetTests(TestCase):
+    """클리닉 대상 판정 — 출석 + 응시 + 평균 미달 (FLOW 3-7).
+
+    이 판정을 만드는 코드가 시드밖에 없었다. 신청 화면은 판정 없는 학생을 403 으로
+    막으므로(`clinic.booking._ensure_can_book`) 실서비스에서는 아무도 클리닉을
+    잡을 수 없었고, 첫 수업에서 시험을 보니 오픈 첫 주에 걸린다.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.exam = Exam.objects.create(name="1주차 미니", exam_date=datetime.date(2026, 9, 4))
+        course = Course.objects.create(name="2026 여름 N제", total_weeks=1)
+        klass = Class.objects.create(course=course, name="목 6.5 대치러셀")
+        week = CourseWeek.objects.create(course=course, week_no=1)
+        cls.session = ClassSession.objects.create(
+            session_date=datetime.date(2026, 9, 4),
+            course_week=week,
+            klass=klass,
+            week_no=1,
+            exam=cls.exam,
+        )
+        # 평균 60 — 아래 40, 위 80, 그리고 결석·미응시 하나씩
+        cls.low = make_student("stu-low", "김하늘")
+        cls.high = make_student("stu-high", "이서준")
+        cls.absent = make_student("stu-away", "박지우")
+        cls.skipped = make_student("stu-skip", "최유진")
+        for student in (cls.low, cls.high, cls.absent, cls.skipped):
+            CourseEnrollment.objects.create(student=student, course=course, klass=klass)
+        for student, status in (
+            (cls.low, Attendance.Status.PRESENT),
+            (cls.high, Attendance.Status.PRESENT),
+            (cls.absent, Attendance.Status.ABSENT),
+            (cls.skipped, Attendance.Status.PRESENT),
+        ):
+            Attendance.objects.create(session=cls.session, student=student, status=status)
+        for student, total in ((cls.low, 40), (cls.high, 80), (cls.absent, 50)):
+            Score.objects.create(
+                exam=cls.exam, student=student, total_score=Decimal(total), is_taken=True
+            )
+
+    def eligibility(self, student):
+        return ClinicEligibility.objects.get(exam=self.exam, student=student)
+
+    def test_a_present_student_below_the_average_is_a_target(self):
+        self.assertEqual(scoring.mark_clinic_targets(self.exam), 1)
+
+        row = self.eligibility(self.low)
+        self.assertTrue(row.is_target)
+        self.assertIsNone(row.reason)
+        # 판정에 쓴 기준점을 남긴다 — 평균 (40+80+50)/3
+        self.assertAlmostEqual(float(row.cutoff_score), (40 + 80 + 50) / 3, places=2)
+
+    def test_a_student_above_the_average_is_not(self):
+        scoring.mark_clinic_targets(self.exam)
+
+        row = self.eligibility(self.high)
+        self.assertFalse(row.is_target)
+        self.assertEqual(row.reason, ClinicEligibility.Reason.ABOVE_AVG)
+
+    def test_an_absent_student_is_not(self):
+        """점수가 아무리 낮아도 그 자리에 없었으면 대상이 아니다."""
+        scoring.mark_clinic_targets(self.exam)
+
+        row = self.eligibility(self.absent)
+        self.assertFalse(row.is_target)
+        self.assertEqual(row.reason, ClinicEligibility.Reason.ABSENT)
+
+    def test_a_student_who_did_not_sit_the_exam_is_not(self):
+        scoring.finalize_exam(self.exam)
+
+        row = self.eligibility(self.skipped)
+        self.assertFalse(row.is_target)
+        self.assertEqual(row.reason, ClinicEligibility.Reason.NOT_TAKEN)
+
+    def test_finalize_makes_the_call(self):
+        """채점이 끝나는 자리마다 판정이 선다 — 시드 밖에서도."""
+        scoring.finalize_exam(self.exam)
+
+        self.assertEqual(ClinicEligibility.objects.filter(exam=self.exam).count(), 4)
+        self.assertEqual(
+            ClinicEligibility.objects.filter(exam=self.exam, is_target=True).count(), 1
+        )
+
+    def test_running_twice_does_not_duplicate(self):
+        scoring.finalize_exam(self.exam)
+        scoring.finalize_exam(self.exam)
+
+        self.assertEqual(ClinicEligibility.objects.filter(exam=self.exam).count(), 4)
+
+    def test_it_follows_a_corrected_score(self):
+        """보정으로 점수가 바뀌면 판정도 따라 움직인다."""
+        scoring.mark_clinic_targets(self.exam)
+        Score.objects.filter(exam=self.exam, student=self.high).update(
+            total_score=Decimal("10")
+        )
+
+        scoring.mark_clinic_targets(self.exam)
+
+        self.assertTrue(self.eligibility(self.high).is_target)
+
+    def test_it_does_not_overwrite_what_a_person_decided(self):
+        """사람이 판정한 행은 재채점이 되돌리지 못한다 — 출석과 같은 축."""
+        actor = User.objects.create_user(
+            login_id="staff-elig", password="pw1234!!", role=User.Role.ADMIN, name="관리자"
+        )
+        ClinicEligibility.objects.create(
+            exam=self.exam, student=self.high, is_target=True, determined_by=actor
+        )
+
+        scoring.mark_clinic_targets(self.exam)
+
+        self.assertTrue(self.eligibility(self.high).is_target)
+
+    def test_an_admin_cut_replaces_the_average(self):
+        """기준점은 관리자 컷 우선 — 담을 자리가 `avg_score` 뿐이라 지금은 그것이다."""
+        Exam.objects.filter(pk=self.exam.pk).update(avg_score=Decimal("30"))
+
+        scoring.mark_clinic_targets(Exam.objects.get(pk=self.exam.pk))
+
+        self.assertFalse(self.eligibility(self.low).is_target)

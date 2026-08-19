@@ -52,6 +52,8 @@ def ingest_pdf(exam, pdf, question_count):
     모의고사는 지면이 아예 다른 카드(성적 조사 카드)라 문항 수를 안 쓴다.
     """
     roster = list(Student.objects.select_related("user").all())
+    # 반쪽 키는 이 시험이 걸린 반 안에서만 찾는다(FLOW 3-3 ② — omr_match).
+    klass_roster = omr_match.class_roster(exam)
     # holds 는 보류 사유별 장수다. 실물에서 "마킹 없음"이 34/94 였다 — 사람에게
     # 알려 줄 값이 "보류 34장"이 아니라 "34명이 버블을 안 칠했다"이기 때문이다.
     summary = {"pages": 0, "read": 0, "held": 0, "matched": 0, "needs_review": 0, "holds": {}}
@@ -68,7 +70,10 @@ def ingest_pdf(exam, pdf, question_count):
             _hold_page(exam, path, survey, summary, sheets, page_no)
             continue
         calibration.add(image)
-        _read_one(exam, path, image, question_count, survey, roster, summary, sheets, page_no)
+        _read_one(
+            exam, path, image, question_count, survey,
+            roster, klass_roster, summary, sheets, page_no,
+        )
     summary["sheets"] = sheets
     summary["drift"] = calibration.result()
     summary["missing"], _ = scoring.finalize_exam(exam)
@@ -88,6 +93,7 @@ def reread_exam(exam, question_count):
     보정한 값은 덮이지 않는다.
     """
     roster = list(Student.objects.select_related("user").all())
+    klass_roster = omr_match.class_roster(exam)
     summary = {"pages": 0, "read": 0, "held": 0, "matched": 0, "needs_review": 0, "holds": {}}
     survey = exam.kind == Exam.Kind.MOCK
     sheets = []
@@ -104,7 +110,7 @@ def reread_exam(exam, question_count):
             continue
         _read_one(
             exam, row.scan_image_path, image, question_count,
-            survey, roster, summary, sheets, page_no,
+            survey, roster, klass_roster, summary, sheets, page_no,
         )
     summary["sheets"] = sheets
     summary["missing"], _ = scoring.finalize_exam(exam)
@@ -125,7 +131,9 @@ def _hold_page(exam, path, survey, summary, sheets, page_no):
     sheets.append({"page": page_no, "sheet_id": row.pk, "held": reason})
 
 
-def _read_one(exam, path, image, question_count, survey, roster, summary, sheets, page_no):
+def _read_one(
+    exam, path, image, question_count, survey, roster, klass_roster, summary, sheets, page_no
+):
     """장 한 개 — 판독·매칭·저장. PDF 업로드와 재판독이 같은 길을 쓴다."""
     summary["pages"] += 1
     from_handwriting = False
@@ -143,7 +151,9 @@ def _read_one(exam, path, image, question_count, survey, roster, summary, sheets
         )
     else:
         summary["read"] += 1
-        student, status = omr_match.match_sheet(reading.name, reading.phone, roster=roster)
+        student, status = omr_match.match_sheet(
+            reading.name, reading.phone, roster=roster, klass_roster=klass_roster
+        )
         if student is not None:
             summary["matched"] += 1
         else:
