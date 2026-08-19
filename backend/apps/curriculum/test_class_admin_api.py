@@ -9,6 +9,9 @@
 - 회차: 개강일에서 주 단위로 총주차만큼 — 1주차 9/4 · 2주차 9/11 · … ·
   10주차 11/6. 반의 주차가 곧 회차라 `ClassSession(klass, week_no)` 다
 - 목록: 커리로 묶고, 반마다 진행 주차와 수강생 수
+- 주차 수정(FLOW 1-3): 앞을 고치면 뒤가 따라 밀리고 번호는 안 움직인다.
+  추가·삭제는 반에서만 하고 기록이 붙은 주차는 못 지운다
+- 반 이동(FLOW 3-9): 수강의 반이 갈리고 지난 기록은 옛 반에 남는다
 """
 import datetime
 import json
@@ -17,7 +20,7 @@ from django.test import TestCase
 
 from apps.accounts.features import FeatureKey
 from apps.accounts.models import StaffFeatureGrant, Student, User
-from apps.grades.models import ClassSession
+from apps.grades.models import Attendance, ClassSession
 
 from .models import Class, Course, CourseEnrollment, CourseWeek, Subject
 
@@ -133,39 +136,24 @@ class OpenClassTests(ClassAdminFixtureMixin, TestCase):
             datetime.date(2026, 9, 2),
         )
 
-    def test_open_class_fills_the_week_dates(self):
-        """주차 날짜가 비면 학생 홈이 통째로 잠긴다 — 반을 열 때 같이 채운다."""
+    def test_open_class_leaves_the_week_dates_to_the_class(self):
+        """날짜는 반의 것이다 — 커리 주차에는 담지 않고 공개 시점만 찍는다."""
         body = self.post_class(self.BODY).json()
         course = Course.objects.get(pk=body["course_id"])
         weeks = list(CourseWeek.objects.filter(course=course).order_by("week_no"))
-        self.assertEqual(weeks[0].start_date, datetime.date(2026, 9, 4))
-        self.assertEqual(weeks[0].end_date, datetime.date(2026, 9, 10))
-        self.assertEqual(weeks[-1].start_date, datetime.date(2026, 11, 6))
+        self.assertEqual([w.start_date for w in weeks], [None] * 10)
+        self.assertEqual([w.end_date for w in weeks], [None] * 10)
         # 개강 전에도 보여야 한다 — 공개 시점은 개강일이 아니라 반을 연 시각
         self.assertEqual(CourseWeek.objects.released().count(), 10)
 
-    def test_second_class_keeps_the_first_class_week_dates(self):
-        """커리 주차는 하나뿐이라 먼저 연 반의 날짜가 남는다(반별 날짜는 회차)."""
-        first = self.post_class(self.BODY).json()
-        self.post_class(
-            {
-                "course_id": first["course_id"],
-                "name": "화 6.5 대치러셀",
-                "start_date": "2026-09-02",
-            }
-        )
-        week1 = CourseWeek.objects.get(course_id=first["course_id"], week_no=1)
-        self.assertEqual(week1.start_date, datetime.date(2026, 9, 4))
-
-    def test_open_class_fills_dates_left_empty_on_an_old_week(self):
-        """날짜 없이 만들어진 주차 — 반을 열 때 채워야 잠긴 채로 남지 않는다."""
+    def test_open_class_releases_a_week_left_locked_on_an_old_course(self):
+        """공개 근거 없이 만들어진 주차 — 반을 열 때 찍어야 잠긴 채로 남지 않는다."""
         course = Course.objects.create(name="옛 커리", total_weeks=2)
         CourseWeek.objects.create(course=course, week_no=1)
         self.post_class(
             {"course_id": course.course_id, "name": "목반", "start_date": "2026-09-04"}
         )
         week1 = CourseWeek.objects.get(course=course, week_no=1)
-        self.assertEqual(week1.start_date, datetime.date(2026, 9, 4))
         self.assertIsNotNone(week1.release_at)
 
     def test_same_name_in_one_course_is_rejected(self):
@@ -309,3 +297,247 @@ class ClassListTests(ClassAdminFixtureMixin, TestCase):
     def test_empty_when_no_class_exists(self):
         Course.objects.create(name="반 없는 커리", total_weeks=4)
         self.assertEqual(self.get_classes().json()["courses"], [])
+
+
+class ClassScheduleTests(ClassAdminFixtureMixin, TestCase):
+    """반별 주차 — 날짜 수정 · 추가 · 삭제 (FLOW 1-3).
+
+    검증 축:
+    - 앞을 고치면 뒤가 같은 폭으로 따라 밀린다. **번호는 안 움직인다**
+    - 다른 반은 그대로다 — 반마다 자기 날짜를 갖는다
+    - 주차 추가·삭제는 반에서만. 커리 총주차는 안 바뀐다
+    - **기록이 붙은 주차는 못 지운다** — 출결·과제가 CASCADE 로 같이 사라진다
+    """
+
+    def setUp(self):
+        body = self.post_class(
+            {
+                "track": "수능",
+                "subject": "통합과학",
+                "course_name": "2026 여름 N제",
+                "total_weeks": 10,
+                "name": "목 6.5 대치러셀",
+                "start_date": "2026-09-04",
+            }
+        ).json()
+        self.course_id = body["course_id"]
+        self.class_id = body["class_id"]
+        self.klass = Class.objects.get(pk=self.class_id)
+
+    def patch_week(self, week_no, session_date, class_id=None, user=None):
+        self.client.force_login(user or self.admin)
+        return self.client.patch(
+            f"{URL}/{class_id or self.class_id}/sessions/{week_no}",
+            data=json.dumps({"session_date": session_date}),
+            content_type="application/json",
+        )
+
+    def dates(self, class_id=None):
+        return {
+            s.week_no: s.session_date
+            for s in ClassSession.objects.filter(klass_id=class_id or self.class_id)
+        }
+
+    def test_moving_a_week_pushes_the_later_ones(self):
+        res = self.patch_week(3, "2026-11-12")
+        self.assertEqual(res.status_code, 200)
+        dates = self.dates()
+        # 1·2주차는 그대로, 3주차부터 8주(9/18 → 11/12) 밀린다
+        self.assertEqual(dates[1], datetime.date(2026, 9, 4))
+        self.assertEqual(dates[2], datetime.date(2026, 9, 11))
+        self.assertEqual(dates[3], datetime.date(2026, 11, 12))
+        self.assertEqual(dates[4], datetime.date(2026, 11, 19))
+        self.assertEqual(dates[10], datetime.date(2026, 12, 31))
+        # 번호는 안 움직인다 — 출결·성적·영상 권한이 번호로 붙어 있다
+        self.assertEqual(sorted(dates), list(range(1, 11)))
+
+    def test_a_week_can_move_back(self):
+        self.patch_week(3, "2026-09-11")
+        self.assertEqual(self.dates()[4], datetime.date(2026, 9, 18))
+
+    def test_the_other_class_keeps_its_own_dates(self):
+        second = self.post_class(
+            {"course_id": self.course_id, "name": "화 6.5 대치러셀", "start_date": "2026-09-02"}
+        ).json()
+        self.patch_week(3, "2026-11-12")
+        self.assertEqual(self.dates(second["class_id"])[3], datetime.date(2026, 9, 16))
+
+    def test_unknown_week_is_rejected(self):
+        self.assertEqual(self.patch_week(99, "2026-11-12").status_code, 400)
+
+    def test_bad_date_is_rejected(self):
+        self.assertEqual(self.patch_week(3, "11/12").status_code, 400)
+
+    def test_unknown_class_is_404(self):
+        self.assertEqual(self.patch_week(3, "2026-11-12", class_id=9999).status_code, 404)
+
+    def test_adding_a_week_appends_after_the_last(self):
+        self.client.force_login(self.admin)
+        res = self.client.post(f"{URL}/{self.class_id}/sessions")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["sessions"][-1]["week_no"], 11)
+        self.assertEqual(self.dates()[11], datetime.date(2026, 11, 13))
+        # 커리 총주차는 안 바뀐다. 없던 커리 주차는 만들어 회차에 물린다
+        self.assertEqual(Course.objects.get(pk=self.course_id).total_weeks, 10)
+        self.assertEqual(CourseWeek.objects.filter(course_id=self.course_id).count(), 11)
+
+    def test_removing_the_last_week(self):
+        self.client.force_login(self.admin)
+        res = self.client.delete(f"{URL}/{self.class_id}/sessions/10")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(sorted(self.dates()), list(range(1, 10)))
+        # 커리 주차는 다른 반도 쓰므로 남는다
+        self.assertEqual(Course.objects.get(pk=self.course_id).total_weeks, 10)
+        self.assertEqual(CourseWeek.objects.filter(course_id=self.course_id).count(), 10)
+
+    def test_only_the_last_week_can_be_removed(self):
+        self.client.force_login(self.admin)
+        res = self.client.delete(f"{URL}/{self.class_id}/sessions/5")
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(len(self.dates()), 10)
+
+    def test_a_week_with_records_cannot_be_removed(self):
+        """출결이 달린 회차를 지우면 그 기록이 CASCADE 로 같이 사라진다."""
+        student = Student.objects.create(
+            user=make_user("sched-stu", User.Role.STUDENT, name="김하늘"),
+            enrollment_status=Student.EnrollmentStatus.REGISTERED,
+        )
+        Attendance.objects.create(
+            session=ClassSession.objects.get(klass=self.klass, week_no=10),
+            student=student,
+            status=Attendance.Status.PRESENT,
+        )
+        self.client.force_login(self.admin)
+        res = self.client.delete(f"{URL}/{self.class_id}/sessions/10")
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(len(self.dates()), 10)
+        self.assertEqual(Attendance.objects.count(), 1)
+
+    def test_assistant_without_feature_gets_403(self):
+        self.assertEqual(
+            self.patch_week(3, "2026-11-12", user=self.assistant).status_code, 403
+        )
+
+
+class ClassMoveTests(ClassAdminFixtureMixin, TestCase):
+    """POST /api/admin/classes/{id}/students — 반 이동 (FLOW 3-9)."""
+
+    def setUp(self):
+        self.first = self.post_class(
+            {
+                "track": "수능",
+                "subject": "통합과학",
+                "course_name": "2026 여름 N제",
+                "total_weeks": 3,
+                "name": "목 6.5 대치러셀",
+                "start_date": "2026-09-04",
+            }
+        ).json()
+        self.second = self.post_class(
+            {
+                "course_id": self.first["course_id"],
+                "name": "화 6.5 대치러셀",
+                "start_date": "2026-09-02",
+            }
+        ).json()
+        self.student = Student.objects.create(
+            user=make_user("mv-stu", User.Role.STUDENT, name="박지우"),
+            enrollment_status=Student.EnrollmentStatus.REGISTERED,
+        )
+        self.enrollment = CourseEnrollment.objects.create(
+            student=self.student,
+            course_id=self.first["course_id"],
+            klass_id=self.first["class_id"],
+        )
+
+    def move(self, class_id, student_id=None, user=None):
+        self.client.force_login(user or self.admin)
+        return self.client.post(
+            f"{URL}/{class_id}/students",
+            data=json.dumps({"student_id": student_id or self.student.student_id}),
+            content_type="application/json",
+        )
+
+    def test_move_swaps_the_class_on_the_enrollment(self):
+        res = self.move(self.second["class_id"])
+        self.assertEqual(res.status_code, 200)
+        self.enrollment.refresh_from_db()
+        self.assertEqual(self.enrollment.klass_id, self.second["class_id"])
+        # 수강은 하나뿐 — 옛 반에 사본이 남지 않는다
+        self.assertEqual(CourseEnrollment.objects.count(), 1)
+
+    def test_moved_student_shows_on_the_new_class_roster_only(self):
+        self.move(self.second["class_id"])
+        self.client.force_login(self.admin)
+        StaffFeatureGrant.objects.create(
+            user=self.admin,
+            feature_key=FeatureKey.ATTENDANCE_ENTRY,
+            is_granted=True,
+            granted_by=self.owner,
+        )
+        old = ClassSession.objects.get(klass_id=self.first["class_id"], week_no=2)
+        new = ClassSession.objects.get(klass_id=self.second["class_id"], week_no=2)
+        self.assertNotIn(
+            self.student.student_id, self._roster(old.session_id)
+        )
+        self.assertIn(self.student.student_id, self._roster(new.session_id))
+
+    def test_past_records_keep_the_student_on_the_old_roster(self):
+        """지난 기록은 옛 반에 남는다 — 그 줄이 출결표에서 사라지면 안 된다."""
+        session = ClassSession.objects.get(klass_id=self.first["class_id"], week_no=1)
+        Attendance.objects.create(
+            session=session, student=self.student, status=Attendance.Status.PRESENT
+        )
+        self.move(self.second["class_id"])
+        StaffFeatureGrant.objects.create(
+            user=self.admin,
+            feature_key=FeatureKey.ATTENDANCE_ENTRY,
+            is_granted=True,
+            granted_by=self.owner,
+        )
+        self.assertIn(self.student.student_id, self._roster(session.session_id))
+
+    def _roster(self, session_id):
+        self.client.force_login(self.admin)
+        res = self.client.get(f"/api/admin/attendance/sessions/{session_id}")
+        self.assertEqual(res.status_code, 200)
+        return [row["student_id"] for row in res.json()["students"]]
+
+    def test_moving_to_a_class_of_another_course_is_rejected(self):
+        other = self.post_class(
+            {
+                "track": "수능",
+                "subject": "통합과학",
+                "course_name": "겨울 N제",
+                "total_weeks": 2,
+                "name": "월반",
+                "start_date": "2026-12-07",
+            }
+        ).json()
+        self.assertEqual(self.move(other["class_id"]).status_code, 400)
+
+    def test_moving_a_student_who_does_not_take_the_course_is_rejected(self):
+        stranger = Student.objects.create(
+            user=make_user("mv-out", User.Role.STUDENT, name="남남"),
+            enrollment_status=Student.EnrollmentStatus.REGISTERED,
+        )
+        res = self.move(self.second["class_id"], student_id=stranger.student_id)
+        self.assertEqual(res.status_code, 400)
+
+    def test_moving_into_the_same_class_is_a_no_op(self):
+        res = self.move(self.first["class_id"])
+        self.assertEqual(res.status_code, 200)
+        self.enrollment.refresh_from_db()
+        self.assertEqual(self.enrollment.klass_id, self.first["class_id"])
+
+    def test_detail_serves_the_weeks_and_the_roster(self):
+        self.client.force_login(self.admin)
+        data = self.client.get(f"{URL}/{self.first['class_id']}").json()
+        self.assertEqual([w["week_no"] for w in data["sessions"]], [1, 2, 3])
+        self.assertEqual(data["sessions"][0]["session_date"], "2026-09-04")
+        self.assertEqual([s["name"] for s in data["students"]], ["박지우"])
+
+    def test_assistant_without_feature_gets_403(self):
+        self.assertEqual(
+            self.move(self.second["class_id"], user=self.assistant).status_code, 403
+        )

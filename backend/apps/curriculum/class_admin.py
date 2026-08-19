@@ -9,21 +9,25 @@
 자리**라 반마다 갖지 않고 커리에 하나씩만 있으면 되며, 회차가 그것을 가리킨다.
 없으면 여기서 만든다 — 총주차가 곧 커리의 주차 수이기 때문이다.
 
-만든 `CourseWeek` 에는 **날짜도 같이 채운다** — 비워 두면 학생·학부모 홈이
-`released()` 로 전 주차를 걸러 내 반을 연 첫날 화면이 텅 빈다. 내용(제목·
-학습계획)은 여전히 커리 편집에서 채운다.
+만든 `CourseWeek` 에는 **공개 시점만 찍는다** — 날짜는 반의 것이라
+(`ClassSession.session_date`) 커리 주차에 담지 않는다. 비워 두면 학생·학부모
+홈이 `released()` 로 전 주차를 걸러 내 반을 연 첫날 화면이 텅 비므로 공개
+시점은 반을 연 시각으로 찍는다. 내용(제목·학습계획)은 커리 편집에서 채운다.
 
 **과목은 없으면 만든다**(FLOW 1-2 — 과목은 신규 입력이 되는 드롭다운).
 반대로 **구분은 값집합 밖을 거절한다** — 열어 두면 표기가 흔들려 아래 층
 분류가 지저분해진다.
 
-주차 날짜 수정·반 수정·삭제는 여기 없다 — 생성과 조회까지다.
+**주차 날짜 수정과 반별 주차 추가·삭제도 여기 있다**(FLOW 1-3). 앞 주차를
+고치면 뒤가 같은 폭으로 따라 밀리고(휴강이 그 모양이다), 주차를 더하고 지우는
+것은 반에서만 하므로 커리 총주차는 안 바뀐다. **번호는 안 움직인다.**
 """
 import datetime
 
 from django.db import IntegrityError, models, transaction
 from django.utils import timezone
 
+from apps.accounts.models import Student
 from apps.grades.models import ClassSession
 
 from .models import Class, Course, CourseEnrollment, CourseWeek, Subject
@@ -157,35 +161,183 @@ def _resolve_subject(track, name):
 def _fill_sessions(klass, total_weeks, start_date):
     """개강일에서 주 단위로 총주차만큼 — 1주차 9/4 · 2주차 9/11 · … (FLOW 1-3).
 
-    `CourseWeek` 의 날짜도 같이 채운다. 커리의 주차는 반이 여럿이라 어느 반의
-    날짜를 담을지가 원래 모호한데, 지금 학생·학부모 홈이 그 날짜를 보고
-    `released()` 로 거르기 때문에(home.py) 비워 두면 반을 열자마자 전 주차가
-    잠긴다. **먼저 연 반의 날짜를 담고, 이미 날짜가 있는 주차는 건드리지
-    않는다** — 뒤에 붙는 반의 진짜 날짜는 `ClassSession.session_date` 에 있고
-    소비자 화면이 그쪽으로 옮겨 가면 이 값은 지워도 된다.
+    날짜는 회차에만 담는다. 커리 주차는 반이 여럿이라 어느 반의 날짜를 담을지가
+    애초에 모호하고, 소비자 화면도 이제 `ClassSession.session_date` 를 본다.
     """
-    now = timezone.now()
     for week_no in range(1, total_weeks + 1):
         week_start = start_date + datetime.timedelta(weeks=week_no - 1)
-        dates = {
-            "start_date": week_start,
-            "end_date": week_start + datetime.timedelta(days=6),
-            # 날짜는 아무것도 발동시키지 않는다(FLOW 1-4). 개강 전에도 일정이
-            # 보여야 하므로 공개 시점은 개강일이 아니라 반을 연 시각이다.
-            "release_at": now,
-        }
-        week, created = CourseWeek.objects.get_or_create(
-            course=klass.course, week_no=week_no, defaults=dates
-        )
-        if not created and week.start_date is None and week.release_at is None:
-            # 날짜 없이 만들어진 주차 — 잠긴 채로 남지 않게 채운다
-            CourseWeek.objects.filter(pk=week.pk).update(**dates)
         ClassSession.objects.create(
             klass=klass,
             week_no=week_no,
             session_date=week_start,
-            course_week=week,
+            course_week=_course_week(klass.course, week_no),
         )
+
+
+def _course_week(course, week_no):
+    """회차가 물릴 커리 주차 — 없으면 만든다. 내용은 커리 편집에서 채운다.
+
+    공개 시점을 지금으로 찍는다. 비워 두면 `released()` 가 전 주차를 걸러 내
+    반을 연 첫날 학생·학부모 화면이 텅 빈다. 날짜는 아무것도 발동시키지
+    않으므로(FLOW 1-4) 공개 시점은 개강일이 아니라 반을 연 시각이다.
+    """
+    now = timezone.now()
+    week, created = CourseWeek.objects.get_or_create(
+        course=course, week_no=week_no, defaults={"release_at": now}
+    )
+    if not created and week.release_at is None and week.start_date is None:
+        # 공개 근거 없이 만들어진 주차 — 잠긴 채로 남지 않게 찍는다
+        CourseWeek.objects.filter(pk=week.pk).update(release_at=now)
+    return week
+
+
+# --- 반의 주차 — 날짜 수정 · 추가 · 삭제 (FLOW 1-3) -----------------------
+
+
+def list_sessions(klass):
+    """반의 주차 목록 — 번호와 날짜. 번호 순."""
+    return [
+        {"week_no": s.week_no, "session_date": s.session_date.isoformat()}
+        for s in klass.sessions.order_by("week_no")
+    ]
+
+
+def class_detail(klass):
+    """반 하나 — 주차와 명단. 주차 편집·반 이동 화면이 같이 쓴다."""
+    students = (
+        Student.objects.filter(
+            course_enrollments__klass=klass,
+            course_enrollments__status=CourseEnrollment.Status.ENROLLED,
+        )
+        .select_related("user")
+        .order_by("student_id")
+    )
+    return {
+        "class": class_block(klass),
+        "sessions": list_sessions(klass),
+        "students": [
+            {
+                "student_id": s.student_id,
+                "name": s.user.name if s.user else None,
+                "login_id": s.user.login_id if s.user else None,
+            }
+            for s in students
+        ],
+    }
+
+
+@transaction.atomic
+def move_week(klass, week_no, session_date):
+    """주차 날짜를 고친다 — **뒤 주차가 같은 폭으로 따라 밀린다**(FLOW 1-3).
+
+    휴강이 그 모양이라 별도의 밀기 버튼이 없다. 움직이는 것은 날짜뿐이고
+    번호는 그대로다 — 출결·성적·영상 권한이 번호로 붙어 있다.
+    """
+    session = klass.sessions.filter(week_no=week_no).first()
+    if session is None:
+        raise ValueError("주차를 찾을 수 없습니다.")
+    delta = _parse_date(session_date) - session.session_date
+    if delta:
+        following = list(klass.sessions.filter(week_no__gte=week_no))
+        for row in following:
+            row.session_date += delta
+        ClassSession.objects.bulk_update(following, ["session_date"])
+    return list_sessions(klass)
+
+
+@transaction.atomic
+def add_week(klass):
+    """반에 주차를 하나 더한다 — 마지막 다음 번호, 마지막 + 일주일 (FLOW 1-3).
+
+    커리 총주차는 안 바뀐다. 커리 주차가 없는 번호면 여기서 만든다.
+    """
+    last = klass.sessions.order_by("-week_no").first()
+    if last is not None and last.week_no is not None:
+        week_no = last.week_no + 1
+        session_date = last.session_date + datetime.timedelta(weeks=1)
+    elif klass.start_date is not None:
+        week_no, session_date = 1, klass.start_date
+    else:
+        raise ValueError("개강일이 없는 반입니다.")
+    ClassSession.objects.create(
+        klass=klass,
+        week_no=week_no,
+        session_date=session_date,
+        course_week=_course_week(klass.course, week_no),
+    )
+    return list_sessions(klass)
+
+
+@transaction.atomic
+def remove_week(klass, week_no):
+    """반의 마지막 주차를 지운다 (FLOW 1-3).
+
+    **마지막만 지운다.** 가운데를 지우면 번호에 구멍이 나고, 그 구멍을 메우려면
+    번호를 다시 매겨야 하는데 그것은 FLOW 1-3 이 기각한 것이다. 한 주 쉬는 것은
+    삭제가 아니라 날짜를 미는 일이다(`move_week`).
+
+    **기록이 붙은 주차는 거절한다.** 회차가 지워지면 출결과 과제가 CASCADE 로
+    같이 사라지고, 워크북·청구는 회차를 가리키던 끈이 끊긴다 — 조교의 실수 한
+    번으로 되돌릴 수 없는 소실이 난다(key_considerations §5 — 파괴적 작업).
+    커리 주차(`CourseWeek`)는 다른 반도 쓰므로 남긴다.
+    """
+    last = klass.sessions.order_by("-week_no").first()
+    if last is None or last.week_no != week_no:
+        raise ValueError("마지막 주차만 지울 수 있습니다.")
+    if _has_records(last):
+        raise ValueError("기록이 있는 주차는 지울 수 없습니다.")
+    last.delete()
+    return list_sessions(klass)
+
+
+def _has_records(session):
+    """출결·시험·과제·워크북·청구가 걸린 회차인가."""
+    return (
+        session.exam_id is not None
+        or session.attendances.exists()
+        or session.assignments.exists()
+        or session.workbook_submissions.exists()
+        or session.triggered_orders.exists()
+    )
+
+
+# --- 반 이동 (FLOW 3-9) ---------------------------------------------------
+
+
+@transaction.atomic
+def move_student(klass, student_id):
+    """학생을 이 반으로 옮긴다 — **옮기는 즉시 그 반의 룰**(FLOW 3-9).
+
+    수강(`CourseEnrollment.klass`)만 갈아 끼운다. 옮기면 출결표 명단이 수강에서
+    나오므로 새 반에 뜨고 옛 반에서 빠지는 것이 같은 한 줄로 끝난다.
+
+    **지난 기록은 옛 반에 남는다.** 출결·성적은 그 반의 회차(`ClassSession`)에
+    달려 있고 회차는 안 움직인다 — "옮기는 즉시" 라는 말이 지난 수업까지
+    소급한다는 뜻은 아니다. 옛 반 출결표가 그 학생 줄을 잃지 않도록 명단은
+    **그 회차에 기록이 있는 학생도 포함**한다(grades.attendance_admin).
+
+    이미 나간 영상·잡힌 클리닉은 건드리지 않는다 — 회수는 지급 시점 기준이고
+    클리닉은 슬롯에 붙어 있어 반과 무관하다.
+    """
+    enrollment = (
+        CourseEnrollment.objects.filter(
+            student_id=student_id,
+            course=klass.course,
+            status=CourseEnrollment.Status.ENROLLED,
+        )
+        .order_by("enrollment_id")
+        .first()
+    )
+    if enrollment is None:
+        raise ValueError("이 커리를 듣는 학생이 아닙니다.")
+    if enrollment.klass_id == klass.pk:
+        return class_detail(klass)
+    enrollment.klass = klass
+    try:
+        enrollment.save(update_fields=["klass"])
+    except IntegrityError as exc:  # UQ(student, klass)
+        raise ValueError("이미 그 반에 있는 학생입니다.") from exc
+    return class_detail(klass)
 
 
 def _parse_date(value):

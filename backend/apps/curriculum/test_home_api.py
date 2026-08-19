@@ -400,14 +400,17 @@ class StudentHomeCalendarTests(HomeFixtureMixin, TestCase):
         )
         # 12 → 13 (2026-07-28): 결석 칸의 makeup_status 를 위한 동보 조회 1건.
         # 결석 수와 무관한 IN 조회 1회이며 학부모 홈과 공유한다(N+1 아님).
-        with freeze_now(), self.assertNumQueries(13):
+        # 13 → 14 (2026-08-19): 주차 축이 반의 회차로 옮겨 갔다. 이 픽스처의
+        # 회차에는 반이 안 붙어 있어 커리 주차로 되돌아가는 1건이 더 붙는다 —
+        # 반이 붙은 회차만 있는 실제 경로는 종전대로 1건이다.
+        with freeze_now(), self.assertNumQueries(14):
             res = self.client.get(STUDENT_HOME)
         self.assertEqual(len(res.json()["deadlines"]), 3)
 
     def test_no_makeup_query_when_month_has_no_absence(self):
-        # 결석이 없으면 동보 조회 자체가 없다 — 위 13건에서 정확히 1건이 빠진다
+        # 결석이 없으면 동보 조회 자체가 없다 — 위 14건에서 정확히 1건이 빠진다
         self.login_student()
-        with freeze_now(), self.assertNumQueries(12):
+        with freeze_now(), self.assertNumQueries(13):
             res = self.client.get(STUDENT_HOME + "?month=2026-08")
         self.assertEqual(res.json()["calendar"]["days"], [])
 
@@ -766,6 +769,6 @@ class ParentHomeTests(HomeFixtureMixin, TestCase):
             attendance=self.att_absent,
             source=MakeupGrant.Source.PARENT_REQUEST,
         )
-        with freeze_now(), self.assertNumQueries(14):
+        with freeze_now(), self.assertNumQueries(15):
             res = self.client.get(PARENT_HOME)
         self.assertEqual(res.status_code, 200)

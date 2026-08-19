@@ -4,6 +4,10 @@
  * API
  *   GET  /api/admin/classes   커리로 묶은 반 목록(진행 주차·수강생 수)
  *   POST /api/admin/classes   {course_id | course_name+total_weeks, name, start_date}
+ *   GET  /api/admin/classes/{id}                       주차 + 명단
+ *   POST /api/admin/classes/{id}/sessions              주차 추가
+ *   PATCH/DELETE .../sessions/{week_no}                날짜 수정 · 주차 삭제
+ *   POST /api/admin/classes/{id}/students              반 이동
  *
  * 화면 설계
  * - 커리로 묶어 한 표에 둔다. 커리명은 그 묶음의 첫 줄에만 적는다 — 같은 커리를
@@ -16,6 +20,13 @@
  *   회차 날짜는 서버가 주 단위로 채운다(FLOW 1-3).
  * - 과목은 고르기와 새로 적기가 둘 다 되어야 해서(FLOW 1-2) datalist 를 단
  *   입력 칸이다. 구분은 늘지 않으므로 그냥 select 다.
+ * - 반을 누르면 그 반의 주차와 명단이 열린다. **날짜 칸을 고치는 것이 미는
+ *   방법이다**(FLOW 1-3) — 밀기 버튼을 따로 두지 않는다. 뒤 주차가 따라
+ *   움직이므로 저장 뒤에는 서버가 준 목록으로 통째로 갈아 끼운다.
+ * - 주차 삭제는 **마지막 줄에만** 붙는다. 가운데를 지우면 번호에 구멍이 나고,
+ *   번호를 다시 매기는 것은 FLOW 1-3 이 기각한 것이다.
+ * - 반 이동은 명단 줄의 반 칸이다(FLOW 3-9). 고를 수 있는 것은 같은 커리의
+ *   다른 반뿐이라 목록에서 이미 받은 묶음을 그대로 쓴다.
  */
 import { FormEvent, useState } from "react";
 
@@ -33,7 +44,15 @@ import {
   Table,
 } from "../../../components";
 import "./manage.css";
-import type { ClassList, ClassRow, CourseGroup, SubjectRow } from "./types";
+import type {
+  ClassDetail,
+  ClassList,
+  ClassRow,
+  ClassSessionRow,
+  ClassStudentRow,
+  CourseGroup,
+  SubjectRow,
+} from "./types";
 
 /** 표에 깔 한 줄 — 반에 그 반이 속한 커리와 "묶음의 첫 줄인가"를 얹는다. */
 interface Line extends ClassRow {
@@ -49,6 +68,7 @@ function toLines(courses: CourseGroup[]): Line[] {
 
 export default function ClassesPage() {
   const [creating, setCreating] = useState(false);
+  const [opened, setOpened] = useState<Line | null>(null);
 
   const list = useApi(async () => {
     const { data } = await http.get<ClassList>("/admin/classes");
@@ -76,6 +96,7 @@ export default function ClassesPage() {
           <Table<Line>
             rows={toLines(courses)}
             rowKey={(row) => row.class_id}
+            onRowClick={(row) => setOpened(row)}
             dense
             caption="커리별 반 목록"
             columns={[
@@ -108,6 +129,12 @@ export default function ClassesPage() {
           />
         )}
       </Card>
+
+      <ClassDetailModal
+        line={opened}
+        onClose={() => setOpened(null)}
+        onChanged={() => void list.reload()}
+      />
 
       <CreateClassModal
         open={creating}
@@ -301,6 +328,166 @@ function CreateClassModal({
           )}
         </Field>
       </form>
+    </Modal>
+  );
+}
+
+/* ── 반 하나 — 주차와 명단 ──────────────────────────────────────────── */
+
+function ClassDetailModal({
+  line,
+  onClose,
+  onChanged,
+}: {
+  line: Line | null;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const classId = line?.class_id ?? null;
+
+  const detail = useApi(async () => {
+    if (classId === null) return null;
+    const { data } = await http.get<ClassDetail>(`/admin/classes/${classId}`);
+    return data;
+  }, [classId]);
+
+  const sessions = detail.data?.sessions ?? [];
+  const students = detail.data?.students ?? [];
+  const siblings = (line?.course.classes ?? []).filter((k) => k.class_id !== classId);
+
+  const edit = useApiAction(async (request: () => Promise<{ sessions: ClassSessionRow[] }>) => {
+    const next = await request();
+    detail.setData(detail.data ? { ...detail.data, sessions: next.sessions } : null);
+    onChanged();
+  });
+
+  const move = useApiAction(async (studentId: number, toClassId: number) => {
+    await http.post(`/admin/classes/${toClassId}/students`, { student_id: studentId });
+    await detail.reload();
+    onChanged();
+  });
+
+  const last = sessions.length ? sessions[sessions.length - 1].week_no : null;
+
+  return (
+    <Modal
+      open={line !== null}
+      onClose={onClose}
+      title={line ? `${line.course.name} · ${line.name}` : ""}
+      wide
+      footer={<Button onClick={onClose}>닫기</Button>}
+    >
+      {detail.loading ? (
+        <Loading label="반을 불러오는 중…" />
+      ) : detail.error ? (
+        <ErrorState description={detail.error} onRetry={detail.reload} />
+      ) : (
+        <div className="ui-stack">
+          {edit.error && <Alert tone="danger">{edit.error}</Alert>}
+          {move.error && <Alert tone="danger">{move.error}</Alert>}
+
+          <Table<ClassSessionRow>
+            rows={sessions}
+            rowKey={(row) => row.week_no}
+            dense
+            caption="주차"
+            columns={[
+              {
+                key: "week",
+                header: "주차",
+                numeric: true,
+                width: "6rem",
+                cell: (row) => `${row.week_no}주차`,
+              },
+              {
+                key: "date",
+                header: "날짜",
+                width: "12rem",
+                cell: (row) => (
+                  <Input
+                    type="date"
+                    value={row.session_date}
+                    onChange={(e) =>
+                      void edit.run(async () => {
+                        const { data } = await http.patch<{ sessions: ClassSessionRow[] }>(
+                          `/admin/classes/${classId}/sessions/${row.week_no}`,
+                          { session_date: e.target.value },
+                        );
+                        return data;
+                      })
+                    }
+                  />
+                ),
+              },
+              {
+                key: "remove",
+                header: "",
+                width: "5rem",
+                cell: (row) =>
+                  row.week_no === last ? (
+                    <Button
+                      onClick={() =>
+                        void edit.run(async () => {
+                          const { data } = await http.delete<{ sessions: ClassSessionRow[] }>(
+                            `/admin/classes/${classId}/sessions/${row.week_no}`,
+                          );
+                          return data;
+                        })
+                      }
+                    >
+                      삭제
+                    </Button>
+                  ) : null,
+              },
+            ]}
+          />
+
+          <Button
+            loading={edit.pending}
+            onClick={() =>
+              void edit.run(async () => {
+                const { data } = await http.post<{ sessions: ClassSessionRow[] }>(
+                  `/admin/classes/${classId}/sessions`,
+                );
+                return data;
+              })
+            }
+          >
+            주차 추가
+          </Button>
+
+          <Table<ClassStudentRow>
+            rows={students}
+            rowKey={(row) => row.student_id}
+            dense
+            caption="명단"
+            empty="학생이 없습니다"
+            columns={[
+              { key: "name", header: "이름", cell: (row) => row.name ?? "" },
+              { key: "login", header: "원번", cell: (row) => row.login_id ?? "" },
+              {
+                key: "class",
+                header: "반",
+                width: "14rem",
+                cell: (row) => (
+                  <Select
+                    value=""
+                    disabled={move.pending || siblings.length === 0}
+                    onChange={(e) => void move.run(row.student_id, Number(e.target.value))}
+                  >
+                    <option value="">{line?.name ?? ""}</option>
+                    {siblings.map((k) => (
+                      <option key={k.class_id} value={k.class_id}>
+                        {k.name}
+                      </option>
+                    ))}
+                  </Select>
+                ),
+              },
+            ]}
+          />
+        </div>
+      )}
     </Modal>
   );
 }

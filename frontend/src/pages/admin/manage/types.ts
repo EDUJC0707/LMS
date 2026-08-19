@@ -70,6 +70,25 @@ export interface ClassList {
   subjects: SubjectRow[];
 }
 
+/** 반의 주차 한 줄. 날짜는 반의 것이다(FLOW 1-3) — 커리 주차가 아니다. */
+export interface ClassSessionRow {
+  week_no: number;
+  session_date: string;
+}
+
+export interface ClassStudentRow {
+  student_id: number;
+  name: string | null;
+  login_id: string | null;
+}
+
+/** GET /api/admin/classes/{id} — 주차 편집과 반 이동이 같이 쓰는 한 덩어리. */
+export interface ClassDetail {
+  class: ClassRow;
+  sessions: ClassSessionRow[];
+  students: ClassStudentRow[];
+}
+
 /* ── /api/admin/accounts/bulk ─────────────────────────────────────── */
 
 export interface BulkParentBlock {
