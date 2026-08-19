@@ -32,6 +32,12 @@ class Notification(models.Model):
       어느 도메인이든 값으로 가리킨다). 원본 삭제에도 이력은 남는다.
     - status: 대기 → 성공/실패(→ 전달확인). 실패 재발송 배치는
       idx_notif_status 부분 인덱스 스캔(§4.5).
+    - **sent_to_phone 은 발송 시점 연락처의 스냅샷**(FLOW 2-5·3-8). 대상 행
+      (users.phone·parents.phone)을 따라가면 "지금 저장된 번호"가 나오는데,
+      번호를 고친 뒤에는 그 값이 **옛 발송이 나간 번호와 다르다** — "못 받았다"는
+      연락에 답하려면 그때 어디로 나갔는지가 있어야 한다. 채우는 것은 발송
+      경로(`sending.deliver`) 한 곳뿐이고, 값이 없던 시절의 행은 **빈 값으로
+      둔다**(소급해 채우면 지금 번호를 그때 번호인 척 적는 것이 된다).
     - 발송 이력은 감사 기록 — 대상 삭제로 유실되지 않게 PROTECT(개인정보
       파기 시 이력 처리는 관리자 수동 절차 소관 — 8-1 연계).
     """
@@ -105,6 +111,7 @@ class Notification(models.Model):
     ref_type = models.CharField("원인 유형", max_length=20, null=True, blank=True)  # noqa: DJ001
     ref_id = models.BigIntegerField("원인 ID", null=True, blank=True)
     sent_at = models.DateTimeField("발송 시각", null=True, blank=True)
+    sent_to_phone = models.CharField("보낸 번호", max_length=20, blank=True, default="")
     status = models.CharField(
         "상태", max_length=15, choices=Status.choices, default=Status.PENDING
     )

@@ -132,6 +132,7 @@ def build_row(notification):
         "error_msg": notification.error_msg,
         "ref_type": notification.ref_type,
         "ref_id": notification.ref_id,
+        "sent_to_phone": notification.sent_to_phone,
         "sent_at": _localized(notification.sent_at),
         "created_at": _localized(notification.created_at),
     }

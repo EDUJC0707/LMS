@@ -118,6 +118,29 @@ class DeliverSuccessTests(TestCase):
         self.assertEqual(notif.sent_at, now)
         self.assertIsNone(notif.error_msg)
 
+    def test_success_records_the_phone_it_went_to(self):
+        # FLOW 2-5·3-8 — "못 받았다"는 연락에 답하려면 어느 번호로 나갔는지가 남아야 한다.
+        notif = make_notification(student=make_student(phone="01011112222"))
+
+        deliver(notif.notif_id)
+
+        notif.refresh_from_db()
+        self.assertEqual(notif.sent_to_phone, "01011112222")
+
+    def test_recorded_phone_survives_a_later_correction(self):
+        # 이 테스트가 이 컬럼의 존재 이유다: 번호를 고친 뒤에도 옛 발송은 옛 번호를
+        # 든다. 대상 행을 따라가면 지금 번호가 나와 옛 발송까지 맞는 번호로 나간
+        # 것처럼 보인다.
+        student = make_student(phone="01011112222")
+        notif = make_notification(student=student)
+        deliver(notif.notif_id)
+
+        student.user.phone = "01011113333"
+        student.user.save(update_fields=["phone"])
+
+        notif.refresh_from_db()
+        self.assertEqual(notif.sent_to_phone, "01011112222")
+
     def test_success_hands_the_message_to_the_channel_adapter(self):
         notif = make_notification(student=make_student(phone="01011112222"))
 
@@ -211,6 +234,8 @@ class DeliverFailureTests(TestCase):
         notif.refresh_from_db()
         self.assertEqual(notif.status, Notification.Status.FAILED)
         self.assertEqual(FakeChannelAdapter.outbox, [])
+        # 풀린 번호가 없으니 적을 것도 없다 — 빈 값이 정직하다.
+        self.assertEqual(notif.sent_to_phone, "")
 
     @override_settings(NOTIFICATION_CHANNEL_BACKENDS={"카카오알림톡": PERMANENT})
     def test_error_msg_is_truncated_to_column_width(self):

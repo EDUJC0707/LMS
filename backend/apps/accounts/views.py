@@ -15,6 +15,7 @@ GET /api/auth/csrf 로 쿠키를 먼저 받는다.
 - POST     /api/admin/accounts/{id}/register   예비등록→등록 전환 (계정관리)
 - POST     /api/admin/accounts/{user_id}/password  임시 비밀번호 재발급 (계정관리)
 - GET      /api/admin/students                 학생 명부 조회 (직원 공통)
+- GET/PATCH /api/admin/students/{id}          학생 상세·수정 (계정관리)
 
 게이트·입력 검증·상태 코드만 여기서, DB 쓰기·페이로드 조립은 staff_admin·
 provisioning 서비스가 담당한다(attendance_admin 선례).
@@ -498,6 +499,61 @@ class AccountPasswordResetView(APIView):
                 "initial_password": password,
             }
         )
+
+
+class StudentDetailView(APIView):
+    """GET·PATCH /api/admin/students/{student_id} — 학생 상세·수정 (계정관리).
+
+    **고칠 자리가 여기 하나뿐이다**(FLOW 2-6). 번호가 한 자리 틀리게 들어온
+    학생은 계속 남의 번호로 문자·청구를 받고, 아이디·대조키도 그 번호에서 나온
+    채 남는다 — 지금까지 남은 수단은 지우고 다시 발급하는 것뿐이었고 그러면
+    출결·성적이 딸려 나갔다.
+
+    게이트가 목록(`StudentDirectoryView` — 직원 공통)과 다른 이유: 이 응답은
+    **연락처를 싣고** 수정은 아이디·비밀번호를 다시 만든다. 명단 입력·계정
+    발급과 같은 일이므로 같은 기능 키(`계정관리`)를 쓴다.
+
+    PATCH 는 **보낸 필드만** 고친다(부분 수정). 값은 문자열만 받는다 — 숫자로
+    온 전화번호는 앞자리 `0` 이 이미 떨어진 값이라 되살릴 수 없다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.ACCOUNT_ADMIN)]
+    EDITABLE = ("name", "school", "grade", "phone", "parent_phone")
+
+    def get(self, request, student_id):
+        student = _load_student_or_404(student_id)
+        if isinstance(student, Response):
+            return student
+        return Response(student_directory.detail(student))
+
+    def patch(self, request, student_id):
+        student = _load_student_or_404(student_id)
+        if isinstance(student, Response):
+            return student
+        body = request.data if isinstance(request.data, dict) else {}
+        fields = {key: body[key] for key in self.EDITABLE if key in body}
+        if not fields:
+            return Response(
+                {"detail": "고칠 값이 없습니다."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        if not all(isinstance(value, str) for value in fields.values()):
+            return Response(
+                {"detail": "값은 문자열이어야 합니다."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            reissued = provisioning.update_student(student, **fields)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        student.refresh_from_db()
+        return Response({**student_directory.detail(student), **reissued})
+
+
+def _load_student_or_404(student_id):
+    """학생 행 또는 404 응답 — 상세·수정이 같은 조회를 쓴다."""
+    student = Student.objects.select_related("user").filter(pk=student_id).first()
+    if student is None:
+        return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+    return student
 
 
 class StudentDirectoryView(APIView):
