@@ -134,6 +134,12 @@ class ClinicQueueTests(ClinicAdminFixtureMixin, TestCase):
         self.assertEqual(self.client.get(REQUESTS_URL, {"date": "22-07"}).status_code, 400)
 
 
+# **클래스 전체에 건다.** 이게 없으면 `assign` 이 `.env` 의 진짜 어댑터를 잡아
+# 테스트를 돌릴 때마다 **실제 미트 스페이스와 실제 감독 봇이 생긴다**
+# (2026-08-19 실측: 업체에 봇 32개가 쌓여 있었고 그중 20개가 이 클래스의
+# 픽스처 날짜였다). 개별 메서드에 붙인 오버라이드가 이걸 덮으므로
+# "어댑터 없음" 을 재는 테스트도 그대로 돈다.
+@override_settings(CLINIC_CONFERENCE_BACKEND=ADAPTER_PATH)
 class ClinicAssignTests(ClinicAdminFixtureMixin, TestCase):
     """POST .../assign · .../reject — 승인+배정·미승인."""
 
