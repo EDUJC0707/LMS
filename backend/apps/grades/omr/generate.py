@@ -602,15 +602,23 @@ def _divider(pen):
     _rect(pen, u0, BOX_ANSWER_V[0], u1, BOX_ANSWER_V[1], fill=TINT)
 
 
-def _grid_column(pen, u0, header, rows_v, numbers, bottom=None):
+#: 추가 마킹란 머리글(대표 2026-08-19). 칸이 좁아 **두 줄**로 앉힌다.
+#:
+#: 이 칸이 실제로 물리는 곳이 약점체크다 — `약점체크 = 오답 OR 추가마킹`
+#: (`SheetAnswer.extra_practice_marked`). 맞은 문제에 체크해도 들어간다.
+EXTRA_HEADER = ("약점", "체크")
+
+
+def _grid_column(pen, u0, header, rows_v, numbers, bottom=None, extra=False):
     """답란·조사 공용 열 — 초록 문번칸 + 5줄마다 구분선(옛 카드 그대로).
 
     `bottom` 을 주면 그 높이에서 박스를 닫는다. 25문항처럼 **덜 찬 열**은
     끝까지 늘이지 않는다 — 수능 답안지도 45문항의 마지막 5문항 열은 짧다.
     빈 칸을 끝까지 그려 두면 학생이 아직 못 푼 문제가 있는 줄 안다.
     """
-    box_w = float(L.mm_to_u(L.ANSWER_BOX_W_MM))
+    box_w = float(L.mm_to_u(L.ANSWER_BOX_W_MM if extra else L.ANSWER_FIELD_W_MM))
     u1 = u0 + box_w
+    field_u = u0 + float(L.mm_to_u(L.ANSWER_FIELD_W_MM))
     top, full_bottom = BOX_ANSWER_V
     bottom = full_bottom if bottom is None else bottom
     header_v = ANSWER_HEADER_V
@@ -621,9 +629,17 @@ def _grid_column(pen, u0, header, rows_v, numbers, bottom=None):
     _rect(pen, u0, top, number_u, bottom, fill=TINT, corners=LEFT_ONLY)
     _rect(pen, u0, top, u1, header_v, fill=TINT, corners=TOP_ONLY)
     _text(pen, (u0 + number_u) / 2, (top + header_v) / 2, "문번", size=8.6, bold=True)
-    _text(pen, (number_u + u1) / 2, (top + header_v) / 2, header, size=9.4, bold=True)
+    _text(pen, (number_u + field_u) / 2, (top + header_v) / 2, header, size=9.4, bold=True)
     _line(pen, u0, header_v, u1, header_v)
     _line(pen, number_u, top, number_u, bottom)
+    if extra:
+        # 추가 마킹란 — 답란과 세로선 하나로 갈린다.
+        _line(pen, field_u, top, field_u, bottom)
+        middle = (field_u + u1) / 2
+        line = float(L.mm_to_v(Decimal("2.7")))
+        base = (top + header_v) / 2 - line / 2
+        for order, word in enumerate(EXTRA_HEADER):
+            _text(pen, middle, base + order * line, word, size=6.6, bold=True)
 
     for index, v in enumerate(rows_v):
         if v > bottom:
@@ -655,10 +671,13 @@ def _answer_block(pen, card):
         # 때 25번 박스 하단이 5번 구분선보다 0.98mm 아래로 내려가 어긋나 보였다.
         short = None if len(questions) == per else rows_v[-1] + step_v * 0.5
         _grid_column(pen, first_u + col * pitch, "답    란", rows_v,
-                     dict(enumerate(questions)), bottom=short)
+                     dict(enumerate(questions)), bottom=short, extra=True)
     for choices in cells.values():
         for index, (u, v) in enumerate(choices, start=1):
             _cell(pen, u, v, str(index))
+    # 추가 마킹란은 **빈 칸**이다 — 안에 숫자를 넣으면 답란처럼 보인다.
+    for u, v in card.extra_cells().values():
+        _bubble(pen, u, v, L.BUBBLE_W_MM, L.BUBBLE_H_MM)
 
 
 def _survey_block(pen, card):

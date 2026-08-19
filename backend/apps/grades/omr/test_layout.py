@@ -88,7 +88,7 @@ class TestGrid:
 
     @pytest.mark.parametrize(
         "name,questions,columns",
-        [("답안25", 25, 2)],
+        [("답안20", 20, 1), ("답안25", 25, 2)],
     )
     def test_sizes_and_columns(self, name, questions, columns):
         card_layout = layout.BY_NAME[name]
@@ -169,6 +169,7 @@ class TestRender:
         ])
 
         want = [uv for row in card_layout.answer_cells().values() for uv in row]
+        want += list(card_layout.extra_cells().values())
         want += list(layout.phone_cells().values())
 
         # 링을 **설계 칸 기준으로** 센다. 지면 전체를 세면 로고 속 빈 공간이나

@@ -143,8 +143,20 @@ ANSWER_FIRST_ROW_MM = Decimal("19.3675")
 #: 열 간격 > 박스 폭 이라 **열 사이에 빈 자리가 생긴다.** 수능 답안지가 열마다
 #: 따로 박스를 세우고 사이를 띄우는 방식이다(대표 2026-08-18). 붙여 놓으면
 #: 21번이 1번 옆줄로 보여 학생이 줄을 잘못 탄다.
-ANSWER_COL_PITCH_MM = Decimal("42.5")
-ANSWER_BOX_W_MM = Decimal("36.8")
+ANSWER_COL_PITCH_MM = Decimal("50.0")
+ANSWER_BOX_W_MM = Decimal("44.3")
+
+#: 추가 마킹란 — 문번·답란 오른쪽의 **한 칸짜리 열**이다.
+#:
+#: 학생이 "이런 문제 더 받고 싶다"를 표시하는 자리다. **맞았든 틀렸든 상관없이**
+#: 체크하면 약점체크 대상이 된다(`SheetAnswer.extra_practice_marked`,
+#: 약점체크 = 오답 OR 추가마킹). 옛 튜터시스템 카드에는 없던 칸이라 우리가
+#: 찍는 카드부터 생긴다.
+#:
+#: 답란 폭은 건드리지 않고 **박스만 오른쪽으로 넓혔다** — 답 버블이 한 칸이라도
+#: 움직이면 리더 좌표가 통째로 어긋난다.
+EXTRA_COL_W_MM = Decimal("7.5")
+ANSWER_FIELD_W_MM = ANSWER_BOX_W_MM - EXTRA_COL_W_MM
 ANSWER_ROWS_PER_COL = 20
 
 #: 조사 카드 점수칸 — **한 열**이다. 십의 자리가 위(1~5), 일의 자리가 아래(1~9,0).
@@ -207,6 +219,20 @@ class Layout:
                 cells[(place, digit)] = (u, float(mm_to_v(y)))
         return cells
 
+    def extra_cells(self):
+        """{문항번호: (u, v)} — 추가 마킹란. 답란과 같은 행 위에 한 칸씩."""
+        if self.is_survey:
+            return {}
+        centre = ANSWER_COL_X_MM - Decimal("11.6") + ANSWER_FIELD_W_MM + EXTRA_COL_W_MM / 2
+        per = ANSWER_ROWS_PER_COL
+        cells = {}
+        for index in range(self.questions or 0):
+            col, row = divmod(index, per)
+            u = mm_to_u(centre + col * ANSWER_COL_PITCH_MM)
+            v = mm_to_v(ANSWER_FIRST_ROW_MM + row * ROW_PITCH_MM)
+            cells[index + 1] = (float(u), float(v))
+        return cells
+
     def bars(self):
         return encode_bars(self.layout_id)
 
@@ -217,7 +243,9 @@ class Layout:
 #: 들어올 때 25 와 조사의 번호가 밀리면 안 된다.
 #:
 #:   1=답안20  2=답안25  3=답안30  4=답안35  5=답안40  6=성적조사
+#: 공식 확정 3종(대표 2026-08-19): 20문항·25문항·성적조사.
 LAYOUTS = (
+    Layout(1, "답안20", 20),
     Layout(2, "답안25", 25),
     Layout(6, "성적조사"),
 )
