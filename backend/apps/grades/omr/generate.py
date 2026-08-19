@@ -201,6 +201,9 @@ RULE_MARK_TAIL = "와 같이 바르게"
 SURVEY_TENS_NOTE = ["점수의 10의 자리 숫", "자에 마킹", "(42점이면 4에 마킹)"]
 SURVEY_ONES_NOTE = ["점수의 1의 자리 숫", "자에 마킹", "(42점이면 2에 마킹)"]
 MYSCORE_NOTE = ["마킹 제대로 되었는지 확인용입니다.", "꼭 작성해주세요 :) 수고했습니다."]
+#: 조사 카드 오른쪽 블록의 우측 여백(마커 기준 mm).
+SURVEY_RIGHT_MM = 8.0
+
 #: 세 가지 예시 — 08점이 0 의 자리를 가르친다(십의 자리를 안 칠한다).
 SURVEY_EXAMPLES = ((8, "08점"), (42, "42점"), (35, "35점"))
 
@@ -742,10 +745,9 @@ def _survey_block(pen, card):
     답란에는 **빈 칸 하나**뿐이다 — 자기 점수의 자릿수와 같은 줄을 칠한다.
     두 덩어리(십·일) 사이에 설명이 들어가고 화살표가 어느 쪽인지 가리킨다.
     """
-    pitch = float(L.mm_to_u(L.ANSWER_COL_PITCH_MM))
     first_u = float(L.mm_to_u(L.ANSWER_COL_LEFT_MM))
     _score_column(pen, first_u, card)
-    _survey_side(pen, first_u + pitch, card)
+    return _survey_side(pen, card)
 
 
 def _score_column(pen, u0, card):
@@ -819,31 +821,35 @@ def _survey_notes(pen, u0, u1, band):
     _text(pen, (u0 + u1) / 2, bottom - arrow, "↓", size=9.0)
 
 
-def _survey_side(pen, bu0, card):
-    """★내 점수★ 손글씨 칸 + 예시 세 개(08·42·35점) — 원본 그대로."""
-    box_w = float(L.mm_to_u(L.ANSWER_BOX_W_MM))
-    pitch = float(L.mm_to_u(L.ANSWER_COL_PITCH_MM))
-    bu1 = bu0 + box_w * 2 + (pitch - box_w)
+def _survey_side(pen, card):
+    """★내 점수★ 손글씨 칸 + 예시 세 개(08·42·35점) — 원본 그대로.
+
+    가로 자리를 **점수 열 오른쪽 남는 폭에서 직접 잡는다.** 답란 열 간격에서
+    파생시켰더니 답란을 넓혔을 때 29mm 를 넘어 예시 하나가 지면 밖으로 나갔다.
+    """
+    bu0 = (float(L.mm_to_u(L.ANSWER_COL_LEFT_MM + L.ANSWER_BOX_W_MM))
+           + float(L.mm_to_u(L.COLUMN_GAP_MM)))
+    bu1 = 1.0 - float(L.mm_to_u(SURVEY_RIGHT_MM))
     top, bottom = BOX_ANSWER_V
-    hand_bottom = top + 0.250
+    hand_bottom = top + 0.300
 
     _rect(pen, bu0, top, bu1, hand_bottom, corners=NO_CORNERS)
-    _text(pen, (bu0 + bu1) / 2, top + 0.045, "★  내 점수  ★", size=15.0, bold=True)
+    _text(pen, (bu0 + bu1) / 2, top + 0.050, "★  내 점수  ★", size=15.0, bold=True)
 
     # 원본에 있는 점 두 개 — 손으로 점수를 적는 자리를 짚어 준다.
     dot_u = bu0 + float(L.mm_to_u(Decimal("6.5")))
     for offset in (0.0, float(L.mm_to_v(Decimal("3.2")))):
-        x, y = _xy(dot_u, top + 0.130 + offset)
+        x, y = _xy(dot_u, top + 0.145 + offset)
         pen.setFillColor(INK)
         pen.circle(x, y, float(L.mm_to_u(Decimal("0.87"))) * float(L.SPAN_X_MM) * MM_UNIT,
                    stroke=0, fill=1)
 
-    v = hand_bottom - 0.070
+    v = hand_bottom - 0.078
     for line in MYSCORE_NOTE:
         _text(pen, bu0 + 0.018, v, line, size=SURVEY_NOTE_PT, anchor="left")
-        v += 0.030
+        v += 0.032
 
-    _survey_examples(pen, bu0, bu1, hand_bottom + 0.040, card)
+    return bu1, _survey_examples(pen, bu0, bu1, hand_bottom + 0.040, card)
 
 
 def _survey_examples(pen, bu0, bu1, v0, card):
@@ -860,7 +866,6 @@ def _survey_examples(pen, bu0, bu1, v0, card):
     gap = (span - width * len(SURVEY_EXAMPLES)) / (len(SURVEY_EXAMPLES) - 1 + 2.4)
     rows = {place: [d for (p, d) in cells if p == place]
             for place in ("십", "일")}
-    tens_last = 4
     ones_first = 10          # 답란과 같은 20행 격자에서 일의 자리가 시작하는 행
     total_rows = ones_first + len(rows["일"])
 
@@ -899,7 +904,7 @@ def _survey_examples(pen, bu0, bu1, v0, card):
                     _line(pen, u0, v + step / 2,
                           bubble_u + float(L.BUBBLE_RU), v + step / 2,
                           colour=GREEN, weight=1.0)
-        _ = tens_last
+    return bottom
 
 
 def render(card, title="한종철 통합과학", exam=""):
@@ -925,22 +930,30 @@ def render(card, title="한종철 통합과학", exam=""):
     _phone_block(pen)
     _divider(pen)
     if card.is_survey:
-        _survey_block(pen, card)
+        foot = _survey_block(pen, card)
     else:
         _answer_block(pen, card)
+        foot = None
 
-    _copyright(pen, card)
+    _copyright(pen, card, foot)
 
     pen.showPage()
     pen.save()
     return buffer.getvalue()
 
 
-def _copyright(pen, card):
-    """하단 우측 저작권 한 줄 — 마지막 답란 열의 오른쪽 끝에 맞춘다."""
-    columns = max(card.columns, 1)
-    right = (float(L.mm_to_u(L.ANSWER_COL_LEFT_MM))
-             + (columns - 1) * float(L.mm_to_u(L.ANSWER_COL_PITCH_MM))
-             + float(L.mm_to_u(L.ANSWER_BOX_W_MM + L.EXTRA_SEP_MM + L.EXTRA_COL_W_MM)))
-    _text(pen, right, BOX_ANSWER_V[1] + 0.026, COPYRIGHT,
+def _copyright(pen, card, foot=None):
+    """하단 우측 저작권 한 줄 — 지면에서 제일 낮은 덩어리의 오른쪽 끝에 맞춘다.
+
+    답란 기준 하나로 두면 조사 카드에서 어긋난다 — 예시가 답란보다 아래까지
+    내려오고 오른쪽으로도 더 나가서, 글줄이 예시 박스를 파고들었다.
+    """
+    if foot is not None:
+        right, bottom = foot
+    else:
+        right = (float(L.mm_to_u(L.ANSWER_COL_LEFT_MM))
+                 + (card.columns - 1) * float(L.mm_to_u(L.ANSWER_COL_PITCH_MM))
+                 + float(L.mm_to_u(L.ANSWER_BOX_W_MM + L.EXTRA_SEP_MM + L.EXTRA_COL_W_MM)))
+        bottom = BOX_ANSWER_V[1]
+    _text(pen, right, bottom + 0.026, COPYRIGHT,
           size=COPYRIGHT_PT, anchor="right", colour=COPYRIGHT_INK)
