@@ -190,8 +190,13 @@ class Layout:
         return cells
 
     def survey_cells(self):
-        """{("십"|"일", 숫자): (u, v)} — 답란과 같은 20행 격자 위 한 열."""
-        u = float(mm_to_u(ANSWER_COL_X_MM + CHOICE_PITCH_MM * 2))
+        """{("십"|"일", 숫자): (u, v)} — 답란과 같은 20행 격자 위 한 열.
+
+        칸은 답란 **왼쪽에 붙는다** — 구분선에서 2.3mm 다(원본 실측). 예전에는
+        답란 한가운데(구분선+10.4mm)에 두어 문번과 칸 사이가 벌어졌고, 어느
+        줄인지 눈으로 잇기 어려웠다.
+        """
+        u = float(mm_to_u(ANSWER_COL_X_MM - Decimal("0.24")))
         cells = {}
         for place, digits, row0 in (
             ("십", SURVEY_TENS, SURVEY_TENS_ROW0),
