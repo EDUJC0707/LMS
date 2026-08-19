@@ -1004,8 +1004,9 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
                 "counselings_created": 1,
                 "counselings_removed": 0,
                 "makeups_granted": 0,
-                # 첫 확정 — 출결이 찍힌 2명에게 나갈 통지가 큐에 쌓인다(FLOW 3-11)
-                "notifications_queued": 2,
+                # 첫 확정 — **출석한 1명**만 통지 대상이다(FLOW 3-11).
+                # 결석한 집에는 다음날 조교가 전화를 건다(3-12)
+                "notifications_queued": 1,
             },
         )
 
@@ -1027,7 +1028,8 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
                 "counselings_created": 0,
                 "counselings_removed": 0,
                 "makeups_granted": 1,
-                "notifications_queued": 2,
+                # 둘 다 결석 계열이라 통지가 안 나간다(FLOW 3-11)
+                "notifications_queued": 0,
             },
         )
 
@@ -1045,10 +1047,12 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
         #    명단 전체를 한 번에 묻는 1쿼리라 학생·영상 수가 늘어도 고정)
         # + 동보조회 1(지급건 없음 → 2번째 쿼리 생략) + 대기열조회/생성 2
         # + 확정 1(조건부 UPDATE — 첫 확정 판정) + 학부모 조회 1
-        # + 통지 6: 대상 3명 × (FK 검증 1 + INSERT 1)
-        #   행 하나가 곧 발송 1건이라(Notification 계약) 대상 수만큼 는다 —
-        #   **처음 확정할 때 한 번뿐**이고 두 번째부터는 이 여덟이 통째로 빠진다
-        with freeze_now(), self.assertNumQueries(26):
+        # + 통지 2: 대상 1명 × (FK 검증 1 + INSERT 1)
+        #   행 하나가 곧 발송 1건이라(Notification 계약) 대상 수만큼 는다.
+        #   **출석한 학생만 대상이다**(FLOW 3-11) — 결석 계열은 다음날 전화라
+        #   문자를 안 보낸다(3-12). **처음 확정할 때 한 번뿐**이고 두 번째부터는
+        #   이 넷이 통째로 빠진다
+        with freeze_now(), self.assertNumQueries(22):
             self.client.put(
                 self.detail_url(self.session_w2.session_id),
                 data=json.dumps(entries),
@@ -1115,6 +1119,29 @@ class ConfirmTests(AttendanceAdminFixtureMixin, TestCase):
         """`미입력` 에서는 아무것도 나가지 않는다(FLOW 3-4)."""
         self.omr_marks(self.s1)
         self.put_attendance(self.session_w2.session_id, [])
+        self.assertEqual(
+            set(
+                Notification.objects.exclude(student=None).values_list(
+                    "student_id", flat=True
+                )
+            ),
+            {self.s1.student_id},
+        )
+
+    def test_absent_students_get_no_notice(self):
+        """결석 계열도 안 나간다(FLOW 3-11) — 다음날 조교가 전화를 건다(3-12).
+
+        문자가 먼저 가면 같은 이야기를 두 번 하는 셈이고, 이 통지에 담기는 것도
+        온 학생 기준이라 "안 왔다" 를 적을 자리가 없다.
+        """
+        self.omr_marks(self.s1)
+        self.put_attendance(
+            self.session_w2.session_id,
+            [
+                {"student_id": self.s2.student_id, "status": "결석"},
+                {"student_id": self.s3.student_id, "status": "결석(동보)"},
+            ],
+        )
         self.assertEqual(
             set(
                 Notification.objects.exclude(student=None).values_list(

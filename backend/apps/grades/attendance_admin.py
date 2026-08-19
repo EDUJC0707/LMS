@@ -365,13 +365,18 @@ def _notify_confirmed(session, roster, att_map):
 
     `미입력` 은 뺀다(FLOW 3-4). 아무도 안 본 학생의 학부모에게 그 주 통지가
     나가면 안 된다 — 안 찍은 것과 없었던 것을 구별하는 것이 그 값의 존재 이유다.
+
+    **결석 계열도 뺀다**(FLOW 3-11, 2026-08-19). 결석한 집에는 다음날 조교가
+    전화를 걸므로(3-12) 문자가 먼저 가면 같은 이야기를 두 번 하는 셈이다.
+    그래서 이 통지에 담기는 것도 온 학생 기준이다 — "안 왔다" 를 적을 자리가 없다.
     """
+    sent_to = {Attendance.Status.PRESENT}
     targets = [
         student
         for student in roster
         if is_entry_target(student)
         and att_map.get(student.student_id) is not None
-        and att_map[student.student_id].status != Attendance.Status.UNENTERED
+        and att_map[student.student_id].status in sent_to
     ]
     parents = {}
     for link in ParentStudent.objects.filter(student__in=targets).select_related("parent"):
