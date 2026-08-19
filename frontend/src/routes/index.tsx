@@ -44,6 +44,7 @@ import PaymentsPage from "../pages/admin/ops/PaymentsPage";
 
 import StaffPage from "../pages/admin/manage/StaffPage";
 import AccountsPage from "../pages/admin/manage/AccountsPage";
+import StudentDetailPage from "../pages/admin/manage/StudentDetailPage";
 import ClassesPage from "../pages/admin/manage/ClassesPage";
 import ClinicManagePage from "../pages/admin/manage/ClinicManagePage";
 import ExamsPage from "../pages/admin/manage/ExamsPage";
@@ -159,6 +160,7 @@ export const router = createBrowserRouter([
             element: <RequireFeature feature="계정관리" />,
             children: [
               { path: "accounts", element: <AccountsPage /> },
+              { path: "students/:studentId", element: <StudentDetailPage /> },
               { path: "classes", element: <ClassesPage /> },
             ],
           },

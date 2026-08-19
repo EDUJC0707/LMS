@@ -30,6 +30,7 @@
  *   출결 권한이 없어도 목록 자체는 비지 않는다.
  */
 import { useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
 import { http, useApi, useApiAction } from "../../../api";
 import { useMe } from "../../../auth";
@@ -57,6 +58,7 @@ import {
   mergePreRegistered,
 } from "./directory";
 import "./manage.css";
+import { StudentPicker } from "./StudentPicker";
 import {
   ColumnChoice,
   EntryField,
@@ -376,7 +378,17 @@ export default function AccountsPage() {
                 width: "3.5rem",
                 cell: (row) => row.index + 1,
               },
-              { key: "name", header: "이름", cell: (row) => row.name ?? "—" },
+              {
+                key: "name",
+                header: "이름",
+                // 고치는 자리는 학생 상세다(FLOW 2-6) — 발급 직후가 오타를 보는 자리다.
+                cell: (row) =>
+                  row.student_id ? (
+                    <Link to={`/admin/students/${row.student_id}`}>{row.name ?? "—"}</Link>
+                  ) : (
+                    (row.name ?? "—")
+                  ),
+              },
               {
                 key: "status",
                 header: "결과",
@@ -481,7 +493,29 @@ export default function AccountsPage() {
       )}
 
       <PreRegisteredPanel canReadRoster={hasFeature("출결입력")} reloadToken={issuedCount} />
+
+      <FindStudentPanel />
     </div>
+  );
+}
+
+/* ── 학생 찾기 ─────────────────────────────────────────────────────── */
+
+/**
+ * 이미 등록된 학생을 고쳐야 할 때 들어가는 문(FLOW 2-6). 위 두 표는 방금 발급한
+ * 행과 전환 대기 학생만 들고 있어서, 지난 달에 등록한 학생은 여기서 찾는다.
+ */
+function FindStudentPanel() {
+  const navigate = useNavigate();
+  return (
+    <Card title="학생 찾기">
+      <StudentPicker
+        value={null}
+        onChange={(student) => {
+          if (student) navigate(`/admin/students/${student.student_id}`);
+        }}
+      />
+    </Card>
   );
 }
 
@@ -666,7 +700,13 @@ function PreRegisteredPanel({
             <EmptyState title="등록 전환을 기다리는 학생이 없습니다" />
           }
           columns={[
-            { key: "name", header: "학생", cell: (row) => row.name ?? "이름 미등록" },
+            {
+              key: "name",
+              header: "학생",
+              cell: (row) => (
+                <Link to={`/admin/students/${row.student_id}`}>{row.name ?? "이름 미등록"}</Link>
+              ),
+            },
             {
               key: "login_id",
               header: "원번",
