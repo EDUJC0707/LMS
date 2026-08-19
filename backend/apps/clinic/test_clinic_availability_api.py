@@ -25,7 +25,7 @@ Calendly 형 흐름(날짜 선택 → 그 날 가능한 시간 목록 → 하나
 import datetime
 from unittest import mock
 
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from django.utils import timezone
 
 from apps.accounts.models import Student, User
@@ -132,8 +132,6 @@ class AvailabilityFixtureMixin:
         )
 
 
-# dev 의 테스트용 구멍과 무관하게 운영 규칙을 고정한다
-@override_settings(CLINIC_ALLOW_SAME_DAY=False)
 class ClinicAvailabilityTests(AvailabilityFixtureMixin, TestCase):
     def setUp(self):
         self.client.force_login(self.s_target.user)
@@ -324,8 +322,6 @@ class ClinicAvailabilityTests(AvailabilityFixtureMixin, TestCase):
             )
 
 
-# dev 의 테스트용 구멍과 무관하게 운영 규칙을 고정한다
-@override_settings(CLINIC_ALLOW_SAME_DAY=False)
 class WindowNarrowsDayByDayTests(TestCase):
     """창구는 시험일 + 6일로 고정이고, 날이 갈수록 남은 날짜만 줄어든다.
 

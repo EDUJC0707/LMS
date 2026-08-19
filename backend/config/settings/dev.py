@@ -33,9 +33,3 @@ NOTIFICATION_CHANNEL_BACKENDS = {
 PAYMENT_PROVIDER_BACKEND = env(
     "PAYMENT_PROVIDER_BACKEND", default="apps.payments.provider.FakePaymentAdapter"
 )
-
-# ⚠ **테스트 전용.** 당일 클리닉 신청을 연다(운영은 전날 마감 — PRD 3.2.4).
-# 감독 흐름(봇 입장 → 녹음 → 전사)을 신청·배정 경로 그대로 확인하려면 오늘
-# 안에 끝나는 클리닉이 필요한데, 전날 마감 때문에 만들 방법이 없어서 뚫어 둔다.
-# **운영 설정(prod.py)에는 절대 넣지 않는다.**
-CLINIC_ALLOW_SAME_DAY = True
