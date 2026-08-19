@@ -18,10 +18,13 @@ import logging
 from django.db import transaction
 from django.utils import timezone
 
+from apps.accounts.models import Student
+from apps.curriculum.models import CourseEnrollment
 from apps.notifications.models import Notification
 from apps.notifications.sending import queue
 
-from .models import Order, Payment
+from .billing import active_order
+from .models import Order, Payment, Product
 from .provider import get_adapter
 
 logger = logging.getLogger(__name__)
@@ -135,12 +138,14 @@ def cancel_order(order, *, reason, now=None):
 
     | 주문 상태 | 업체 호출 | 이유 |
     |---|---|---|
-    | 결제완료·배부완료 | `/bill/cancel` | 승인된 건은 승인취소다 |
-    | 미결제 + 청구서 발송됨 | `/bill/destroy` | 승인 전이라 취소가 안 먹는다(파기) |
-    | 미결제 + 미발송 | 없음 | 업체에 청구서가 존재한 적이 없다 |
+    | 미발송 | 없음 | 업체에 청구서가 존재한 적이 없다 |
+    | 발송됨 + 결제완료·배부완료 | `/bill/cancel` | 승인된 건은 승인취소다 |
+    | 발송됨 + 미결제 | `/bill/destroy` | 승인 전이라 취소가 안 먹는다(파기) |
 
-    마지막 줄이 중요하다 — 없는 청구서에 파기를 걸면 `BILL_003` 으로 실패하고,
-    그러면 **우리 쪽 오등록 주문을 영영 못 지운다.**
+    **첫 줄이 상태보다 먼저 갈린다.** 러셀 반은 결제가 우리 밖에서 끝나 주문이
+    `결제완료` 로 서지만 청구서는 나간 적이 없다(FLOW 2-7 · `deliver_class`).
+    상태만 보고 승인취소를 걸면 있지도 않은 청구서 때문에 실패하고, 그러면
+    **우리 쪽 오등록 주문을 영영 못 지운다.**
 
     업체 호출은 트랜잭션 밖이다(billing 과 같은 이유). 업체가 성공한 뒤에야
     우리 행을 접는다 — 반대 순서면 우리는 취소인데 업체는 살아 있는 상태가 난다.
@@ -153,9 +158,11 @@ def cancel_order(order, *, reason, now=None):
         raise PaymentQueryError("취소 사유를 입력해 주세요.")
 
     bill_ref = str(order.order_id)
-    if order.status in (Order.Status.PAID, Order.Status.DELIVERED):
+    if not order.is_billed:
+        pass  # 청구서가 나간 적이 없다 — 업체에 지울 것도 없다
+    elif order.status in (Order.Status.PAID, Order.Status.DELIVERED):
         get_adapter().cancel_bill(bill_ref, amount=order.amount, reason=str(reason))
-    elif order.is_billed:
+    else:
         get_adapter().destroy_bill(bill_ref, amount=order.amount)
 
     was_paid = order.status in (Order.Status.PAID, Order.Status.DELIVERED)
@@ -229,6 +236,145 @@ def mark_delivered(order, *, now=None):
     order.delivered_at = now
     order.save(update_fields=["status", "delivered_at"])
     return order
+
+
+def unmark_delivered(order):
+    """배부 표시를 되돌린다 — `결제완료` 로 (FLOW §5 "되돌리는 문을 같은 커밋에").
+
+    **밖으로 나가는 것이 없다.** 배부 표시는 우리 장부의 상태라 잘못 찍었으면
+    조용히 되돌릴 수 있어야 한다. 지금까지 유일한 되돌리기가 `cancel_order`
+    였는데 그건 **학부모에게 문자를 한 통 더 보낸다** — 업체가 취소를 안 알려
+    주기 때문이다(FLOW 2-5). 배부를 무르려고 청구를 취소하면 돈이 문자를 두 번
+    낳는다.
+
+    **행을 지우지 않는다.** "샀다" 는 사실은 남고 배부 표시만 벗는다.
+    """
+    if order.status != Order.Status.DELIVERED:
+        raise PaymentQueryError("배부완료된 주문만 되돌릴 수 있습니다.")
+    order.status = Order.Status.PAID
+    order.delivered_at = None
+    order.save(update_fields=["status", "delivered_at"])
+    return order
+
+
+# --- 반 단위 교재 배부 (FLOW 2-5·2-7·§5) ----------------------------------
+
+
+def class_students(klass):
+    """그 반의 재원 학생 — 명단 순(class_admin.class_detail 과 같은 축)."""
+    return (
+        Student.objects.filter(
+            course_enrollments__klass=klass,
+            course_enrollments__status=CourseEnrollment.Status.ENROLLED,
+        )
+        .select_related("user")
+        .order_by("student_id")
+    )
+
+
+def class_goods(klass):
+    """반 하나의 교재 상황 — 커리 교재 · 명단 · 학생×교재 주문 상태.
+
+    조교가 반과 교재를 고르면 **누가 샀고 누가 배부됐나**가 한 화면에 서야
+    한다(FLOW §5-1 반 레벨 — 이 반의 교재). 교재는 커리에 붙으므로(FLOW 1-6)
+    고를 수 있는 것은 이 반이 듣는 커리의 것뿐이다.
+    """
+    students = list(class_students(klass))
+    orders = Order.objects.filter(
+        student__in=students, product__course_id=klass.course_id
+    ).exclude(status=Order.Status.CANCELLED)
+    held = {}
+    for order in orders:
+        held.setdefault(order.student_id, {})[order.product_id] = {
+            "order_id": order.order_id,
+            "status": order.status,
+            "is_billed": order.is_billed,
+        }
+    return {
+        "class": class_row(klass),
+        "products": [
+            {"product_id": p.product_id, "name": p.name, "kind": p.kind, "price": p.price}
+            for p in Product.objects.filter(
+                is_active=True, course_id=klass.course_id
+            ).order_by("product_id")
+        ],
+        "students": [
+            {
+                "student_id": s.student_id,
+                "name": (s.user.name if s.user else "") or s.matching_key,
+                "matching_key": s.matching_key,
+                "orders": held.get(s.student_id, {}),
+            }
+            for s in students
+        ],
+    }
+
+
+def class_row(klass):
+    """반 고르기 한 줄. `uses_payssam` 이 실리는 이유는 청구 버튼이 그 값으로
+    갈리기 때문이다 — 러셀 반에는 청구를 걸 자리가 없다(FLOW 2-7)."""
+    return {
+        "class_id": klass.class_id,
+        "name": klass.name,
+        "course_name": klass.course.name,
+        "uses_payssam": klass.uses_payssam,
+    }
+
+
+def deliver_class(klass, product, *, now=None):
+    """반 전원의 그 교재를 배부완료로 찍는다 (FLOW 2-5 일괄 · §5 묶음).
+
+    **러셀 반에는 찍을 행이 없었다.** 결제선생을 안 쓰는 반은 `check_billable`
+    이 청구를 막아 `Order` 자체가 안 생기는데, 배부 표시는 `Order` 에 붙는다 —
+    일괄 배부가 필요한 바로 그 반이 통째로 비어 있었다(FLOW 2-7).
+
+    그래서 **여기서 행을 만든다. 업체는 부르지 않는다.** 새 모델도 새 상태값도
+    필요 없었다 — `is_billed=False` 가 이미 "청구서가 나간 적 없다" 를 들고
+    있고(`start_billing` 만 그 플래그를 세운다), `billed_to_phone` ·
+    `charge_trigger` 를 비워 두면 어디로도 나간 적 없는 건이라는 사실이 행에
+    그대로 남는다. 취소해도 학부모에게 문자가 안 나가는 것(`_notify_cancelled`)
+    과 업체를 안 부르는 것(`cancel_order`)이 같은 플래그에서 나온다.
+
+    돈은 학원이 따로 받아 우리 밖에서 끝났으므로 상태는 `결제완료` 다.
+
+    **결제선생을 쓰는 반에서는 행을 만들지 않는다.** 거기서 안 낸 학생을
+    결제완료로 세우면 받은 적 없는 돈이 장부에 선다. 그 학생은 주문이 없는 채
+    남아 묶음이 스스로 뱉는다(FLOW §5 — 확인 화면을 붙이지 않는다).
+    """
+    now = now or timezone.now()
+    result = {"delivered": 0, "skipped": 0}
+    for student in class_students(klass):
+        order = active_order(student, product)
+        if order is None:
+            if klass.uses_payssam:
+                result["skipped"] += 1
+                continue
+            order = Order.objects.create(
+                student=student, product=product, amount=product.price,
+                status=Order.Status.PAID, paid_at=now,
+            )
+        if order.status == Order.Status.DELIVERED:
+            continue
+        if order.status != Order.Status.PAID:
+            result["skipped"] += 1
+            continue
+        mark_delivered(order, now=now)
+        result["delivered"] += 1
+    return result
+
+
+def undeliver_class(klass, product):
+    """일괄 배부를 되돌린다 — 배부완료였던 것만 `결제완료` 로 (FLOW §5).
+
+    `unmark_delivered` 와 같은 일이고 밖으로 나가는 것이 없다.
+    """
+    return {
+        "undelivered": Order.objects.filter(
+            student__in=class_students(klass),
+            product=product,
+            status=Order.Status.DELIVERED,
+        ).update(status=Order.Status.PAID, delivered_at=None)
+    }
 
 
 def _parse_id(raw, label):

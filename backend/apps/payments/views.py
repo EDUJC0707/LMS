@@ -20,6 +20,7 @@ from rest_framework.views import APIView
 from apps.accounts.features import FeatureKey
 from apps.accounts.models import Parent, ParentStudent, Student
 from apps.accounts.permissions import FeatureRequired, IsOwner, IsParent, IsStudent
+from apps.curriculum.models import Class
 
 from . import billing, consumer, payment_admin, sync
 from .models import Order, Product
@@ -363,6 +364,106 @@ class AdminPaymentDeliverView(APIView):
         except payment_admin.PaymentQueryError as exc:
             return Response({"detail": exc.message}, status=status.HTTP_400_BAD_REQUEST)
         return Response(payment_admin.build_row(order))
+
+
+class AdminPaymentUndeliverView(APIView):
+    """POST /api/admin/payments/{order_id}/undeliver — 배부 표시 되돌리기.
+
+    배부와 같은 게이트다. 밖으로 나가는 것이 없어 취소(IsOwner)와 다른 축이다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.PAYMENT_CHECK)]
+
+    def post(self, request, order_id):
+        order = _order_or_404(order_id)
+        if order is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            order = payment_admin.unmark_delivered(order)
+        except payment_admin.PaymentQueryError as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(payment_admin.build_row(order))
+
+
+# ── 반 단위 교재 (FLOW 2-5·2-7·§5-1) ──────────────────────────────────
+# 게이트는 전부 `결제확인` 이다. 반 개설 화면(`계정관리`)과 같은 반을 보지만
+# 하는 일이 돈·배부라 축이 다르다.
+
+
+def _class_or_404(class_id):
+    return Class.objects.select_related("course").filter(pk=class_id).first()
+
+
+def _class_and_product(request, class_id):
+    """(반, 교재, 오류응답). 다른 커리의 교재는 거절한다(FLOW 1-6)."""
+    klass = _class_or_404(class_id)
+    if klass is None:
+        return None, None, Response(
+            {"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND
+        )
+    product, error = _resolve_product(request)
+    if error is not None:
+        return None, None, error
+    if product.course_id != klass.course_id:
+        return None, None, Response(
+            {"detail": "이 반이 듣는 커리의 교재가 아닙니다."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return klass, product, None
+
+
+class AdminGoodsClassListView(APIView):
+    """GET /api/admin/payments/classes — 반 고르기."""
+
+    permission_classes = [FeatureRequired(FeatureKey.PAYMENT_CHECK)]
+
+    def get(self, request):
+        rows = (
+            Class.objects.filter(is_active=True)
+            .select_related("course")
+            .order_by("-class_id")
+        )
+        return Response([payment_admin.class_row(klass) for klass in rows])
+
+
+class AdminGoodsClassView(APIView):
+    """GET /api/admin/payments/classes/{class_id} — 그 반의 교재·명단·주문 상태."""
+
+    permission_classes = [FeatureRequired(FeatureKey.PAYMENT_CHECK)]
+
+    def get(self, request, class_id):
+        klass = _class_or_404(class_id)
+        if klass is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return Response(payment_admin.class_goods(klass))
+
+
+class AdminGoodsDeliverView(APIView):
+    """POST /api/admin/payments/classes/{class_id}/deliver — 일괄 배부.
+
+    **결제선생에는 아무것도 안 나간다**(payment_admin.deliver_class). 러셀 반은
+    여기서 주문 행이 생기고 그대로 배부완료로 선다(FLOW 2-7).
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.PAYMENT_CHECK)]
+
+    def post(self, request, class_id):
+        klass, product, error = _class_and_product(request, class_id)
+        if error is not None:
+            return error
+        return Response(payment_admin.deliver_class(klass, product))
+
+
+class AdminGoodsUndeliverView(APIView):
+    """POST /api/admin/payments/classes/{class_id}/undeliver — 일괄 배부 되돌리기."""
+
+    permission_classes = [FeatureRequired(FeatureKey.PAYMENT_CHECK)]
+
+    def post(self, request, class_id):
+        klass, product, error = _class_and_product(request, class_id)
+        if error is not None:
+            return error
+        return Response(payment_admin.undeliver_class(klass, product))
 
 
 class AdminPaymentBalanceView(APIView):

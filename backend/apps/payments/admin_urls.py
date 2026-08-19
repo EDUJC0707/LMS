@@ -19,6 +19,27 @@ urlpatterns = [
         views.AdminPaymentBalanceView.as_view(),
         name="admin-payment-balance",
     ),
+    # 반 단위 교재는 <int:order_id> 보다 앞에 둔다(int 컨버터라 겹치진 않는다).
+    path(
+        "admin/payments/classes",
+        views.AdminGoodsClassListView.as_view(),
+        name="admin-goods-classes",
+    ),
+    path(
+        "admin/payments/classes/<int:class_id>",
+        views.AdminGoodsClassView.as_view(),
+        name="admin-goods-class",
+    ),
+    path(
+        "admin/payments/classes/<int:class_id>/deliver",
+        views.AdminGoodsDeliverView.as_view(),
+        name="admin-goods-deliver",
+    ),
+    path(
+        "admin/payments/classes/<int:class_id>/undeliver",
+        views.AdminGoodsUndeliverView.as_view(),
+        name="admin-goods-undeliver",
+    ),
     path(
         "admin/payments/<int:order_id>/cancel",
         views.AdminPaymentCancelView.as_view(),
@@ -28,5 +49,10 @@ urlpatterns = [
         "admin/payments/<int:order_id>/deliver",
         views.AdminPaymentDeliverView.as_view(),
         name="admin-payment-deliver",
+    ),
+    path(
+        "admin/payments/<int:order_id>/undeliver",
+        views.AdminPaymentUndeliverView.as_view(),
+        name="admin-payment-undeliver",
     ),
 ]

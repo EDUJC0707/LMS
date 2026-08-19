@@ -16,6 +16,8 @@ from django.test import TestCase, override_settings
 
 from apps.accounts.features import FeatureKey
 from apps.accounts.models import Parent, StaffFeatureGrant, Student, User
+from apps.curriculum.models import Class, Course, CourseEnrollment, Subject
+from apps.notifications.models import Notification
 
 from .models import Order, Payment, Product
 from .provider import Bill, BillState, PaymentAdapter, Receipt
@@ -343,3 +345,172 @@ class NotificationFailureTests(TestCase):
         self.assertEqual(response.status_code, 200)
         order.refresh_from_db()
         self.assertEqual(order.status, Order.Status.CANCELLED)
+
+
+@override_settings(PAYMENT_PROVIDER_BACKEND=RECORDING)
+class ClassDeliveryTests(TestCase):
+    """반 단위 교재 배부 — 러셀에 찍을 행을 만드는 자리 (FLOW 2-5·2-7·§5).
+
+    **러셀 반은 청구가 막혀 있어 `Order` 가 안 생긴다.** 배부 표시는 `Order` 에
+    붙으므로 일괄 배부가 필요한 바로 그 반이 통째로 비어 있었다. 여기서 행을
+    만들되 **업체는 부르지 않는다** — 돈은 학원이 따로 받았다.
+
+    되돌리기도 같은 커밋에 있다(§5). 배부 표시는 우리 장부라 밖으로 나가는
+    것이 없고, 청구 취소처럼 문자를 한 통 더 낳지 않는다.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = make_user("cd-adm", User.Role.ADMIN, name="관리자")
+        StaffFeatureGrant.objects.create(
+            user=cls.admin, feature_key=FeatureKey.PAYMENT_CHECK, is_granted=True
+        )
+        cls.subject, _ = Subject.objects.get_or_create(track="수능", name="통합과학")
+        cls.course = Course.objects.create(
+            name="2026 여름 N제", subject=cls.subject, total_weeks=10
+        )
+        cls.product = Product.objects.create(
+            course=cls.course, name="N제 세트", price=45000
+        )
+        cls.russell = Class.objects.create(
+            course=cls.course, name="목 6.5 대치러셀", uses_payssam=False
+        )
+        cls.mirae = Class.objects.create(
+            course=cls.course, name="화 6.5 미래탐구", uses_payssam=True
+        )
+        cls.students = []
+        for i in range(3):
+            student = Student.objects.create(
+                user=make_user(f"cd-stu{i}", User.Role.STUDENT, name=f"학생{i}"),
+                matching_key=f"학생{i}000{i}",
+            )
+            CourseEnrollment.objects.create(
+                student=student, course=cls.course, klass=cls.russell
+            )
+            cls.students.append(student)
+
+    def setUp(self):
+        RecordingAdapter.calls.clear()
+        self.client.force_login(self.admin)
+
+    def deliver_url(self, klass):
+        return f"/api/admin/payments/classes/{klass.class_id}/deliver"
+
+    def undeliver_url(self, klass):
+        return f"/api/admin/payments/classes/{klass.class_id}/undeliver"
+
+    def test_bulk_delivery_creates_the_rows_russell_never_had(self):
+        response = self.client.post(
+            self.deliver_url(self.russell), {"product_id": self.product.product_id}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"delivered": 3, "skipped": 0})
+        orders = Order.objects.filter(product=self.product)
+        self.assertEqual(orders.count(), 3)
+        self.assertEqual(orders.filter(status=Order.Status.DELIVERED).count(), 3)
+
+    def test_bulk_delivery_never_calls_the_vendor(self):
+        # 결제선생이 나가면 안 된다 — 그것이 이 반의 정의다(FLOW 2-7).
+        self.client.post(
+            self.deliver_url(self.russell), {"product_id": self.product.product_id}
+        )
+        self.assertEqual(RecordingAdapter.calls, [])
+        orders = Order.objects.filter(product=self.product)
+        self.assertEqual(orders.filter(is_billed=True).count(), 0)
+        self.assertEqual(Payment.objects.filter(order__in=orders).count(), 0)
+
+    def test_bulk_delivery_is_idempotent(self):
+        body = {"product_id": self.product.product_id}
+        self.client.post(self.deliver_url(self.russell), body)
+        second = self.client.post(self.deliver_url(self.russell), body)
+        self.assertEqual(second.json(), {"delivered": 0, "skipped": 0})
+        self.assertEqual(Order.objects.filter(product=self.product).count(), 3)
+
+    def test_undo_leaves_the_purchase_but_drops_the_delivery(self):
+        body = {"product_id": self.product.product_id}
+        self.client.post(self.deliver_url(self.russell), body)
+        response = self.client.post(self.undeliver_url(self.russell), body)
+        self.assertEqual(response.json(), {"undelivered": 3})
+        orders = Order.objects.filter(product=self.product)
+        self.assertEqual(orders.filter(status=Order.Status.PAID).count(), 3)
+        self.assertEqual(orders.exclude(delivered_at=None).count(), 0)
+
+    def test_undo_sends_nothing_to_anyone(self):
+        body = {"product_id": self.product.product_id}
+        self.client.post(self.deliver_url(self.russell), body)
+        before = Notification.objects.count()
+        self.client.post(self.undeliver_url(self.russell), body)
+        self.assertEqual(RecordingAdapter.calls, [])
+        self.assertEqual(Notification.objects.count(), before)
+
+    def test_cancelling_a_russell_order_never_calls_the_vendor(self):
+        # 청구서가 나간 적 없는 `결제완료` 다 — 상태만 보고 승인취소를 걸면
+        # 없는 청구서 때문에 실패해 오등록 행을 영영 못 지운다.
+        self.client.post(
+            self.deliver_url(self.russell), {"product_id": self.product.product_id}
+        )
+        order = Order.objects.filter(product=self.product).first()
+        owner = make_user("cd-own", User.Role.OWNER, name="대표")
+        self.client.force_login(owner)
+        response = self.client.post(
+            f"/api/admin/payments/{order.order_id}/cancel", {"reason": "오등록"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(RecordingAdapter.calls, [])
+
+    def test_payssam_class_gets_no_invented_purchases(self):
+        # 안 낸 학생을 결제완료로 세우면 받은 적 없는 돈이 장부에 선다.
+        for student in self.students:
+            CourseEnrollment.objects.filter(student=student).update(klass=self.mirae)
+        response = self.client.post(
+            self.deliver_url(self.mirae), {"product_id": self.product.product_id}
+        )
+        self.assertEqual(response.json(), {"delivered": 0, "skipped": 3})
+        self.assertEqual(Order.objects.filter(product=self.product).count(), 0)
+
+    def test_a_product_from_another_course_is_rejected(self):
+        other = Course.objects.create(
+            name="내신 생명", subject=self.subject, total_weeks=8
+        )
+        stray = Product.objects.create(course=other, name="남의 교재", price=10000)
+        response = self.client.post(
+            self.deliver_url(self.russell), {"product_id": stray.product_id}
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_bulk_delivery_needs_the_payment_feature(self):
+        self.client.force_login(make_user("cd-ast", User.Role.ASSISTANT))
+        response = self.client.post(
+            self.deliver_url(self.russell), {"product_id": self.product.product_id}
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_single_delivery_can_be_undone(self):
+        self.client.post(
+            self.deliver_url(self.russell), {"product_id": self.product.product_id}
+        )
+        order = Order.objects.filter(product=self.product).first()
+        response = self.client.post(f"/api/admin/payments/{order.order_id}/undeliver")
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.PAID)
+        self.assertIsNone(order.delivered_at)
+        # 배부완료가 아닌 것은 되돌릴 것이 없다.
+        self.assertEqual(
+            self.client.post(f"/api/admin/payments/{order.order_id}/undeliver").status_code,
+            400,
+        )
+
+    def test_the_class_view_shows_who_holds_what(self):
+        self.client.post(
+            self.deliver_url(self.russell), {"product_id": self.product.product_id}
+        )
+        body = self.client.get(
+            f"/api/admin/payments/classes/{self.russell.class_id}"
+        ).json()
+        self.assertFalse(body["class"]["uses_payssam"])
+        self.assertEqual(len(body["students"]), 3)
+        self.assertEqual([p["product_id"] for p in body["products"]], [self.product.product_id])
+        held = body["students"][0]["orders"][str(self.product.product_id)]
+        self.assertEqual(held["status"], Order.Status.DELIVERED)
+        self.assertFalse(held["is_billed"])
