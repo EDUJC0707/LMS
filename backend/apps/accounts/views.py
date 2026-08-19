@@ -52,6 +52,9 @@ from .throttling import THROTTLED_MESSAGE, client_ip, is_throttled, record_failu
 # 경쟁사 정찰 등 계정 존재 탐색을 막는다(상태 기반 노출 원칙과 같은 방향).
 _LOGIN_FAILED_MESSAGE = "아이디 또는 비밀번호가 올바르지 않습니다."
 
+# 퇴원으로 막힌 계정. **비밀번호가 맞았을 때만** 이 문구가 나간다(_is_withdrawn_login).
+_WITHDRAWN_MESSAGE = "퇴원 처리된 계정입니다."
+
 #: 랜딩(`hjcedu.com`)이 "이 사람 로그인돼 있나"를 **네트워크 호출 없이** 판단하는 표시.
 #:
 #: 세션 쿠키는 `HttpOnly` 라 JS 가 못 읽는다(그건 그대로 둔다 — 읽히면 탈취당한다).
@@ -131,6 +134,12 @@ class RoleLoginView(APIView):
         )
         # ModelBackend 는 is_active=False 를 인증 실패로 처리한다(차단 요구 충족).
         if user is None:
+            if _is_withdrawn_login(login_id, serializer.validated_data["password"]):
+                # 자격이 맞는 사람이라 실패로 세지 않는다 — 여기서 429 를 얹으면
+                # 사유를 말해 준 뜻이 없어진다(계속 다시 쳐 볼 이유가 없다).
+                return Response(
+                    {"detail": _WITHDRAWN_MESSAGE}, status=status.HTTP_401_UNAUTHORIZED
+                )
             record_failure(login_id, ip)
             return Response(
                 {"detail": _LOGIN_FAILED_MESSAGE}, status=status.HTTP_401_UNAUTHORIZED
@@ -139,6 +148,30 @@ class RoleLoginView(APIView):
             return Response({"detail": _LOGIN_FAILED_MESSAGE}, status=status.HTTP_403_FORBIDDEN)
         login(request, user)
         return _mark_signed_in(Response(user_summary(user)))
+
+
+def _is_withdrawn_login(login_id, password):
+    """퇴원으로 막힌 계정인가 — **비밀번호까지 맞아야** True.
+
+    FLOW 3-4 는 "로그인 화면이 왜 안 되는지 말해 준다"를 요구한다. 아이디·
+    비밀번호가 틀렸다고 하면 학생이 계속 다시 쳐 보고 조교에게 전화한다.
+
+    **개인정보 판단**: 사유를 아이디만으로 가르면 "이 아이디가 우리 학생이었다"
+    를 아무에게나 알려 주는 존재 확인 창구가 된다(단일 실패 문구를 둔 이유가
+    그것이다). 그래서 **비밀번호 일치를 조건에 넣는다** — 여기까지 온 사람은
+    이미 그 계정의 자격을 다 쥐고 있어서 새로 흘러가는 정보가 없다. 틀린
+    비밀번호로는 퇴원생이든 아니든 똑같은 문구를 받는다.
+
+    직원은 걸리지 않는다 — 퇴원은 학생·학부모의 사건이고, 비활성 직원
+    계정에까지 이 문구를 붙이면 없던 존재 확인 창구가 다시 생긴다.
+    """
+    user = User.objects.filter(login_id=login_id).first()
+    return (
+        user is not None
+        and not user.is_active
+        and user.role in (User.Role.STUDENT, User.Role.PARENT)
+        and user.check_password(password)
+    )
 
 
 class ConsumerLoginView(RoleLoginView):

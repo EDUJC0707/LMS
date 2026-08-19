@@ -165,6 +165,12 @@ class AttendanceAdminFixtureMixin:
                 WITHDRAW_URL, data=json.dumps(body), content_type="application/json"
             )
 
+    def delete_withdraw(self, body, at=NOW):
+        with freeze_now(at):
+            return self.client.delete(
+                WITHDRAW_URL, data=json.dumps(body), content_type="application/json"
+            )
+
 
 class AttendanceAdminAccessTests(AttendanceAdminFixtureMixin, TestCase):
     """기능 키 게이트 — 출결입력(조회·입력) / 영상지급관리(동보)."""
@@ -268,6 +274,37 @@ class SessionListTests(AttendanceAdminFixtureMixin, TestCase):
     def test_list_query_count_is_fixed(self):
         with self.assertNumQueries(4):  # 세션인증 2 + 기능키 1 + 회차 1
             self.client.get(SESSIONS_URL)
+
+    def test_session_carries_its_class(self):
+        """같은 커리의 목반 3주차와 화반 3주차를 이름으로 갈라야 한다(FLOW 1-1).
+
+        반을 안 실으면 둘이 한 글자도 다르지 않게 뜨고, 주차 날짜는 조교가
+        고칠 수 있어 날짜로도 안 갈린다 — 남의 반 출결표를 확정하면 영상과
+        첫 통지가 엉뚱한 반으로 나간다.
+        """
+        thu = Class.objects.create(course=self.course, name="목 6.5 대치러셀")
+        tue = Class.objects.create(course=self.course, name="화 6.5 대치러셀")
+        for klass in (thu, tue):
+            ClassSession.objects.create(
+                session_date=datetime.date(2026, 7, 23),
+                course_week=self.week2,
+                klass=klass,
+                week_no=2,
+            )
+        by_class = {
+            s["klass"]["name"]: s
+            for s in self.client.get(SESSIONS_URL).json()["sessions"]
+            if s["klass"]
+        }
+        self.assertEqual(sorted(by_class), ["목 6.5 대치러셀", "화 6.5 대치러셀"])
+        self.assertEqual(by_class["목 6.5 대치러셀"]["klass"]["class_id"], thu.class_id)
+        # 반 없이 만들어진 옛 회차는 종전대로 — null
+        old_rows = [
+            s
+            for s in self.client.get(SESSIONS_URL).json()["sessions"]
+            if s["session_id"] == self.session_w2.session_id
+        ]
+        self.assertIsNone(old_rows[0]["klass"])
 
 
 class SessionDetailTests(AttendanceAdminFixtureMixin, TestCase):
@@ -1339,6 +1376,109 @@ class WithdrawTests(AttendanceAdminFixtureMixin, TestCase):
         self.assertEqual(
             self.post_withdraw({"student_id": self.s1.student_id}).status_code, 403
         )
+        self.assertEqual(
+            self.delete_withdraw({"student_id": self.s1.student_id}).status_code, 403
+        )
+
+
+class WithdrawLoginBlockTests(AttendanceAdminFixtureMixin, TestCase):
+    """퇴원 = 로그인 차단 (FLOW 3-4) — 계정도 데이터도 지우지 않는다.
+
+    막는 것은 들어오는 것 하나다. 학부모는 **남은 자녀가 전부 퇴원일 때만**
+    같이 막힌다 — 자녀가 둘이고 하나만 퇴원했으면 드롭다운으로 남은 자녀를
+    계속 본다(FLOW 4-2).
+    """
+
+    def setUp(self):
+        self.login(self.admin)
+        # p_one: 자녀가 s1 뿐 / p_two: 자녀가 s1·s2 둘
+        self.p_one = Parent.objects.create(
+            user=make_user("par-1", User.Role.PARENT, name="외동학부모"), phone="01000000001"
+        )
+        self.p_two = Parent.objects.create(
+            user=make_user("par-2", User.Role.PARENT, name="둘학부모"), phone="01000000002"
+        )
+        ParentStudent.objects.create(parent=self.p_one, student=self.s1)
+        ParentStudent.objects.create(parent=self.p_two, student=self.s1)
+        ParentStudent.objects.create(parent=self.p_two, student=self.s2)
+
+    def actives(self):
+        for row in (self.s1, self.s2, self.p_one, self.p_two):
+            row.refresh_from_db()
+            row.user.refresh_from_db()
+        return (
+            self.s1.user.is_active,
+            self.s2.user.is_active,
+            self.p_one.user.is_active,
+            self.p_two.user.is_active,
+        )
+
+    def test_withdraw_blocks_the_student_and_the_only_child_parent(self):
+        self.post_withdraw({"student_id": self.s1.student_id})
+        # 학생 막힘 · 외동 학부모 막힘 · 자녀 둘인 학부모는 그대로
+        self.assertEqual(self.actives(), (False, True, False, True))
+
+    def test_reinstate_opens_both_again(self):
+        self.post_withdraw({"student_id": self.s1.student_id})
+        res = self.delete_withdraw({"student_id": self.s1.student_id})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["enrollment_status"], "예비등록")
+        self.assertEqual(self.actives(), (True, True, True, True))
+
+    def test_second_child_withdrawal_blocks_the_parent(self):
+        self.post_withdraw({"student_id": self.s1.student_id})
+        self.post_withdraw({"student_id": self.s2.student_id})
+        self.assertEqual(self.actives(), (False, False, False, False))
+        # 하나만 돌아와도 학부모는 다시 열린다
+        self.delete_withdraw({"student_id": self.s2.student_id})
+        self.assertEqual(self.actives(), (False, True, False, True))
+
+    def test_login_says_it_is_a_withdrawal_when_the_password_is_right(self):
+        self.post_withdraw({"student_id": self.s1.student_id})
+        self.client.logout()
+        res = self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"login_id": "stu-1", "password": PASSWORD}),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 401)
+        self.assertEqual(res.json()["detail"], "퇴원 처리된 계정입니다.")
+
+    def test_wrong_password_gets_the_same_message_as_anyone(self):
+        """존재 확인 창구를 만들지 않는다 — 틀린 비밀번호에는 사유를 안 준다."""
+        self.post_withdraw({"student_id": self.s1.student_id})
+        self.client.logout()
+        for login_id in ("stu-1", "there-is-no-such-id"):
+            res = self.client.post(
+                "/api/auth/login",
+                data=json.dumps({"login_id": login_id, "password": "wrong-Pw-1234!"}),
+                content_type="application/json",
+            )
+            self.assertEqual(res.status_code, 401)
+            self.assertEqual(
+                res.json()["detail"], "아이디 또는 비밀번호가 올바르지 않습니다."
+            )
+
+    def test_reinstated_student_can_log_in_again(self):
+        self.post_withdraw({"student_id": self.s1.student_id})
+        self.delete_withdraw({"student_id": self.s1.student_id})
+        self.client.logout()
+        res = self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"login_id": "stu-1", "password": PASSWORD}),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+
+    def test_reinstate_returns_registered_when_the_student_had_been_registered(self):
+        self.s1.registered_at = NOW
+        self.s1.save(update_fields=["registered_at"])
+        self.post_withdraw({"student_id": self.s1.student_id})
+        res = self.delete_withdraw({"student_id": self.s1.student_id})
+        self.assertEqual(res.json()["enrollment_status"], "등록")
+        self.s1.refresh_from_db()
+        self.assertIsNone(self.s1.withdrawn_at)
+        self.assertIsNone(self.s1.withdrawn_by)
 
 
 class OnsiteMakeupTests(TestCase):

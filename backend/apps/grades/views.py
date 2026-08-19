@@ -6,6 +6,7 @@
 - PUT  /api/admin/attendance/sessions/{id}       출결 upsert + 파생 트리거 (출결입력)
 - POST /api/admin/attendance/sessions/{id}/onsite 명단 밖 학생 현보 (출결입력)
 - POST /api/admin/attendance/makeup              동보 관리자 체크 (영상지급관리)
+- POST·DELETE /api/admin/attendance/withdraw     퇴원 처리 · 퇴원 취소 (출결입력)
 
 5차(PRD 3.2.1·3.1.1·§4 — 전부 조회 전용):
 - GET /api/student/grades                        내 시험 목록 + 회차별 추이 (IsStudent)
@@ -81,9 +82,9 @@ class AttendanceSessionListView(APIView):
     permission_classes = [FeatureRequired(FeatureKey.ATTENDANCE_ENTRY)]
 
     def get(self, request):
-        sessions = ClassSession.objects.select_related("course_week__course").order_by(
-            "session_date", "session_id"
-        )
+        sessions = ClassSession.objects.select_related(
+            "course_week__course", "klass"
+        ).order_by("session_date", "session_id")
         raw_course_id = request.query_params.get("course_id")
         if raw_course_id:
             try:
@@ -330,34 +331,55 @@ class AttendanceWithdrawView(APIView):
 
     body: `{"student_id": int, "reason": str?}` — 이미 퇴원인 학생은 최초 처리
     이력을 지키기 위해 덮어쓰지 않는다(멱등, 200).
+
+    **DELETE 는 퇴원 취소다.** 되돌리는 문이 없으면 잘못 누른 한 번을 사람이
+    DB 에서 고쳐야 한다. 같은 자원(그 학생의 퇴원)이라 경로도 게이트도 같다.
     """
 
     permission_classes = [FeatureRequired(FeatureKey.ATTENDANCE_ENTRY)]
 
     def post(self, request):
+        student, error = self._student(request)
+        if error is not None:
+            return error
+        raw_reason = (request.data or {}).get("reason")
+        reason = raw_reason.strip() if isinstance(raw_reason, str) else None
+        attendance_admin.withdraw_student(
+            student, request.user, timezone.now(), reason=reason
+        )
+        return Response(_withdrawal_block(student))
+
+    def delete(self, request):
+        student, error = self._student(request)
+        if error is not None:
+            return error
+        attendance_admin.reinstate_student(student)
+        return Response(_withdrawal_block(student))
+
+    @staticmethod
+    def _student(request):
         body = request.data if isinstance(request.data, dict) else {}
         student_id = body.get("student_id")
         if not isinstance(student_id, int) or isinstance(student_id, bool):
-            return Response(
+            return None, Response(
                 {"detail": "student_id가 올바르지 않습니다."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         student = Student.objects.filter(pk=student_id).first()
         if student is None:
-            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
-        raw_reason = body.get("reason")
-        reason = raw_reason.strip() if isinstance(raw_reason, str) else None
-        attendance_admin.withdraw_student(
-            student, request.user, timezone.now(), reason=reason
-        )
-        return Response(
-            {
-                "student_id": student.student_id,
-                "enrollment_status": student.enrollment_status,
-                "withdrawn_at": timezone_iso(student.withdrawn_at),
-                "withdrawn_reason": student.withdrawn_reason,
-            }
-        )
+            return None, Response(
+                {"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND
+            )
+        return student, None
+
+
+def _withdrawal_block(student):
+    return {
+        "student_id": student.student_id,
+        "enrollment_status": student.enrollment_status,
+        "withdrawn_at": timezone_iso(student.withdrawn_at),
+        "withdrawn_reason": student.withdrawn_reason,
+    }
 
 
 def timezone_iso(value):

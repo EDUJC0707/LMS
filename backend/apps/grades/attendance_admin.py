@@ -96,7 +96,7 @@ DB 레벨에서 이중 생성을 차단한다(get_or_create 패턴 — 조회 �
 from django.db import models, transaction
 from django.utils import timezone
 
-from apps.accounts.models import ParentStudent, Student
+from apps.accounts.models import ParentStudent, Student, User
 from apps.boards.models import AbsenceCounseling
 from apps.curriculum.models import CourseEnrollment, class_name_subquery
 from apps.notifications.models import Notification
@@ -118,9 +118,9 @@ from .models import Attendance, ClassSession
 
 
 def load_session(session_id):
-    """회차 + 주차·강좌 1쿼리 로드. 없으면 None."""
+    """회차 + 주차·강좌·반 1쿼리 로드. 없으면 None."""
     return (
-        ClassSession.objects.select_related("course_week__course")
+        ClassSession.objects.select_related("course_week__course", "klass")
         .filter(pk=session_id)
         .first()
     )
@@ -200,7 +200,14 @@ def load_attendance_map(session, student_ids):
 
 
 def session_block(session):
-    """회차 요약 블록 — 목록·상세·PUT 응답 공용."""
+    """회차 요약 블록 — 목록·상세·PUT 응답 공용.
+
+    **반을 싣는다**(2026-08-19). 같은 커리를 목반·화반이 같이 듣는데(FLOW 1-1)
+    강좌명과 주차만 실으면 `2026 여름 N제 3주차` 가 두 반에서 똑같이 뜨고,
+    주차 날짜는 조교가 고칠 수 있어(FLOW 1-3) 날짜로도 안 갈린다. 남의 반
+    출결표에서 `출결 확정` 을 누르면 영상과 첫 통지가 엉뚱한 반으로 나가고
+    되돌리는 문이 없다. 반이 없는 옛 회차는 null — 종전대로 강좌만 뜬다.
+    """
     week = session.course_week
     return {
         "session_id": session.session_id,
@@ -216,6 +223,11 @@ def session_block(session):
         "week_no": week.week_no if week else None,
         "course": (
             {"course_id": week.course.course_id, "name": week.course.name} if week else None
+        ),
+        "klass": (
+            {"class_id": session.klass.class_id, "name": session.klass.name}
+            if session.klass_id
+            else None
         ),
     }
 
@@ -800,19 +812,82 @@ def withdraw_student(student, actor, now, reason=None):
 
     이미 퇴원인 학생은 **덮어쓰지 않는다**(멱등) — 최초 퇴원 시각·처리자가
     감사 이력이므로 재요청이 그것을 지우면 안 된다.
+
+    **저장하는 그 순간 로그인이 막힌다**(FLOW 3-4) — 나중에 도는 작업이 아니다.
     """
     if student.enrollment_status == Student.EnrollmentStatus.WITHDRAWN:
         return student
-    student.enrollment_status = Student.EnrollmentStatus.WITHDRAWN
-    student.withdrawn_at = now
-    student.withdrawn_by = actor
-    student.withdrawn_reason = reason or None
-    student.save(
-        update_fields=[
-            "enrollment_status",
-            "withdrawn_at",
-            "withdrawn_by",
-            "withdrawn_reason",
-        ]
-    )
+    with transaction.atomic():
+        student.enrollment_status = Student.EnrollmentStatus.WITHDRAWN
+        student.withdrawn_at = now
+        student.withdrawn_by = actor
+        student.withdrawn_reason = reason or None
+        student.save(
+            update_fields=[
+                "enrollment_status",
+                "withdrawn_at",
+                "withdrawn_by",
+                "withdrawn_reason",
+            ]
+        )
+        sync_login_block(student)
     return student
+
+
+def reinstate_student(student):
+    """퇴원 취소 — 되돌리는 길이 없으면 사람이 DB 를 고쳐야 한다.
+
+    돌아갈 상태는 `registered_at` 이 안다: 등록 전환을 거친 학생은 `등록`,
+    아직이면 `예비등록`. 퇴원 스탬프 셋은 지운다 — 남겨 두면 재학 중인
+    학생에게 퇴원 시각·사유가 계속 붙어 있다.
+    """
+    if student.enrollment_status != Student.EnrollmentStatus.WITHDRAWN:
+        return student
+    with transaction.atomic():
+        student.enrollment_status = (
+            Student.EnrollmentStatus.REGISTERED
+            if student.registered_at
+            else Student.EnrollmentStatus.PRE_REGISTERED
+        )
+        student.withdrawn_at = None
+        student.withdrawn_by = None
+        student.withdrawn_reason = None
+        student.save(
+            update_fields=[
+                "enrollment_status",
+                "withdrawn_at",
+                "withdrawn_by",
+                "withdrawn_reason",
+            ]
+        )
+        sync_login_block(student)
+    return student
+
+
+def sync_login_block(student):
+    """학생·학부모의 로그인 차단을 **지금 등록 상태에 맞춰 다시 계산**한다(FLOW 3-4).
+
+    막는 것은 **들어오는 것 하나**다 — 계정도 데이터도 지우지 않는다. 지난
+    출결·성적·워크북이 다 붙어 있고 반 평균도 그때 그 학생을 세고 끝났다.
+
+    | 학생 | 퇴원이면 막는다 |
+    | 학부모 | **남은 자녀가 전부 퇴원일 때만** 막는다 |
+
+    퇴원과 퇴원 취소가 **같은 함수를 부른다** — 방향마다 따로 쓰면 한쪽만
+    고쳐서 "퇴원은 막혔는데 취소해도 안 열리는" 계정이 남는다. 자녀 둘이
+    차례로 퇴원하면 두 번째에서 학부모가 막히고, 하나라도 돌아오면 열린다.
+    """
+    withdrawn = Student.EnrollmentStatus.WITHDRAWN
+    if student.user_id:
+        User.objects.filter(pk=student.user_id).update(
+            is_active=student.enrollment_status != withdrawn
+        )
+    for link in ParentStudent.objects.filter(student=student).select_related("parent"):
+        if link.parent.user_id is None:
+            continue
+        has_enrolled_child = (
+            ParentStudent.objects.filter(parent_id=link.parent_id)
+            .exclude(student__enrollment_status=withdrawn)
+            .exists()
+        )
+        User.objects.filter(pk=link.parent.user_id).update(is_active=has_enrolled_child)

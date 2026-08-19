@@ -190,6 +190,19 @@ export default function AttendanceSessionPage() {
     return data;
   });
 
+  // 퇴원·퇴원 취소 — 여기가 유일한 입구다(FLOW 3-4). 저장하는 그 순간 로그인이
+  // 막히고, 자녀가 이 학생뿐인 학부모도 같이 막힌다. 되돌리는 것도 같은 버튼이다.
+  const withdrawal = useApiAction(async (student: RosterStudent) => {
+    const body = { student_id: student.student_id };
+    if (student.is_withdrawn) await http.delete("/admin/attendance/withdraw", { data: body });
+    else await http.post("/admin/attendance/withdraw", body);
+  });
+
+  const runWithdrawal = async (student: RosterStudent) => {
+    await withdrawal.run(student);
+    void detail.reload();
+  };
+
   const runOnsite = async () => {
     const data = await onsite.run(onsiteId.trim());
     if (!data) return;
@@ -325,6 +338,22 @@ export default function AttendanceSessionPage() {
         ]
       : []),
     {
+      key: "withdrawal",
+      header: "퇴원",
+      align: "right" as const,
+      width: "7rem",
+      cell: (r: RosterStudent) => (
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={withdrawal.pending}
+          onClick={() => void runWithdrawal(r)}
+        >
+          {r.is_withdrawn ? "퇴원 취소" : "퇴원"}
+        </Button>
+      ),
+    },
+    {
       key: "recorded",
       // "저장된 값" 이 아니다 — OMR 도 여기에 쓰므로(FLOW 3-2) 저장이라는 말이
       // 주체를 사람으로 오해하게 만든다. 이 열은 **서버에 있는 지금 값**이다.
@@ -389,6 +418,7 @@ export default function AttendanceSessionPage() {
       <div className="ui-stack">
         {confirmApi.error && <Alert tone="danger">{confirmApi.error}</Alert>}
         {onsite.error && <Alert tone="danger">{onsite.error}</Alert>}
+        {withdrawal.error && <Alert tone="danger">{withdrawal.error}</Alert>}
         {result && <ConfirmSummary triggers={result} onClose={() => setResult(null)} />}
 
         <Card padding="none" className="ops-tablecard">

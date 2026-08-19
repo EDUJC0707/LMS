@@ -15,6 +15,11 @@ export interface SessionCourse {
   name: string;
 }
 
+export interface SessionClass {
+  class_id: number;
+  name: string;
+}
+
 /** GET /api/admin/attendance/sessions 의 한 줄. 상세·PUT 응답에도 그대로 들어 있다. */
 export interface SessionBlock {
   session_id: number;
@@ -26,6 +31,9 @@ export interface SessionBlock {
   memo: string | null;
   week_no: number | null;
   course: SessionCourse | null;
+  /** 같은 커리를 목반·화반이 같이 듣는다 — 반이 없으면 두 반의 3주차가 같은
+   *  이름으로 뜬다(FLOW 1-1). 반 없이 만들어진 옛 회차는 null. */
+  klass: SessionClass | null;
 }
 
 export interface AttendanceBlock {
@@ -45,7 +53,8 @@ export interface RosterStudent {
   matching_key: string;
   current_class: string | null;
   enrollment_status: string;
-  /** 퇴원 행. 명단에는 남지만 출결 입력 대상이 아니다(보내면 400). */
+  /** 퇴원 행. 명단에는 남지만 출결 입력 대상이 아니다(보내면 400).
+   *  로그인도 이 값과 같이 막힌다(FLOW 3-4). */
   is_withdrawn: boolean;
   attendance: AttendanceBlock | null;
 }
