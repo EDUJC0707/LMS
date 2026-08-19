@@ -54,16 +54,26 @@ class Notification(models.Model):
         2026-07-15 delta(동보/결석상담/상담신청/클리닉리마인더). 클리닉대상은
         판정 확정 즉시 신청 안내(PRD 3.1.2), 영상만료예고는 8.1-1(D-2 사전
         알림). 7/29 확정 목록 수신 시 상수만 추가한다.
+
+        **FLOW 3-11 의 여덟 시점은 값이 서로 달라야 한다.** 알림톡 템플릿은
+        `NOTIFICATION_KAKAO_TEMPLATE_CODES` 가 **type 으로** 찾으므로
+        (aligo._alimtalk_payload), 두 시점이 같은 값을 쓰면 한쪽 문구로만
+        나간다. 그래서 교재청구는 결제(취소·환불)와, 클리닉확정·반려·
+        리마인더·미참석은 서로 갈라져 있다.
         """
 
         GRADE = "성적", "성적"
         VIDEO_GRANT = "영상권한", "영상권한"
         VIDEO_EXPIRY = "영상만료예고", "영상만료예고"
         PAYMENT = "결제", "결제"
+        BILLING = "교재청구", "교재청구"
         REPORT = "리포트", "리포트"
         CLINIC_TARGET = "클리닉대상", "클리닉대상"
         CLINIC_ATTENDANCE = "클리닉출결", "클리닉출결"
+        CLINIC_APPROVED = "클리닉확정", "클리닉확정"
+        CLINIC_REJECTED = "클리닉반려", "클리닉반려"
         CLINIC_REMINDER = "클리닉리마인더", "클리닉리마인더"
+        CLINIC_NOSHOW_CHECK = "클리닉미참석", "클리닉미참석"
         ACCOUNT_ISSUED = "계정발급", "계정발급"
         NOSHOW_WARNING = "노쇼경고", "노쇼경고"
         MAKEUP = "동보", "동보"
@@ -111,6 +121,9 @@ class Notification(models.Model):
     ref_type = models.CharField("원인 유형", max_length=20, null=True, blank=True)  # noqa: DJ001
     ref_id = models.BigIntegerField("원인 ID", null=True, blank=True)
     sent_at = models.DateTimeField("발송 시각", null=True, blank=True)
+    # 앱 안 알림의 읽음(FLOW 3-11). 발송 결과와 다른 축이다 — 문자가 실패해도
+    # 앱에는 남고, 받는 사람이 열면 읽힌다. NULL = 아직 안 읽음.
+    read_at = models.DateTimeField("읽은 시각", null=True, blank=True)
     sent_to_phone = models.CharField("보낸 번호", max_length=20, blank=True, default="")
     status = models.CharField(
         "상태", max_length=15, choices=Status.choices, default=Status.PENDING

@@ -19,13 +19,19 @@
 그대로 통과한다. 판정은 둘이다 — ① 그 학생이 듣는 커리의 교재인가 ② 그 반이
 결제선생으로 받는 반인가.
 """
+import logging
+
 from django.db import transaction
 from django.utils import timezone
 
 from apps.curriculum.models import CourseEnrollment
+from apps.notifications.models import Notification
+from apps.notifications.sending import queue
 
 from .models import Order, Payment
 from .provider import get_adapter
+
+logger = logging.getLogger(__name__)
 
 
 class BillingError(Exception):
@@ -134,7 +140,35 @@ def start_billing(student, product, *, actor, parent=None, now=None):
             status=Payment.Status.PENDING,
             amount=order.amount,
         )
+        _notify_billed(order, product)
     return order, existing is None
+
+
+def _notify_billed(order, product):
+    """무엇에 대한 청구인지 알린다(FLOW 3-11 #2).
+
+    **결제선생 문자만으로는 모른다** — 업체 알림톡에는 금액과 링크만 있고 어느
+    교재인지가 없다. 받는 사람은 청구서를 받은 쪽이다(`billed_to_parent`,
+    없으면 학생 본인 — `_recipient` 와 같은 갈래).
+
+    삼키는 이유는 `payment_admin._notify_cancelled` 와 같다: 청구서는 이미
+    업체로 나갔고 트랜잭션은 곧 커밋된다. 여기서 예외가 올라가면 **청구는
+    됐는데 화면에는 500** 이 뜬다. 행은 `queue` 가 먼저 만들어 두므로 재발송
+    배치가 집어 간다.
+    """
+    try:
+        queue(
+            type=Notification.Type.BILLING,
+            channel=Notification.Channel.KAKAO,
+            student=None if order.billed_to_parent_id else order.student,
+            parent=order.billed_to_parent,
+            title="교재 청구",
+            body=f"{product.name} {order.amount:,}원",
+            ref_type="orders",
+            ref_id=order.order_id,
+        )
+    except Exception:
+        logger.exception("교재 청구 알림을 걸지 못했습니다 (order=%s)", order.order_id)
 
 
 def _build_request(order, recipient_name, phone, product):

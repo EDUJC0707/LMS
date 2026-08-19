@@ -1,6 +1,8 @@
 """notifications 뷰 — 알림 내역 조회 (설계 도메인 8, PRD 3.1.2).
 
 - GET  /api/me/notifications                   — 로그인 사용자 알림 내역(최신순 페이지네이션)
+- POST /api/me/notifications/{id}/read         — 한 건 읽음(열면 읽힌다)
+- POST /api/me/notifications/read-all          — 모두 읽음
 - GET  /api/admin/notifications                — 관리자 발송내역(필터·페이징, 기능 키 `알림발송`)
 - POST /api/admin/notifications/{id}/resend    — 개인별 (재)발송(같은 기능 키)
 
@@ -37,32 +39,37 @@ from . import notification_admin
 from .models import Notification
 
 
+def my_notifications(user):
+    """그 사람 앞으로 온 알림만 — 대상 3분기 축 그대로(모듈 docstring).
+
+    읽음 처리도 이 queryset 을 지난다. 남의 알림 id 를 실어 보내도 여기서
+    빠지므로 뷰가 소유 검사를 따로 하지 않는다(닫힘이 기본값).
+    """
+    if user.role == User.Role.STUDENT:
+        student = Student.objects.filter(user=user).first()
+        if student is None:
+            return Notification.objects.none()
+        return Notification.objects.filter(student=student)
+    if user.role == User.Role.PARENT:
+        parent = Parent.objects.filter(user=user).first()
+        if parent is None:
+            return Notification.objects.none()
+        return Notification.objects.filter(parent=parent)
+    if user.role in STAFF_ROLES:
+        return Notification.objects.filter(user=user)
+    return Notification.objects.none()
+
+
 class MeNotificationsView(APIView):
     """GET /api/me/notifications — 내 알림 내역(3분기 매칭·페이지네이션)."""
 
     permission_classes = [IsStudent | IsParent | IsStaffRole]
 
     def get(self, request):
-        queryset = self._my_notifications(request.user).order_by("-notif_id")
+        queryset = my_notifications(request.user).order_by("-notif_id")
         paginator = PageNumberPagination()
         page = paginator.paginate_queryset(queryset, request, view=self)
         return paginator.get_paginated_response([self._item(n) for n in page])
-
-    @staticmethod
-    def _my_notifications(user):
-        if user.role == User.Role.STUDENT:
-            student = Student.objects.filter(user=user).first()
-            if student is None:
-                return Notification.objects.none()
-            return Notification.objects.filter(student=student)
-        if user.role == User.Role.PARENT:
-            parent = Parent.objects.filter(user=user).first()
-            if parent is None:
-                return Notification.objects.none()
-            return Notification.objects.filter(parent=parent)
-        if user.role in STAFF_ROLES:
-            return Notification.objects.filter(user=user)
-        return Notification.objects.none()
 
     @staticmethod
     def _item(notification):
@@ -81,7 +88,32 @@ class MeNotificationsView(APIView):
                 else None
             ),
             "created_at": timezone.localtime(notification.created_at).isoformat(),
+            "read_at": (
+                timezone.localtime(notification.read_at).isoformat()
+                if notification.read_at
+                else None
+            ),
         }
+
+
+class MeNotificationReadView(APIView):
+    """POST /api/me/notifications/{id}/read · /read-all — 읽음 처리(FLOW 3-11).
+
+    한 건이든 전부든 하는 일이 같아서 뷰도 하나다 — `notif_id` 가 오면 그 건
+    으로 좁힐 뿐이다.
+
+    **이미 읽은 것은 시각을 덮지 않는다**(`read_at__isnull=True` 필터). 목록을
+    다시 열 때마다 시각이 밀리면 "언제 읽었나"가 아니라 "마지막으로 본 때"가
+    된다. 없는 id·남의 id 는 0 이다 — 404 를 주면 남의 알림 번호를 캐낼 수 있다.
+    """
+
+    permission_classes = [IsStudent | IsParent | IsStaffRole]
+
+    def post(self, request, notif_id=None):
+        queryset = my_notifications(request.user).filter(read_at__isnull=True)
+        if notif_id is not None:
+            queryset = queryset.filter(pk=notif_id)
+        return Response({"read": queryset.update(read_at=timezone.now())})
 
 
 class AdminNotificationsView(APIView):

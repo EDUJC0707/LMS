@@ -1,10 +1,15 @@
 /**
  * 알림 내역 — /notifications.
  *
- * API: GET /api/me/notifications?page=  (최신순·20건. 읽음 처리 API 는 없다)
+ * API
+ *   GET  /api/me/notifications?page=        최신순·20건
+ *   POST /api/me/notifications/{id}/read    한 건
+ *   POST /api/me/notifications/read-all     모두
  *
  * 화면 규칙
  * - 날짜 묶음으로 끊어 읽는다(오늘·어제·7월 22일).
+ * - 안 읽은 것은 제목이 버튼이다 — 누르면 읽힌다(FLOW 3-11). 읽고 나면
+ *   버튼이 사라진다: 되돌릴 것이 없는데 누를 자리가 남으면 헷갈린다.
  * - 유형은 서버 값(성적·영상권한·클리닉대상 …)을 그대로 보여 준다. 값집합이
  *   열려 있어(백엔드 Notification.Type 주석) 화면에서 임의로 묶지 않는다.
  * - 발송 실패는 숨기지 않는다 — 알림톡이 안 갔더라도 내용은 여기서 볼 수 있다.
@@ -12,9 +17,17 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import { http, useApi } from "../../api";
+import { http, useApi, useApiAction } from "../../api";
 import { useMe } from "../../auth";
-import { Badge, Card, EmptyState, ErrorState, Loading, Pagination } from "../../components";
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  ErrorState,
+  Loading,
+  Pagination,
+} from "../../components";
 import { API_PAGE_SIZE, Paged, formatDay, formatTime, groupByDay } from "./boards";
 import "./common.css";
 
@@ -29,6 +42,7 @@ interface NotificationRow {
   ref_id: number | null;
   sent_at: string | null;
   created_at: string;
+  read_at: string | null;
 }
 
 export default function NotificationsPage() {
@@ -46,6 +60,15 @@ export default function NotificationsPage() {
   const rows = list.data?.results ?? [];
   const totalPages = Math.max(1, Math.ceil((list.data?.count ?? 0) / API_PAGE_SIZE));
   const groups = groupByDay(rows, (row) => row.created_at);
+  const unread = rows.filter((row) => row.read_at === null).length;
+
+  const markRead = useApiAction(async (notifId?: number) => {
+    await http.post(
+      notifId === undefined ? "/me/notifications/read-all" : `/me/notifications/${notifId}/read`,
+    );
+    await list.reload();
+    return true;
+  });
 
   // 성적 알림에서 성적표로 바로 가는 길. 자녀를 고르는 학부모 화면은 어느
   // 자녀인지 알 수 없으므로 만들지 않는다(서버가 안 준 것을 짐작하지 않는다).
@@ -63,6 +86,14 @@ export default function NotificationsPage() {
         </Card>
       ) : (
         <div className="ui-stack">
+          {unread > 0 && (
+            <div className="cm-notif__readall">
+              <Button variant="ghost" loading={markRead.pending} onClick={() => markRead.run()}>
+                모두 읽음
+              </Button>
+            </div>
+          )}
+
           <Card padding="none" className="cm-clip">
             {groups.map((group) => (
               <section className="cm-daygroup" key={group.key}>
@@ -70,7 +101,11 @@ export default function NotificationsPage() {
                 <ul className="cm-notif">
                   {group.rows.map((row) => (
                     <li key={row.notif_id}>
-                      <NotificationItem row={row} gradeLinkable={gradeLinkable} />
+                      <NotificationItem
+                        row={row}
+                        gradeLinkable={gradeLinkable}
+                        onRead={() => markRead.run(row.notif_id)}
+                      />
                     </li>
                   ))}
                 </ul>
@@ -93,20 +128,32 @@ export default function NotificationsPage() {
 function NotificationItem({
   row,
   gradeLinkable,
+  onRead,
 }: {
   row: NotificationRow;
   gradeLinkable: boolean;
+  onRead: () => void;
 }) {
   const failed = row.status === "실패";
   const waiting = row.status === "대기";
   const when = row.sent_at ? formatTime(row.sent_at) : formatDay(row.created_at);
   const showGradeLink = gradeLinkable && row.ref_type === "exam" && row.ref_id !== null;
+  const unread = row.read_at === null;
+  const title = row.title ?? `${row.type} 안내`;
 
   return (
-    <article className="cm-notif__item">
+    <article className={`cm-notif__item${unread ? " cm-notif__item--unread" : ""}`}>
       <div className="cm-notif__head">
         <Badge tone="neutral">{row.type}</Badge>
-        <h3 className="cm-notif__title">{row.title ?? `${row.type} 안내`}</h3>
+        {unread ? (
+          <h3 className="cm-notif__title">
+            <button type="button" className="cm-notif__open" onClick={onRead}>
+              {title}
+            </button>
+          </h3>
+        ) : (
+          <h3 className="cm-notif__title">{title}</h3>
+        )}
         {failed && <Badge tone="danger">발송 실패</Badge>}
       </div>
 

@@ -231,13 +231,60 @@ class ClinicAssignTests(ClinicAdminFixtureMixin, TestCase):
 
     def test_rejects_pending_request_only(self):
         req = self.make_request()
-        res = self.post_json(f"{REQUESTS_URL}/{req.clinic_id}/reject")
+        res = self.post_json(
+            f"{REQUESTS_URL}/{req.clinic_id}/reject",
+            {"reason": ClinicRequest.RejectReason.FULL},
+        )
         self.assertEqual(res.status_code, 200)
         req.refresh_from_db()
         self.assertEqual(req.status, ClinicRequest.Status.REJECTED)
+        self.assertEqual(req.reject_reason, ClinicRequest.RejectReason.FULL)
         self.assertEqual(
-            self.post_json(f"{REQUESTS_URL}/{req.clinic_id}/reject").status_code, 400
+            self.post_json(
+                f"{REQUESTS_URL}/{req.clinic_id}/reject",
+                {"reason": ClinicRequest.RejectReason.FULL},
+            ).status_code,
+            400,
         )
+
+    def test_reject_requires_reason_from_the_value_set(self):
+        """사유가 그대로 문자에 실린다 — 빈 사유·자유 문장은 400(FLOW 3-7)."""
+        req = self.make_request()
+        self.assertEqual(self.post_json(f"{REQUESTS_URL}/{req.clinic_id}/reject").status_code, 400)
+        self.assertEqual(
+            self.post_json(
+                f"{REQUESTS_URL}/{req.clinic_id}/reject", {"reason": "그냥 안 됩니다"}
+            ).status_code,
+            400,
+        )
+        req.refresh_from_db()
+        self.assertEqual(req.status, ClinicRequest.Status.PENDING)
+
+    def test_reject_queues_student_notification_carrying_the_reason(self):
+        """미승인은 학생에게만 가고, 고른 사유가 본문에 실린다(FLOW 3-11 #6)."""
+        req = self.make_request()
+        self.post_json(
+            f"{REQUESTS_URL}/{req.clinic_id}/reject",
+            {"reason": ClinicRequest.RejectReason.UNAVAILABLE},
+        )
+        rows = Notification.objects.filter(type=Notification.Type.CLINIC_REJECTED)
+        self.assertEqual([row.body for row in rows], [ClinicRequest.RejectReason.UNAVAILABLE])
+        self.assertEqual(rows[0].student_id, self.student.student_id)
+        self.assertEqual(rows[0].ref_id, req.clinic_id)
+
+    def test_assign_queues_confirmation_once(self):
+        """확정은 학생·학부모 둘 다. 재배정은 다시 안 나간다(FLOW 3-11 #5)."""
+        req = self.make_request()
+        body = {"assigned_staff_id": self.assistant.user_id, "conference_url": "https://m/x"}
+        res = self.post_json(f"{REQUESTS_URL}/{req.clinic_id}/assign", body)
+        self.assertEqual(res.status_code, 200)
+        approved = Notification.objects.filter(type=Notification.Type.CLINIC_APPROVED)
+        self.assertEqual(approved.count(), 2)
+        self.assertEqual(
+            {row.student_id for row in approved}, {self.student.student_id, None}
+        )
+        self.post_json(f"{REQUESTS_URL}/{req.clinic_id}/assign", body)
+        self.assertEqual(approved.count(), 2)
 
 
 class ClinicAttendanceTests(ClinicAdminFixtureMixin, TestCase):

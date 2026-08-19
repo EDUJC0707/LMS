@@ -10,7 +10,7 @@
 8차(관리자 — admin_urls.py):
 - GET  /api/admin/clinic/requests?status=&date=      대기열 (클리닉배정)
 - POST /api/admin/clinic/requests/{id}/assign        승인+배정 (클리닉배정)
-- POST /api/admin/clinic/requests/{id}/reject        미승인 (클리닉배정)
+- POST /api/admin/clinic/requests/{id}/reject        미승인 (클리닉배정) {reason}
 - POST /api/admin/clinic/requests/{id}/attendance    출결 처리·노쇼 (클리닉배정)
 - POST /api/admin/clinic/requests/{id}/evaluation    평가 기록 (클리닉배정)
 - GET  /api/admin/clinic/eval-criteria               평가 항목 (클리닉배정)
@@ -319,8 +319,9 @@ class AdminClinicRejectView(APIView):
         clinic_request = _load_clinic_request(clinic_id)
         if clinic_request is None:
             return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        body = request.data if isinstance(request.data, dict) else {}
         try:
-            clinic_admin.reject(clinic_request)
+            clinic_admin.reject(clinic_request, body.get("reason"))
         except booking.ClinicError as error:
             return Response({"detail": error.message}, status=error.http_status)
         return Response(clinic_admin.queue_row(clinic_request))

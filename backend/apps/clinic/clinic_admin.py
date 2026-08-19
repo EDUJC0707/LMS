@@ -24,7 +24,8 @@
      (닫힘이 안전 기본값 — §5). noshow_count 는 유지 — 누적은 사실 기록이고,
      해제 후 재노쇼 시 즉시 재제한되는 것이 의도된 동작이다.
 
-알림(출석/결석 → 학부모, 노쇼 경고 → 학생·학부모 — PRD 3.2.4)은
+알림(확정 → 학생·학부모, 미승인 → 학생, 출석/결석 → 학부모, 노쇼 경고 →
+학생·학부모 — FLOW 3-11 #5·#6, PRD 3.2.4)은
 `notifications.sending.queue` 로 건다 — 행을 남기고 **커밋 뒤** 발송 태스크가
 걸린다(2026-08-04 발송 파이프라인 도입 전까지는 행 기록만 하고 배치를 기다렸다).
 채널 구현체가 없거나 실패하면 사유가 행에 남고 재발송 배치가 다시 집는다.
@@ -56,6 +57,9 @@ from .models import (
 # 노쇼 영구제한 임계값(PRD 3.2.4 — 누적 2회). 컷값 변경은 대표 전용 후보라
 # 설정화(관리자 화면)는 후순위 — 코드 상수로 시작한다.
 NOSHOW_BAN_THRESHOLD = 2
+
+#: 클리닉 알림 행이 원인을 가리키는 이름. 주기 작업의 중복 판정도 이 값을 쓴다.
+CLINIC_REF_TYPE = "clinic"
 
 
 # --- 대기열 조회 ----------------------------------------------------------
@@ -108,6 +112,7 @@ def queue_row(request):
         "requested_date": request.requested_date.isoformat(),
         "requested_time": request.requested_time.strftime("%H:%M"),
         "status": request.status,
+        "reject_reason": request.reject_reason,
         "assigned_staff": (
             {"user_id": request.assigned_staff.user_id, "name": request.assigned_staff.name}
             if request.assigned_staff
@@ -163,6 +168,11 @@ def assign(request, staff_user, conference_url=None):
     if staff_user is None or staff_user.role not in STAFF_ROLES or not staff_user.is_active:
         raise ClinicError("배정 대상은 활성 직원이어야 합니다.")
     conference = _resolve_conference(request, conference_url)
+    # 확정 알림은 **처음 승인될 때만**이다(FLOW 3-11 #5 — "보내는 것은 확정부터").
+    # 재배정은 담당 조교만 갈리고 링크는 그대로라(`_resolve_conference` 순서 2)
+    # 학생 쪽에서 달라지는 것이 없다. 다시 보내야 하면 조교가 발송 내역에서
+    # 누른다(FLOW 3-11 "조교는 무엇이든 다시 보낼 수 있다").
+    first_approval = request.status == ClinicRequest.Status.PENDING
     request.status = ClinicRequest.Status.APPROVED
     request.assigned_staff = staff_user
     request.conference_provider = conference.provider
@@ -177,6 +187,15 @@ def assign(request, staff_user, conference_url=None):
             "conference_url",
         ]
     )
+    if first_approval:
+        # 신청은 학생만 하지만 결과는 둘 다 본다(FLOW 3-11 #5).
+        queue_clinic_notification(
+            Notification.Type.CLINIC_APPROVED, "클리닉 확정", request, student=request.student
+        )
+        for parent in parents_of(request.student):
+            queue_clinic_notification(
+                Notification.Type.CLINIC_APPROVED, "클리닉 확정", request, parent=parent
+            )
     _book_supervision(request)
     return request
 
@@ -232,12 +251,29 @@ def _resolve_conference(request, conference_url):
         raise ClinicError(str(error)) from error
 
 
-def reject(request):
-    """미승인 — `대기` 건만."""
+def reject(request, reason):
+    """미승인 — `대기` 건만. **사유는 필수이고 값집합 안이어야 한다.**
+
+    사유가 그대로 학생 문자에 실리기 때문이다(FLOW 3-7) — 빈 사유를 허용하면
+    "왜 안 잡혔는지 모른 채 기다린다"가 그대로 남는다. "다른 시간에 다시
+    신청하라"는 말은 템플릿이 갖는다(우리가 문장을 짓지 않는다).
+    """
     if request.status != ClinicRequest.Status.PENDING:
         raise ClinicError("미승인 처리할 수 없는 상태입니다.")
+    if reason not in ClinicRequest.RejectReason.values:
+        raise ClinicError("미승인 사유를 골라야 합니다.")
     request.status = ClinicRequest.Status.REJECTED
-    request.save(update_fields=["status"])
+    request.reject_reason = reason
+    request.save(update_fields=["status", "reject_reason"])
+    # 학생에게만 간다(FLOW 3-11 #6) — 신청한 사람이 학생이라 결과를 기다리는
+    # 것도 학생이다.
+    queue_clinic_notification(
+        Notification.Type.CLINIC_REJECTED,
+        "클리닉 미승인",
+        request,
+        student=request.student,
+        body=reason,
+    )
     return request
 
 
@@ -259,7 +295,7 @@ def mark_attendance(request, value, actor):
         raise ClinicError("이미 출결 처리된 건입니다.")  # 재처리 = 노쇼 이중 집계 위험
     now = timezone.now()
     student = request.student
-    parents = [link.parent for link in ParentStudent.objects.filter(student=student)]
+    parents = parents_of(student)
     with transaction.atomic():
         request.attendance_status = value
         request.attendance_marked_at = now
@@ -268,7 +304,7 @@ def mark_attendance(request, value, actor):
             update_fields=["attendance_status", "attendance_marked_at", "attendance_marked_by"]
         )
         for parent in parents:
-            _pending_notification(
+            queue_clinic_notification(
                 Notification.Type.CLINIC_ATTENDANCE,
                 f"클리닉 {value} 안내",
                 request,
@@ -292,27 +328,37 @@ def count_noshow(request, student, parents):
     if student.noshow_count >= NOSHOW_BAN_THRESHOLD and not student.clinic_banned:
         student.clinic_banned = True
         student.save(update_fields=["clinic_banned"])
-    _pending_notification(
+    queue_clinic_notification(
         Notification.Type.NOSHOW_WARNING, "클리닉 노쇼 경고", request, student=student
     )
     for parent in parents:
-        _pending_notification(
+        queue_clinic_notification(
             Notification.Type.NOSHOW_WARNING, "클리닉 노쇼 경고", request, parent=parent
         )
     return student
 
 
-def _pending_notification(type_, title, request, student=None, parent=None):
-    """알림을 건다 — 행은 지금, 발송은 커밋 뒤(모듈 docstring). 대상 3분기 준수."""
+def queue_clinic_notification(type_, title, request, student=None, parent=None, body=None):
+    """알림을 건다 — 행은 지금, 발송은 커밋 뒤(모듈 docstring). 대상 3분기 준수.
+
+    `ref_type`/`ref_id` 로 클리닉 1건을 가리킨다 — 5분 전/후 주기 작업이
+    "이미 건 것"을 이 두 값으로 찾으므로(tasks.send_clinic_reminders) 여기를
+    거치지 않고 클리닉 알림을 만들면 그 건은 중복으로 한 번 더 나간다.
+    """
     queue_notification(
         student=student,
         parent=parent,
         channel=Notification.Channel.KAKAO,
         type=type_,
         title=title,
-        ref_type="clinic",
+        body=body,
+        ref_type=CLINIC_REF_TYPE,
         ref_id=request.clinic_id,
     )
+
+
+def parents_of(student):
+    return [link.parent for link in ParentStudent.objects.filter(student=student)]
 
 
 def unban(student):

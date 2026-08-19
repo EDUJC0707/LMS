@@ -3,6 +3,7 @@
  *
  * API  GET   /api/admin/students/{id}
  *      PATCH /api/admin/students/{id}   {name?, school?, grade?, phone?, parent_phone?}
+ *      POST  /api/admin/notifications/{id}/resend
  *
  * 화면 설계
  * - **고칠 자리가 여기 하나뿐이다.** 번호가 한 자리 틀리게 들어온 학생은 계속 남의
@@ -15,6 +16,8 @@
  *   지나가면 다시 볼 수 없다 — 계정 안내 알림이 나가기 전까지 유일한 전달 경로다.
  * - 발송 내역의 **보낸 번호**는 그때 나간 번호다(서버 스냅샷). 지금 칸에 적힌 번호와
  *   다를 수 있고, 다른 것이 정상이다 — "못 받았다"는 연락에 답하는 자리가 여기다.
+ * - **어느 줄이든 다시 보낼 수 있다**(FLOW 3-11). 번호를 고친 뒤 여기서 누르면
+ *   새 번호로 나간다 — 유형을 가리지 않는다.
  */
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
@@ -151,6 +154,13 @@ export default function StudentDetailPage() {
   const data = detail.data;
   const body = changed(form, base);
   const dirty = Object.keys(body).length > 0;
+
+  // 발송 내역의 어느 줄이든 다시 보낸다(FLOW 3-11) — 끝난 행은 새 행이 되고
+  // 아직 안 끝난 행은 그 행이 다시 뜬다(서버 notification_admin.resend).
+  const resend = useApiAction(async (notifId: number) => {
+    await http.post(`/admin/notifications/${notifId}/resend`);
+    return true;
+  });
 
   const submit = async () => {
     setIssued(null);
@@ -308,6 +318,22 @@ export default function StudentDetailPage() {
               key: "created_at",
               header: "시각",
               cell: (row) => day(row.sent_at ?? row.created_at),
+            },
+            {
+              key: "resend",
+              header: "",
+              cell: (row) => (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  loading={resend.pending}
+                  onClick={async () => {
+                    if (await resend.run(row.notif_id)) await detail.reload();
+                  }}
+                >
+                  다시 보내기
+                </Button>
+              ),
             },
           ]}
         />

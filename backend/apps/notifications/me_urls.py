@@ -11,4 +11,16 @@ app_name = "notifications_me"
 
 urlpatterns = [
     path("me/notifications", views.MeNotificationsView.as_view(), name="me-notifications"),
+    # `read-all` 이 `<int:notif_id>` 보다 위에 있을 필요는 없다 — 정수가 아니라
+    # 두 패턴이 겹치지 않는다. 읽기 좋은 순서로 둔다.
+    path(
+        "me/notifications/read-all",
+        views.MeNotificationReadView.as_view(),
+        name="me-notifications-read-all",
+    ),
+    path(
+        "me/notifications/<int:notif_id>/read",
+        views.MeNotificationReadView.as_view(),
+        name="me-notification-read",
+    ),
 ]

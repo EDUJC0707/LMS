@@ -195,6 +195,8 @@ export interface ClinicRequestRow {
   requested_date: string;
   requested_time: string;
   status: ClinicStatus;
+  /** 미승인일 때 고른 사유. 그대로 학생 문자에 실린다(FLOW 3-7). 그 외에는 "" */
+  reject_reason: string;
   assigned_staff: { user_id: number; name: string } | null;
   conference_url: string | null;
   attendance_status: "출석" | "결석" | null;
