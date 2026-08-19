@@ -88,8 +88,9 @@ DIVIDER_U = (0.4434, 0.4574)
 
 #: 답란 1번 위와 20번 아래의 여백을 **같게** 둔다(대표 2026-08-19). 행 자리는
 #: 옛 카드에서 물려받아 고정이므로, 머리칸 아래와 박스 아래를 행에서 역산한다.
-#: 예전에는 위 7.61mm 아래 8.35mm 로 0.7mm 어긋나 있었다.
-ANSWER_ROW_MARGIN_MM = 7.98
+#: 예전에는 위 7.61mm 아래 8.35mm 로 0.7mm 어긋나 있었다. 맞춘 뒤 버블
+#: 끝에서 잰 여백이 5.87mm 라 20% 줄였다(대표 2026-08-19) -> 4.70mm.
+ANSWER_ROW_MARGIN_MM = 6.81
 _ROW1_V = float(L.mm_to_v(L.ANSWER_FIRST_ROW_MM))
 _ROW_LAST_V = float(L.mm_to_v(L.ANSWER_FIRST_ROW_MM + 19 * L.ROW_PITCH_MM))
 _ROW_MARGIN_V = float(L.mm_to_v(Decimal(str(ANSWER_ROW_MARGIN_MM))))
@@ -103,10 +104,10 @@ NUMBER_COL_U = 0.030
 HEAD_EXAM_V = 0.030
 HEAD_U = 0.0256
 #: 로고는 제목보다 더 안으로 들어간다.
-LOGO_U = 0.0542
-LOGO_V = 0.1094
+LOGO_U = 0.0613
+LOGO_V = 0.1199
 #: 제목 크기 — 원본은 12.6pt 상당이지만 **더 크게 간다**(대표 2026-08-19).
-HEAD_EXAM_PT = 15.4
+HEAD_EXAM_PT = 18.5
 
 #: 안내 문구 — **원본 줄폭에서 역산한 값**이다. 옛 카드의 줄 하나하나를 재
 #: 폭을 얻고, 같은 문구가 그 폭이 되는 크기를 구했다. 블록 안에서는 값이
