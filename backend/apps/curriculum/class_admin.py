@@ -301,6 +301,45 @@ def _has_records(session):
     )
 
 
+# --- 반 이동 (FLOW 3-9) ---------------------------------------------------
+
+
+@transaction.atomic
+def move_student(klass, student_id):
+    """학생을 이 반으로 옮긴다 — **옮기는 즉시 그 반의 룰**(FLOW 3-9).
+
+    수강(`CourseEnrollment.klass`)만 갈아 끼운다. 옮기면 출결표 명단이 수강에서
+    나오므로 새 반에 뜨고 옛 반에서 빠지는 것이 같은 한 줄로 끝난다.
+
+    **지난 기록은 옛 반에 남는다.** 출결·성적은 그 반의 회차(`ClassSession`)에
+    달려 있고 회차는 안 움직인다 — "옮기는 즉시" 라는 말이 지난 수업까지
+    소급한다는 뜻은 아니다. 옛 반 출결표가 그 학생 줄을 잃지 않도록 명단은
+    **그 회차에 기록이 있는 학생도 포함**한다(grades.attendance_admin).
+
+    이미 나간 영상·잡힌 클리닉은 건드리지 않는다 — 회수는 지급 시점 기준이고
+    클리닉은 슬롯에 붙어 있어 반과 무관하다.
+    """
+    enrollment = (
+        CourseEnrollment.objects.filter(
+            student_id=student_id,
+            course=klass.course,
+            status=CourseEnrollment.Status.ENROLLED,
+        )
+        .order_by("enrollment_id")
+        .first()
+    )
+    if enrollment is None:
+        raise ValueError("이 커리를 듣는 학생이 아닙니다.")
+    if enrollment.klass_id == klass.pk:
+        return class_detail(klass)
+    enrollment.klass = klass
+    try:
+        enrollment.save(update_fields=["klass"])
+    except IntegrityError as exc:  # UQ(student, klass)
+        raise ValueError("이미 그 반에 있는 학생입니다.") from exc
+    return class_detail(klass)
+
+
 def _parse_date(value):
     try:
         return datetime.date.fromisoformat(value)

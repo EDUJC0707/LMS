@@ -5,6 +5,7 @@
 - GET·POST /api/admin/classes          반 목록 · 커리와 반 만들기 (계정관리)
 - GET  /api/admin/classes/{id}         반 하나 — 주차와 명단
 - POST·PATCH·DELETE .../sessions       반별 주차 추가 · 날짜 수정 · 삭제
+- POST .../students                    반 이동
 
 페이로드 조립은 home.build_home_payload 공용 서비스가 담당한다 — 뷰는
 역할 게이트·입력 검증·대상 학생 결정(학부모는 자녀 소유 검증)만 한다.
@@ -214,5 +215,25 @@ class AdminClassSessionView(APIView):
             return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
         try:
             return Response({"sessions": action(klass)})
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AdminClassStudentView(APIView):
+    """POST /api/admin/classes/{class_id}/students — 반 이동 (FLOW 3-9, 계정관리).
+
+    body `{student_id}`. 옮길 반이 주소에 있으므로 옛 반은 받지 않는다 — 학생의
+    지금 반은 수강이 알고 있다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.ACCOUNT_ADMIN)]
+
+    def post(self, request, class_id):
+        klass = _load_class(class_id)
+        if klass is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        body = request.data if isinstance(request.data, dict) else {}
+        try:
+            return Response(class_admin.move_student(klass, body.get("student_id")))
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)

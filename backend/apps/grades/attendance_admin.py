@@ -89,7 +89,7 @@ DB 레벨에서 이중 생성을 차단한다(get_or_create 패턴 — 조회 �
 선례 — Asia/Seoul). 만료 = 지급 + 7일 기본(2026-07-15 회의, 관리자 설정 변경은
 후순위 — 기본값 산정은 앱 레이어 몫이라는 VideoGrant 모델 계약 이행).
 """
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from apps.accounts.models import Student
@@ -134,20 +134,27 @@ def load_roster(session):
     **반이 붙은 회차는 그 반만 본다**(2026-08-18). 같은 커리를 목반·화반이
     같이 듣기 때문에(FLOW 1-1) 커리로만 거르면 목반 출결표에 화반 학생이
     뜬다. 반이 없는 옛 회차는 종전대로 커리 전체다.
+
+    **이 회차에 기록이 있는 학생은 반을 떠났어도 남는다**(FLOW 3-9). 명단이
+    지금 수강에서 나오므로 반을 옮기면 옛 반의 지난 출결표에서 그 줄이 통째로
+    사라진다 — 기록은 옛 반에 남는데 그것을 볼 자리가 없어지는 셈이다.
     """
     if session.course_week is None:
         return []
     course = session.course_week.course
-    scope = (
-        {"course_enrollments__klass": session.klass_id}
-        if session.klass_id
-        else {"course_enrollments__course": course}
-    )
-    return list(
-        Student.objects.filter(
-            **scope,
+    if session.klass_id:
+        scope = models.Q(
+            course_enrollments__klass=session.klass_id,
+            course_enrollments__status=CourseEnrollment.Status.ENROLLED,
+        ) | models.Q(attendances__session=session)
+    else:
+        scope = models.Q(
+            course_enrollments__course=course,
             course_enrollments__status=CourseEnrollment.Status.ENROLLED,
         )
+    return list(
+        Student.objects.filter(scope)
+        .distinct()
         .select_related("user")
         # 반은 **이 회차 커리의 반**이다 — 다른 커리를 같이 듣는 학생이 있어도
         # 출결표에는 그 반이 뜨면 안 된다(학생↔반 N:M — FLOW 1-1).

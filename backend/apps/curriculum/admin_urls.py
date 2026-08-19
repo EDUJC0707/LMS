@@ -26,4 +26,9 @@ urlpatterns = [
         views.AdminClassSessionView.as_view(),
         name="class-session",
     ),
+    path(
+        "admin/classes/<int:class_id>/students",
+        views.AdminClassStudentView.as_view(),
+        name="class-student",
+    ),
 ]
