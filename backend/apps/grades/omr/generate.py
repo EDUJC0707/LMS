@@ -97,9 +97,16 @@ ANSWER_HEADER_V = _ROW1_V - _ROW_MARGIN_V
 BOX_ANSWER_V = (0.022, _ROW_LAST_V + _ROW_MARGIN_V)
 NUMBER_COL_U = 0.030
 
+#: 머리말 자리 — 옛 카드 실측(지면 왼쪽 끝 기준 제목 14.4mm, 로고 22.5mm).
+#: 눈으로 맞추던 때는 둘 다 11.4mm 에 붙어 있어 제목이 3mm, 로고가 11mm
+#: 왼쪽으로 밀려 있었다.
 HEAD_EXAM_V = 0.030
-HEAD_LOGO_V = 0.150
-HEAD_U = 0.012
+HEAD_U = 0.0256
+#: 로고는 제목보다 더 안으로 들어간다.
+LOGO_U = 0.0542
+LOGO_V = 0.1094
+#: 제목 크기도 실측에서 역산했다 — 15.0pt 는 원본보다 19% 넓게 나왔다.
+HEAD_EXAM_PT = 12.6
 
 #: 안내 문구 — **원본 줄폭에서 역산한 값**이다. 옛 카드의 줄 하나하나를 재
 #: 폭을 얻고, 같은 문구가 그 폭이 되는 크기를 구했다. 블록 안에서는 값이
@@ -403,7 +410,7 @@ def _header(pen, title, exam):
     비우면 손으로 적을 줄을 남긴다 — 미리 찍어 둘 수도 있어야 한다.
     """
     if exam:
-        _text(pen, HEAD_U, HEAD_EXAM_V, exam, size=15.0, anchor="left")
+        _text(pen, HEAD_U, HEAD_EXAM_V, exam, size=HEAD_EXAM_PT, anchor="left")
     else:
         _line(pen, HEAD_U, HEAD_EXAM_V + 0.012, HEAD_U + 0.185,
               HEAD_EXAM_V + 0.012, weight=1.0)
@@ -414,12 +421,12 @@ def _header(pen, title, exam):
         width_px, height_px = art.getSize()
         width_mm = 33.0   # 원본 실측 폭. 크게 그렸더니 지면을 잡아먹었다
         height_mm = width_mm * height_px / width_px
-        x, y = _xy(HEAD_U, HEAD_LOGO_V)
+        x, y = _xy(LOGO_U, LOGO_V)
         pen.drawImage(art, x, y - height_mm * MM_UNIT / 2,
                       width=width_mm * MM_UNIT, height=height_mm * MM_UNIT,
                       mask="auto")
     else:
-        _text(pen, HEAD_U, HEAD_LOGO_V, title, size=13, anchor="left")
+        _text(pen, LOGO_U, LOGO_V, title, size=13, anchor="left")
 
 
 def _school_block(pen):
