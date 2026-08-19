@@ -4,7 +4,7 @@
  * API
  *   GET  /api/admin/clinic/requests?status=&date=
  *   POST /api/admin/clinic/requests/{id}/assign      {assigned_staff_id, conference_url?}
- *   POST /api/admin/clinic/requests/{id}/reject
+ *   POST /api/admin/clinic/requests/{id}/reject      {reason}
  *   POST /api/admin/clinic/requests/{id}/attendance  {status: "출석"|"결석"}
  *   POST /api/admin/clinic/requests/{id}/evaluation  {items[], overall_result?}
  *   GET  /api/admin/clinic/eval-criteria
@@ -49,6 +49,10 @@ import type { ClinicCriteria, ClinicRequestRow, ClinicStatus, StaffMatrix } from
 // `지난` 만 축이 다르다 — 나머지는 상태, 이것은 기간이다. 한 줄에 섞어 두는
 // 이유는 관리자가 하는 일이 하나라서다: 목록을 좁혀서 한 건을 고른다.
 type TabKey = "전체" | "지난" | ClinicStatus;
+
+// 서버 값집합(ClinicRequest.RejectReason)과 같아야 한다 — 여기 없는 값을
+// 보내면 400 이다.
+const REJECT_REASONS = ["정원 마감", "시간 불가"];
 const TABS: { key: TabKey; label: string }[] = [
   { key: "대기", label: "대기" },
   { key: "승인배정", label: "승인·배정" },
@@ -277,6 +281,7 @@ function RequestPanel({
   // 채워 두면 재배정할 때마다 그 값이 "직접 입력"으로 되돌아가 서버가 만든
   // 스페이스 참조가 지워진다(backend clinic_admin.assign 순서 1·2).
   const [conferenceUrl, setConferenceUrl] = useState("");
+  const [rejectReason, setRejectReason] = useState("");
 
   // 모든 액션은 성공 시 true 를 돌려준다 — useApiAction 은 실패에만
   // undefined 를 주므로 void 액션은 성공/실패를 구분할 수 없다.
@@ -291,7 +296,9 @@ function RequestPanel({
     return true;
   });
   const reject = useApiAction(async () => {
-    await http.post(`/admin/clinic/requests/${request.clinic_id}/reject`);
+    await http.post(`/admin/clinic/requests/${request.clinic_id}/reject`, {
+      reason: rejectReason,
+    });
     return true;
   });
   const attend = useApiAction(async (status: "출석" | "결석") => {
@@ -325,6 +332,7 @@ function RequestPanel({
           <dt>상태</dt>
           <dd>
             <StatusBadge status={request.status} />
+            {request.reject_reason && <> {request.reject_reason}</>}
             {request.attendance_status && (
               <>
                 {" "}
@@ -428,15 +436,30 @@ function RequestPanel({
                 {request.status === "승인배정" ? "담당·링크 다시 배정" : "승인하고 배정"}
               </Button>
               {canReject && (
-                <Button
-                  variant="ghost"
-                  loading={reject.pending}
-                  onClick={async () => {
-                    if (await reject.run()) await onDone();
-                  }}
-                >
-                  미승인 처리
-                </Button>
+                <>
+                  <Select
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    aria-label="미승인 사유"
+                  >
+                    <option value="">미승인 사유</option>
+                    {REJECT_REASONS.map((reason) => (
+                      <option key={reason} value={reason}>
+                        {reason}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button
+                    variant="ghost"
+                    disabled={rejectReason === ""}
+                    loading={reject.pending}
+                    onClick={async () => {
+                      if (await reject.run()) await onDone();
+                    }}
+                  >
+                    미승인 처리
+                  </Button>
+                </>
               )}
             </div>
           </div>

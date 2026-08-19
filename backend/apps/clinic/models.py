@@ -130,6 +130,20 @@ class ClinicRequest(models.Model):
         REJECTED = "미승인", "미승인"
         CANCELLED = "취소", "취소"
 
+    class RejectReason(models.TextChoices):
+        """미승인 사유 — **조교가 고르는 값이다**(FLOW 3-7, 2026-08-19).
+
+        문장을 쓰게 하지 않는 이유는 그 값이 그대로 문자에 실리기 때문이다.
+        조교마다 다른 문장이 나가면 템플릿 심사를 통과한 문구가 아니게 된다.
+
+        둘로 시작한다 — 실제로 갈리는 것은 "그 자리가 없다"와 "그 시간에
+        못 한다" 둘뿐이고, 나머지(대상 아님·기간 지남)는 신청 단계에서
+        `booking` 이 이미 막는다. 값 추가는 상수 한 줄이다.
+        """
+
+        FULL = "정원 마감", "정원 마감"
+        UNAVAILABLE = "시간 불가", "시간 불가"
+
     class AttendanceStatus(models.TextChoices):
         UNMARKED = "미처리", "미처리"
         PRESENT = "출석", "출석"
@@ -152,6 +166,9 @@ class ClinicRequest(models.Model):
     requested_time = models.TimeField("희망 시작 시간")
     status = models.CharField(
         "상태", max_length=15, choices=Status.choices, default=Status.PENDING
+    )
+    reject_reason = models.CharField(
+        "미승인 사유", max_length=20, choices=RejectReason.choices, blank=True, default=""
     )
     assigned_staff = models.ForeignKey(
         settings.AUTH_USER_MODEL,
