@@ -138,11 +138,12 @@ BOLD_STROKE = 0.022
 #: 세로 배치 — 본문이 34.6mm 인데 박스 안 높이가 46.1mm 다. 예전에는 본문을
 #: 11.8mm 에서 시작해 마지막 줄이 박스 **밖으로** 나갔다(48.5mm). 제목·밑줄을
 #: 위로 붙이고 본문을 8.5mm 에서 시작하면 45.2mm 로 들어간다.
-#: 제목 위 여백을 절반으로 줄이고 아래 내용을 그만큼 끌어올린다
-#: (대표 2026-08-19). **박스 크기는 그대로다.**
-RULES_TITLE_V = 0.012
-RULES_RULE_V = 0.022
-RULES_BODY_V = 0.033
+#: 제목 위 여백 — 원래 0.024(4.55mm)를 절반으로 줄였더니 2.28mm 라 제목 글자
+#: (약 3mm)가 테두리에 닿았다. 그 중간인 3.6mm 로 둔다. 아래 내용은 같은 만큼
+#: 따라 올라간다 — **박스 크기는 그대로다.**
+RULES_TITLE_V = 0.019
+RULES_RULE_V = 0.029
+RULES_BODY_V = 0.040
 
 RULES_TITLE = "지켜야 할 사항"
 #: (문구, 들여쓰기 단, **다음 줄까지의 간격 mm**). 간격을 균등하게 두면 항목이
@@ -583,9 +584,9 @@ def _phone_block(pen):
 
     u0, v0, u1, v1 = BOX_PHONE_HOW
     _rect(pen, u0, v0, u1, v1, fill=TINT)
-    _text(pen, (u0 + u1) / 2, v0 + 0.0115, PHONE_HOW_TITLE, size=7.8, bold=True)
-    _line(pen, u0 + 0.018, v0 + 0.0225, u1 - 0.018, v0 + 0.0225, weight=1.0)
-    v = v0 + 0.0365
+    _text(pen, (u0 + u1) / 2, v0 + 0.018, PHONE_HOW_TITLE, size=7.8, bold=True)
+    _line(pen, u0 + 0.018, v0 + 0.029, u1 - 0.018, v0 + 0.029, weight=1.0)
+    v = v0 + 0.043
     step = (v1 - 0.010 - v) / (len(PHONE_HOW) - 1)
     for line, indent in PHONE_HOW:
         if line:
