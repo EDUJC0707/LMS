@@ -205,13 +205,19 @@ class TestRender:
 
 
 class TestBarReading:
-    """스캔 원본에서 판형을 읽는다 — 어긋난 스캔에서도, 그리고 **틀리게는 안 읽는다**.
+    """스캔에서 판형을 읽는다 — 어긋난 스캔에서도, 그리고 **틀리게는 안 읽는다**.
 
     인코딩이 튼튼한 것과 실제로 읽히는 것은 다른 얘기다. 여기서 재는 것은 후자다.
+
+    **지면은 세로로 세워서 넣는다.** A4 를 짧은 변부터 먹이므로 실제 스캔은
+    카드가 90° 누운 세로 이미지로 들어온다. 렌더 그대로(가로)로 재던 때는
+    통과했지만 실물 방향에서는 세 판형 모두 못 읽었다 — 그래서 픽스처를
+    실물 방향에 맞춘다.
     """
 
     @staticmethod
     def page(card, dpi=200):
+        """실제 스캔과 같은 방향의 지면 이미지."""
         import cv2
         with tempfile.TemporaryDirectory() as tmp:
             pdf = Path(tmp) / "c.pdf"
@@ -220,14 +226,21 @@ class TestBarReading:
                 ["pdftoppm", "-png", "-r", str(dpi), str(pdf), str(Path(tmp) / "x")],
                 check=True, capture_output=True,
             )
-            return cv2.imread(str(next(Path(tmp).glob("x*.png"))), 0)
+            page = cv2.imread(str(next(Path(tmp).glob("x*.png"))), 0)
+            return cv2.rotate(page, cv2.ROTATE_90_CLOCKWISE)
+
+    @staticmethod
+    def layout_of(image):
+        """지면 이미지 -> 판형 id. 프레임을 세우고 그 위에서 읽는다."""
+        from . import bars, normalize
+        frame = normalize.locate_card(image)
+        return None if frame is None else bars.read_layout(image, frame)
 
     @pytest.mark.skipif(not shutil.which("pdftoppm"), reason="pdftoppm 없음")
     def test_every_layout_reads_back_off_a_clean_scan(self):
         pytest.importorskip("cv2")
-        from . import bars
         for sheet in layout.LAYOUTS:
-            assert bars.read_layout(self.page(sheet)) == sheet.layout_id
+            assert self.layout_of(self.page(sheet)) == sheet.layout_id
 
     @pytest.mark.skipif(not shutil.which("pdftoppm"), reason="pdftoppm 없음")
     def test_it_survives_a_crooked_scanner(self):
@@ -235,15 +248,22 @@ class TestBarReading:
         cv2 = pytest.importorskip("cv2")
         import numpy as np
 
-        from . import bars
-
         card = layout.BY_NAME["답안25"]
         image = self.page(card)
         height, width = image.shape
 
         def turn(degrees):
+            """캔버스를 넓혀서 돌린다 — 안 넓히면 **마커가 잘려 나간다**.
+
+            프레임을 세우는 것은 네 모서리 마커이므로, 화폭을 고정한 채 돌리면
+            기울기가 아니라 잘림을 재게 된다. 실제 스캐너도 지면을 자르지 않는다.
+            """
             matrix = cv2.getRotationMatrix2D((width / 2, height / 2), degrees, 1.0)
-            return cv2.warpAffine(image, matrix, (width, height), borderValue=255)
+            cos, sin = abs(matrix[0, 0]), abs(matrix[0, 1])
+            grown = (int(height * sin + width * cos), int(height * cos + width * sin))
+            matrix[0, 2] += grown[0] / 2 - width / 2
+            matrix[1, 2] += grown[1] / 2 - height / 2
+            return cv2.warpAffine(image, matrix, grown, borderValue=255)
 
         cases = {
             "회전 -2도": turn(-2.0),
@@ -254,48 +274,71 @@ class TestBarReading:
                 image, np.float32([[1, 0, 30], [0, 1, 18]]), (width, height),
                 borderValue=255,
             ),
-            "저해상도 100dpi": self.page(card, 100),
         }
         for name, degraded in cases.items():
-            assert bars.read_layout(degraded) == card.layout_id, name
+            assert self.layout_of(degraded) == card.layout_id, name
+
+    @pytest.mark.skipif(not shutil.which("pdftoppm"), reason="pdftoppm 없음")
+    def test_it_reads_at_any_scanner_resolution(self):
+        """스캐너 해상도에 묶이면 안 된다 — **300dpi 가 기본값인 기계가 흔하다.**
+
+        마커 크기 문턱이 200dpi 픽셀 절대값이던 때는 창이 175~250dpi 뿐이었고
+        그 밖에서는 카드를 못 찾아 전부 보류로 떨어졌다. 실물 127장에서 후보
+        집합이 종전과 한 장도 다르지 않은 것을 확인하고 비율로 바꿨다.
+        """
+        pytest.importorskip("cv2")
+        card = layout.BY_NAME["답안25"]
+        for dpi in (100, 150, 200, 250, 300):
+            assert self.layout_of(self.page(card, dpi)) == card.layout_id, f"{dpi}dpi"
 
     @pytest.mark.skipif(not shutil.which("pdftoppm"), reason="pdftoppm 없음")
     def test_one_ruined_edge_is_carried_by_the_other(self):
         """좌우 이중으로 둔 이유다 — 스캔에서 가장자리가 날아가는 일이 있다."""
         pytest.importorskip("cv2")
-        from . import bars
-
         card = layout.BY_NAME["답안25"]
         image = self.page(card)
-        width = image.shape[1]
-        for cut in (slice(0, int(width * 0.08)), slice(int(width * 0.92), width)):
+        # 세로 스캔에서 막대가 붙는 변은 **위아래**다 — 카드가 누워 들어오므로.
+        # 네 귀퉁이는 남긴다: 프레임을 세우는 것이 마커라 거기까지 지우면
+        # 카드 자체를 못 찾고, 그건 판형 이전에 보류로 떨어지는 다른 경로다.
+        height, width = image.shape
+        keep = slice(int(width * 0.2), int(width * 0.8))
+        for cut in (slice(0, int(height * 0.06)), slice(int(height * 0.94), height)):
             damaged = image.copy()
-            damaged[:, cut] = 255
-            assert bars.read_layout(damaged) == card.layout_id
+            damaged[cut, keep] = 255
+            assert self.layout_of(damaged) == card.layout_id
 
     @pytest.mark.skipif(not shutil.which("pdftoppm"), reason="pdftoppm 없음")
     def test_disagreeing_edges_are_refused(self):
         """한쪽이 오염되면 어느 쪽을 믿을지 알 수 없다 — 조용히 고르지 않는다."""
         pytest.importorskip("cv2")
-        from . import bars
-
         sheet = self.page(layout.BY_NAME["답안25"])
-        other = self.page(layout.BY_NAME["성적조사"])
-        width = sheet.shape[1]
-        # **왼쪽 가장자리만** 갈아 끼운다. 오른쪽을 덮으면 막대가 깨져 읽기
-        # 실패로 떨어지고, 그건 "한쪽이 망가지면 반대쪽으로 읽는다"는 다른
-        # 경로다. 여기서 재려는 건 **둘 다 읽히는데 서로 다른** 경우다.
+        other = self.page(layout.BY_NAME["답안20"])
+        height = sheet.shape[0]
+        # **한 변만** 갈아 끼운다. 양쪽을 덮으면 그냥 다른 판형으로 읽히고,
+        # 한쪽을 지우면 "반대쪽으로 읽는다"는 다른 경로다. 여기서 재려는 건
+        # **둘 다 읽히는데 서로 다른** 경우다.
         spliced = sheet.copy()
-        spliced[:, : int(width * 0.05)] = other[:, : int(width * 0.05)]
-        assert bars.read_layout(spliced) is None
+        band = slice(0, int(height * 0.04))
+        spliced[band, :] = other[band, :]
+        assert self.layout_of(spliced) is None
 
     def test_a_sheet_without_bars_reads_as_unknown(self):
         """옛 튜터시스템 카드다. 판형을 지어내지 않고 `exams.kind` 로 넘긴다."""
-        pytest.importorskip("cv2")
+        cv2 = pytest.importorskip("cv2")
         import numpy as np
 
-        from . import bars
-        assert bars.read_layout(np.full((1654, 2339), 255, dtype=np.uint8)) is None
+        from . import bars, normalize
+
+        # 마커는 있고 막대만 없는 지면 — 옛 카드가 그렇다. 프레임은 서지만
+        # 슬롯 자리에 대비가 없으므로 8비트를 지어내면 안 된다.
+        page = np.full((1654, 2339), 255, dtype=np.uint8)
+        for (x, y), (w, h) in (((59, 93), (20, 39)), ((2280, 93), (20, 39)),
+                               ((59, 1583), (19, 22)), ((2280, 1583), (19, 22))):
+            page[y:y + h, x:x + w] = 0
+        image = cv2.rotate(page, cv2.ROTATE_90_CLOCKWISE)
+        frame = normalize.locate_card(image)
+        assert frame is not None, "마커 넷은 세워져야 이 검사가 뜻이 있다"
+        assert bars.read_layout(image, frame) is None
 
 
 class TestTextFits:
