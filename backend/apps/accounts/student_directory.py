@@ -39,6 +39,10 @@ staff_admin·attendance_admin 선례).
 from django.db.models import Q
 
 from apps.curriculum.models import CourseEnrollment, class_name_subquery
+from apps.notifications.models import Notification
+from apps.notifications.notification_admin import build_row as notification_row
+from apps.payments.models import Order
+from apps.payments.payment_admin import build_row as order_row
 
 from .models import Student
 
@@ -93,4 +97,68 @@ def row(student, class_name):
         "grade": student.grade,
         "current_class": class_name,
         "enrollment_status": student.enrollment_status,
+    }
+
+
+def detail(student):
+    """학생 상세 — FLOW 2-6 이 한 화면에 모으라고 한 것들.
+
+    목록(`row`)과 달리 **연락처가 실린다.** 고칠 수 있어야 하는 값이고(FLOW 2-6),
+    틀린 번호를 눈으로 확인하지 못하면 고칠 수도 없다. 그래서 이 응답만 게이트가
+    다르다 — 목록은 직원 공통이지만 상세·수정은 `계정관리` 다.
+
+    발송 내역은 **학부모 앞으로 나간 것도 함께** 본다(FLOW 2-5). 번호 없는 학생의
+    계정 안내가 학부모에게 가므로(provisioning), 학생 행만 보면 정작 그 학생의
+    아이디가 어디로 갔는지가 빠진다. 교재·결제 행은 결제 관리 화면과 같은 조립을
+    쓴다(payment_admin) — 같은 사실을 두 모양으로 만들지 않는다.
+    """
+    user = student.user
+    parents = [
+        link.parent
+        for link in student.parent_students.select_related("parent__user").order_by("parent_id")
+    ]
+    orders = (
+        Order.objects.filter(student=student)
+        .select_related("product", "student__user")
+        .prefetch_related("payments")
+        .order_by("-order_id")
+    )
+    notifications = (
+        Notification.objects.filter(Q(student=student) | Q(parent__in=parents))
+        .select_related("student__user", "parent", "user")
+        .order_by("-notif_id")
+    )
+    return {
+        "student_id": student.student_id,
+        "name": user.name if user else None,
+        "login_id": user.login_id if user else None,
+        "matching_key": student.matching_key,
+        "phone": user.phone if user else "",
+        "grade": student.grade,
+        "school": student.school,
+        "enrollment_status": student.enrollment_status,
+        "parents": [
+            {
+                "parent_id": parent.parent_id,
+                "name": parent.name,
+                "phone": parent.phone,
+                "login_id": parent.user.login_id if parent.user else None,
+            }
+            for parent in parents
+        ],
+        "classes": [
+            {
+                "class_id": enrollment.klass_id,
+                "class_name": enrollment.klass.name if enrollment.klass else None,
+                "course_name": enrollment.course.name,
+                "status": enrollment.status,
+            }
+            for enrollment in (
+                CourseEnrollment.objects.filter(student=student)
+                .select_related("klass", "course")
+                .order_by("enrollment_id")
+            )
+        ],
+        "orders": [order_row(order) for order in orders],
+        "notifications": [notification_row(notification) for notification in notifications],
     }

@@ -78,6 +78,7 @@ from .login_id import (
     issue_student_login_id,
     nfc,
     normalize_phone,
+    resolve_collision,
 )
 from .matching_key import build_matching_key
 from .models import Parent, ParentStudent, Student, User
@@ -457,3 +458,121 @@ def register_student(student):
     student.registered_at = timezone.now()
     student.save(update_fields=["enrollment_status", "registered_at"])
     return student
+
+
+@transaction.atomic
+def update_student(student, *, name=None, school=None, grade=None, phone=None, parent_phone=None):
+    """학생 정보 수정 — **번호가 바뀌면 아이디·대조키가 다시 만들어진다**(FLOW 2-6).
+
+    지금까지 고칠 자리가 없어서, 번호가 한 자리 틀리게 들어온 학생은 계속 남의
+    번호로 문자·청구를 받았고 아이디·대조키도 그 틀린 번호에서 나온 채였다.
+    남은 수단이 "지우고 다시 발급" 인데 그러면 출결·성적이 딸려 나간다.
+
+    **아이디를 다시 만드는 기준은 대조키다.** 대조키 = `{이름}{뒷4자리}` 이고
+    아이디는 거기에 충돌 접미사만 붙인 값이라(login_id·matching_key 모듈),
+    "대조키가 달라졌다" 와 "아이디의 근거가 달라졌다" 는 같은 말이다. 학교·학년만
+    고치면 아무것도 다시 만들지 않는다.
+
+    | 바뀐 것 | 하는 일 |
+    |---|---|
+    | 학교·학년 | 저장만 |
+    | 이름·학생 번호(대조키가 달라짐) | 대조키·아이디·비밀번호 재생성 → 안내 재발송 |
+    | 학부모 번호 | 학부모 번호 정정 → 그 학부모 안내 재발송 |
+
+    **이미 낸 답안지는 건드리지 않는다**(FLOW 2-6). OMR·워크북은 제출 시점에
+    학생 행을 이미 물었고(answer_sheets.student), 지면에서 읽은 값은 그때 읽은
+    그대로(`recognized_matching_key`) 남는다 — 소급해 다시 대조하면 조교가 손으로
+    고른 것까지 뒤집힌다. 수강·출결·성적도 그대로다: 계정을 다시 만드는 것이
+    아니라 아이디와 비밀번호만 다시 만든다.
+
+    **청구 재발송은 하지 않는다.** 학부모 번호가 틀렸으면 청구서도 엉뚱한 번호로
+    간 것이지만(FLOW 2-6), 그건 업체를 부르는 일이고 부분 환불이 안 돼 취소+재청구
+    한 쌍이다 — 결제 관리 화면에서 사람이 취소하고 다시 청구한다. 이미 나간 주문의
+    `billed_to_phone` 은 그때 번호 그대로 남는다(스냅샷).
+
+    돌려주는 것은 **한 번만 볼 수 있는 값**뿐이다(`initial_password` —
+    해시만 저장되므로 응답을 닫으면 다시 볼 수 없다. 알림 템플릿 승인 전까지는
+    이것이 유일한 전달 경로다 — 모듈 docstring).
+    """
+    user = student.user
+    if user is None:
+        raise ValueError("계정이 없는 학생입니다.")
+
+    if school is not None:
+        student.school = school.strip()
+    if grade is not None:
+        student.grade = grade.strip()
+
+    name = nfc(name).strip() if name is not None else user.name
+    if not name:
+        raise ValueError("이름이 필요합니다.")
+    phone = normalize_phone(phone) if phone is not None else user.phone
+    current_parent = _notify_target_parent(student)
+    # 빈 학부모 번호는 "안 고친다" 로 읽는다 — 연결을 끊는 것은 수정이 아니다.
+    new_parent_phone = normalize_phone(parent_phone) if parent_phone else ""
+    parent_phone_now = new_parent_phone or (current_parent.phone if current_parent else "")
+
+    try:
+        matching_key = build_matching_key(name, phone, parent_phone_now)
+    except LoginIdError as exc:
+        raise ValueError(str(exc)) from exc
+
+    reissue = matching_key != student.matching_key
+    user.name = name
+    user.phone = phone
+    if reissue:
+        try:
+            user.login_id = resolve_collision(matching_key)
+        except LoginIdError as exc:
+            raise ValueError(str(exc)) from exc
+        student.matching_key = matching_key
+    user.save(update_fields=["name", "phone", "login_id"])
+    student.save(update_fields=["school", "grade", "matching_key"])
+
+    # 학부모를 먼저 정리한다 — 번호 없는 학생의 계정 안내는 학부모에게 가므로
+    # (`_notify_credentials`), 순서가 뒤바뀌면 방금 고친 번호가 아니라 틀린
+    # 번호로 다시 나간다.
+    parent_needs_notice = bool(new_parent_phone) and _set_parent_phone(
+        student, current_parent, new_parent_phone, name, user.login_id
+    )
+    result = {"initial_password": None, "parent_initial_password": None}
+    if reissue:
+        result["initial_password"] = reset_password(user)
+    if parent_needs_notice:
+        parent = _notify_target_parent(student)
+        if parent is not None and parent.user is not None:
+            result["parent_initial_password"] = reset_password(parent.user)
+    return result
+
+
+def _set_parent_phone(student, current, parent_phone, student_name, student_login_id):
+    """학부모 번호를 고친다 — 계정 안내를 다시 보내야 하면 True.
+
+    **그 번호를 이미 쓰는 학부모가 있으면 새로 만들지 않고 그쪽으로 옮긴다.**
+    형제가 먼저 등록해 둔 경우가 그렇다(FLOW 2-3) — 한 번호에 학부모 계정이 둘
+    생기면 청구도 알림도 둘로 갈린다. 그 계정의 안내는 이미 맞는 번호로 나갔으니
+    다시 보낼 것이 없다(False).
+
+    번호를 제자리에서 고친 경우와 새로 만든 경우는 True 다 — 어느 쪽이든 그
+    학부모는 **자기 번호로 아이디를 받은 적이 없다**.
+    """
+    if current is None:
+        return _link_parent(parent_phone, student_name, student_login_id, student)["created"]
+    if current.phone == parent_phone:
+        return False
+    other = (
+        Parent.objects.filter(phone=parent_phone)
+        .exclude(pk=current.pk)
+        .order_by("parent_id")
+        .first()
+    )
+    if other is not None:
+        ParentStudent.objects.get_or_create(parent=other, student=student)
+        ParentStudent.objects.filter(parent=current, student=student).delete()
+        return False
+    current.phone = parent_phone
+    current.save(update_fields=["phone"])
+    if current.user is not None:
+        current.user.phone = parent_phone
+        current.user.save(update_fields=["phone"])
+    return True

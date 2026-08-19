@@ -31,6 +31,11 @@ urlpatterns = [
         name="staff-activate",
     ),
     path("admin/students", views.StudentDirectoryView.as_view(), name="student-directory"),
+    path(
+        "admin/students/<int:student_id>",
+        views.StudentDetailView.as_view(),
+        name="student-detail",
+    ),
     path("admin/accounts/bulk", views.AccountBulkIssueView.as_view(), name="accounts-bulk"),
     path(
         "admin/accounts/<int:student_id>/register",
