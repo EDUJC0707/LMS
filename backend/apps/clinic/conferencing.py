@@ -76,32 +76,26 @@ class ConferenceAdapter(ABC):
     def create_space(self) -> Conference:
         """새 스페이스 1개. 실패하면 Temporary/PermanentConferenceError 를 던진다."""
 
-    def start_supervision(self, url: str, *, title: str, minutes: int) -> None:
-        """감독 기록을 시작시킨다. **기본은 아무것도 하지 않는 것이다.**
-
-        구글은 스페이스를 만들 때 "전사를 켜라"를 실어 보내므로 회의가 시작되면
-        저절로 돈다 — 부를 것이 없다. 봇을 회의에 넣어야 하는 업체만 이걸
-        구현한다(Fireflies). 그래서 `@abstractmethod` 가 아니다: 필요 없는
-        구현체까지 빈 메서드를 쓰게 만들면 계약이 거짓말을 하게 된다.
-
-        `title` 은 나중에 `fetch_supervision(file_as=...)` 이 되찾을 **같은
-        문자열**이다. 저장소가 제목을 모르는 업체면 무시해도 된다.
-        """
-        return None
-
     def schedule_supervision(
         self, url: str, *, key: str, title: str, starts_at, minutes: int
     ) -> None:
         """감독을 **미리 걸어 둔다**. 기본은 아무것도 하지 않는 것이다.
 
-        `start_supervision` 과 갈리는 점은 **누가 시각을 지키느냐**다. 그쪽은
-        회의가 도는 동안 우리가 밀어 넣는 것이라 배치가 1분마다 돌아야 하고,
-        이쪽은 업체가 시작 시각을 알고 알아서 들어온다 — 우리 쪽에 도는 것이
-        없다(알림톡을 업체 예약 발송으로 넘긴 것과 같은 모양).
+        구글은 스페이스를 만들 때 "전사를 켜라"를 실어 보내므로 회의가 시작되면
+        저절로 돈다 — 걸어 둘 것이 없다. 봇을 넣어야 하는 업체만 이걸 구현한다.
+        그래서 `@abstractmethod` 가 아니다: 필요 없는 구현체까지 빈 메서드를
+        쓰게 만들면 계약이 거짓말을 하게 된다.
+
+        **시각을 지키는 것은 업체다.** 우리는 배정하는 순간 "그 시각에 이 링크로
+        들어가"를 꽂아 두고 끝이라 우리 쪽에 도는 배치가 없다(알림톡을 업체
+        예약 발송으로 넘긴 것과 같은 모양).
 
         `key` 는 나중에 고치거나 지울 때 그 예약을 다시 가리키는 이름이다.
         클리닉 1건에 하나이고 **바뀌지 않아야** 한다 — 시각이 바뀌어도 같은
         예약을 덮어쓰는 것이지 새로 만드는 게 아니기 때문이다.
+
+        `title` 은 나중에 `fetch_supervision(file_as=...)` 이 받을 **같은
+        문자열**이다. 제목을 쓸 데가 없는 업체면 무시해도 된다.
         """
         return None
 

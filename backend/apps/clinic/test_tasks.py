@@ -9,12 +9,7 @@ from unittest import mock
 from django.test import SimpleTestCase, override_settings
 
 from .conferencing import PermanentConferenceError
-from .tasks import (
-    COLLECT_TASK_NAME,
-    DISPATCH_TASK_NAME,
-    collect_clinic_supervision,
-    dispatch_clinic_supervision,
-)
+from .tasks import COLLECT_TASK_NAME, collect_clinic_supervision
 
 
 class CollectTaskTests(SimpleTestCase):
@@ -52,34 +47,6 @@ class BeatScheduleTests(SimpleTestCase):
             e for e in settings.CELERY_BEAT_SCHEDULE.values() if e["task"] == COLLECT_TASK_NAME
         )
         self.assertLessEqual(entry["schedule"], 30 * 60)
-
-
-class DispatchTaskTests(SimpleTestCase):
-    """봇 투입 태스크 — 수집과 달리 **시각이 맞아야** 의미가 있다."""
-
-    def test_delegates_to_the_service(self):
-        counts = {"started": 1, "failed": 0}
-        with mock.patch("apps.clinic.tasks.supervision.dispatch") as dispatch:
-            dispatch.return_value = counts
-            self.assertEqual(dispatch_clinic_supervision(), counts)
-        dispatch.assert_called_once_with()
-
-    def test_a_broken_provider_does_not_kill_the_worker(self):
-        with mock.patch("apps.clinic.tasks.supervision.dispatch") as dispatch:
-            dispatch.side_effect = PermanentConferenceError("설정 없음")
-            result = dispatch_clinic_supervision()
-        self.assertEqual(result["started"], 0)
-        self.assertIn("설정 없음", result["error"])
-
-    def test_beat_calls_it_often_enough_to_catch_a_start(self):
-        # 창(DISPATCH_WINDOW)보다 성기게 돌면 시작을 통째로 놓친다.
-        from django.conf import settings
-
-        from .supervision import DISPATCH_WINDOW
-
-        entry = settings.CELERY_BEAT_SCHEDULE["clinic-supervision-dispatch"]
-        self.assertEqual(entry["task"], DISPATCH_TASK_NAME)
-        self.assertLess(entry["schedule"], DISPATCH_WINDOW.total_seconds())
 
     def test_beat_still_carries_the_other_tracks_entry(self):
         # 같은 딕셔너리를 여러 트랙이 쓴다 — 새 대입으로 덮으면 조용히 사라진다

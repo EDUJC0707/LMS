@@ -31,8 +31,10 @@
 그런 경우라면 노크가 있어도 조교가 수락해 준다 — 노크가 실제로 막던 것은
 "링크를 우연히 주운 외부인" 뿐이었다.
 
-**`artifactConfig`: 전사 ON · Gemini 요약 ON · 녹화 OFF** — PRD 8-5 확정
-(2026-07-17). 미트에는 오디오 전용 녹음이 없어서 전사와 AI 요약이 조교 감독
+**`artifactConfig`: 지금은 셋 다 OFF** — ~~전사 ON · Gemini 요약 ON~~ 이 PRD 8-5
+확정(2026-07-17)이었고 2026-08-12 에 껐다(아래 `SPACE_CONFIG` 의 두 줄). 감독
+자료는 회의에 들어오는 봇이 만든다. **여기부터는 되살릴 때를 위한 기록이다.**
+미트에는 오디오 전용 녹음이 없어서 전사와 AI 요약이 조교 감독
 자료를 대신한다(`ClinicEvaluation.transcript_ref`·`ai_summary` 가 받을 자리).
 전사와 요약은 **문서 한 개**에 함께 담긴다(실측: 둘의 document ID 가 같다).
 **스페이스를 만들 때 걸어 둔다** — 조교가 회의 중에 버튼을 누르는 것에 기대면
@@ -48,7 +50,8 @@
 전사가 시작되지 않는다. 실제 회의로 확인한 적은 아직 없다(미결 8-20).
 
 전사는 회의 종료 후 **30일만** API 로 조회된다(`conferenceRecords.transcripts`).
-수집 배치는 아직 없다 — 그때까지는 주최자 드라이브에 남는 문서가 원본이다.
+그 안쪽에서 `supervision.collect`(beat `clinic-supervision`)가 가져간다 —
+`RECORD_LIFETIME` 이 30일인 이유가 이것이다.
 
 ## HTTP 는 표준 라이브러리로 한다
 
@@ -56,7 +59,6 @@
 없다. 대신 전송을 주입할 수 있게 열어 두어(`transport`) 테스트가 실제 구글을
 부르지 않는다.
 """
-import datetime
 import json
 import urllib.error
 import urllib.parse
@@ -93,8 +95,8 @@ SPACE_CONFIG = {
     "accessType": "OPEN",
     "artifactConfig": {
         "recordingConfig": {"autoRecordingGeneration": "OFF"},
-        # ~~ON~~ → **OFF**(2026-08-12 전면 교체). 감독 자료는 Fireflies 봇이
-        # 만든다. 구글까지 켜 두면 안 쓰는 회의록이 클리닉마다 드라이브에
+        # ~~ON~~ → **OFF**(2026-08-12 전면 교체). 감독 자료는 회의에 들어오는
+        # 봇이 만든다. 구글까지 켜 두면 안 쓰는 회의록이 클리닉마다 드라이브에
         # 쌓이고, 학생에게 녹취 안내가 두 번 뜬다. 되살리려면 이 두 줄이다 —
         # 어댑터 토글(`CLINIC_CONFERENCE_BACKEND`)과는 별개 스위치다.
         "transcriptionConfig": {"autoTranscriptionGeneration": "OFF"},
@@ -112,14 +114,17 @@ SPACE_CONFIG = {
 #: 구글에 "미트가 만든 파일만 읽고 쓰기" 라는 권한은 없다(2026-08-04 사용자 결정).
 #: 그래서 이 계정 드라이브에 **클리닉 감독 자료 말고 다른 것을 두지 않는 것**이
 #: 실질적인 방어선이다 — 권한으로는 더 좁힐 수 없다.
+#:
+#: **지금 들고 있는 갱신 토큰은 여기보다 넓다.** ~~`calendar.events`~~ 가 한때
+#: 여기 있었고(2026-08-12~19 — Fireflies 가 캘린더를 보고 참석하던 구조),
+#: Recall 이 `join_at` 으로 직접 예약하면서 걷어냈다. 토큰은 그때 동의받은
+#: 것이라 캘린더 권한을 아직 달고 있다 — 그래도 **그대로 쓴다**. 안 부르는
+#: 권한이 붙어 있는 것뿐이고 토큰은 정상 동작한다. 좁히고 싶으면 사람이
+#: 브라우저에서 `manage.py meet_authorize` 로 **재동의**해야 하고, 그 결과는
+#: 새 갱신 토큰이다(옛것은 죽는다).
 SCOPES = (
     "https://www.googleapis.com/auth/meetings.space.created",
     "https://www.googleapis.com/auth/drive",
-    # 감독 봇을 일정에 걸어 두기 위해서다(2026-08-12). 봇을 우리가 시작 시각에
-    # 밀어 넣는 대신 캘린더에 클리닉을 올려 두면 업체가 알아서 들어온다.
-    # `calendar` 가 아니라 `calendar.events` — 일정 하나를 만들고 고치고 지울 뿐
-    # 달력 자체를 만들거나 남의 달력 설정을 건드릴 일이 없다.
-    "https://www.googleapis.com/auth/calendar.events",
 )
 
 #: 끝난 회의 조회. 스페이스 하나에 회의가 여러 번 열릴 수 있다(모두 나갔다가
@@ -131,20 +136,6 @@ DRIVE_FILES_ENDPOINT = "https://www.googleapis.com/drive/v3/files"
 
 #: 드라이브 업로드는 주소가 다르다(`/upload` 접두사).
 DRIVE_UPLOAD_ENDPOINT = "https://www.googleapis.com/upload/drive/v3/files"
-
-#: 캘린더 — 감독 봇이 **시작 시각을 아는 유일한 경로**다. 봇은 붙어 있는 캘린더를
-#: 보고 알아서 들어오므로, 클리닉을 여기 올려 두는 것이 곧 예약이다.
-#: `primary` = 토큰 주인(`hjcedu@hjcedu.com`)의 기본 캘린더.
-CALENDAR_EVENTS_ENDPOINT = (
-    "https://www.googleapis.com/calendar/v3/calendars/primary/events"
-)
-
-#: 토큰 주인이 누구인지 묻는 자리. 참석자 명단에 넣어야 해서 필요한데, 설정에
-#: 또 적으면 토큰과 이메일이 갈릴 수 있다.
-#: **캘린더가 아니라 드라이브에 묻는다** — `calendar.events` 로는 캘린더 정보를
-#: 못 읽어 403 이고(2026-08-12 실측), 스코프를 하나 더 받으면 재동의가 또 필요하다.
-#: `drive` 는 이미 갖고 있다.
-DRIVE_ABOUT_ENDPOINT = "https://www.googleapis.com/drive/v3/about?fields=user"
 
 #: 관리자가 배정 버튼을 누른 채 기다리는 시간 — 동기 호출이라 짧게 잡는다.
 TIMEOUT_SECONDS = 10
@@ -254,100 +245,6 @@ class GoogleMeetAdapter(ConferenceAdapter):
         if status != 200:
             raise self._translate(status, response, "감독 자료를 저장하지 못했습니다")
         return self._json(response).get("webViewLink") or ""
-
-    # -- 캘린더(감독 예약) --------------------------------------------------
-
-    def upsert_event(self, key, *, title, url, starts_at, minutes):
-        """클리닉 일정을 세우거나 덮어쓴다. `key` 가 곧 일정 ID 다.
-
-        **ID 를 우리가 정하는 이유**: 시간이 바뀌었을 때 새 일정을 하나 더
-        만들면 봇이 옛 시각에도 들어간다. 클리닉에서 뽑은 이름을 쓰면 덮어쓰기가
-        되고, 어느 일정이 그 클리닉 것인지 적어 둘 컬럼도 필요 없다.
-
-        **링크는 글자로 싣는다.** 구글은 캘린더가 `createRequest` 로 **새로
-        만든** 미트만 정식 회의 필드(`conferenceData`)에 넣어 주고, 우리처럼
-        이미 있는 스페이스 링크는 거기 못 넣는다. 그래서 `location` 과
-        `description` 양쪽에 적는다 — 회의록 봇들이 보는 자리가 그 둘이다.
-        """
-        end = None
-        if starts_at is not None and hasattr(starts_at, "isoformat"):
-            end = (starts_at + datetime.timedelta(minutes=minutes)).isoformat()
-            starts_at = starts_at.isoformat()
-        token = self._access_token()
-        event = {
-            "id": key,
-            # **참석자를 비워 두면 안 된다.** 회의록 봇의 참석 규칙은 참석자
-            # 도메인을 보고 "내부 회의"를 판정하는데, 비어 있으면 볼 것이 없어
-            # 규칙이 걸리지 않는다. 학생은 구글 계정이 아니라(LMS 계정이다)
-            # 외부 게스트로 들어오므로 여기 넣을 수 없고, 조직 계정 하나로 족하다.
-            "attendees": [{"email": self._account_email(token)}],
-            # 일정 제목이 그대로 전사 제목이 된다(되찾는 열쇠).
-            "summary": title,
-            "location": url,
-            "description": url,
-            "start": {"dateTime": starts_at},
-            "end": {"dateTime": end or starts_at},
-        }
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-        # **만들기는 POST 다.** PUT 은 이미 있는 일정만 고치고 없으면 404 라,
-        # PUT 부터 걸면 새 클리닉의 예약이 통째로 안 걸린다(2026-08-12 실측 —
-        # 배정은 성공했는데 캘린더가 비어 있었다).
-        status, body = self._send(
-            "POST",
-            f"{CALENDAR_EVENTS_ENDPOINT}?sendUpdates=none",
-            json.dumps(event).encode(),
-            headers,
-        )
-        if status == 409:
-            # 이미 있다 = 같은 클리닉의 예약이다(ID 를 우리가 정하므로).
-            # 시간이 바뀐 경우라 덮어쓴다 — 하나 더 만들면 봇이 두 번 간다.
-            status, body = self._send(
-                "PUT",
-                f"{CALENDAR_EVENTS_ENDPOINT}/{key}?sendUpdates=none",
-                json.dumps(event).encode(),
-                headers,
-            )
-        if status >= 300:
-            raise self._translate(status, body, "감독 일정을 걸지 못했습니다")
-
-    def _account_email(self, token):
-        """토큰 주인의 이메일.
-
-        설정에 따로 적지 않는다 — 토큰을 다른 계정으로 재발급했는데 이메일만
-        옛 값으로 남으면 참석자가 엉뚱한 사람이 되고, 그건 조용히 틀린다.
-        """
-        if getattr(self, "_email", None):
-            return self._email
-        status, body = self._send(
-            "GET",
-            DRIVE_ABOUT_ENDPOINT,
-            None,
-            {"Authorization": f"Bearer {token}"},
-        )
-        if status != 200:
-            raise self._translate(status, body, "계정을 확인하지 못했습니다")
-        self._email = (self._json(body).get("user") or {}).get("emailAddress")
-        return self._email
-
-    def delete_event(self, key):
-        """걸어 둔 일정을 거둔다. **없으면 성공으로 본다**(멱등).
-
-        취소를 두 번 눌러도, 애초에 예약이 없던 건이어도 조용히 끝나야 한다 —
-        404 를 실패로 다루면 취소가 실패하고 학생은 취소되지 않은 화면을 본다.
-        """
-        token = self._access_token()
-        status, body = self._send(
-            "DELETE",
-            f"{CALENDAR_EVENTS_ENDPOINT}/{key}?sendUpdates=none",
-            None,
-            {"Authorization": f"Bearer {token}"},
-        )
-        if status in (200, 204, 404, 410):
-            return
-        raise self._translate(status, body, "감독 일정을 거두지 못했습니다")
 
     # -- 감독 자료 수집 ----------------------------------------------------
 

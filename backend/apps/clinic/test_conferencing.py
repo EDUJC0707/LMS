@@ -55,23 +55,12 @@ class ConferenceValueTests(SimpleTestCase):
             conference.url = "https://x/b"
 
 
-class StartSupervisionDefaultTests(SimpleTestCase):
-    """감독 시작은 **선택 사항**이다 — 구현 안 한 어댑터가 깨지면 안 된다."""
+class ScheduleSupervisionDefaultTests(SimpleTestCase):
+    """감독 예약은 **선택 사항**이다 — 구현 안 한 어댑터가 깨지면 안 된다."""
 
-    def test_defaults_to_doing_nothing(self):
-        # 구글은 스페이스 설정으로 알아서 전사를 시작한다. 봇을 넣어야 하는
-        # 업체만 이걸 구현하고, 나머지는 이 기본값 위에서 그대로 돈다.
-        class Bare(ConferenceAdapter):
-            def create_space(self):
-                return Conference(provider="p", ref="r", url="u")
-
-            def fetch_supervision(self, ref, *, file_as=None, key=None):
-                return None
-
-        self.assertIsNone(Bare().start_supervision("https://x/a", title="t", minutes=60))
-
-    def test_scheduling_and_cancelling_also_default_to_nothing(self):
-        # 예약형(업체가 시작 시각에 알아서 들어옴)을 지원하는 업체만 구현한다.
+    def test_scheduling_and_cancelling_default_to_nothing(self):
+        # 구글은 스페이스 설정으로 알아서 전사를 시작한다 — 걸어 둘 것이 없다.
+        # 봇을 넣어야 하는 업체만 이걸 구현하고, 나머지는 기본값 위에서 돈다.
         class Bare(ConferenceAdapter):
             def create_space(self):
                 return Conference(provider="p", ref="r", url="u")

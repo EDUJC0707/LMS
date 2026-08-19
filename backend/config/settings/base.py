@@ -119,14 +119,6 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.clinic.tasks.collect_clinic_supervision",
         "schedule": 20 * 60,
     },
-    # 감독 봇 투입. **수집과 달리 늦으면 못 만회한다** — 봇은 회의가 도는 동안
-    # 에만 들어갈 수 있어서, 주기가 성기면 그만큼 회의 앞부분이 통째로 안 남는다.
-    # 1분인 이유가 그것이고, 할 일이 없으면 DB 조회 한 번으로 끝난다.
-    # 구글 경로에서는 어댑터가 아무것도 하지 않으므로 켜 두어도 해가 없다.
-    "clinic-supervision-dispatch": {
-        "task": "apps.clinic.tasks.dispatch_clinic_supervision",
-        "schedule": 60,
-    },
 }
 
 # --- 알림 채널 (PRD 6-8 채널 추상화 — apps/notifications/channels.py) --------
@@ -281,18 +273,17 @@ STORAGES = {
 
 # --- 화상(클리닉) — key_considerations §4 추상화 경계 --------------------
 # 업체 교체는 이 경로 한 줄이다(apps.clinic.conferencing 계약).
-# 2026-08-12 전면 교체 — 기본값이 Fireflies 다. 방과 링크는 여전히 구글이
-# 만들고(FirefliesAdapter 가 위임한다) **감독 자료만** 봇에서 온다.
-# 바꾼 이유는 조교 기기다: 구글 전사는 컴퓨터·안드로이드에서만 켜지고
-# 아이폰·아이패드에는 버튼 자체가 없다. 봇은 클라우드에서 들어오므로 사람이
-# 무슨 기기를 쓰든 기록이 남는다(docs/2026-08-12-아이패드-전사-대안조사.md).
+# 기본값은 **Recall** 이다. 방과 링크는 여전히 구글이 만들고(RecallAdapter 가
+# 위임한다) **감독 자료만** 봇에서 온다. 바꾼 이유는 조교 기기다: 구글 전사는
+# 컴퓨터·안드로이드에서만 켜지고 아이폰·아이패드에는 버튼 자체가 없다. 봇은
+# 클라우드에서 들어오므로 사람이 무슨 기기를 쓰든 기록이 남는다
+# (docs/2026-08-12-아이패드-전사-대안조사.md).
+# ~~apps.clinic.fireflies.FirefliesAdapter~~ (2026-08-12~19) ← 예약 참가가 없어
+# 배치로 봇을 밀어 넣어야 했다. 2026-08-19 Recall 로 교체하며 걷어냈다.
 # ~~apps.clinic.google_meet.GoogleMeetAdapter~~ ← 되돌리려면 이 값이다.
 CLINIC_CONFERENCE_BACKEND = env(
-    "CLINIC_CONFERENCE_BACKEND", default="apps.clinic.fireflies.FirefliesAdapter"
+    "CLINIC_CONFERENCE_BACKEND", default="apps.clinic.recall.RecallAdapter"
 )
-
-# 비면 봇 투입·수집이 "API 키가 설정되지 않았습니다" 로 실패한다(조용한 성공 없음).
-FIREFLIES_API_KEY = env("FIREFLIES_API_KEY", default="")
 
 # --- 감독 = Recall(귀) + CLOVA(받아쓰기) -----------------------------------
 # 회의에 들어가는 일과 한국어를 받아쓰는 일을 **다른 업체가 한다**. 한국어를
