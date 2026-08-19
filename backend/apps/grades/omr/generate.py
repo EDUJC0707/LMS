@@ -196,16 +196,28 @@ RULES_TAIL = [("3. 수정시에는 수정테이프만을", 0, 3.6), ("사용하�
 #: 공백을 넣고 그 폭을 재서 얹던 방식은 간격이 원본과 어긋났다.
 RULE_MARK_TAIL = "와 같이 바르게"
 
-#: 원본 조사 카드 문구 그대로(2026-06-12 실물). 화살표가 어느 덩어리를
-#: 가리키는지까지 원본이 정해 놓았다 — 위 덩어리는 십의 자리, 아래는 일의 자리.
-SURVEY_TENS_NOTE = ["점수의 10의 자리 숫", "자에 마킹", "(42점이면 4에 마킹)"]
-SURVEY_ONES_NOTE = ["점수의 1의 자리 숫", "자에 마킹", "(42점이면 2에 마킹)"]
+#: 원본 조사 카드 문구 그대로(2026-06-12 실물). **줄바꿈은 여기서 정하지 않는다** —
+#: 답란 폭이 26mm 로 좁아져 원본의 줄바꿈이 안 맞는다. 폭에 맞춰 자동으로 나눈다.
+#: 화살표는 설명 **위**에 온다 — 설명이 가리키는 덩어리가 바로 위에 있다.
+#: 괄호 부분은 **따로 줄을 시작한다** — 이어 붙이면 `…마킹 (42점이면` 에서
+#: 줄이 끊겨 읽는 사람이 한 번 멈춘다.
+SURVEY_TENS_NOTE = ("점수의 10의 자리 숫자에 마킹", "(42점이면 4에 마킹)")
+SURVEY_ONES_NOTE = ("점수의 1의 자리 숫자에 마킹", "(42점이면 2에 마킹)")
+SURVEY_COL_NOTE_PT = 6.4
 MYSCORE_NOTE = ["마킹 제대로 되었는지 확인용입니다.", "꼭 작성해주세요 :) 수고했습니다."]
 #: 조사 카드 오른쪽 블록의 우측 여백(마커 기준 mm).
 SURVEY_RIGHT_MM = 8.0
+#: 예시 한 벌의 폭과 사이. 오른쪽 블록(내 점수 박스)도 이 폭에 맞춘다.
+EXAMPLE_W_MM = Decimal("20.0")
+EXAMPLE_GAP_MM = Decimal("2.0")
+SURVEY_BLOCK_W_MM = EXAMPLE_W_MM * 3 + EXAMPLE_GAP_MM * 2
+#: ★내 점수★ — 손으로 두 자리를 적는 자리다. 원본은 49.8mm 였는데 그만한
+#: 높이가 필요 없다(대표 2026-08-19).
+MYSCORE_H_MM = Decimal("34.0")
+EXAMPLE_SCALE = 0.60
 
-#: 세 가지 예시 — 08점이 0 의 자리를 가르친다(십의 자리를 안 칠한다).
-SURVEY_EXAMPLES = ((8, "08점"), (42, "42점"), (35, "35점"))
+#: 세 가지 예시 — 08점이 십의 자리를 안 칠하는 경우, 50점이 일의 자리 0 을 보여 준다.
+SURVEY_EXAMPLES = ((8, "08점"), (42, "42점"), (50, "50점"))
 
 PHONE_HOW_TITLE = "전화번호 마킹방법"
 PHONE_HOW = [
@@ -314,6 +326,25 @@ def overflow(body, size, room_u, bold=False):
     return (_width(body, size, bold) - room_pt) / MM_UNIT
 
 
+def _wrap(body, size, room_u):
+    """`room_u` 안에 들어가게 **공백에서만** 끊는다. 한 낱말이 넘치면 그대로 둔다.
+
+    글자를 줄이지 않는 것은 `overflow` 와 같은 이유다 — 줄마다 크기가 달라지면
+    한 문단 안에서 계단처럼 튄다.
+    """
+    lines, current = [], ""
+    for word in body.split():
+        trial = f"{current} {word}".strip()
+        if current and overflow(trial, size, room_u) > 0:
+            lines.append(current)
+            current = word
+        else:
+            current = trial
+    if current:
+        lines.append(current)
+    return lines
+
+
 # --- 도형 ------------------------------------------------------------------
 
 
@@ -407,10 +438,10 @@ def _cell(pen, u, v, glyph, width_mm=None, height_mm=None, size=None):
     _text(pen, u, v, glyph, size=size or CELL_GLYPH_PT, colour=PINK)
 
 
-def _filled_bubble(pen, u, v):
+def _filled_bubble(pen, u, v, scale=1.0):
     x, y = _xy(u, v)
-    w = float(L.BUBBLE_W_MM) * MM_UNIT
-    h = float(L.BUBBLE_H_MM) * MM_UNIT
+    w = float(L.BUBBLE_W_MM) * MM_UNIT * scale
+    h = float(L.BUBBLE_H_MM) * MM_UNIT * scale
     pen.setFillColor(INK)
     pen.roundRect(x - w / 2, y - h / 2, w, h, w / 2, stroke=0, fill=1)
     pen.setFillColor(INK)
@@ -751,13 +782,17 @@ def _survey_block(pen, card):
 
 
 def _score_column(pen, u0, card):
-    """점수 열 — 문번이 숫자, 답란은 칸 하나. 사이에 설명과 화살표.
+    """점수 열 — 문번이 숫자, 답란은 칸 하나. 십이 위, 일이 아래다.
 
-    **설명이 놓이는 구간에는 문번 칸도 세로 구분선도 없다**(원본 그대로).
-    끝까지 그었더니 세로줄이 `점수의|10의 자리 숫` 처럼 글자를 잘랐고 초록
-    바탕까지 글자 밑에 깔려 읽기가 제일 나빴다.
+    **문번 초록칸과 세로줄은 위에서 아래까지 끊기지 않는다**(대표 2026-08-19).
+    예전에는 두 덩어리 사이를 흰 띠로 끊고 거기에 설명을 넣었는데, 열이 두
+    동강 난 것처럼 보였다. 설명은 각 덩어리 끝의 **빈 두 줄**로 옮겼다.
+
+    문번 숫자는 **전부 같은 무게**다. 답란에서는 5의 배수를 굵게 해 눈이 짚을
+    자리를 주지만, 여기 숫자는 문항 번호가 아니라 **점수 자릿수**다 — 5 와 0 만
+    굵으면 그 점수가 특별해 보인다.
     """
-    box_w = float(L.mm_to_u(L.ANSWER_BOX_W_MM))
+    box_w = float(L.mm_to_u(L.SURVEY_BOX_W_MM))
     u1 = u0 + box_w
     top, bottom = BOX_ANSWER_V
     header_v = ANSWER_HEADER_V
@@ -765,145 +800,125 @@ def _score_column(pen, u0, card):
     cells = card.survey_cells()
     half = float(L.mm_to_v(L.ROW_PITCH_MM)) / 2
 
-    tens_last = max(v for (place, _), (_, v) in cells.items() if place == "십")
-    ones_first = min(v for (place, _), (_, v) in cells.items() if place == "일")
-    band = (tens_last + half, ones_first - half)   # 설명이 들어가는 빈 구간
-
     _rect(pen, u0, top, u1, bottom)
-    # 문번 칸과 구분선은 **덩어리마다 끊어서** 그린다.
-    for run_top, run_bottom, corners in (
-        (top, band[0], LEFT_ONLY if top == top else NO_CORNERS),
-        (band[1], bottom, (False, False, False, True)),
-    ):
-        _rect(pen, u0, run_top, number_u, run_bottom, fill=TINT,
-              corners=corners, stroke=False)
-        _line(pen, number_u, run_top, number_u, run_bottom)
+    _rect(pen, u0, top, number_u, bottom, fill=TINT, corners=LEFT_ONLY)
     _rect(pen, u0, top, u1, header_v, fill=TINT, corners=TOP_ONLY)
     _text(pen, (u0 + number_u) / 2, (top + header_v) / 2, "문번", size=8.6, bold=True)
     _text(pen, (number_u + u1) / 2, (top + header_v) / 2, "답    란", size=9.4, bold=True)
     _line(pen, u0, header_v, u1, header_v)
-    _line(pen, number_u, top, number_u, band[0])
+    _line(pen, number_u, top, number_u, bottom)
 
     for (place, digit), (u, v) in cells.items():
-        heavy = digit in ("5", "0")
-        _text(pen, (u0 + number_u) / 2, v, digit,
-              size=11.7 if heavy else 10.6, bold=heavy)
+        _text(pen, (u0 + number_u) / 2, v, digit, size=10.6)
         _cell(pen, u, v, "1")
         if place == "일" and digit == "5":
             # 원본은 폭의 40% 만 긋는 짧은 선이다 — 버블 오른쪽에서 끝난다.
             _line(pen, u0, v + half, u + float(L.BUBBLE_RU) + 0.006, v + half,
                   colour=GREEN, weight=1.2)
 
-    _survey_notes(pen, u0, u1, band)
+    tens_last = max(v for (p, _), (_, v) in cells.items() if p == "십")
+    ones_first = min(v for (p, _), (_, v) in cells.items() if p == "일")
+    ones_last = max(v for (p, _), (_, v) in cells.items() if p == "일")
+    for note, band in ((SURVEY_TENS_NOTE, (tens_last + half, ones_first - half)),
+                       (SURVEY_ONES_NOTE, (ones_last + half, bottom))):
+        _survey_note(pen, number_u, u1, band[0], band[1], note)
 
 
-def _survey_notes(pen, u0, u1, band):
-    """두 덩어리 사이의 설명 — 화살표가 위/아래 어느 쪽인지 말한다.
+def _survey_note(pen, number_u, u1, top, bottom, body):
+    """덩어리 끝 빈 줄에 앉는 설명 — **답란 쪽에만** 든다.
 
-    글자는 **박스 안쪽 왼쪽 끝에 붙인다**(원본 실측 0.0~0.17mm). 들여쓰면
-    줄이 짧아져 원본이 의도한 줄바꿈 자리가 어긋나 보인다.
+    문번 칸 위로 걸치면 초록 바탕에 글자가 깔리고 세로줄이 글자를 가른다.
     """
-    top, bottom = band
-    height = bottom - top
-    arrow = height * 0.10
-    line_step = height * 0.115
-    _text(pen, (u0 + u1) / 2, top + arrow, "↑", size=9.0)
-    v = top + arrow + line_step * 0.9
-    for line in SURVEY_TENS_NOTE:
-        _text(pen, u0 + 0.004, v, line, size=SURVEY_NOTE_PT, anchor="left")
-        v += line_step
-    mid = v - line_step * 0.35
-    _line(pen, u0, mid, u1, mid, colour=GREEN, weight=1.2)
-    v += line_step * 0.12
-    for line in SURVEY_ONES_NOTE:
-        _text(pen, u0 + 0.004, v, line, size=SURVEY_NOTE_PT, anchor="left")
-        v += line_step
-    _text(pen, (u0 + u1) / 2, bottom - arrow, "↓", size=9.0)
+    inset = float(L.mm_to_u(Decimal("1.6")))
+    left = number_u + inset
+    room = u1 - left - inset
+    lines = [line for part in body for line in _wrap(part, SURVEY_COL_NOTE_PT, room)]
+    step = _down(SURVEY_COL_NOTE_PT * 25.4 / 72 * 1.30)
+    height = step * (len(lines) + 1)
+    v = top + (bottom - top - height) / 2 + step * 0.7
+    _text(pen, (left + u1 - inset) / 2, v, "↑", size=8.0)
+    for line in lines:
+        v += step
+        _text(pen, left, v, line, size=SURVEY_COL_NOTE_PT, anchor="left")
 
 
 def _survey_side(pen, card):
-    """★내 점수★ 손글씨 칸 + 예시 세 개(08·42·35점) — 원본 그대로.
+    """★내 점수★ 손글씨 칸 + 예시 세 벌 — 폭을 예시 3벌에 맞춰 잡는다.
 
-    가로 자리를 **점수 열 오른쪽 남는 폭에서 직접 잡는다.** 답란 열 간격에서
-    파생시켰더니 답란을 넓혔을 때 29mm 를 넘어 예시 하나가 지면 밖으로 나갔다.
+    원본은 90×50mm 였다. 손으로 두 자리를 적는 자리에 그만한 지면이 필요하지
+    않아 폭·높이 모두 줄였다(대표 2026-08-19). 오른쪽 끝은 지면 기준이다 —
+    답란 열 간격에서 파생시켰더니 답란을 넓혔을 때 예시가 지면 밖으로 나갔다.
     """
-    bu0 = (float(L.mm_to_u(L.ANSWER_COL_LEFT_MM + L.ANSWER_BOX_W_MM))
-           + float(L.mm_to_u(L.COLUMN_GAP_MM)))
-    bu1 = 1.0 - float(L.mm_to_u(SURVEY_RIGHT_MM))
-    top, bottom = BOX_ANSWER_V
-    hand_bottom = top + 0.300
+    # 점수 열과 오른쪽 여백 **사이 한가운데**에 놓는다. 오른쪽 끝에 붙였더니
+    # 폭을 줄인 만큼이 점수 열 옆에 통째로 빈 구멍으로 남았다.
+    left = (float(L.mm_to_u(L.ANSWER_COL_LEFT_MM + L.SURVEY_BOX_W_MM))
+            + float(L.mm_to_u(L.COLUMN_GAP_MM)))
+    right = 1.0 - float(L.mm_to_u(SURVEY_RIGHT_MM))
+    span = float(L.mm_to_u(SURVEY_BLOCK_W_MM))
+    bu0 = left + (right - left - span) / 2
+    bu1 = bu0 + span
+    top = BOX_ANSWER_V[0]
+    hand_bottom = top + float(L.mm_to_v(MYSCORE_H_MM))
 
     _rect(pen, bu0, top, bu1, hand_bottom, corners=NO_CORNERS)
-    _text(pen, (bu0 + bu1) / 2, top + 0.050, "★  내 점수  ★", size=15.0, bold=True)
+    _text(pen, (bu0 + bu1) / 2, top + _down(7.0), "★ 내 점수 ★", size=13.0, bold=True)
 
-    # 원본에 있는 점 두 개 — 손으로 점수를 적는 자리를 짚어 준다.
-    dot_u = bu0 + float(L.mm_to_u(Decimal("6.5")))
-    for offset in (0.0, float(L.mm_to_v(Decimal("3.2")))):
-        x, y = _xy(dot_u, top + 0.145 + offset)
-        pen.setFillColor(INK)
-        pen.circle(x, y, float(L.mm_to_u(Decimal("0.87"))) * float(L.SPAN_X_MM) * MM_UNIT,
-                   stroke=0, fill=1)
-
-    v = hand_bottom - 0.078
+    v = hand_bottom - _down(9.4)
     for line in MYSCORE_NOTE:
-        _text(pen, bu0 + 0.018, v, line, size=SURVEY_NOTE_PT, anchor="left")
-        v += 0.032
+        _text(pen, bu0 + float(L.mm_to_u(Decimal("3.0"))), v, line,
+              size=SURVEY_NOTE_PT, anchor="left")
+        v += _down(4.6)
 
-    return bu1, _survey_examples(pen, bu0, bu1, hand_bottom + 0.040, card)
+    return bu1, _survey_examples(pen, bu0, hand_bottom + _down(6.0), card)
 
 
-def _survey_examples(pen, bu0, bu1, v0, card):
-    """예시 세 벌 — **점수 열을 그대로 줄인 축소판**이다.
+def _survey_examples(pen, bu0, v0, card):
+    """예시 세 벌 — 점수 열의 축소판. **십·일 사이 빈 구간은 없다.**
 
-    십과 일 사이의 빈 구간까지 같은 비율로 담아야 원본과 같은 실루엣이 난다.
-    그 구간을 접었더니 세로가 20mm 짧아 다른 물건처럼 보였다.
+    본 열은 그 자리에 설명이 들어가서 비워 두지만, 예시는 마킹 모양만 보여
+    주면 된다(대표 2026-08-19). 십 다섯 줄과 일 열 줄을 붙이고 사이에 구분선을
+    긋는다 — 어느 쪽이 십의 자리인지는 문번 숫자가 말한다.
     """
     cells = card.survey_cells()
-    scale = 0.68
+    scale = EXAMPLE_SCALE
     step = float(L.mm_to_v(L.ROW_PITCH_MM)) * scale
-    span = bu1 - bu0
-    width = span * 0.255
-    gap = (span - width * len(SURVEY_EXAMPLES)) / (len(SURVEY_EXAMPLES) - 1 + 2.4)
-    rows = {place: [d for (p, d) in cells if p == place]
-            for place in ("십", "일")}
-    ones_first = 10          # 답란과 같은 20행 격자에서 일의 자리가 시작하는 행
-    total_rows = ones_first + len(rows["일"])
+    width = float(L.mm_to_u(EXAMPLE_W_MM))
+    gap = float(L.mm_to_u(EXAMPLE_GAP_MM))
+    glyph = CELL_GLYPH_PT * scale
+    bubble = (float(L.BUBBLE_W_MM) * scale, float(L.BUBBLE_H_MM) * scale)
+    rows = {place: [d for (p, d) in cells if p == place] for place in ("십", "일")}
+    order = [("십", d) for d in rows["십"]] + [("일", d) for d in rows["일"]]
 
     for index, (score, label) in enumerate(SURVEY_EXAMPLES):
-        u0 = bu0 + gap * 1.2 + index * (width + gap)
+        u0 = bu0 + index * (width + gap)
         u1 = u0 + width
-        number_u = u0 + width * 0.205
-        head = v0 + 0.026
-        first = head + 0.052
-        bottom = first + (total_rows - 0.4) * step
+        number_u = u0 + width * 0.25
+        head = v0 + _down(2.2)
+        first = head + _down(4.6)
+        bottom = first + (len(order) - 0.4) * step
 
-        _text(pen, u0, v0, f"ex) {label}", size=8.6, anchor="left")
+        _text(pen, u0, v0, f"ex) {label}", size=8.0, anchor="left")
         _rect(pen, u0, head, u1, bottom)
-        _rect(pen, u0, head, u1, head + 0.030, fill=TINT, corners=TOP_ONLY)
-        _text(pen, (u0 + number_u) / 2, head + 0.015, "문번", size=5.0)
-        _text(pen, (number_u + u1) / 2, head + 0.015, "답  란", size=5.4)
-        _line(pen, u0, head + 0.030, u1, head + 0.030)
+        _rect(pen, u0, head, number_u, bottom, fill=TINT, corners=LEFT_ONLY)
+        _rect(pen, u0, head, u1, head + _down(2.6), fill=TINT, corners=TOP_ONLY)
+        _text(pen, (u0 + number_u) / 2, head + _down(1.3), "문번", size=4.6)
+        _text(pen, (number_u + u1) / 2, head + _down(1.3), "답  란", size=5.0)
+        _line(pen, u0, head + _down(2.6), u1, head + _down(2.6))
+        _line(pen, number_u, head, number_u, bottom)
 
         marks = {"십": str(score // 10), "일": str(score % 10)}
-        bubble_u = number_u + width * 0.20
-        for place, row0 in (("십", 0), ("일", ones_first)):
-            _rect(pen, u0, first + (row0 - 0.45) * step, number_u,
-                  first + (row0 + len(rows[place]) - 0.55) * step,
-                  fill=TINT, stroke=False, corners=NO_CORNERS)
-            _line(pen, number_u, first + (row0 - 0.45) * step,
-                  number_u, first + (row0 + len(rows[place]) - 0.55) * step)
-            for order, digit in enumerate(rows[place]):
-                v = first + (row0 + order) * step
-                _text(pen, (u0 + number_u) / 2, v, digit, size=5.0)
-                if marks[place] == digit:
-                    _filled_bubble(pen, bubble_u, v)
-                else:
-                    _bubble(pen, bubble_u, v, float(L.BUBBLE_W_MM) * scale,
-                            float(L.BUBBLE_H_MM) * scale)
-                if place == "일" and digit == "5":
-                    _line(pen, u0, v + step / 2,
-                          bubble_u + float(L.BUBBLE_RU), v + step / 2,
-                          colour=GREEN, weight=1.0)
+        bubble_u = number_u + width * 0.24
+        for row, (place, digit) in enumerate(order):
+            v = first + row * step
+            _text(pen, (u0 + number_u) / 2, v, digit, size=5.0)
+            if marks[place] == digit:
+                _filled_bubble(pen, bubble_u, v, scale)
+            else:
+                _cell(pen, bubble_u, v, "1", *bubble, size=glyph)
+            # 십↔일 경계와 일의 5 밑 — 본 열이 긋는 자리 그대로.
+            if (place, digit) in (("십", rows["십"][-1]), ("일", "5")):
+                _line(pen, u0, v + step / 2, u1, v + step / 2,
+                      colour=GREEN, weight=1.0)
     return bottom
 
 
