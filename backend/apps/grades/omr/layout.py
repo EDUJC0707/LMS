@@ -166,8 +166,10 @@ ANSWER_ROWS_PER_COL = 20
 #: "점수의 10의 자리 숫자에 마킹 (42점이면 4에 마킹)" 같은 설명을 지면에
 #: 붙여야 했다. 십도 0~9 로 두면 그 설명이 통째로 없어진다 — 08점은 0 과 8 이다.
 #: 판은 같은 지면의 전화번호 블록과 같다: 손으로 적는 줄 아래에 자리마다 한 열.
-SURVEY_PLACES = ("십", "일")
-SURVEY_DIGITS = tuple(str(digit) for digit in range(10))
+#: 최대 50점이라 십의 자리는 1~5 로 충분하다(대표 2026-08-19). 0 은 두지 않는다 —
+#: 한 자리 점수는 십의 자리를 비우고 일의 자리만 칠한다.
+SURVEY_PLACES = (("십", ("1", "2", "3", "4", "5")),
+                 ("일", tuple(str(digit) for digit in range(10))))
 #: 답란 격자에서 마킹이 시작하는 줄 — 위 두 줄은 손으로 점수를 적는 자리다.
 SURVEY_ROW0 = 2
 SURVEY_BOX_W_MM = ANSWER_BOX_W_MM
@@ -212,10 +214,10 @@ class Layout:
         """
         cells = {}
         places = len(SURVEY_PLACES)
-        for index, place in enumerate(SURVEY_PLACES):
+        for index, (place, digits) in enumerate(SURVEY_PLACES):
             x = (ANSWER_COL_LEFT_MM
                  + SURVEY_BOX_W_MM * Decimal(2 * index + 1) / Decimal(2 * places))
-            for row, digit in enumerate(SURVEY_DIGITS):
+            for row, digit in enumerate(digits):
                 y = ANSWER_FIRST_ROW_MM + (SURVEY_ROW0 + row) * ROW_PITCH_MM
                 cells[(place, digit)] = (float(mm_to_u(x)), float(mm_to_v(y)))
         return cells

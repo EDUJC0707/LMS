@@ -146,6 +146,8 @@ TEXT_RIGHT_MM = 1.1
 #:
 #: **주체는 강사다.** `시스템` 을 붙이면 인쇄 업체 이름(튜터시스템)을 따라가는
 #: 꼴이 되고, 우리는 시스템 벤더가 아니다(CLAUDE.md §8-1).
+#: 오른쪽 마커에서 저작권 줄 끝까지(mm) — blank-card 실측.
+COPYRIGHT_RIGHT_MM = Decimal("10.2")
 COPYRIGHT = "Copyright © 2026 한종철 통합과학. All rights reserved."
 COPYRIGHT_PT = 7.5
 #: 옛 카드 실측 색 — 본문 먹보다 흐리다. 읽히되 지면을 안 끈다.
@@ -786,16 +788,13 @@ def render(card, title="한종철 통합과학", exam=""):
     return buffer.getvalue()
 
 
-def _copyright(pen, card):
-    """하단 우측 저작권 한 줄 — 마지막 열의 오른쪽 끝에 맞춘다."""
-    if card.is_survey:
-        # 조사 카드에는 약점 체크 열이 없다 — 답란 기준을 그대로 쓰면 글줄이
-        # 점수 박스보다 14mm 오른쪽에 뜬다.
-        right = float(L.mm_to_u(L.ANSWER_COL_LEFT_MM + L.SURVEY_BOX_W_MM))
-    else:
-        right = (float(L.mm_to_u(L.ANSWER_COL_LEFT_MM))
-                 + (card.columns - 1) * float(L.mm_to_u(L.ANSWER_COL_PITCH_MM))
-                 + float(L.mm_to_u(L.ANSWER_BOX_W_MM + L.EXTRA_SEP_MM
-                                   + L.EXTRA_COL_W_MM)))
-    _text(pen, right, BOX_ANSWER_V[1] + 0.026, COPYRIGHT,
+def _copyright(pen, _card):
+    """하단 우측 저작권 한 줄 — **지면에 고정**이다.
+
+    마지막 답란 열의 오른쪽 끝에 맞춰 두었더니 20문항·25문항·조사 카드가 저마다
+    다른 자리에 찍혔다. 원본은 판형과 무관하게 오른쪽 마커에서 10.2mm 안쪽
+    한 자리다(blank-card 실측 278.4mm).
+    """
+    _text(pen, 1.0 - float(L.mm_to_u(COPYRIGHT_RIGHT_MM)),
+          BOX_ANSWER_V[1] + 0.026, COPYRIGHT,
           size=COPYRIGHT_PT, anchor="right", colour=COPYRIGHT_INK)

@@ -67,24 +67,27 @@ class TestGrid:
         assert len(layout.name_cells()) == 188
         assert len(layout.phone_cells()) == 40
 
-    def test_the_survey_score_marks_both_places_zero_through_nine(self):
-        """0 점대를 칠할 칸이 있어야 한다 — 원본에는 없었다.
+    def test_the_survey_score_covers_zero_to_fifty(self):
+        """마킹으로 적을 수 있는 점수가 0~50 전부여야 한다.
 
-        원본은 십의 자리가 1~5 뿐이라 08점을 어떻게 칠하는지 지면에 글로
-        설명해야 했다. 십도 0~9 면 설명할 것이 없다. 이 테스트가 무너지면
-        그 설명 문구가 다시 필요해진다는 뜻이다.
+        만점이 50이라 십의 자리는 1~5 다. 한 자리 점수는 십을 비우고 일만
+        칠한다 — 그래서 일의 자리에는 0 이 있어야 하고(50점), 십의 자리에는
+        없어도 된다. 어느 한쪽이라도 빠지면 적을 수 없는 점수가 생긴다.
         """
         cells = layout.BY_NAME["성적조사"].survey_cells()
-        assert len(cells) == 20
-        for place in ("십", "일"):
-            digits = {d for (p, d) in cells if p == place}
-            assert digits == {str(n) for n in range(10)}, f"{place}의 자리"
+        tens = {d for (place, d) in cells if place == "십"}
+        ones = {d for (place, d) in cells if place == "일"}
+        assert tens == {"1", "2", "3", "4", "5"}
+        assert ones == {str(n) for n in range(10)}
+        reachable = {int(t + o) for t in tens | {""} for o in ones}
+        # 51~59 도 칠할 수는 있다. 자릿수 격자라 그렇고, 나올 수 없는 점수라
+        # 막을 이유가 없다 — 여기서 보는 것은 **못 적는 점수가 없는가**다.
+        assert set(range(51)) <= reachable, "0~50 중 못 적는 점수가 있다"
+
         us = sorted({round(u, 6) for u, _ in cells.values()})
         assert len(us) == 2, "자리마다 한 열"
         tens_u = {round(u, 6) for (p, _), (u, _v) in cells.items() if p == "십"}
         assert tens_u == {us[0]}, "십의 자리가 왼쪽에 온다"
-        rows = {round(v, 6) for _u, v in cells.values()}
-        assert len(rows) == 10, "두 열이 같은 줄을 쓴다"
 
     def test_the_answer_grid_no_longer_matches_the_old_card(self):
         """옛 카드와의 일치는 **의도적으로 깼다**(대표 2026-08-19).
