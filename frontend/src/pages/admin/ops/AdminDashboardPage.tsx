@@ -125,7 +125,7 @@ export default function AdminDashboardPage() {
       <OpsTile
         key="counseling"
         to="/admin/counseling"
-        label="결석 상담 대기"
+        label="전화 대기"
         state={counseling}
       />,
     );
