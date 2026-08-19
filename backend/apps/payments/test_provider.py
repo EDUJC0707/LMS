@@ -218,18 +218,15 @@ class SettingsWiringTests(SimpleTestCase):
         self.assertEqual(base.PAYMENT_PROVIDER_BACKEND, "")
 
     def test_prod_wires_the_real_vendor_not_the_fake(self):
-        # 운영은 오브젝트 스토리지 없이는 부팅을 거부하므로 버킷을 채우고 읽는다
-        # (`notifications.test_channels` 의 같은 테스트와 같은 처리). 그냥 import 하면
-        # 앞선 테스트가 환경을 남겨 준 실행에서만 통과한다.
-        import importlib
-        import os
-        from unittest import mock
+        # `prod` 는 import 만으로 버킷을 요구하고 Sentry 를 켠다 — 되돌려 주는
+        # 도구로 읽는다(config.prod_settings_probe).
+        from config.prod_settings_probe import prod_settings
 
-        with mock.patch.dict(os.environ, {"AWS_STORAGE_BUCKET_NAME": "test-bucket"}):
-            prod = importlib.reload(importlib.import_module("config.settings.prod"))
+        with prod_settings() as prod:
+            backend = prod.PAYMENT_PROVIDER_BACKEND
 
-        self.assertIn("payssam", prod.PAYMENT_PROVIDER_BACKEND.lower())
-        self.assertNotIn("Fake", prod.PAYMENT_PROVIDER_BACKEND)
+        self.assertIn("payssam", backend.lower())
+        self.assertNotIn("Fake", backend)
 
     def test_dev_wires_the_fake_so_bills_do_not_leave_the_machine(self):
         # 시드 연락처는 진짜 번호일 수 있다 — 로컬에서 구매를 눌러 보는 것만으로

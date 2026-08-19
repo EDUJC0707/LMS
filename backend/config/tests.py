@@ -64,29 +64,21 @@ class SentryInitTests(SimpleTestCase):
 class ProdSettingsSentryTests(SimpleTestCase):
     """운영 설정이 실제로 Sentry 를 켜는가 — prod.py 에서 호출이 빠지면 조용히 안 켜진다."""
 
-    def tearDown(self):
-        client = sentry_sdk.get_client()
-        if client.is_active():
-            client.close(timeout=0.0)
-        sentry_sdk.get_global_scope().set_client(None)
-
-    def load_prod_settings(self, **environ):
-        # 운영은 오브젝트 스토리지 없이는 부팅을 거부한다(prod.py) — 설정을
-        # 읽어 보려는 테스트는 그 조건을 채워 줘야 한다.
-        environ.setdefault("AWS_STORAGE_BUCKET_NAME", "test-bucket")
-        with mock.patch.dict(os.environ, environ):
-            importlib.reload(importlib.import_module("config.settings.prod"))
-
     def test_dsn_env_turns_sentry_on_without_pii(self):
-        self.load_prod_settings(SENTRY_DSN=FAKE_DSN)
-        client = sentry_sdk.get_client()
-        self.assertTrue(client.is_active())
-        self.assertEqual(client.options["max_request_body_size"], "never")
-        self.assertFalse(client.options["include_local_variables"])
+        # 켜졌는지는 **컨텍스트 안에서** 본다 — 나오면서 되돌리기 때문이다.
+        from config.prod_settings_probe import prod_settings
+
+        with prod_settings(SENTRY_DSN=FAKE_DSN):
+            client = sentry_sdk.get_client()
+            self.assertTrue(client.is_active())
+            self.assertEqual(client.options["max_request_body_size"], "never")
+            self.assertFalse(client.options["include_local_variables"])
 
     def test_no_dsn_env_leaves_sentry_off(self):
-        self.load_prod_settings(SENTRY_DSN="")
-        self.assertFalse(sentry_sdk.get_client().is_active())
+        from config.prod_settings_probe import prod_settings
+
+        with prod_settings(SENTRY_DSN=""):
+            self.assertFalse(sentry_sdk.get_client().is_active())
 
 
 

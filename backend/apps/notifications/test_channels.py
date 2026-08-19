@@ -106,15 +106,12 @@ class SettingsWiringTests(SimpleTestCase):
 
     def test_prod_wires_the_real_vendor_not_the_fake(self):
         # Fake 가 운영에 남으면 발송내역에는 성공만 쌓이고 아무도 못 받는다.
-        # 운영은 오브젝트 스토리지 없이는 부팅을 거부하므로 버킷을 채우고 읽는다.
-        import importlib
-        import os
-        from unittest import mock
+        # `prod` 는 import 만으로 버킷을 요구하고 Sentry 를 켠다 — 되돌려 주는
+        # 도구로 읽는다(config.prod_settings_probe).
+        from config.prod_settings_probe import prod_settings
 
-        with mock.patch.dict(os.environ, {"AWS_STORAGE_BUCKET_NAME": "test-bucket"}):
-            prod = importlib.reload(importlib.import_module("config.settings.prod"))
-
-        backends = prod.NOTIFICATION_CHANNEL_BACKENDS
+        with prod_settings() as prod:
+            backends = prod.NOTIFICATION_CHANNEL_BACKENDS
         self.assertEqual(
             set(backends), {"카카오알림톡", "문자"}
         )
