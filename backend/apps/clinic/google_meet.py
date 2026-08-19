@@ -202,18 +202,18 @@ class GoogleMeetAdapter(ConferenceAdapter):
 
     # -- 드라이브 보관 ------------------------------------------------------
 
-    def save_document(self, path, text):
-        """전사를 **구글 문서**로 만들고 그 링크를 돌려준다.
+    def save_document(self, path, html):
+        """감독 자료를 **구글 문서**로 만들고 그 링크를 돌려준다.
 
         업체 저장소에 기대지 않기 위한 자리다. 업체 보관은 5일이고, 업체가 주는
         다운로드 주소는 **서명된 임시 URL** 이라 몇 시간이면 죽는다(2026-08-18
         실측). 그걸 DB 에 넣으면 곧 죽는 링크를 저장하는 셈이라, 우리 드라이브에
         옮기고 **안 죽는 링크**만 남긴다.
 
-        평문으로 올리면서 `application/vnd.google-apps.document` 로 변환시킨다 —
-        사람이 열어 읽고 고칠 수 있어야 감독 자료로 쓸모가 있다.
+        **HTML 로 올린다.** 구글이 변환하면서 제목·굵게·표를 그대로 살려 주기
+        때문이다. 평문으로 올리면 한 덩어리가 되어 40분치를 눈으로 훑을 수 없다.
         """
-        return self._upload(path, text.encode(), "text/plain", convert=True)
+        return self._upload(path, html.encode(), "text/html", convert=True)
 
     def save_bytes(self, path, blob, content_type):
         """녹음 원본처럼 **변환하지 않는** 파일을 그대로 올린다."""

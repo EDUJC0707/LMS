@@ -153,6 +153,13 @@ class FetchTests(SimpleTestCase):
 
         return transcribe
 
+    def stub_summariser(self, text="오답 원인을 끝까지 설명했다."):
+        def summarize(body):
+            self.summarised = body
+            return text
+
+        return summarize
+
     def test_waits_while_the_bot_is_still_in_the_call(self):
         transport = FakeTransport(listed(bot(state="in_call_recording")))
         found = RecallAdapter(transport=transport).fetch_supervision(
@@ -196,6 +203,82 @@ class FetchTests(SimpleTestCase):
         self.assertEqual(self.asked[0], "https://cdn.recall/audio.mp3")
         self.assertEqual(found.transcript_ref, "bot-1")
 
+    def test_the_summary_goes_to_the_database_and_the_transcript_does_not(self):
+        # 학생 발화를 우리 DB 로 들이지 않는 것이 계약이다(PRD 8-1). DB 에는
+        # 판단에 쓰는 **요약**만 남고, 원문은 문서 링크로만 닿는다.
+        transport = FakeTransport(listed(bot()))
+        adapter = RecallAdapter(
+            transport=transport,
+            transcriber=self.stub_transcriber(),
+            summariser=self.stub_summariser(),
+            conference=self.stub_archive(),
+            fetcher=lambda url: b"ID3audio",
+        )
+        found = adapter.fetch_supervision("spaces/S1", file_as=TITLE, key=KEY)
+        self.assertEqual(found.summary, "오답 원인을 끝까지 설명했다.")
+        self.assertNotIn("오답 원인은 여기다", found.summary)
+        # 요약기는 전사 원문을 받는다
+        self.assertIn("오답 원인은 여기다", self.summarised)
+
+    def test_the_document_keeps_the_transcript_lines_as_they_are(self):
+        # 표로 감싸면 폭이 좁아져 긴 발화가 접힌다. 시각·화자는 줄이 이미 달고 있다.
+        from .recall import document
+
+        html = document(TITLE, "요약 한 줄", "00:01:09 [2] 오답 원인이 뭐였죠?")
+        self.assertIn("<h2>클리닉 감독 기록</h2>", html)
+        self.assertIn("<p>00:01:09 [2] 오답 원인이 뭐였죠?</p>", html)
+        self.assertNotIn("<table", html)
+
+    def test_the_document_drops_the_markdown_the_model_writes(self):
+        from .recall import document
+
+        html = document(TITLE, "- **다룬 내용:** 세포 분열", "00:00:01 [1] 네")
+        self.assertIn("- 다룬 내용: 세포 분열", html)
+        self.assertNotIn("**", html)
+
+    def test_the_document_says_so_when_there_is_no_summary(self):
+        # 빈칸으로 두면 "아직 안 왔나" 와 구분이 안 된다.
+        from .recall import document
+
+        self.assertIn("요약을 만들지 못했습니다", document(TITLE, None, "00:00:01 [1] 네"))
+
+    def test_the_document_escapes_what_people_said(self):
+        from .recall import document
+
+        self.assertIn("&lt;b&gt;", document(TITLE, None, "00:00:01 [1] <b>"))
+
+    def test_the_document_carries_the_summary_above_the_transcript(self):
+        # 사람이 문서를 열었을 때 요약이 먼저 보여야 읽는 값어치가 있다.
+        transport = FakeTransport(listed(bot()))
+        adapter = RecallAdapter(
+            transport=transport,
+            transcriber=self.stub_transcriber(),
+            summariser=self.stub_summariser(),
+            conference=self.stub_archive(),
+            fetcher=lambda url: b"ID3audio",
+        )
+        adapter.fetch_supervision("spaces/S1", file_as=TITLE, key=KEY)
+        written = self.archive.saved[0][2]
+        self.assertLess(written.index("끝까지 설명했다"), written.index("여기다"))
+        self.assertIn("<h3>요약</h3>", written)
+
+    def test_a_failed_summary_does_not_lose_the_transcript(self):
+        # 요약은 덤이다. 원문은 이미 문서로 남았으므로 수집을 실패시키지 않는다.
+        def broken(body):
+            raise PermanentConferenceError("요약 실패")
+
+        transport = FakeTransport(listed(bot()))
+        adapter = RecallAdapter(
+            transport=transport,
+            transcriber=self.stub_transcriber(),
+            summariser=broken,
+            conference=self.stub_archive(),
+            fetcher=lambda url: b"ID3audio",
+        )
+        found = adapter.fetch_supervision("spaces/S1", file_as=TITLE, key=KEY)
+        self.assertIsNone(found.summary)
+        self.assertTrue(found.transcript_url)
+
     def test_keeps_the_transcript_in_our_own_drive(self):
         # 업체 보관은 5일이고 업체가 주는 주소는 몇 시간이면 죽는다. 우리
         # 문서로 옮겨 두지 않으면 감독 근거가 통째로 사라진다.
@@ -209,9 +292,11 @@ class FetchTests(SimpleTestCase):
         found = adapter.fetch_supervision("spaces/S1", file_as=TITLE, key=KEY)
         kinds = [k for k, _, _ in self.archive.saved]
         self.assertEqual(kinds, ["doc", "bytes"])
-        self.assertEqual(self.archive.saved[0][1], TITLE)
+        # **클리닉 하나에 폴더 하나.** 전사·녹음이 한자리에 모이고, 나중에
+        # 평가표 같은 것이 붙어도 흩어지지 않는다.
+        self.assertEqual(self.archive.saved[0][1], f"{TITLE}/전사")
         self.assertIn("오답 원인", self.archive.saved[0][2])
-        self.assertEqual(self.archive.saved[1][1], TITLE + ".mp3")
+        self.assertEqual(self.archive.saved[1][1], f"{TITLE}/녹음.mp3")
         # **DB 에 남는 것은 안 죽는 링크다** — 업체의 서명 URL 이 아니라
         self.assertEqual(found.transcript_url, "https://docs.google.com/document/d/doc-1/edit")
 

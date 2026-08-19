@@ -28,11 +28,13 @@ Recall 은 **귀**, CLOVA 는 **받아쓰기**.
 """
 import datetime
 import json
+import re
 
 from django.conf import settings
 
 from .conferencing import (
     ConferenceAdapter,
+    ConferenceError,
     PermanentConferenceError,
     Supervision,
     TemporaryConferenceError,
@@ -66,6 +68,44 @@ RETENTION_HOURS = 24 * 5
 JOIN_EARLY = datetime.timedelta(minutes=10)
 
 
+def document(file_as, summary, text):
+    """감독 문서 본문(HTML). 요약이 먼저, 전사는 **줄 그대로**.
+
+    표로 감싸지 않는다 — 한 줄이 한 발화라 이미 읽히고, 표는 폭이 좁아져
+    긴 발화가 접힌다. 시각·화자 표시는 전사가 이미 달고 있다.
+    """
+    name = file_as.rsplit("/", 1)[-1]
+    body = ["<h2>클리닉 감독 기록</h2>", f"<p>{_safe(name)}</p>", "<h3>요약</h3>"]
+    if summary:
+        # 업체가 `**굵게**` 로 줄 때가 있는데 문서에서는 군더더기다.
+        body += [
+            f"<p>{_safe(_plain(part))}</p>"
+            for part in summary.splitlines()
+            if part.strip()
+        ]
+    else:
+        # 없는 것을 빈칸으로 두면 "아직 안 왔나" 와 구분이 안 된다.
+        body.append("<p>요약을 만들지 못했습니다.</p>")
+    body.append("<h3>전사</h3>")
+    lines = [line for line in (text or "").splitlines() if line.strip()]
+    body += [f"<p>{_safe(line)}</p>" for line in lines] or ["<p>발화가 없습니다.</p>"]
+    return "<html><body>" + "".join(body) + "</body></html>"
+
+
+def _plain(text):
+    """마크다운 굵게 표시를 벗긴다."""
+    return re.sub(r"\*\*(.+?)\*\*", r"\1", text or "")
+
+
+def _safe(text):
+    return (
+        (text or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
 def _download(url):
     """녹음 원본을 받아 온다. 업체가 주는 서명 URL 은 곧 만료되므로 바로 쓴다."""
     import urllib.request
@@ -82,12 +122,20 @@ def base_url():
 class RecallAdapter(ConferenceAdapter):
     """방은 구글에서, 오디오는 Recall 에서, 전사는 주입한 엔진에서."""
 
-    def __init__(self, transport=None, conference=None, transcriber=None, fetcher=None):
+    def __init__(
+        self,
+        transport=None,
+        conference=None,
+        transcriber=None,
+        summariser=None,
+        fetcher=None,
+    ):
         self.transport = transport or urllib_transport
         # 화상은 위임한다 — 이 클래스는 방을 만들 줄 모르고, 드라이브 보관도
         # 저쪽이 안다(구글 API 지식은 한 곳에 모아 둔다).
         self.conference = conference or GoogleMeetAdapter(transport=transport)
         self._transcriber = transcriber
+        self._summariser = summariser
         self._fetcher = fetcher or _download
 
     def create_space(self):
@@ -161,13 +209,16 @@ class RecallAdapter(ConferenceAdapter):
         if not audio:
             return None
         text = self._transcribe(audio)
+        summary = self._summarise(text)
         return Supervision(
             transcript_ref=found.get("id") or "",
             # **업체 주소를 그대로 저장하지 않는다.** 서명된 임시 URL 이라 몇
             # 시간이면 죽고, 업체 보관도 5일이다. 우리 드라이브로 옮긴 문서의
             # 링크를 남긴다 — 그건 안 죽는다.
-            transcript_url=self._archive(file_as, text, audio),
-            summary=text,
+            transcript_url=self._archive(file_as, text, summary, audio),
+            # **DB 에는 요약만.** 학생 발화를 우리 DB 로 들이지 않는 것이
+            # 계약이고(PRD 8-1), 원문은 문서 링크로만 닿는다.
+            summary=summary,
         )
 
     def _transcribe(self, audio):
@@ -176,7 +227,21 @@ class RecallAdapter(ConferenceAdapter):
             from .clova import transcribe as transcriber
         return transcriber(audio, terms=())
 
-    def _archive(self, file_as, text, audio):
+    def _summarise(self, text):
+        """감독용 요약. **덤이다** — 실패해도 전사는 이미 남는다.
+
+        요약이 없으면 화면이 "요약을 읽지 못했습니다" 로 말하고 사람이 원문을
+        열면 된다. 여기서 터뜨리면 그 회차의 감독 자료가 통째로 사라진다.
+        """
+        summariser = self._summariser
+        if summariser is None:
+            from .summary import summarize as summariser
+        try:
+            return summariser(text)
+        except ConferenceError:
+            return None
+
+    def _archive(self, file_as, text, summary, audio):
         """전사를 문서로, 녹음을 파일로 우리 드라이브에 남기고 문서 링크를 준다.
 
         정리할 경로가 없으면(관리자가 손으로 넣은 건 등) 아무것도 안 남기고
@@ -184,13 +249,17 @@ class RecallAdapter(ConferenceAdapter):
         """
         if not file_as:
             return audio
-        link = self.conference.save_document(file_as, text)
+        # 사람이 문서를 열었을 때 **요약이 먼저** 보여야 읽는 값어치가 있다.
+        # **클리닉 하나에 폴더 하나** — 전사·녹음이 한자리에 모인다.
+        link = self.conference.save_document(f"{file_as}/전사", document(file_as, summary, text))
         # 녹음 원본까지 우리 것으로 — **여기는 덤이다.** 전사는 이미 문서로
         # 남았으므로 원본 복사가 실패했다고 수집을 통째로 실패시키지 않는다.
         # 넓게 잡는 이유: 내려받기는 네트워크·만료·디스크 등 업체 예외가 아닌
         # 것으로도 깨지는데, 그 어느 것도 감독 자료를 버릴 사유가 아니다.
         try:
-            self.conference.save_bytes(f"{file_as}.mp3", self._fetcher(audio), "audio/mpeg")
+            self.conference.save_bytes(
+                f"{file_as}/녹음.mp3", self._fetcher(audio), "audio/mpeg"
+            )
         except Exception:  # noqa: BLE001 - 덤이라 무엇이 나든 넘어간다
             pass
         return link

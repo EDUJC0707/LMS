@@ -307,6 +307,12 @@ RECALL_REGION = env("RECALL_REGION", default="ap-northeast-1")  # 도쿄
 # 도메인마다 다르고, 시크릿과 짝이라 둘 중 하나만 있으면 안 된다.
 CLOVA_SPEECH_INVOKE_URL = env("CLOVA_SPEECH_INVOKE_URL", default="")
 CLOVA_SPEECH_SECRET = env("CLOVA_SPEECH_SECRET", default="")
+
+# 요약은 **다른 업체**다 — 전사 엔진은 받아쓰기만 한다. 같은 녹취로 CLOVA
+# Studio·Terra·Sol 과 비교해 Luna 를 골랐다(apps/clinic/summary.py 머리말).
+# 비면 요약이 안 붙지만 전사는 그대로 남는다(요약은 덤 — recall._summarise).
+OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
+SUMMARY_MODEL = env("SUMMARY_MODEL", default="gpt-5.6-luna")
 # 구글 미트는 **사용자 인증만** 받는다(서비스 계정은 워크스페이스 도메인 위임
 # 한정) — 계정 1개로 한 번 동의받은 갱신 토큰을 서버가 들고 쓴다.
 # 발급: `manage.py meet_authorize`. 셋 중 하나라도 비면 스페이스 생성은

@@ -23,7 +23,6 @@ CREDENTIALS = {
     "CLOVA_SPEECH_SECRET": "cs-secret",
 }
 
-
 def recognized(*segments):
     return (
         200,
@@ -33,8 +32,8 @@ def recognized(*segments):
     )
 
 
-def segment(text, speaker="1"):
-    return {"text": text, "speaker": {"label": speaker}}
+def segment(text, speaker="1", start=0):
+    return {"text": text, "speaker": {"label": speaker}, "start": start}
 
 
 class FakeTransport:
@@ -85,16 +84,24 @@ class TranscribeTests(SimpleTestCase):
         self.assertNotIn("boostings", json.loads(transport.calls[0]["body"]))
 
     def test_returns_one_line_per_speaker_turn(self):
+        # **시각을 붙인다.** 요약이 근거로 든 대목을 사람이 찾아 들으려면
+        # 어디쯤인지 알아야 하고, 그게 없으면 40분을 처음부터 뒤져야 한다.
         transport = FakeTransport(
             recognized(
-                segment("오답 원인이 뭐였죠?", speaker="2"),
-                segment("대립유전자를 반대로 봤어요.", speaker="1"),
+                segment("오답 원인이 뭐였죠?", speaker="2", start=7_640),
+                segment("대립유전자를 반대로 봤어요.", speaker="1", start=73_200),
             )
         )
         text = transcribe("https://x/a", transport=transport)
         self.assertEqual(
             text,
-            "[2] 오답 원인이 뭐였죠?\n[1] 대립유전자를 반대로 봤어요.",
+            "00:00:07 [2] 오답 원인이 뭐였죠?\n00:01:13 [1] 대립유전자를 반대로 봤어요.",
+        )
+
+    def test_the_clock_rolls_into_hours(self):
+        transport = FakeTransport(recognized(segment("네", start=3_725_000)))
+        self.assertEqual(
+            transcribe("https://x/a", transport=transport), "01:02:05 [1] 네"
         )
 
     def test_no_speech_is_not_a_failure(self):
@@ -114,3 +121,4 @@ class TranscribeTests(SimpleTestCase):
         with override_settings(CLOVA_SPEECH_SECRET=""):
             with self.assertRaises(PermanentConferenceError):
                 transcribe("https://x/a", transport=FakeTransport())
+

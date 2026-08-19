@@ -396,8 +396,9 @@ class DriveArchiveTests(SimpleTestCase):
         upload = transport.calls[-1]
         self.assertIn("uploadType=multipart", upload["url"])
         body = upload["body"].decode()
-        # 텍스트로 올리면서 구글 문서로 변환시킨다 — 나중에 사람이 열어 고친다
+        # 구글 문서로 변환시키되 **HTML 로** 올린다 — 제목·표가 살아야 읽힌다
         self.assertIn("application/vnd.google-apps.document", body)
+        self.assertIn("text/html", body)
         self.assertIn("[1] 오답 원인은…", body)
         self.assertEqual(url, "https://docs.google.com/document/d/file-1/edit")
 

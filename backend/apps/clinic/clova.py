@@ -23,14 +23,19 @@ from .google_meet import urllib_transport
 #: 회의 한 건이 길어서 넉넉히 잡는다 — 동기 호출이라 전사가 끝날 때까지 기다린다.
 TIMEOUT_SECONDS = 600
 
+
 _RETRYABLE_STATUSES = frozenset({408, 429})
 
 
 def transcribe(audio_url, *, terms=(), transport=None):
-    """오디오 URL → `"[화자] 말\\n[화자] 말"` 텍스트. 발화가 없으면 빈 문자열.
+    """오디오 URL → `"시:분:초 [화자] 말"` 줄들. 발화가 없으면 빈 문자열.
 
     **화자 이름은 붙이지 않는다.** 업체는 `1`·`2` 같은 라벨만 주고 누가 조교
     인지는 회의 밖 정보다. 라벨을 그대로 남기고 판단은 사람이 한다.
+    한 명만 말했으면 전부 `1` 이다 — 그건 오작동이 아니라 사실이다.
+
+    **시각을 붙이는 이유**: 요약이 근거로 든 대목을 사람이 찾아 들어야 하는데,
+    없으면 40분을 처음부터 뒤져야 한다.
     """
     invoke = (getattr(settings, "CLOVA_SPEECH_INVOKE_URL", "") or "").rstrip("/")
     secret = getattr(settings, "CLOVA_SPEECH_SECRET", "")
@@ -74,5 +79,10 @@ def transcribe(audio_url, *, terms=(), transport=None):
         if not said:
             continue
         label = ((part.get("speaker") or {}).get("label") or "?").strip()
-        lines.append(f"[{label}] {said}")
+        # 업체는 밀리초로 준다. `시:분:초` 로 적는다 — 녹음을 열어 그 지점으로
+        # 건너뛸 때 재생기가 쓰는 것과 같은 표기라 눈으로 바로 옮겨 적는다.
+        started = int((part.get("start") or 0) // 1000)
+        stamp = f"{started // 3600:02d}:{started // 60 % 60:02d}:{started % 60:02d}"
+        lines.append(f"{stamp} [{label}] {said}")
     return "\n".join(lines)
+
