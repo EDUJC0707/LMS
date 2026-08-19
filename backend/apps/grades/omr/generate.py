@@ -366,13 +366,14 @@ def _bubble(pen, u, v, width_mm, height_mm, colour=None):
 
 
 def _cell(pen, u, v, glyph, width_mm=None, height_mm=None, size=None):
-    """버블 한 칸 — **링만 분홍이고 글자는 검정**이다(대표 2026-08-19).
+    """버블 한 칸 — **링도 글자도 분홍**이다(원본 그대로).
 
-    링을 분홍으로 두는 이유는 그대로다: 검정 사인펜 마킹과 인쇄된 테두리가
-    같은 색이면 사람도 기계도 가르기 어렵다.
+    칸 안에 있는 것은 전부 분홍, 칸 밖의 라벨·머리글·문번은 검정이다. 검정
+    사인펜 마킹과 인쇄물이 같은 색이면 사람도 기계도 가르기 어렵다 — 그래서
+    학생이 칠할 자리는 통째로 분홍으로 둔다.
     """
     _bubble(pen, u, v, width_mm or L.BUBBLE_W_MM, height_mm or L.BUBBLE_H_MM)
-    _text(pen, u, v, glyph, size=size or CELL_GLYPH_PT, colour=INK)
+    _text(pen, u, v, glyph, size=size or CELL_GLYPH_PT, colour=PINK)
 
 
 def _filled_bubble(pen, u, v):
