@@ -34,6 +34,10 @@ class ClassSession(models.Model):
       지우는 것은 반에서만 하고 커리 총주차는 안 바뀌며(FLOW 1-3), 반별
       주차 날짜는 `session_date` 다. 번호는 안 움직이고 날짜만 밀린다.
       기록이 달린 반이 지워지지 않게 PROTECT.
+    - confirmed_at: 조교가 `출결 확정` 을 처음 누른 시각(FLOW 3-5·3-11).
+      **잠금이 아니다** — 확정 뒤에도 출결표는 계속 바뀐다. 이 값이 가르는
+      것은 문자뿐이다: 처음 확정할 때만 나가고 그 뒤로는 영상만 채워진다.
+      날짜로 판정하지 않는다 — 누른 그 시점이 곧 부여 시점이다.
     """
 
     session_id = models.BigAutoField(primary_key=True)
@@ -69,6 +73,7 @@ class ClassSession(models.Model):
         verbose_name="반",
     )
     week_no = models.SmallIntegerField("주차 번호", null=True, blank=True)
+    confirmed_at = models.DateTimeField("출결 확정 시각", null=True, blank=True)
 
     class Meta:
         db_table = "class_sessions"

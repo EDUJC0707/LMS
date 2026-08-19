@@ -108,7 +108,13 @@ class AttendanceSessionListView(APIView):
 
 
 class AttendanceSessionDetailView(APIView):
-    """GET·PUT /api/admin/attendance/sessions/{id} — 명단 조회·출결 upsert."""
+    """GET·PUT /api/admin/attendance/sessions/{id} — 명단 조회 · `출결 확정`.
+
+    PUT 은 저장이 아니라 **확정**이다(FLOW 3-5·3-11). 출결표는 OMR 이 돌 때마다
+    스스로 바뀌므로 조교가 따로 저장할 것이 없고, 이 요청이 뜻하는 것은 "이제
+    내보낸다" 하나다 — 손으로 고친 행이 하나도 없어도(빈 리스트) 정상이다.
+    그때도 OMR 이 찍어 준 학생의 영상이 나가고, 첫 확정이면 문자가 나간다.
+    """
 
     permission_classes = [FeatureRequired(FeatureKey.ATTENDANCE_ENTRY)]
 
@@ -139,8 +145,8 @@ class AttendanceSessionDetailView(APIView):
         )
         if error is not None:
             return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
-        att_map, triggers = attendance_admin.apply_entries(
-            session, request.data, request.user, roster_ids
+        att_map, triggers = attendance_admin.confirm_session(
+            session, request.data, request.user, roster
         )
         payload = attendance_admin.build_detail_payload(session, roster, att_map)
         payload["triggers"] = triggers

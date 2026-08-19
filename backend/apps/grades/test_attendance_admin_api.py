@@ -29,9 +29,10 @@ from django.test import TestCase
 from django.utils import timezone
 
 from apps.accounts.features import FeatureKey
-from apps.accounts.models import StaffFeatureGrant, Student, User
+from apps.accounts.models import Parent, ParentStudent, StaffFeatureGrant, Student, User
 from apps.boards.models import AbsenceCounseling
 from apps.curriculum.models import Class, Course, CourseEnrollment, CourseWeek
+from apps.notifications.models import Notification
 from apps.videos.models import MakeupGrant, Video, VideoGrant
 
 from .models import Attendance, ClassSession
@@ -1003,6 +1004,8 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
                 "counselings_created": 1,
                 "counselings_removed": 0,
                 "makeups_granted": 0,
+                # 첫 확정 — 출결이 찍힌 2명에게 나갈 통지가 큐에 쌓인다(FLOW 3-11)
+                "notifications_queued": 2,
             },
         )
 
@@ -1024,6 +1027,7 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
                 "counselings_created": 0,
                 "counselings_removed": 0,
                 "makeups_granted": 1,
+                "notifications_queued": 2,
             },
         )
 
@@ -1040,12 +1044,107 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
         #   (보유영상 조회는 "이미 가진 영상은 두 번 주지 않는다"(FLOW 3-5)의 근거다 —
         #    명단 전체를 한 번에 묻는 1쿼리라 학생·영상 수가 늘어도 고정)
         # + 동보조회 1(지급건 없음 → 2번째 쿼리 생략) + 대기열조회/생성 2
-        with freeze_now(), self.assertNumQueries(18):
+        # + 확정 1(조건부 UPDATE — 첫 확정 판정) + 학부모 조회 1
+        # + 통지 6: 대상 3명 × (FK 검증 1 + INSERT 1)
+        #   행 하나가 곧 발송 1건이라(Notification 계약) 대상 수만큼 는다 —
+        #   **처음 확정할 때 한 번뿐**이고 두 번째부터는 이 여덟이 통째로 빠진다
+        with freeze_now(), self.assertNumQueries(26):
             self.client.put(
                 self.detail_url(self.session_w2.session_id),
                 data=json.dumps(entries),
                 content_type="application/json",
             )
+
+
+class ConfirmTests(AttendanceAdminFixtureMixin, TestCase):
+    """PUT /sessions/{id} = `출결 확정` — 내보내는 동작(FLOW 3-5·3-11).
+
+    저장이 아니다. 출결표는 OMR 이 돌 때마다 스스로 바뀌므로(scoring.mark_present)
+    **조교가 손댈 것이 없는 것이 정상**이고, 그때도 확정은 눌려야 한다 — 영상과
+    문자가 거기 걸려 있기 때문이다.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.parent = Parent.objects.create(name="김학부모", phone="010-1111-2222")
+        ParentStudent.objects.create(parent=cls.parent, student=cls.s1)
+
+    def setUp(self):
+        self.login(self.admin)
+
+    def omr_marks(self, *students):
+        """OMR 이 찍은 출결 — 사람이 손대지 않은 자리다(marked_by 없음)."""
+        for student in students:
+            Attendance.objects.create(
+                session=self.session_w2, student=student, status="출석", marked_by=None
+            )
+
+    def test_confirm_without_hand_edits_still_grants_videos(self):
+        """**이번 작업의 요점** — OMR 이 다 찍어 줘서 보낼 행이 없어도 눌린다."""
+        self.omr_marks(self.s1, self.s2)
+        res = self.put_attendance(self.session_w2.session_id, [])
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(
+            VideoGrant.objects.filter(
+                student__in=[self.s1, self.s2], revoked_at=None
+            ).count(),
+            2 * len(self.w2_videos),
+        )
+        self.assertEqual(
+            res.json()["triggers"]["video_grants_created"], 2 * len(self.w2_videos)
+        )
+
+    def test_first_confirm_stamps_and_queues_notices(self):
+        self.omr_marks(self.s1, self.s2)
+        res = self.put_attendance(self.session_w2.session_id, [])
+        self.session_w2.refresh_from_db()
+        self.assertEqual(self.session_w2.confirmed_at, NOW)
+        self.assertEqual(res.json()["session"]["confirmed_at"][:16], "2026-07-22T22:00")
+        # 학생 2 + s1 의 학부모 1
+        self.assertEqual(res.json()["triggers"]["notifications_queued"], 3)
+        self.assertEqual(
+            set(
+                Notification.objects.values_list("type", "channel", "ref_type", "ref_id")
+            ),
+            {("리포트", "카카오알림톡", "class_sessions", self.session_w2.session_id)},
+        )
+        self.assertEqual(Notification.objects.filter(parent=self.parent).count(), 1)
+
+    def test_unentered_students_get_no_notice(self):
+        """`미입력` 에서는 아무것도 나가지 않는다(FLOW 3-4)."""
+        self.omr_marks(self.s1)
+        self.put_attendance(self.session_w2.session_id, [])
+        self.assertEqual(
+            set(
+                Notification.objects.exclude(student=None).values_list(
+                    "student_id", flat=True
+                )
+            ),
+            {self.s1.student_id},
+        )
+
+    def test_second_confirm_fills_videos_but_sends_nothing(self):
+        """문자는 처음 확정할 때만 — 오타를 고칠 때마다 문자가 가면 안 된다."""
+        self.omr_marks(self.s1)
+        self.put_attendance(self.session_w2.session_id, [])
+        first_stamp = ClassSession.objects.get(pk=self.session_w2.pk).confirmed_at
+        notices = Notification.objects.count()
+
+        later = NOW + datetime.timedelta(minutes=30)
+        res = self.put_attendance(
+            self.session_w2.session_id,
+            [{"student_id": self.s2.student_id, "status": "출석"}],
+            at=later,
+        )
+        self.assertEqual(Notification.objects.count(), notices)
+        self.assertEqual(res.json()["triggers"]["notifications_queued"], 0)
+        self.assertEqual(
+            res.json()["triggers"]["video_grants_created"], len(self.w2_videos)
+        )
+        # 확정 시각은 처음 누른 그대로다 — 날짜가 아니라 그 시점이 기준이다
+        self.session_w2.refresh_from_db()
+        self.assertEqual(self.session_w2.confirmed_at, first_stamp)
 
 
 class MakeupCheckTests(AttendanceAdminFixtureMixin, TestCase):

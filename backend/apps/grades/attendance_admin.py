@@ -7,6 +7,10 @@
   ③ `결석(동보)` 확정 → videos.MakeupGrant(지급완료) + VideoGrant(source=동보)
      — 살아있는 신청이 붙은 `결석` 도 여기서 `결석(동보)` 로 올라가며 지급된다
 
+**쓰기 문은 둘이다.** `apply_entries` 는 보내온 행만 도는 부분 upsert 이고
+(OMR·현보·동보 체크가 쓴다), `confirm_session` 은 조교의 `출결 확정` 이다 —
+같은 트리거를 **명단 전체**에 태우고 첫 확정에만 통지를 건다(FLOW 3-5·3-11).
+
 **값집합 4종의 트리거 판정 근거** (2026-07-29 개편 — `지각` 제거, 결석 3분화).
 
 | status | 복습영상 | 상담 대기열 | 동보 체인 |
@@ -92,9 +96,11 @@ DB 레벨에서 이중 생성을 차단한다(get_or_create 패턴 — 조회 �
 from django.db import models, transaction
 from django.utils import timezone
 
-from apps.accounts.models import Student
+from apps.accounts.models import ParentStudent, Student
 from apps.boards.models import AbsenceCounseling
 from apps.curriculum.models import CourseEnrollment, class_name_subquery
+from apps.notifications.models import Notification
+from apps.notifications.sending import queue as queue_notification
 
 # GRANT_DURATION(시청 기간 기본 7일)은 동보 지급 체인과 공유하는 단일 기본값 —
 # videos.makeup 이 원천이다(4차 슬라이스 공용 서비스 추출).
@@ -199,6 +205,11 @@ def session_block(session):
     return {
         "session_id": session.session_id,
         "session_date": session.session_date.isoformat(),
+        "confirmed_at": (
+            timezone.localtime(session.confirmed_at).isoformat()
+            if session.confirmed_at
+            else None
+        ),
         "session_no": session.session_no,
         "target_grade": session.target_grade,
         "memo": session.memo,
@@ -312,12 +323,85 @@ def apply_entries(session, entries, actor, roster_ids):
     return att_map, triggers
 
 
+def confirm_session(session, entries, actor, roster):
+    """`출결 확정` — 손으로 고친 값을 저장하고 **이제 내보낸다**(FLOW 3-5·3-11).
+
+    저장 버튼이 아니다. 출결표는 OMR 이 다시 돌 때마다 스스로 바뀌고
+    (`scoring.mark_present` 가 같은 upsert 를 탄다), 이 함수가 뜻하는 것은
+    "내보낸다" 하나다. 그래서 **손댄 것이 없어도 할 일이 남는다**:
+
+    - 트리거를 **명단 전체**에 태운다. `apply_entries` 처럼 보내온 행만 돌면
+      OMR 이 찍어 준 학생(조교가 손댈 것이 없어 entries 에 없는 학생)의 영상이
+      영영 안 나간다. 이미 가진 학생은 트리거가 알아서 건너뛴다(FLOW 3-5).
+    - **문자는 처음 확정할 때만** 나간다. `confirmed_at` 이 비어 있는지로 가르며
+      날짜로 판정하지 않는다 — 누른 그 시점이 곧 부여 시점이다(FLOW 3-11).
+
+    확정은 잠금이 아니다. 뒤에 출결이 또 바뀌면 다시 눌러 영상을 채운다.
+    """
+    now = timezone.now()
+    triggers = empty_triggers()
+    roster_ids = entry_target_ids(roster)
+    with transaction.atomic():
+        att_map = load_attendance_map(session, roster_ids)
+        for entry in entries:
+            _upsert_row(session, entry, att_map, actor, now)
+        _run_triggers(session, list(att_map.values()), actor, now, triggers)
+        # 조건부 UPDATE 로 첫 확정을 가른다 — 읽고 나서 쓰면 두 조교가 동시에
+        # 누를 때 둘 다 "처음"이 돼 문자가 두 번 나간다.
+        if ClassSession.objects.filter(pk=session.pk, confirmed_at__isnull=True).update(
+            confirmed_at=now
+        ):
+            session.confirmed_at = now
+            triggers["notifications_queued"] = _notify_confirmed(session, roster, att_map)
+    return att_map, triggers
+
+
+def _notify_confirmed(session, roster, att_map):
+    """출결 통지 — 그 주에 관한 것을 **한 통으로** 학생·학부모에게(FLOW 3-11 ④).
+
+    본문은 비워 둔다. 카카오 템플릿이 사전 승인제라 문구가 확정돼야 채울 수 있고
+    (FLOW 3-11 고려사항), 승인된 템플릿 코드가 아직 없어 운영에서는 발송이 영구
+    실패로 닫힌다 — 이 자리가 하는 일은 **나갈 것을 큐에 남기는 것**뿐이다.
+
+    `미입력` 은 뺀다(FLOW 3-4). 아무도 안 본 학생의 학부모에게 그 주 통지가
+    나가면 안 된다 — 안 찍은 것과 없었던 것을 구별하는 것이 그 값의 존재 이유다.
+    """
+    targets = [
+        student
+        for student in roster
+        if is_entry_target(student)
+        and att_map.get(student.student_id) is not None
+        and att_map[student.student_id].status != Attendance.Status.UNENTERED
+    ]
+    parents = {}
+    for link in ParentStudent.objects.filter(student__in=targets).select_related("parent"):
+        parents.setdefault(link.student_id, []).append(link.parent)
+    queued = 0
+    for student in targets:
+        recipients = [{"student": student}]
+        recipients += [{"parent": p} for p in parents.get(student.student_id, [])]
+        for recipient in recipients:
+            queue_notification(
+                type=Notification.Type.REPORT,
+                channel=Notification.Channel.KAKAO,
+                title="출결 통지",
+                ref_type="class_sessions",
+                ref_id=session.session_id,
+                **recipient,
+            )
+            queued += 1
+    return queued
+
+
 def empty_triggers():
     """응답용 트리거 카운터 초기값 — 응답 형태가 값 유무에 따라 흔들리지 않게 한다.
 
     `video_grants_*` 는 경로(출석자동·동보)를 가리지 않고 이번 저장이 만든/회수한/
     되살린 시청 권한 수다 — 화면이 "복습영상 n건 지급"으로 옮기는 값이므로 학생이
     체감하는 단위(권한)와 같아야 한다. `makeups_granted` 는 그중 동보 확정 건수다.
+
+    `notifications_queued` 는 확정 경로에서만 0 이 아니다 — 처음 확정할 때 한 번
+    쌓이고 두 번째부터는 0 이다(FLOW 3-11).
     """
     return {
         "video_grants_created": 0,
@@ -326,6 +410,7 @@ def empty_triggers():
         "counselings_created": 0,
         "counselings_removed": 0,
         "makeups_granted": 0,
+        "notifications_queued": 0,
     }
 
 
