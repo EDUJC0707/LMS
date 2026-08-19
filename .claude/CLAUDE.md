@@ -204,6 +204,16 @@ PRD의 수치·결정은 **조사 근거 문서와 일치해야 한다.** 조사
     DATABASE_URL=postgres://lms:lms@localhost:5432/lms_<이름>
 
 그리고 `createdb` → `migrate` → `seed_demo`.
+
+**끝나면 워크트리와 DB 를 같이 지운다.** `git worktree remove` 는 DB 를 안 지우므로
+따로 안 지우면 계속 쌓인다 — 2026-08-19 에 `lms_v1`~`v10` 등 **고아 DB 10개(97MB)**
+가 나왔다. 워크트리도 브랜치도 없이 DB 만 남아 있어서 어느 세션 것인지도 알 수 없었다.
+
+    git worktree remove .claude/worktrees/<이름> && git branch -d <브랜치>
+    docker compose exec -T postgres psql -U lms -d postgres -c "DROP DATABASE lms_<이름>;"
+
+지우기 전에 **`git rev-list --count main..<브랜치>` 와 `git status --porcelain`** 을 본다 —
+둘 다 0 이어야 잃을 것이 없다.
 **주의**: `.env.example` 에 `# DATABASE_URL=` 이 주석으로 있어서 "이미 있다" 로
 착각하기 쉽다. 줄 맨 앞에 실제로 있는지 확인할 것.
 
