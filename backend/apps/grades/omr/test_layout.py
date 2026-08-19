@@ -269,3 +269,67 @@ class TestBarReading:
 
         from . import bars
         assert bars.read_layout(np.full((1654, 2339), 255, dtype=np.uint8)) is None
+
+
+class TestTextFits:
+    """안내 문구가 박스를 넘지 않는지 — **자동 축소를 걷어낸 대가로** 필요한 검사.
+
+    예전에는 넘치는 줄만 글자를 줄였다. 그래서 안 터지는 대신 한 문단에서
+    크기가 5.7 / 7.2 / 4.7pt 로 튀었다. 이제는 고정 크기라 넘치면 정말로
+    삐져나오므로, 여기서 잡아 문구를 나누거나 박스를 넓히게 만든다.
+    """
+
+    @staticmethod
+    def worst(lines, box, indents_mm, size_of):
+        generate._font()
+        span = float(layout.SPAN_X_MM)
+        u0, _, u1, _ = box
+        return max(
+            generate.overflow(
+                line, size_of(indent),
+                u1 - u0 - (indents_mm[indent] + generate.TEXT_RIGHT_MM) / span,
+            )
+            for line, indent, *_ in lines
+            if line
+        )
+
+    def test_the_rules_box_holds_its_text(self):
+        over = self.worst(
+            generate.RULES + generate.RULES_TAIL, generate.BOX_RULES,
+            generate.RULES_INDENT_MM,
+            lambda i: generate.RULES_NOTE_PT if i == 2 else generate.RULES_PT,
+        )
+        assert over <= 0, f"지켜야 할 사항 문구가 {over:.2f}mm 넘친다"
+
+    def test_the_phone_note_holds_its_text(self):
+        over = self.worst(
+            generate.PHONE_HOW, generate.BOX_PHONE_HOW,
+            generate.PHONE_INDENT_MM, lambda _i: generate.PHONE_PT,
+        )
+        assert over <= 0, f"전화번호 마킹방법 문구가 {over:.2f}mm 넘친다"
+
+    def test_the_inline_bubble_line_holds(self):
+        """`2. 표기란에는 ● 와 같이 바르게` 는 글자+버블+글자 폭을 다 더해야 한다."""
+        generate._font()
+        u0, _, u1, _ = generate.BOX_RULES
+        head = next(line for line, *_ in generate.RULES if line.startswith("2."))
+        width_mm = (
+            generate._width(head, generate.RULES_PT) / generate.MM_UNIT
+            + generate._width(generate.RULE_MARK_TAIL, generate.RULES_PT) / generate.MM_UNIT
+            + float(layout.BUBBLE_W_MM) + 3.2
+        )
+        room = (u1 - u0) * float(layout.SPAN_X_MM) - (
+            generate.RULES_INDENT_MM[0] + generate.TEXT_RIGHT_MM
+        )
+        assert width_mm <= room, f"2번 줄이 {width_mm - room:.2f}mm 넘친다"
+
+
+    def test_the_rules_box_holds_its_text_vertically(self):
+        """가로만 재면 마지막 줄이 박스 아래로 새는 것을 못 잡는다 — 실제로 샜다."""
+        span = float(layout.SPAN_Y_MM)
+        top, bottom = generate.BOX_RULES[1], generate.BOX_RULES[3]
+        used = generate.RULES_BODY_V * span + sum(a for *_, a in generate.RULES)
+        used += generate.WRONG_ADVANCE_MM + sum(a for *_, a in generate.RULES_TAIL)
+        used += 2.1  # 마지막 줄 글자 높이
+        room = (bottom - top) * span
+        assert used <= room, f"세로로 {used - room:.2f}mm 넘친다"

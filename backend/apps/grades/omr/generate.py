@@ -40,6 +40,7 @@ Helvetica, 한글은 CID 폰트로 그린다(`_runs`).
 """
 import io
 import pathlib
+from decimal import Decimal
 
 from reportlab.lib.colors import Color, black, white  # noqa: F401
 from reportlab.lib.units import mm as MM_UNIT
@@ -83,28 +84,61 @@ HEAD_EXAM_V = 0.030
 HEAD_LOGO_V = 0.150
 HEAD_U = 0.012
 
+#: 안내 문구 — **원본 줄폭에서 역산한 값**이다. 옛 카드의 줄 하나하나를 재
+#: 폭을 얻고, 같은 문구가 그 폭이 되는 크기를 구했다. 블록 안에서는 값이
+#: 5.94~5.99pt 로 모여 있었다 — 원본은 크기가 안 튄다.
+RULES_PT = 6.0
+#: ※ 줄만 작다. 원본이 4.97pt 로 일부러 낮춰 놓았다.
+RULES_NOTE_PT = 5.0
+PHONE_PT = 5.4
+
+#: 들여쓰기·여백도 원본 실측이다(박스 안쪽 왼쪽 끝 기준 mm).
+#: 예전 값은 1단 3.4mm·2단 7.3mm 로 원본의 2.4배였고, 그래서 글자가 들어갈
+#: 자리가 없어 축소가 걸렸다. 원인은 글자 크기가 아니라 **여백**이었다.
+RULES_INDENT_MM = (1.40, 3.81, 3.05, 0.0)
+PHONE_INDENT_MM = (0.89, 2.54, 2.54, 7.75)
+TEXT_RIGHT_MM = 1.1
+
 #: 5문항마다 구분선 — 옛 카드에 있다. 20줄이 한 덩어리면 줄을 잘못 탄다.
 GROUP_EVERY = 5
 
 #: 박스 모서리 반경 — **전부 같은 값**을 쓴다(대표 2026-08-19). 자리마다
 #: 1.0/2.0/3.0 으로 달랐더니 같은 지면에서 모서리가 제각각으로 보였다.
-RADIUS = 2.4
+RADIUS = 2.0
 
-#: 합성 볼드의 덧획 두께(글자 크기 대비). 0.045 는 7pt 본문에서 뭉갰다 —
-#: 원본은 굵되 획이 살아 있다.
-BOLD_STROKE = 0.024
+#: 굵게 — 겹쳐 찍을 때 밀어 주는 거리(글자 크기 대비).
+BOLD_STROKE = 0.035
+
+#: 세로 배치 — 본문이 34.6mm 인데 박스 안 높이가 46.1mm 다. 예전에는 본문을
+#: 11.8mm 에서 시작해 마지막 줄이 박스 **밖으로** 나갔다(48.5mm). 제목·밑줄을
+#: 위로 붙이고 본문을 8.5mm 에서 시작하면 45.2mm 로 들어간다.
+RULES_TITLE_V = 0.024
+RULES_RULE_V = 0.034
+RULES_BODY_V = 0.045
 
 RULES_TITLE = "지켜야 할 사항"
+#: (문구, 들여쓰기 단, **다음 줄까지의 간격 mm**). 간격을 균등하게 두면 항목이
+#: 한 덩어리로 붙어 버린다 — 원본은 항목 안이 3.6mm, 항목 사이가 4.1~4.6mm,
+#: 예시 버블 다음이 7.6mm 로 리듬이 있다(옛 카드 실측).
 RULES = [
-    ("1. 반드시 검정색 싸인펜으로 표기", 0),
-    ("합니다.", 1),
-    ("※ 샤프펜슬, 볼펜 사용시 불이익 발생", 2),
-    ("", 0),
-    ("2. 표기란에는        와 같이 바르게", 0),
-    ("표기해야 합니다.", 1),
-    ("(잘못된 표기 예시)", 3),
+    ("1. 반드시 검정색 싸인펜으로 표기", 0, 3.6),
+    ("합니다.", 1, 3.8),
+    ("※ 샤프펜슬, 볼펜 사용시 불이익 발생", 2, 4.1),
+    ("2. 표기란에는", 0, 4.6),   # 뒤에 버블이 붙고 이어서 아래 조각이 온다
+    ("표기해야 합니다.", 1, 3.7),
+    ("(잘못된 표기 예시)", 3, 3.6),
 ]
-RULES_TAIL = [("3. 수정시에는 수정테이프만을", 0), ("사용하여 깨끗하게 수정합니다.", 1)]
+#: 잘못된 표기 예시 — 원본 실측: 왼쪽 8.0mm 에서 시작, 칸 간격 4.1mm,
+#: 칸 크기 3.0 x 5.4mm(본 버블보다 크다).
+WRONG_START_MM = 8.0
+WRONG_PITCH_MM = 4.1
+WRONG_W_MM = 3.0
+WRONG_H_MM = 5.4
+WRONG_ADVANCE_MM = 7.6
+RULES_TAIL = [("3. 수정시에는 수정테이프만을", 0, 3.6), ("사용하여 깨끗하게 수정합니다.", 1, 0.0)]
+#: 2번 줄은 **버블을 사이에 끼워** 그린다 — 글자·버블·글자 세 조각.
+#: 공백을 넣고 그 폭을 재서 얹던 방식은 간격이 원본과 어긋났다.
+RULE_MARK_TAIL = "와 같이 바르게"
 
 #: 원본 조사 카드 문구 그대로(2026-06-12 실물). 화살표가 어느 덩어리를
 #: 가리키는지까지 원본이 정해 놓았다 — 위 덩어리는 십의 자리, 아래는 일의 자리.
@@ -188,36 +222,35 @@ def _text(pen, u, v, body, size=5.0, anchor="middle", colour=None, bold=False):
     elif anchor == "right":
         x -= total
     y -= size * 0.36
-    if bold:
-        pen.setStrokeColor(fill)
-        pen.setLineWidth(size * BOLD_STROKE)
+    # 굵게는 **같은 글자를 살짝 밀어 두 번** 찍는다. 예전에는 PDF 렌더 모드
+    # 2(채우고 두르기)를 썼는데, `Tr` 은 한 번 켜지면 그래프 상태에 남고
+    # reportlab 은 "이미 0 이겠지" 하고 `0 Tr` 을 안 쓴다 — 실제 PDF 에 `2 Tr`
+    # 47개, `0 Tr` 0개였다. 그래서 볼드 뒤에 오는 글자가 전부 볼드로 남았고,
+    # 3번 항목만 굵어 보인 것도 이것이었다. 겹쳐 찍기는 상태를 안 남긴다.
+    passes = (0.0, size * BOLD_STROKE) if bold else (0.0,)
     for chunk, is_latin in _runs(body):
         face = _face(is_latin, bold)
-        text = pen.beginText(x, y)
-        text.setFont(face, size)
-        # 텍스트 객체는 캔버스의 색을 물려받지 않는다 — 여기서 다시 준다.
-        # (안 주면 흰 글자가 검게 나온다: 채운 버블 위 예시 숫자가 그랬다.)
-        text.setFillColor(fill)
-        if bold:
-            text.setStrokeColor(fill)
-        text.setTextRenderMode(2 if bold else 0)
-        text.textOut(chunk)
-        pen.drawText(text)
+        for nudge in passes:
+            text = pen.beginText(x + nudge, y)
+            text.setFont(face, size)
+            text.setFillColor(fill)
+            text.textOut(chunk)
+            pen.drawText(text)
         x += pdfmetrics.stringWidth(chunk, face, size)
-    if bold:
-        pen.setStrokeColor(INK)
     pen.setFillColor(INK)
 
 
-def _fit(body, size, room_u, bold=False):
-    """박스 폭을 넘지 않는 글자 크기. 손으로 맞추면 문구가 조금만 길어져도 삐져나온다."""
+def overflow(body, size, room_u, bold=False):
+    """이 줄이 박스 폭을 넘는 mm. 0 이하면 들어간다.
+
+    **줄마다 글자를 줄이지 않는다.** 예전에는 넘치면 그 줄만 축소했는데, 그 결과
+    긴 줄은 작고 짧은 줄은 커져 한 문단 안에서 크기가 계단처럼 튀었다(실측:
+    5.7 / 7.2 / 4.7 / 6.3 / 5.3pt). 원본은 크기가 고정이고 줄을 나눌 뿐이다.
+    안 들어가면 **문구를 나누거나 박스를 넓히는 것이 답**이고, 그건 사람이 정한다 —
+    테스트가 넘침을 잡는다.
+    """
     room_pt = room_u * float(L.SPAN_X_MM) * MM_UNIT
-    width = _width(body, size, bold)
-    return size if width <= room_pt else max(size * room_pt / width, 3.2)
-
-
-def _fitted(pen, u, v, body, size, room_u, anchor="left", colour=None):
-    _text(pen, u, v, body, size=_fit(body, size, room_u), anchor=anchor, colour=colour)
+    return (_width(body, size, bold) - room_pt) / MM_UNIT
 
 
 # --- 도형 ------------------------------------------------------------------
@@ -225,6 +258,11 @@ def _fitted(pen, u, v, body, size, room_u, anchor="left", colour=None):
 
 def _stroke():
     return float(L.STROKE_MM) * MM_UNIT
+
+
+def _down(mm):
+    """mm 만큼 아래로 — 줄 간격을 실측 mm 로 적기 위한 변환."""
+    return float(L.mm_to_v(Decimal(str(mm))))
 
 
 def _xy(u, v):
@@ -352,47 +390,53 @@ def _rules_block(pen):
     u0, v0, u1, v1 = BOX_RULES
     _rect(pen, u0, v0, u1, v1, fill=TINT)
     centre = (u0 + u1) / 2
-    _text(pen, centre, v0 + 0.026, RULES_TITLE, size=11.0, bold=True)
-    _line(pen, u0 + 0.020, v0 + 0.038, u1 - 0.020, v0 + 0.038, weight=1.0)
+    _text(pen, centre, v0 + RULES_TITLE_V, RULES_TITLE, size=8.2, bold=True)
+    _line(pen, u0 + 0.026, v0 + RULES_RULE_V, u1 - 0.026, v0 + RULES_RULE_V, weight=1.0)
 
-    indents = (0.012, 0.026, 0.020, 0.0)
-    body_v0 = v0 + 0.062
-    step = (v1 - 0.012 - body_v0) / (len(RULES) + len(RULES_TAIL) + 2)
-    mark_at = None
-    for order, (line, indent) in enumerate(RULES):
-        if line.startswith("2. 표기란에는"):
-            mark_at = (order, u0 + indents[indent], line.split("에는")[0] + "에는  ")
-    v = body_v0
-    for line, indent in RULES:
-        if line:
-            if indent == 3:
-                _fitted(pen, centre, v, line, 7.2, u1 - u0 - 0.010, anchor="middle")
-            else:
-                start = u0 + indents[indent]
-                _fitted(pen, start, v, line, 6.4 if indent == 2 else 7.2,
-                        u1 - start - 0.008)
-        v += step
-    if mark_at is not None:
-        order, start_u, prefix = mark_at
-        size = _fit(RULES[order][0], 6.2, u1 - start_u - 0.008)
-        offset = _width(prefix, size) / MM_UNIT
-        _filled_bubble(pen, start_u + float(L.mm_to_u(offset)), body_v0 + order * step)
+    indents = tuple(float(L.mm_to_u(Decimal(str(x)))) for x in RULES_INDENT_MM)
+    v = v0 + RULES_BODY_V
+    for line, indent, advance in RULES:
+        if indent == 3:
+            _text(pen, centre, v, line, size=RULES_PT, anchor="middle", bold=True)
+        elif line.startswith("2. 표기란에는"):
+            _inline_mark(pen, u0 + indents[indent], v, line)
+        else:
+            _text(pen, u0 + indents[indent], v, line,
+                  size=RULES_NOTE_PT if indent == 2 else RULES_PT, anchor="left", bold=True)
+        v += _down(advance)
+
+    start_u = u0 + float(L.mm_to_u(Decimal(str(WRONG_START_MM))))
+    pitch_u = float(L.mm_to_u(Decimal(str(WRONG_PITCH_MM))))
     for index in range(5):
-        _wrong_mark(pen, u0 + 0.028 + index * 0.0175, v + step * 0.55, index)
-    v += step * 2
-    for line, indent in RULES_TAIL:
-        start = u0 + indents[indent]
-        _fitted(pen, start, v, line, 7.2, u1 - start - 0.008)
-        v += step
+        _wrong_mark(pen, start_u + index * pitch_u, v + _down(WRONG_H_MM / 2), index)
+    v += _down(WRONG_ADVANCE_MM)
+    for line, indent, advance in RULES_TAIL:
+        _text(pen, u0 + indents[indent], v, line, size=RULES_PT, anchor="left",
+              bold=True)
+        v += _down(advance)
+
+
+def _inline_mark(pen, u, v, head):
+    """`2. 표기란에는 ● 와 같이 바르게` — 글자·버블·글자를 이어 그린다.
+
+    한 문자열에 공백을 박고 폭을 재서 버블을 얹으면 자간이 원본과 안 맞는다.
+    조각을 차례로 놓으면 앞뒤 여백을 mm 로 정확히 줄 수 있다.
+    """
+    pad = float(L.mm_to_u(Decimal("1.6")))
+    _text(pen, u, v, head, size=RULES_PT, anchor="left", bold=True)
+    after = u + float(L.mm_to_u(Decimal(str(_width(head, RULES_PT) / MM_UNIT))))
+    bubble_u = after + pad + float(L.BUBBLE_RU)
+    _filled_bubble(pen, bubble_u, v)
+    _text(pen, bubble_u + float(L.BUBBLE_RU) + pad, v, RULE_MARK_TAIL,
+          size=RULES_PT, anchor="left", bold=True)
 
 
 def _wrong_mark(pen, u, v, kind):
     """잘못된 표기 예시 — 옛 카드의 다섯 가지(V·X·점·세로줄·빗금)."""
-    _bubble(pen, u, v, float(L.BUBBLE_W_MM) * 1.15,
-            float(L.BUBBLE_H_MM) * 1.05, colour=INK)
+    _bubble(pen, u, v, WRONG_W_MM, WRONG_H_MM, colour=INK)
     x, y = _xy(u, v)
-    w = float(L.BUBBLE_W_MM) * 1.15 * MM_UNIT / 2
-    h = float(L.BUBBLE_H_MM) * 1.05 * MM_UNIT / 2
+    w = WRONG_W_MM * MM_UNIT / 2
+    h = WRONG_H_MM * MM_UNIT / 2
     pen.setLineWidth(_stroke() * 1.6)
     if kind == 0:
         pen.line(x - w * 0.6, y + h * 0.6, x, y - h * 0.5)
@@ -466,14 +510,14 @@ def _phone_block(pen):
 
     u0, v0, u1, v1 = BOX_PHONE_HOW
     _rect(pen, u0, v0, u1, v1, fill=TINT)
-    _text(pen, (u0 + u1) / 2, v0 + 0.023, PHONE_HOW_TITLE, size=10.4, bold=True)
+    _text(pen, (u0 + u1) / 2, v0 + 0.023, PHONE_HOW_TITLE, size=7.8, bold=True)
     _line(pen, u0 + 0.018, v0 + 0.034, u1 - 0.018, v0 + 0.034, weight=1.0)
     v = v0 + 0.048
     step = (v1 - 0.010 - v) / (len(PHONE_HOW) - 1)
     for line, indent in PHONE_HOW:
         if line:
-            start = u0 + (0.010, 0.021, 0.016, 0.030)[indent]
-            _fitted(pen, start, v, line, 6.4, u1 - start - 0.008)
+            start = u0 + float(L.mm_to_u(Decimal(str(PHONE_INDENT_MM[indent]))))
+            _text(pen, start, v, line, size=PHONE_PT, anchor="left", bold=True)
         v += step
 
 
@@ -591,12 +635,12 @@ def _survey_notes(pen, u0, u1, cells):
     _text(pen, (u0 + u1) / 2, tens_last + step * 0.9, "↑", size=9.0)
     v = tens_last + step * 1.9
     for line in SURVEY_TENS_NOTE:
-        _fitted(pen, u0 + 0.008, v, line, 6.4, u1 - u0 - 0.014)
+        _text(pen, u0 + 0.008, v, line, size=PHONE_PT, anchor="left")
         v += step * 0.78
     _line(pen, u0, v - step * 0.30, u1, v - step * 0.30, colour=GREEN, weight=1.2)
     v += step * 0.16
     for line in SURVEY_ONES_NOTE:
-        _fitted(pen, u0 + 0.008, v, line, 6.4, u1 - u0 - 0.014)
+        _text(pen, u0 + 0.008, v, line, size=PHONE_PT, anchor="left")
         v += step * 0.78
     _text(pen, (u0 + u1) / 2, ones_first - step * 0.9, "↓", size=9.0)
 
@@ -613,7 +657,7 @@ def _survey_side(pen, bu0, card):
     _text(pen, (bu0 + bu1) / 2, top + 0.045, "★  내 점수  ★", size=13.0, bold=True)
     v = hand_bottom - 0.062
     for line in MYSCORE_NOTE:
-        _fitted(pen, bu0 + 0.014, v, line, 7.4, bu1 - bu0 - 0.024)
+        _text(pen, bu0 + 0.014, v, line, size=PHONE_PT, anchor="left")
         v += 0.026
 
     _survey_examples(pen, bu0, bu1, hand_bottom + 0.034, card)
