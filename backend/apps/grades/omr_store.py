@@ -28,8 +28,11 @@
 
 - `AnswerSheet.is_corrected=True` → student·match_status·recognized_* 불변
 - `SheetAnswer.is_corrected=True` → marked·result 불변, 행 삭제도 안 함
-- `extra_practice_marked` 는 엔진이 아직 읽지 않으므로(card 판형에 추가
-  마킹란 격자가 없다) 언제나 건드리지 않는다 — `extra_mark_corrected` 포함
+- `SheetAnswer.extra_mark_corrected=True` → extra_practice_marked 불변
+
+`extra_practice_marked` 는 **우리 카드에서만** 값이 온다(2026-08-19). 옛
+튜터시스템 카드에는 그 칸이 없으므로 엔진이 빈 값을 주고, 그때는 기존 값을
+건드리지 않는다 — 옛 배치를 재판독한다고 조교가 켜 둔 체크가 꺼지면 안 된다
 
 시트 보정과 답 보정은 축이 다르다: 시트 보정은 "누구 것인가"의 확정이므로,
 보정된 시트라도 **미보정 문항 행**은 재판독이 계속 갱신한다.
@@ -72,11 +75,15 @@ _R = SheetAnswer.Result
 _I = SheetAnswer.Issue
 
 #: 재판독이 갱신하는 시트 필드 — 시트 보정(is_corrected)이 잠그는 것들.
+#:
+#: `layout_id` 도 여기 있다. 판형은 지면이 말하는 사실이라 사람이 고칠 값은
+#: 아니지만, 보정된 시트는 통째로 사람 것이라 예외를 두지 않는다.
 _SHEET_MACHINE_FIELDS = (
     "student",
     "match_status",
     "recognized_matching_key",
     "recognized_name",
+    "layout_id",
 )
 
 
@@ -89,6 +96,8 @@ def store_sheet(
     match_status=None,
     recognized_matching_key=None,
     recognized_name=None,
+    layout_id=None,
+    extra=None,
 ):
     """엔진 출력 1장 저장 — (sheet, summary). 계약은 모듈 docstring 전체.
 
@@ -117,6 +126,7 @@ def store_sheet(
                 "match_status": match_status,
                 "recognized_matching_key": recognized_matching_key,
                 "recognized_name": recognized_name,
+                "layout_id": layout_id,
             },
         )
         if not created and not sheet.is_corrected:
@@ -124,8 +134,11 @@ def store_sheet(
             sheet.match_status = match_status
             sheet.recognized_matching_key = recognized_matching_key
             sheet.recognized_name = recognized_name
+            sheet.layout_id = layout_id
             sheet.save(update_fields=_SHEET_MACHINE_FIELDS)
-        written, kept, removed, missing = _apply_answers(sheet, exam, readings, created)
+        written, kept, removed, missing = _apply_answers(
+            sheet, exam, readings, created, extra or {}
+        )
         scored = _apply_score(sheet, exam)
     return sheet, {
         "scored": scored,
@@ -310,7 +323,7 @@ def _write_corrections(sheet, answers):
             row.save(update_fields=["marked", "result", "issue_reason", "is_corrected"])
 
 
-def _apply_answers(sheet, exam, readings, created):
+def _apply_answers(sheet, exam, readings, created, extra):
     """문항 행을 이번 판독으로 수렴 — (written, kept, removed, missing).
 
     행 단위 소유권 규칙(모듈 docstring)만 본다: 미보정 행은 갱신·삭제,
@@ -336,12 +349,14 @@ def _apply_answers(sheet, exam, readings, created):
                 missing.append(q_number)
                 continue
             marked, result, issue = _verdict(readings[q_number], question.answer)
+            weak = bool(extra.get(q_number))
             row = existing.pop(question.question_id, None)
             if row is None:
                 to_create.append(
                     SheetAnswer(
                         sheet=sheet, question=question,
                         marked=marked, result=result, issue_reason=issue,
+                        extra_practice_marked=weak,
                     )
                 )
                 written += 1
@@ -349,7 +364,15 @@ def _apply_answers(sheet, exam, readings, created):
                 kept += 1
             else:
                 written += 1
-                if (row.marked, row.result, row.issue_reason) != (marked, result, issue):
+                fields = (row.marked, row.result, row.issue_reason)
+                changed = fields != (marked, result, issue)
+                # 약점 체크는 **축이 다르다** — 답 보정과 따로 잠긴다. 그 칸이
+                # 없는 판형(옛 카드)이면 `extra` 가 비어 있고, 그때는 기존 값을
+                # 그대로 둔다: 옛 배치 재판독이 조교의 체크를 끄면 안 된다.
+                if extra and not row.extra_mark_corrected and row.extra_practice_marked != weak:
+                    row.extra_practice_marked = weak
+                    changed = True
+                if changed:
                     row.marked, row.result, row.issue_reason = marked, result, issue
                     to_update.append(row)
     kept += sum(1 for row in existing.values() if row.is_corrected)
@@ -359,7 +382,9 @@ def _apply_answers(sheet, exam, readings, created):
         removed = SheetAnswer.objects.filter(pk__in=stale_ids).delete()[0]
     SheetAnswer.objects.bulk_create(to_create)
     if to_update:
-        SheetAnswer.objects.bulk_update(to_update, ["marked", "result", "issue_reason"])
+        SheetAnswer.objects.bulk_update(
+            to_update, ["marked", "result", "issue_reason", "extra_practice_marked"]
+        )
     return written, kept, removed, missing
 
 

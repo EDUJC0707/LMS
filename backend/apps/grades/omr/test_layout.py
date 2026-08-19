@@ -322,8 +322,12 @@ class TestBarReading:
         spliced[band, :] = other[band, :]
         assert self.layout_of(spliced) is None
 
-    def test_a_sheet_without_bars_reads_as_unknown(self):
-        """옛 튜터시스템 카드다. 판형을 지어내지 않고 `exams.kind` 로 넘긴다."""
+    def test_a_sheet_without_bars_reads_as_the_old_card(self):
+        """옛 튜터시스템 카드다. 판형을 지어내지 않고 `exams.kind` 로 넘긴다.
+
+        **읽기 실패(None)와 갈라야 한다.** 뭉쳐 두면 우리 카드인데 막대를 못
+        읽은 장이 조용히 옛 좌표로 읽혀 답이 통째로 밀린다.
+        """
         cv2 = pytest.importorskip("cv2")
         import numpy as np
 
@@ -338,7 +342,7 @@ class TestBarReading:
         image = cv2.rotate(page, cv2.ROTATE_90_CLOCKWISE)
         frame = normalize.locate_card(image)
         assert frame is not None, "마커 넷은 세워져야 이 검사가 뜻이 있다"
-        assert bars.read_layout(image, frame) is None
+        assert bars.read_layout(image, frame) is bars.ABSENT
 
 
 class TestTextFits:

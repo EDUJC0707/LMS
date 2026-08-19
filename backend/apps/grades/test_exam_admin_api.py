@@ -353,15 +353,65 @@ class SheetUploadTests(ExamAdminFixtureMixin, TestCase):
         self.assertTrue(default_storage.exists(path))
         default_storage.delete(path)
 
-    def test_rejects_a_question_count_off_the_card(self):
-        """카드는 20줄이다. 워커에서 죽으면 사용자는 "판독 실패"만 보게 된다."""
+    def test_rejects_a_question_count_no_card_can_hold(self):
+        """상한은 **제일 큰 판형**이 정한다 — 옛 카드 20, 우리 25문항 카드 25.
+
+        워커에서 죽으면 사용자는 "판독 실패"만 보게 되므로 여기서 막는다.
+        21문항은 이제 통과한다: 25문항 카드에 얹으면 된다.
+        """
         self.login_admin()
 
         with mock.patch("apps.grades.tasks.ingest_omr_batch.delay") as delay:
-            res = self.post_pdf(self.exam2, 21)
+            delay.return_value = mock.Mock(id="task-25")
+            ok = self.post_pdf(self.exam2, 25)
+        self.assertEqual(ok.status_code, 202)
+        default_storage.delete(delay.call_args.args[1])
 
+        with mock.patch("apps.grades.tasks.ingest_omr_batch.delay") as delay:
+            res = self.post_pdf(self.exam2, 26)
         self.assertEqual(res.status_code, 400)
         delay.assert_not_called()
+
+
+class ExamCardsTests(ExamAdminFixtureMixin, TestCase):
+    """회차 OMR 카드 PDF — 저장하지 않고 그 자리에서 만들어 내려보낸다."""
+
+    def cards_url(self, exam):
+        return f"{ADMIN_EXAMS}/{exam.pk}/cards"
+
+    def test_it_returns_a_printable_pdf(self):
+        self.login_admin()
+
+        res = self.client.get(self.cards_url(self.exam2))
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res["Content-Type"], "application/pdf")
+        self.assertTrue(res.content.startswith(b"%PDF"))
+        # 판형 이름이 한글이라 파일 이름은 RFC5987 로 실린다. 헤더 값 자체가
+        # ASCII 로 남아야 `attachment` 가 보이고 브라우저가 내려받는다.
+        self.assertTrue(res["Content-Disposition"].startswith("attachment;"))
+        self.assertIn("filename*=UTF-8''", res["Content-Disposition"])
+
+    def test_the_question_count_picks_the_layout(self):
+        """21문항이면 25문항 카드다 — 20문항 카드에는 안 들어간다."""
+        from .omr import layout
+
+        self.assertEqual(layout.for_questions(1).name, "답안20")
+        self.assertEqual(layout.for_questions(20).name, "답안20")
+        self.assertEqual(layout.for_questions(21).name, "답안25")
+        self.assertEqual(layout.for_questions(25).name, "답안25")
+        self.assertIsNone(layout.for_questions(26))
+
+    def test_without_an_answer_key_there_is_nothing_to_print(self):
+        """문항 수를 모르면 판형을 못 고른다. 지어내면 틀린 카드를 찍는다."""
+        self.login_admin()
+        exam = Exam.objects.create(
+            name="키 없는 회차", exam_date=self.exam2.exam_date, kind=Exam.Kind.MINI
+        )
+
+        res = self.client.get(self.cards_url(exam))
+
+        self.assertEqual(res.status_code, 400)
 
 
 class AnonymousSheetStatsTests(ExamAdminFixtureMixin, TestCase):

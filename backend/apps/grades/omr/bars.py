@@ -42,6 +42,13 @@ SAMPLE_RV = float(L.mm_to_v(Decimal("2.4")))
 #: 막대는 검정 실칠이라 깨끗한 스캔에서 255 가 나온다. 빈 지면은 0 에 붙는다.
 MIN_CONTRAST = 60.0
 
+#: 막대 자리에 인쇄가 아예 없다 — 옛 튜터시스템 카드다.
+#:
+#: **`None` 과 갈라야 한다.** 둘을 뭉치면 우리 카드인데 막대를 못 읽은 장이
+#: 조용히 옛 좌표로 읽혀 답이 통째로 밀린다. 없으면 옛 카드로 넘기고, 있는데
+#: 못 읽으면 보류다.
+ABSENT = "막대 없음"
+
 SIDES = (0, 1)
 
 
@@ -60,27 +67,33 @@ def bar_cells():
 
 
 def _read_side(ink):
-    """한 변의 슬롯별 잉크 -> 판형 id. 못 읽으면 None."""
+    """한 변의 슬롯별 잉크 -> 판형 id · ABSENT · None(있는데 못 읽음)."""
     values = list(ink.values())
     low, high = min(values), max(values)
     if high - low < MIN_CONTRAST:
-        return None
+        return ABSENT
     floor = (low + high) / 2
     return L.decode_bars(tuple(ink[slot] > floor for slot in range(L.BAR_SLOTS)))
 
 
 def read_layout(image, frame):
-    """스캔 + 카드 프레임 -> 판형 id. 못 읽으면 None.
+    """스캔 + 카드 프레임 -> 판형 id · `ABSENT` · None.
 
-    좌우를 따로 읽는다. 둘 다 읽혔는데 다르면 **보류** — 한쪽이 오염됐다는
-    뜻이라 어느 쪽을 믿을지 알 수 없다.
+    좌우를 따로 읽는다:
+
+    - 둘 다 판형을 말하는데 **다르면 None** — 한쪽이 오염됐다는 뜻이라 어느
+      쪽을 믿을지 알 수 없다. 조용히 틀리느니 보류다
+    - 한쪽만 읽히면 그쪽을 쓴다. 스캔에서 가장자리가 날아가는 일이 있다
+    - 둘 다 비어 있으면 `ABSENT` — 옛 카드다
+    - 한쪽이 비고 한쪽이 못 읽었으면 None. 막대가 있는 지면이라는 뜻이므로
+      옛 카드로 넘기면 안 된다
     """
     ink = sample_cells(image, frame, bar_cells(), (SAMPLE_RU, SAMPLE_RV))
-    sides = [
+    left, right = (
         _read_side({slot: ink[(side, slot)] for slot in range(L.BAR_SLOTS)})
         for side in SIDES
-    ]
-    left, right = sides
-    if left is not None and right is not None:
-        return left if left == right else None
-    return left if left is not None else right
+    )
+    ids = [side for side in (left, right) if side not in (ABSENT, None)]
+    if ids:
+        return ids[0] if len(ids) == 1 or ids[0] == ids[1] else None
+    return ABSENT if left is ABSENT and right is ABSENT else None

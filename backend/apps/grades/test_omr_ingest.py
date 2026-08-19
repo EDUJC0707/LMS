@@ -106,6 +106,10 @@ class IngestTests(TestCase):
                 answers={q: (3,) for q in range(1, 17)},
                 phone="0001",
                 matching_key="김서연0001",
+                # 판형·약점 체크는 **실제 값**이어야 한다 — Mock 이 그대로
+                # 컬럼에 들어가면 Django 가 F() 식으로 착각해 insert 에서 죽는다.
+                layout_id=None,
+                extra={},
             )
             reading.name = "김서연"  # Mock(name=...) 은 속성이 아니라 목 이름이다
             read_sheet.return_value = reading
@@ -450,7 +454,11 @@ class ShortExamTests(TestCase):
         self.assertEqual(sorted(marked), ["3"] * 5)
 
     def test_a_count_the_card_cannot_hold_is_refused(self):
-        from .omr import sheet as sheet_module
+        """상한은 **판형이 정한다.** 옛 카드는 20, 우리 25문항 카드는 25다."""
+        from .omr import grid
 
         with self.assertRaises(ValueError):
-            sheet_module.answer_cells_for(21)
+            grid.VENDOR.answer_cells(21)
+        with self.assertRaises(ValueError):
+            grid.BY_LAYOUT[2].answer_cells(26)
+        self.assertEqual(len(grid.BY_LAYOUT[2].answer_cells(25)), 125)

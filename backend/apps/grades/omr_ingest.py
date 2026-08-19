@@ -41,7 +41,7 @@ from apps.accounts.models import Student
 
 from . import media, ocr, omr_match, omr_store, scoring
 from .models import AnswerSheet, Exam
-from .omr import drift, sheet
+from .omr import bars, drift, grid, normalize, sheet
 
 
 def ingest_pdf(exam, pdf, question_count):
@@ -125,11 +125,51 @@ def _hold_page(exam, path, survey, summary, sheets, page_no):
     sheets.append({"page": page_no, "sheet_id": row.pk, "held": reason})
 
 
+def _pick_grid(image, question_count):
+    """지면이 스스로 말하는 판형 -> (좌표, 프레임, 보류사유).
+
+    **판형은 시험 설정이 아니라 종이가 정한다**(2026-08-19). 한 배치에 20문항
+    카드와 25문항 카드가 섞여 들어올 수 있고, 시험에 적힌 값을 믿으면 섞인 장을
+    조용히 틀리게 읽는다.
+
+    막대가 아예 없으면 옛 튜터시스템 카드다 — 종전대로 옛 좌표로 읽는다.
+    막대는 있는데 못 읽으면 **보류**다: 우리 카드라는 뜻이므로 옛 좌표로
+    넘기면 답이 통째로 밀린다.
+    """
+    frame = normalize.locate_card(image)
+    if frame is None:
+        return None, None, sheet.CARD_NOT_FOUND
+    layout_id = bars.read_layout(image, frame)
+    if layout_id is bars.ABSENT:
+        chosen = grid.VENDOR
+    else:
+        chosen = grid.for_layout(layout_id) if layout_id is not None else None
+        if chosen is None:
+            return None, frame, sheet.LAYOUT_UNKNOWN
+    if question_count > chosen.questions:
+        # 다시 스캔해도 안 바뀐다 — 다른 종이를 넣었거나 시험 설정이 틀렸다.
+        # 판형은 읽혔으니 **행에는 남긴다**: 보정 화면이 "20문항 카드인데
+        # 25문항 시험" 이라고 말할 수 있어야 조교가 무엇을 고칠지 안다.
+        return chosen, frame, sheet.LAYOUT_MISMATCH
+    return chosen, frame, None
+
+
 def _read_one(exam, path, image, question_count, survey, roster, summary, sheets, page_no):
     """장 한 개 — 판독·매칭·저장. PDF 업로드와 재판독이 같은 길을 쓴다."""
     summary["pages"] += 1
     from_handwriting = False
-    reading = sheet.read_survey(image) if survey else sheet.read_sheet(image, question_count)
+    if survey:
+        reading = sheet.read_survey(image)
+    else:
+        chosen, frame, held = _pick_grid(image, question_count)
+        reading = (
+            sheet.SheetReading(
+                held=held, frame=frame,
+                layout_id=None if chosen is None else chosen.layout_id,
+            )
+            if held
+            else sheet.read_sheet(image, question_count, grid=chosen, frame=frame)
+        )
     if survey and reading.held == sheet.CARD_UNMARKED:
         reading, from_handwriting = _rescue_by_ocr(image, reading)
 
@@ -139,7 +179,7 @@ def _read_one(exam, path, image, question_count, survey, roster, summary, sheets
         row, _ = (
             omr_store.store_survey(exam, path, None)
             if survey
-            else omr_store.store_sheet(exam, path, None)
+            else omr_store.store_sheet(exam, path, None, layout_id=reading.layout_id)
         )
     else:
         summary["read"] += 1
@@ -159,7 +199,10 @@ def _read_one(exam, path, image, question_count, survey, roster, summary, sheets
                 exam, path, reading.score, from_handwriting=from_handwriting, **identity
             )
             if survey
-            else omr_store.store_sheet(exam, path, reading.answers, **identity)
+            else omr_store.store_sheet(
+                exam, path, reading.answers,
+                layout_id=reading.layout_id, extra=reading.extra, **identity
+            )
         )
     sheets.append({"page": page_no, "sheet_id": row.pk, "held": reading.held})
 

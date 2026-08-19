@@ -23,6 +23,11 @@ urlpatterns = [
         name="exam-sheets",
     ),
     path(
+        "admin/exams/<int:exam_id>/cards",
+        views.AdminExamCardsView.as_view(),
+        name="exam-cards",
+    ),
+    path(
         "admin/exams/<int:exam_id>/reread",
         views.AdminExamRereadView.as_view(),
         name="exam-reread",

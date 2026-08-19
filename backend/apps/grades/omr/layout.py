@@ -81,6 +81,17 @@ BUBBLE_H_MM = Decimal("4.216")
 BUBBLE_RU = mm_to_u(BUBBLE_W_MM / 2)
 BUBBLE_RV = mm_to_v(BUBBLE_H_MM / 2)
 
+#: 판독 표본 반경 — **인쇄된 칸보다 가로로 넓다.**
+#:
+#: 링 반폭은 1.162mm 인데 1.397mm 까지 본다. 옛 카드가 같은 이유로 실측 반폭
+#: 9.15px 대신 11.0px 를 썼다: 칸 옆으로 삐져나가게 칠한 마킹이 실물 65장에
+#: 2건 있었고, 참값으로 좁히면 그 둘이 빈칸으로 죽는다. 넓혀도 65% 표본폭이
+#: 링 안쪽 여백에 머물러 링을 물지 않는다.
+#:
+#: 세로는 참 반높이 그대로다(2.108mm = 옛 카드 16.6px).
+ANSWER_SAMPLE_RU = mm_to_u(Decimal("1.397"))
+ANSWER_SAMPLE_RV = BUBBLE_RV
+
 #: 인쇄 선 굵기. 0.3pt(0.106mm)로 그렸더니 200dpi 렌더에서 링이 **조각났고**
 #: 옵셋 최소 선폭(약 0.1mm)에도 걸쳐 아예 안 찍힐 수 있었다. 0.18mm 면 링 안쪽
 #: 여백이 0.99mm 라 리더의 65% 표본(±0.76mm)을 침범하지 않는다.
@@ -258,6 +269,19 @@ BY_ID = {layout.layout_id: layout for layout in LAYOUTS}
 BY_NAME = {layout.name: layout for layout in LAYOUTS}
 
 
+def for_questions(count):
+    """문항 수 -> 그걸 담을 수 있는 **제일 작은** 답안 카드. 없으면 None.
+
+    큰 카드로 다 찍으면 될 것 같지만 그러면 안 쓰는 줄이 지면에 남는다 —
+    학생이 아직 못 푼 문제가 있는 줄 안다(덜 찬 열을 짧게 닫는 것과 같은 이유).
+    """
+    fits = sorted(
+        (sheet for sheet in LAYOUTS if not sheet.is_survey and sheet.questions >= count),
+        key=lambda sheet: sheet.questions,
+    )
+    return fits[0] if fits else None
+
+
 # --- 신원란 — 옛 카드에서 그대로 물려받는다 (대표 2026-08-18 "지금대로") -----
 #
 # 아래 값은 옛 카드 실측(`card.py`)의 정규좌표 그대로다. 자모 격자를 유지하기로
@@ -281,6 +305,9 @@ NAME_VOWEL_COLUMNS = (2, 5, 8, 11)
 #: 31px 를 폭으로 환산한 3.94mm 를 양쪽에 쓰던 것이 가로로 0.4mm 컸다.
 NAME_BUBBLE_W_MM = Decimal("3.62")
 NAME_BUBBLE_H_MM = Decimal("3.94")
+#: 성명 표본 반경 — 옛 카드와 같이 **두 축 모두 반높이**로 둔다(1.97mm =
+#: 옛 카드 15.5px). 성명 버블은 거의 정원이라 가로만 넓힐 이유가 없다.
+NAME_SAMPLE_R = mm_to_u(NAME_BUBBLE_H_MM / 2), mm_to_v(NAME_BUBBLE_H_MM / 2)
 
 #: 전화 4자리 열 — 박스를 **네 칸으로 똑같이 나눈 각 칸의 한가운데**에 둔다
 #: (대표 2026-08-19). 앞서 간격만 균일하게 했더니 열이 박스 안에서 좌우로
