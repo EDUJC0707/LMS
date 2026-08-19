@@ -420,13 +420,41 @@ def _layout_bars(pen, card):
     pen.setFillColor(INK)
 
 
+#: 회차명이 들어갈 수 있는 최대 폭(마커 기준 mm). 제목은 안내 박스보다 **위**라
+#: 그쪽과는 안 부딪힌다. 먼저 만나는 것은 **세로 구분바**다 — 답란 열까지 있다고
+#: 계산했다가 구분바를 뚫고 나갔다. 앞에 3mm 를 비워 둔다.
+HEAD_ROOM_MM = (DIVIDER_U[0] - HEAD_U) * float(L.SPAN_X_MM) - 3.0
+#: 여기까지는 줄여서 넣는다. 그 밑으로는 읽으라고 찍는 글자가 아니다.
+HEAD_MIN_PT = 9.0
+
+
+def _exam_size(exam):
+    """회차명이 자리에 들어가는 크기. 안 되면 이름을 줄이라고 말한다.
+
+    제목은 **한 줄뿐**이라 줄여도 다른 줄과 크기가 어긋날 일이 없다(안내 문구를
+    줄마다 줄이던 것과는 다른 얘기다). 다만 끝없이 줄이지는 않는다 — 9pt 밑으로
+    가야 들어가는 이름이면 지면이 아니라 이름이 문제다. 잘라 내거나 깨알같이
+    찍어 내보내느니 여기서 막는다.
+    """
+    width = _width(exam, HEAD_EXAM_PT) / MM_UNIT
+    if width <= HEAD_ROOM_MM:
+        return HEAD_EXAM_PT
+    fitted = HEAD_EXAM_PT * HEAD_ROOM_MM / width
+    if fitted < HEAD_MIN_PT:
+        raise ValueError(
+            f"회차명이 너무 깁니다({width:.0f}mm, 자리는 {HEAD_ROOM_MM:.0f}mm): "
+            f"{exam!r} — 짧게 적어 주세요"
+        )
+    return fitted
+
+
 def _header(pen, title, exam):
     """회차명 + 로고. 회차는 시험을 만들 때 채운다(대표 2026-08-18).
 
     비우면 손으로 적을 줄을 남긴다 — 미리 찍어 둘 수도 있어야 한다.
     """
     if exam:
-        _text(pen, HEAD_U, HEAD_EXAM_V, exam, size=HEAD_EXAM_PT, anchor="left")
+        _text(pen, HEAD_U, HEAD_EXAM_V, exam, size=_exam_size(exam), anchor="left")
     else:
         _line(pen, HEAD_U, HEAD_EXAM_V + 0.012, HEAD_U + 0.185,
               HEAD_EXAM_V + 0.012, weight=1.0)

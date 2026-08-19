@@ -376,3 +376,33 @@ class TestJamoMatchesTheReader:
         """행 수가 자모 수보다 적으면 뒤쪽 자모가 지면에서 잘린다."""
         assert len(layout.VOWELS) == layout.NAME_ROWS
         assert len(layout.CONSONANTS) == layout.NAME_CONSONANT_ROWS
+
+
+class TestExamName:
+    """회차명은 사람이 자유롭게 적는다 — 지면이 그걸 견뎌야 한다."""
+
+    def test_a_normal_name_keeps_the_full_size(self):
+        generate._font()
+        assert generate._exam_size("2027 OMEGA black 3회") == generate.HEAD_EXAM_PT
+
+    def test_a_long_name_shrinks_to_fit(self):
+        generate._font()
+        long_name = "2027 OMEGA black 시즌2 파이널 모의고사 12회차"
+        size = generate._exam_size(long_name)
+        assert size < generate.HEAD_EXAM_PT
+        assert generate._width(long_name, size) / generate.MM_UNIT <= generate.HEAD_ROOM_MM + 0.01
+
+    def test_an_absurd_name_is_refused_not_squeezed(self):
+        """9pt 밑으로 가야 들어가면 지면이 아니라 이름이 문제다.
+
+        잘라 내면 어느 회차인지 알 수 없고, 깨알같이 찍으면 인쇄에서 뭉갠다.
+        만들 때 막아야 조교가 이름을 고칠 수 있다.
+        """
+        generate._font()
+        with pytest.raises(ValueError, match="너무 깁니다"):
+            generate._exam_size("가" * 120)
+
+    @pytest.mark.parametrize("name", ["", "2027 OMEGA black 3회", "6월 모의평가"])
+    def test_the_card_still_renders(self, name):
+        for sheet in layout.LAYOUTS:
+            assert generate.render(sheet, exam=name).startswith(b"%PDF")
