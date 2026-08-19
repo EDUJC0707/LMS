@@ -12,6 +12,10 @@
  *
  * **잔액 배너**: 자동충전을 안 켜기로 해서(2026-08-11) 잔액이 마르면 청구가
  * 통째로 멈춘다. 로그 말고 사람이 보는 자리가 여기다.
+ *
+ * **반 단위는 위 패널이 맡는다**(ClassGoodsPanel — FLOW §5-1). 아래 목록은
+ * 주문 행이라 아직 주문이 없는 학생이 안 뜬다 — 청구를 시작하는 자리도,
+ * 러셀 반의 일괄 배부도 거기여야 한다.
  */
 import { useState } from "react";
 
@@ -30,6 +34,7 @@ import {
   StatusBadge,
   Table,
 } from "../../../components";
+import ClassGoodsPanel from "./ClassGoodsPanel";
 import "./ops.css";
 
 interface PaymentRow {
@@ -101,6 +106,10 @@ export default function PaymentsPage() {
   const cancel = useApiAction(async (orderId: number, reason: string) => {
     return (await http.post<PaymentRow>(`/admin/payments/${orderId}/cancel`, { reason })).data;
   });
+  // 배부 표시는 우리 장부라 밖으로 나가는 것이 없다 — 사유도 확인창도 없다.
+  const undeliver = useApiAction(async (orderId: number) => {
+    return (await http.post<PaymentRow>(`/admin/payments/${orderId}/undeliver`)).data;
+  });
 
   const runDeliver = async (row: PaymentRow) => {
     setNotice(null);
@@ -109,6 +118,16 @@ export default function PaymentsPage() {
     setPendingId(null);
     if (!updated) return; // 실패 사유는 위 Alert 에 뜬다
     setNotice(`${row.student.name} · ${row.product_name} 배부완료`);
+    await list.reload();
+  };
+
+  const runUndeliver = async (row: PaymentRow) => {
+    setNotice(null);
+    setPendingId(row.order_id);
+    const updated = await undeliver.run(row.order_id);
+    setPendingId(null);
+    if (!updated) return;
+    setNotice(`${row.student.name} · ${row.product_name} 배부 해제`);
     await list.reload();
   };
 
@@ -149,15 +168,16 @@ export default function PaymentsPage() {
         </Alert>
       )}
 
-      {(deliver.error || cancel.error) && (
+      {(deliver.error || cancel.error || undeliver.error) && (
         <Alert
           tone="danger"
           onClose={() => {
             deliver.clearError();
             cancel.clearError();
+            undeliver.clearError();
           }}
         >
-          {deliver.error ?? cancel.error}
+          {deliver.error ?? cancel.error ?? undeliver.error}
         </Alert>
       )}
 
@@ -166,6 +186,9 @@ export default function PaymentsPage() {
           {notice}
         </Alert>
       )}
+
+      <ClassGoodsPanel onChanged={() => void list.reload()} />
+
       <Card padding="none">
         {/* 필터 줄은 다른 운영 화면과 같은 부품을 쓴다(`ops-toolbar ops-cardbar`) —
             좌우 여백·간격·라벨 크기가 거기 한 곳에 있다. AttendancePage 선례. */}
@@ -268,6 +291,16 @@ export default function PaymentsPage() {
                         onClick={() => runDeliver(r)}
                       >
                         배부완료
+                      </Button>
+                    )}
+                    {r.status === "배부완료" && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        loading={pendingId === r.order_id && undeliver.pending}
+                        onClick={() => runUndeliver(r)}
+                      >
+                        배부 해제
                       </Button>
                     )}
                     {/* 취소는 대표만. 서버가 IsOwner 로 막고 화면은 감추기만 한다. */}
