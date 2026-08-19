@@ -16,6 +16,10 @@ Celery 를 모른다. 태스크는 이 함수를 부르고 재시도 정책만 �
 | 영구 실패(번호 오류·템플릿 미승인·채널 미설정) | `실패` | NULL | 사유 |
 | 일시 실패(타임아웃·5xx) | **`대기` 유지** | NULL | 사유 |
 
+`sent_to_phone` 은 연락처를 푼 직후에 박는다 — 실패한 시도도 어느 번호로
+걸었는지가 남아야 사유("번호 오류")를 확인할 수 있다. 연락처를 아예 못 찾은
+행만 빈 값이다(풀린 번호가 없으므로 적을 것이 없다).
+
 일시 실패에서 `실패` 로 쓰지 않는 이유: 재시도가 도는 동안 관리자 발송내역에
 "실패"가 떴다 사라지는 깜빡임이 생기고, 실패 재발송 배치가 아직 살아 있는 건을
 집어 이중 발송한다. 실패로 확정하는 것은 **재시도가 소진된 뒤**(tasks 소관)다.
@@ -149,7 +153,11 @@ def deliver(notif_id, now=None):
         if notification.status in _TERMINAL:
             return notification
         try:
-            get_adapter(notification.channel).send(build_message(notification))
+            message = build_message(notification)
+            # 보낸 번호는 **보내기 직전에** 박는다(FLOW 2-5·3-8). 대상 행을 따라가면
+            # 나중에 고친 번호가 나와, 옛 발송까지 맞는 번호로 나간 것처럼 보인다.
+            notification.sent_to_phone = message.recipient
+            get_adapter(notification.channel).send(message)
         except PermanentChannelError as exc:
             _stamp(notification, Notification.Status.FAILED, error=exc)
             return notification
@@ -195,4 +203,4 @@ def _stamp(notification, status, sent_at=None, error=None):
     notification.status = status
     notification.sent_at = sent_at
     notification.error_msg = str(error)[:_ERROR_MSG_MAX] if error else None
-    notification.save(update_fields=["status", "sent_at", "error_msg"])
+    notification.save(update_fields=["status", "sent_at", "error_msg", "sent_to_phone"])
