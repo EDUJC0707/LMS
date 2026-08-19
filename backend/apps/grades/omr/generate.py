@@ -69,10 +69,10 @@ INK = Color(0x23 / 255, 0x1F / 255, 0x20 / 255)
 #: 상대화 문턱이 이 글리프가 인쇄된 지면에서 맞춰졌다.
 #: 답란·전화는 글리프가 링 높이의 84% 다(원본 실측 1.78x3.94mm / 2.54x4.70mm).
 #: 지금 값이 82~83% 로 이미 맞는다.
-CELL_GLYPH_PT = 6.0
+CELL_GLYPH_PT = 7.3
 #: 성명은 다르다 — 원본이 링 3.62x3.94mm 에 글리프 1.52x2.03mm 로 **52%** 다.
 #: 6.0pt 로 그렸더니 69% 라 칸을 꽉 채워 답란보다 크게 보였다.
-NAME_GLYPH_PT = 5.2
+NAME_GLYPH_PT = 6.4
 
 #: 박스 자리 — 옛 카드 200dpi 렌더에서 잰 정규좌표 그대로.
 BOX_SCHOOL = (0.025, 0.210, 0.272, 0.310)
@@ -96,7 +96,8 @@ _ROW_LAST_V = float(L.mm_to_v(L.ANSWER_FIRST_ROW_MM + 19 * L.ROW_PITCH_MM))
 _ROW_MARGIN_V = float(L.mm_to_v(Decimal(str(ANSWER_ROW_MARGIN_MM))))
 ANSWER_HEADER_V = _ROW1_V - _ROW_MARGIN_V
 BOX_ANSWER_V = (0.022, _ROW_LAST_V + _ROW_MARGIN_V)
-NUMBER_COL_U = 0.030
+#: 문번 칸 폭 — 원본 실측 7.88mm. 8.97mm 로 두었을 때 1.10mm 넓었다.
+NUMBER_COL_U = 0.0279
 
 #: 머리말 자리 — 옛 카드 실측(지면 왼쪽 끝 기준 제목 14.4mm, 로고 22.5mm).
 #: 눈으로 맞추던 때는 둘 다 11.4mm 에 붙어 있어 제목이 3mm, 로고가 11mm
@@ -137,9 +138,11 @@ BOLD_STROKE = 0.022
 #: 세로 배치 — 본문이 34.6mm 인데 박스 안 높이가 46.1mm 다. 예전에는 본문을
 #: 11.8mm 에서 시작해 마지막 줄이 박스 **밖으로** 나갔다(48.5mm). 제목·밑줄을
 #: 위로 붙이고 본문을 8.5mm 에서 시작하면 45.2mm 로 들어간다.
-RULES_TITLE_V = 0.024
-RULES_RULE_V = 0.034
-RULES_BODY_V = 0.045
+#: 제목 위 여백을 절반으로 줄이고 아래 내용을 그만큼 끌어올린다
+#: (대표 2026-08-19). **박스 크기는 그대로다.**
+RULES_TITLE_V = 0.012
+RULES_RULE_V = 0.022
+RULES_BODY_V = 0.033
 
 RULES_TITLE = "지켜야 할 사항"
 #: (문구, 들여쓰기 단, **다음 줄까지의 간격 mm**). 간격을 균등하게 두면 항목이
@@ -363,8 +366,13 @@ def _bubble(pen, u, v, width_mm, height_mm, colour=None):
 
 
 def _cell(pen, u, v, glyph, width_mm=None, height_mm=None, size=None):
+    """버블 한 칸 — **링만 분홍이고 글자는 검정**이다(대표 2026-08-19).
+
+    링을 분홍으로 두는 이유는 그대로다: 검정 사인펜 마킹과 인쇄된 테두리가
+    같은 색이면 사람도 기계도 가르기 어렵다.
+    """
     _bubble(pen, u, v, width_mm or L.BUBBLE_W_MM, height_mm or L.BUBBLE_H_MM)
-    _text(pen, u, v, glyph, size=size or CELL_GLYPH_PT, colour=PINK)
+    _text(pen, u, v, glyph, size=size or CELL_GLYPH_PT, colour=INK)
 
 
 def _filled_bubble(pen, u, v):
@@ -444,8 +452,7 @@ def _school_block(pen):
     for top, bottom, label in ((v0, mid_v, "학 교"), (mid_v, v1, "학 급")):
         _rect(pen, u0, top, label_u, bottom, fill=TINT,
               corners=TOP_LEFT_ONLY if top == v0 else (False, False, False, True))
-        _text(pen, (u0 + label_u) / 2, (top + bottom) / 2, label,
-               size=11.0, colour=GREEN, bold=True)
+        _text(pen, (u0 + label_u) / 2, (top + bottom) / 2, label, size=11.0, bold=True)
     _line(pen, label_u, mid_v, u1, mid_v)
     _text(pen, u1 - 0.008, (v0 + mid_v) / 2, "고등학교", size=10.5, anchor="right", bold=True)
 
@@ -528,9 +535,10 @@ def _titled_grid_box(pen, box, title, grid_v0, cells=4, columns=()):
     _rect(pen, u0, v0, u1, v1)
     header_v = v0 + 0.048
     _rect(pen, u0, v0, u1, header_v, fill=TINT, corners=TOP_ONLY)
-    _text(pen, (u0 + u1) / 2, (v0 + header_v) / 2, title, size=10.0, colour=GREEN, bold=True)
+    _text(pen, (u0 + u1) / 2, (v0 + header_v) / 2, title, size=10.0, bold=True)
     write_v = grid_v0 - 0.030
-    _line(pen, u0, write_v, u1, write_v, colour=GREEN)
+    # 답란 안 5줄 구분선과 같은 두께로 — 굵으면 손글씨 칸이 도드라진다.
+    _line(pen, u0, write_v, u1, write_v, colour=GREEN, weight=1.2)
     for edge in _divider_us(u0, u1, cells, columns):
         _dashed(pen, edge, header_v, edge, v1)
 
@@ -567,16 +575,16 @@ def _name_block(pen):
 
 
 def _phone_block(pen):
-    _titled_grid_box(pen, BOX_PHONE, "전화번호  끝  네  자리",
+    _titled_grid_box(pen, BOX_PHONE, "전화번호  뒤  4자리",
                      float(L.PHONE_ROW_V[0]), cells=L.PHONE_CELLS)
     for (_pos, digit), (u, v) in L.phone_cells().items():
         _cell(pen, u, v, str(digit))
 
     u0, v0, u1, v1 = BOX_PHONE_HOW
     _rect(pen, u0, v0, u1, v1, fill=TINT)
-    _text(pen, (u0 + u1) / 2, v0 + 0.023, PHONE_HOW_TITLE, size=7.8, bold=True)
-    _line(pen, u0 + 0.018, v0 + 0.034, u1 - 0.018, v0 + 0.034, weight=1.0)
-    v = v0 + 0.048
+    _text(pen, (u0 + u1) / 2, v0 + 0.0115, PHONE_HOW_TITLE, size=7.8, bold=True)
+    _line(pen, u0 + 0.018, v0 + 0.0225, u1 - 0.018, v0 + 0.0225, weight=1.0)
+    v = v0 + 0.0365
     step = (v1 - 0.010 - v) / (len(PHONE_HOW) - 1)
     for line, indent in PHONE_HOW:
         if line:
@@ -608,8 +616,8 @@ def _grid_column(pen, u0, header, rows_v, numbers, bottom=None):
     # 문번 칸은 위·아래가 박스 테두리에 닿는다 — 왼쪽 두 모서리만 둥글다.
     _rect(pen, u0, top, number_u, bottom, fill=TINT, corners=LEFT_ONLY)
     _rect(pen, u0, top, u1, header_v, fill=TINT, corners=TOP_ONLY)
-    _text(pen, (u0 + number_u) / 2, (top + header_v) / 2, "문번", size=8.6, colour=GREEN, bold=True)
-    _text(pen, (number_u + u1) / 2, (top + header_v) / 2, header, size=9.4, colour=GREEN, bold=True)
+    _text(pen, (u0 + number_u) / 2, (top + header_v) / 2, "문번", size=8.6, bold=True)
+    _text(pen, (number_u + u1) / 2, (top + header_v) / 2, header, size=9.4, bold=True)
     _line(pen, u0, header_v, u1, header_v)
     _line(pen, number_u, top, number_u, bottom)
 
@@ -622,7 +630,7 @@ def _grid_column(pen, u0, header, rows_v, numbers, bottom=None):
             # 눈이 짚을 자리가 없어 학생이 줄을 잘못 탄다.
             heavy = isinstance(label, int) and label % GROUP_EVERY == 0
             _text(pen, (u0 + number_u) / 2, v, str(label),
-                  size=10.6 if heavy else 9.6, colour=GREEN, bold=heavy)
+                  size=11.7 if heavy else 10.6, bold=heavy)
         if index and index % GROUP_EVERY == 0:
             gap = (rows_v[index] - rows_v[index - 1]) / 2
             _line(pen, u0, v - gap, u1, v - gap, colour=GREEN, weight=1.2)
