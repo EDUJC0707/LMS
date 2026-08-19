@@ -111,7 +111,7 @@ GROUP_EVERY = 5
 RADIUS = 2.0
 
 #: 굵게 — 겹쳐 찍을 때 밀어 주는 거리(글자 크기 대비).
-BOLD_STROKE = 0.035
+BOLD_STROKE = 0.022
 
 #: 세로 배치 — 본문이 34.6mm 인데 박스 안 높이가 46.1mm 다. 예전에는 본문을
 #: 11.8mm 에서 시작해 마지막 줄이 박스 **밖으로** 나갔다(48.5mm). 제목·밑줄을
@@ -231,11 +231,13 @@ def _text(pen, u, v, body, size=5.0, anchor="middle", colour=None, bold=False):
     # reportlab 은 "이미 0 이겠지" 하고 `0 Tr` 을 안 쓴다 — 실제 PDF 에 `2 Tr`
     # 47개, `0 Tr` 0개였다. 그래서 볼드 뒤에 오는 글자가 전부 볼드로 남았고,
     # 3번 항목만 굵어 보인 것도 이것이었다. 겹쳐 찍기는 상태를 안 남긴다.
-    passes = (0.0, size * BOLD_STROKE) if bold else (0.0,)
+    # 대각으로 조금 민다. 가로로만 밀면 확대했을 때 글자가 겹쳐 보인다
+    # ("전화번호 끝끝 네네 자리자리" 로 읽혔다).
+    passes = ((0.0, 0.0), (size * BOLD_STROKE, size * BOLD_STROKE)) if bold else ((0.0, 0.0),)
     for chunk, is_latin in _runs(body):
         face = _face(is_latin, bold)
-        for nudge in passes:
-            text = pen.beginText(x + nudge, y)
+        for dx, dy in passes:
+            text = pen.beginText(x + dx, y + dy)
             text.setFont(face, size)
             text.setFillColor(fill)
             text.textOut(chunk)
@@ -540,7 +542,7 @@ def _name_block(pen):
 
 def _phone_block(pen):
     _titled_grid_box(pen, BOX_PHONE, "전화번호  끝  네  자리",
-                     float(L.PHONE_ROW_V[0]), cells=4, columns=L.PHONE_COL_U)
+                     float(L.PHONE_ROW_V[0]), cells=L.PHONE_CELLS)
     for (_pos, digit), (u, v) in L.phone_cells().items():
         _cell(pen, u, v, str(digit))
 

@@ -236,17 +236,18 @@ NAME_VOWEL_COLUMNS = (2, 5, 8, 11)
 NAME_BUBBLE_W_MM = Decimal("3.62")
 NAME_BUBBLE_H_MM = Decimal("3.94")
 
-#: 전화 4자리 열 — **균일 간격으로 고친다**(대표 2026-08-19). 옛 카드는
-#: 52.9 / 79.2 / 57.2px 로 가운데만 넓었다(구분선 자리). 우리가 찍는 카드이니
-#: 고르게 둔다 — 두 자리씩 떨어져 보이면 학생이 자리를 헷갈린다.
-#:
-#: 양 끝은 옛 카드 그대로 두고 사이만 4등분했다. 그래서 격자가 차지하는
-#: **폭은 안 변하고** 안쪽 두 열만 움직인다.
-_PHONE_FIRST, _PHONE_LAST = Decimal("706.9"), Decimal("896.1")
+#: 전화 4자리 열 — 박스를 **네 칸으로 똑같이 나눈 각 칸의 한가운데**에 둔다
+#: (대표 2026-08-19). 앞서 간격만 균일하게 했더니 열이 박스 안에서 좌우로
+#: 치우쳐, 손글씨 줄의 칸막이를 열 사이 중앙에 그었을 때 **바깥 두 칸이
+#: 안쪽보다 넓어졌다.** 칸에서 출발해 열을 놓으면 둘 다 균일해진다.
+_PHONE_BOX_U = (Decimal("0.294"), Decimal("0.421"))
+PHONE_CELLS = 4
 PHONE_COL_U = tuple(
-    (_PHONE_FIRST + (_PHONE_LAST - _PHONE_FIRST) * Decimal(index) / 3) / _AVG_W
-    for index in range(4)
+    _PHONE_BOX_U[0]
+    + (_PHONE_BOX_U[1] - _PHONE_BOX_U[0]) * (Decimal(2 * index + 1) / (2 * PHONE_CELLS))
+    for index in range(PHONE_CELLS)
 )
+
 PHONE_ROW_V = (Decimal("698.7") / _AVG_H, Decimal("1149.2") / _AVG_H)
 PHONE_DIGITS = 10
 
