@@ -22,6 +22,7 @@ export default function AttendancePage() {
   const today = todayISO();
   const [date, setDate] = useState("");
   const [courseId, setCourseId] = useState("");
+  const [classId, setClassId] = useState("");
   const [range, setRange] = useState<Range>("예정");
 
   const sessions = useApi(
@@ -42,10 +43,23 @@ export default function AttendancePage() {
     return [...seen].map(([id, name]) => ({ id, name }));
   }, [all]);
 
-  const byCourse = useMemo(
-    () => (courseId ? all.filter((s) => String(s.course?.course_id ?? "") === courseId) : all),
-    [all, courseId],
-  );
+  // 반은 고른 강좌 안에서만 보여 준다 — 반 이름은 커리를 안 담으므로
+  // 전체 강좌의 반을 한 줄에 늘어놓으면 어느 커리의 반인지 알 수 없다.
+  const classes = useMemo(() => {
+    const seen = new Map<number, string>();
+    for (const s of all) {
+      if (courseId && String(s.course?.course_id ?? "") !== courseId) continue;
+      if (s.klass) seen.set(s.klass.class_id, s.klass.name);
+    }
+    return [...seen].map(([id, name]) => ({ id, name }));
+  }, [all, courseId]);
+
+  const byCourse = useMemo(() => {
+    const rows = courseId
+      ? all.filter((s) => String(s.course?.course_id ?? "") === courseId)
+      : all;
+    return classId ? rows.filter((s) => String(s.klass?.class_id ?? "") === classId) : rows;
+  }, [all, courseId, classId]);
 
   const ahead = useMemo(() => byCourse.filter((s) => s.session_date >= today), [byCourse, today]);
   const past = useMemo(
@@ -78,7 +92,7 @@ export default function AttendancePage() {
     },
     {
       key: "course",
-      header: "강좌 · 주차",
+      header: "반 · 강좌 · 주차",
       cell: (r) => sessionLabel({ ...r, session_no: null }),
     },
     {
@@ -130,7 +144,13 @@ export default function AttendancePage() {
           {courses.length > 1 && (
             <label className="ops-toolbar__field">
               <span className="ops-toolbar__label">강좌</span>
-              <Select value={courseId} onChange={(event) => setCourseId(event.target.value)}>
+              <Select
+                value={courseId}
+                onChange={(event) => {
+                  setCourseId(event.target.value);
+                  setClassId("");
+                }}
+              >
                 <option value="">전체 강좌</option>
                 {courses.map((course) => (
                   <option key={course.id} value={String(course.id)}>
@@ -141,17 +161,32 @@ export default function AttendancePage() {
             </label>
           )}
 
+          {classes.length > 1 && (
+            <label className="ops-toolbar__field">
+              <span className="ops-toolbar__label">반</span>
+              <Select value={classId} onChange={(event) => setClassId(event.target.value)}>
+                <option value="">전체 반</option>
+                {classes.map((klass) => (
+                  <option key={klass.id} value={String(klass.id)}>
+                    {klass.name}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          )}
+
           <div className="ui-row">
             <Button size="sm" onClick={() => setDate(today)}>
               오늘
             </Button>
-            {(date || courseId) && (
+            {(date || courseId || classId) && (
               <Button
                 size="sm"
                 variant="ghost"
                 onClick={() => {
                   setDate("");
                   setCourseId("");
+                  setClassId("");
                 }}
               >
                 조건 지우기

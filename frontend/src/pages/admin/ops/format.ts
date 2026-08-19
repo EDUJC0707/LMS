@@ -51,15 +51,23 @@ export function relativeDay(iso: string, today: string): string {
   return diff > 0 ? `${diff}일 뒤` : `${-diff}일 전`;
 }
 
-/** "로직엔제 3주차 6차시" — 없는 조각은 자연스럽게 빠진다. */
+/** "목 6.5 대치러셀 · 로직엔제 3주차 6차시" — 없는 조각은 자연스럽게 빠진다.
+ *
+ *  **반이 맨 앞이다.** 같은 커리를 목반과 화반이 같이 듣기 때문에(FLOW 1-1)
+ *  강좌명과 주차만 그리면 두 반의 3주차가 한 글자도 다르지 않게 뜬다. 반이
+ *  없이 만들어진 옛 회차는 종전대로 강좌명부터다.
+ */
 export function sessionLabel(session: {
   session_no: number | null;
   week_no: number | null;
   course: { name: string } | null;
+  klass?: { name: string } | null;
 }): string {
   const bits: string[] = [];
   if (session.course) bits.push(session.course.name);
   if (session.week_no !== null) bits.push(`${session.week_no}주차`);
   if (session.session_no !== null) bits.push(`${session.session_no}차시`);
-  return bits.length > 0 ? bits.join(" ") : "커리큘럼 미매핑 회차";
+  const rest = bits.join(" ");
+  if (session.klass) return rest === "" ? session.klass.name : `${session.klass.name} · ${rest}`;
+  return rest === "" ? "커리큘럼 미매핑 회차" : rest;
 }
