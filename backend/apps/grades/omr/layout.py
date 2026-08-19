@@ -231,8 +231,10 @@ NAME_ROW_V = (Decimal("694.0") / _AVG_H, Decimal("1391.5") / _AVG_H)
 NAME_ROWS = 19
 NAME_CONSONANT_ROWS = 14
 NAME_VOWEL_COLUMNS = (2, 5, 8, 11)
-#: 성명 버블은 스타디움이 아니라 지름 ~31px 정원이다.
-NAME_BUBBLE_D_MM = Decimal("31.0") / _AVG_W * SPAN_X_MM
+#: 성명 버블 — 원본 실측 3.62 x 3.94mm(정원이 아니라 살짝 세로로 길다).
+#: 31px 를 폭으로 환산한 3.94mm 를 양쪽에 쓰던 것이 가로로 0.4mm 컸다.
+NAME_BUBBLE_W_MM = Decimal("3.62")
+NAME_BUBBLE_H_MM = Decimal("3.94")
 
 #: 전화 4자리 열 — **균일 간격으로 고친다**(대표 2026-08-19). 옛 카드는
 #: 52.9 / 79.2 / 57.2px 로 가운데만 넓었다(구분선 자리). 우리가 찍는 카드이니

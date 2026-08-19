@@ -67,8 +67,12 @@ INK = Color(0x23 / 255, 0x1F / 255, 0x20 / 255)
 #: 버블 안 글자 — 옛 카드에서 링 높이의 약 40% 다. 작게 그렸더니 원본보다
 #: 눈에 띄게 작았다(대표 지적). 리더 입장에서도 **원본과 같은 크기가 안전하다**:
 #: 상대화 문턱이 이 글리프가 인쇄된 지면에서 맞춰졌다.
+#: 답란·전화는 글리프가 링 높이의 84% 다(원본 실측 1.78x3.94mm / 2.54x4.70mm).
+#: 지금 값이 82~83% 로 이미 맞는다.
 CELL_GLYPH_PT = 6.0
-NAME_GLYPH_PT = 6.0
+#: 성명은 다르다 — 원본이 링 3.62x3.94mm 에 글리프 1.52x2.03mm 로 **52%** 다.
+#: 6.0pt 로 그렸더니 69% 라 칸을 꽉 채워 답란보다 크게 보였다.
+NAME_GLYPH_PT = 5.2
 
 #: 박스 자리 — 옛 카드 200dpi 렌더에서 잰 정규좌표 그대로.
 BOX_SCHOOL = (0.025, 0.210, 0.272, 0.310)
@@ -270,16 +274,47 @@ def _xy(u, v):
     return float(x_mm) * MM_UNIT, float(y_mm) * MM_UNIT
 
 
-def _rect(pen, u0, v0, u1, v1, fill=None, radius=None, edge=None):
+#: 어느 모서리를 둥글릴지. 붙어 있는 칸은 **바깥쪽만** 둥글어야 한다 —
+#: 문번 머리칸의 아래 모서리가 둥글면 밑으로 이어지는 칸이 거기서 끊겨 보인다.
+ALL_CORNERS = (True, True, True, True)      # 좌상, 우상, 우하, 좌하
+TOP_ONLY = (True, True, False, False)
+LEFT_ONLY = (True, False, False, True)
+TOP_LEFT_ONLY = (True, False, False, False)
+NO_CORNERS = (False, False, False, False)
+
+
+def _rect(pen, u0, v0, u1, v1, fill=None, radius=None, edge=None, corners=None,
+          stroke=True):
+    """모서리를 골라 둥글리는 사각형.
+
+    `corners` 는 (좌상, 우상, 우하, 좌하). 넷 다 둥근 것이 기본이지만, 다른 칸에
+    붙는 변은 각지게 둬야 이어져 보인다.
+    """
     x0, y0 = _xy(u0, v0)
     x1, y1 = _xy(u1, v1)
+    r = RADIUS if radius is None else radius
+    top, bottom = max(y0, y1), min(y0, y1)
+    tl, tr, br, bl = corners or ALL_CORNERS
+    path = pen.beginPath()
+    path.moveTo(x0 + (r if tl else 0), top)
+    path.lineTo(x1 - (r if tr else 0), top)
+    if tr:
+        path.curveTo(x1, top, x1, top, x1, top - r)
+    path.lineTo(x1, bottom + (r if br else 0))
+    if br:
+        path.curveTo(x1, bottom, x1, bottom, x1 - r, bottom)
+    path.lineTo(x0 + (r if bl else 0), bottom)
+    if bl:
+        path.curveTo(x0, bottom, x0, bottom, x0, bottom + r)
+    path.lineTo(x0, top - (r if tl else 0))
+    if tl:
+        path.curveTo(x0, top, x0, top, x0 + r, top)
+    path.close()
     pen.setStrokeColor(edge or INK)
     pen.setLineWidth(_stroke() * 2.2)
     if fill is not None:
         pen.setFillColor(fill)
-    pen.roundRect(x0, y1, x1 - x0, y0 - y1,
-                  RADIUS if radius is None else radius,
-                  stroke=1, fill=1 if fill is not None else 0)
+    pen.drawPath(path, stroke=1 if stroke else 0, fill=1 if fill is not None else 0)
     pen.setFillColor(INK)
     pen.setStrokeColor(INK)
 
@@ -379,7 +414,8 @@ def _school_block(pen):
     mid_v = (v0 + v1) / 2
     _rect(pen, u0, v0, u1, v1)
     for top, bottom, label in ((v0, mid_v, "학 교"), (mid_v, v1, "학 급")):
-        _rect(pen, u0, top, label_u, bottom, fill=TINT)
+        _rect(pen, u0, top, label_u, bottom, fill=TINT,
+              corners=TOP_LEFT_ONLY if top == v0 else (False, False, False, True))
         _text(pen, (u0 + label_u) / 2, (top + bottom) / 2, label,
                size=11.0, colour=GREEN, bold=True)
     _line(pen, label_u, mid_v, u1, mid_v)
@@ -463,7 +499,7 @@ def _titled_grid_box(pen, box, title, grid_v0, cells=4, columns=()):
     u0, v0, u1, v1 = box
     _rect(pen, u0, v0, u1, v1)
     header_v = v0 + 0.048
-    _rect(pen, u0, v0, u1, header_v, fill=TINT)
+    _rect(pen, u0, v0, u1, header_v, fill=TINT, corners=TOP_ONLY)
     _text(pen, (u0 + u1) / 2, (v0 + header_v) / 2, title, size=10.0, colour=GREEN, bold=True)
     write_v = grid_v0 - 0.030
     _line(pen, u0, write_v, u1, write_v, colour=GREEN)
@@ -496,10 +532,10 @@ def _dashed(pen, u0, v0, u1, v1):
 def _name_block(pen):
     _titled_grid_box(pen, BOX_NAME, "성    명    (좌측부터 차례로 마킹)",
                      float(L.NAME_ROW_V[0]), cells=4, columns=L.NAME_COL_U)
-    diameter = L.NAME_BUBBLE_D_MM
     for (col, row), (u, v) in L.name_cells().items():
         letters = L.VOWELS if col in L.NAME_VOWEL_COLUMNS else L.CONSONANTS
-        _cell(pen, u, v, letters[row - 1], diameter, diameter, NAME_GLYPH_PT)
+        _cell(pen, u, v, letters[row - 1],
+              L.NAME_BUBBLE_W_MM, L.NAME_BUBBLE_H_MM, NAME_GLYPH_PT)
 
 
 def _phone_block(pen):
@@ -541,8 +577,9 @@ def _grid_column(pen, u0, header, rows_v, numbers, bottom=None):
     number_u = u0 + NUMBER_COL_U
 
     _rect(pen, u0, top, u1, bottom)
-    _rect(pen, u0, top, number_u, bottom, fill=TINT)
-    _rect(pen, u0, top, u1, header_v, fill=TINT)
+    # 문번 칸은 위·아래가 박스 테두리에 닿는다 — 왼쪽 두 모서리만 둥글다.
+    _rect(pen, u0, top, number_u, bottom, fill=TINT, corners=LEFT_ONLY)
+    _rect(pen, u0, top, u1, header_v, fill=TINT, corners=TOP_ONLY)
     _text(pen, (u0 + number_u) / 2, (top + header_v) / 2, "문번", size=8.6, colour=GREEN, bold=True)
     _text(pen, (number_u + u1) / 2, (top + header_v) / 2, header, size=9.4, colour=GREEN, bold=True)
     _line(pen, u0, header_v, u1, header_v)
@@ -606,8 +643,9 @@ def _score_column(pen, u0, card):
     cells = card.survey_cells()
 
     _rect(pen, u0, top, u1, bottom)
-    _rect(pen, u0, top, number_u, bottom, fill=TINT)
-    _rect(pen, u0, top, u1, header_v, fill=TINT)
+    # 문번 칸은 위·아래가 박스 테두리에 닿는다 — 왼쪽 두 모서리만 둥글다.
+    _rect(pen, u0, top, number_u, bottom, fill=TINT, corners=LEFT_ONLY)
+    _rect(pen, u0, top, u1, header_v, fill=TINT, corners=TOP_ONLY)
     _text(pen, (u0 + number_u) / 2, (top + header_v) / 2, "문번", size=8.6,
           colour=GREEN, bold=True)
     _text(pen, (number_u + u1) / 2, (top + header_v) / 2, "답    란", size=9.4,
@@ -684,8 +722,8 @@ def _survey_examples(pen, bu0, bu1, v0, card):
         # 내려가야 칸이 테두리에 걸리지 않는다.
         bottom = rows + 15.7 * step
         _rect(pen, u0, head, u1, bottom)
-        _rect(pen, u0, head, number_u, bottom, fill=TINT)
-        _rect(pen, u0, head, u1, rows - 0.022, fill=TINT)
+        _rect(pen, u0, head, number_u, bottom, fill=TINT, corners=LEFT_ONLY)
+        _rect(pen, u0, head, u1, rows - 0.022, fill=TINT, corners=TOP_ONLY)
         _text(pen, (u0 + number_u) / 2, head + 0.016, "문번", size=5.6, colour=GREEN)
         _text(pen, (number_u + u1) / 2, head + 0.016, "답 란", size=6.0, colour=GREEN)
         _line(pen, u0, rows - 0.022, u1, rows - 0.022)
@@ -733,8 +771,6 @@ def render(card, title="한종철 생명과학", exam=""):
         _survey_block(pen, card)
     else:
         _answer_block(pen, card)
-
-    _text(pen, 0.992, HEAD_EXAM_V, card.name, size=9.0, anchor="right", colour=GREEN, bold=True)
 
     pen.showPage()
     pen.save()
