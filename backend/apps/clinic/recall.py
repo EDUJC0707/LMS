@@ -52,10 +52,11 @@ DONE, FATAL = "done", "fatal"
 #: (2026-08-18 실측). 사람이 읽는 자리라 사람 말로 적는다.
 BOT_NAME = "JC 만점봇"
 
-#: 업체 쪽 보관 기간(시간). **7일** — 원본은 회의가 끝나면 우리 드라이브로
+#: 업체 쪽 보관 기간(시간). **5일** — 원본은 회의가 끝나면 우리 드라이브로
 #: 옮기므로 저쪽은 옮기기가 몇 번 실패해도 될 여유만 있으면 된다.
-#: 업체 요금표상 7일까지가 무료 보관이라 그 안에서 끝낸다.
-RETENTION_HOURS = 24 * 7
+#: 무료 구간이 7일이라 5일로 잡아 **경계에 붙지 않게** 한다 — 시간대·정산
+#: 기준이 어긋나도 요금이 시작되지 않는다.
+RETENTION_HOURS = 24 * 5
 
 #: 시작보다 이만큼 일찍 들어간다. 정각에 맞추면 조교·학생이 먼저 들어와
 #: 인사하고 문제를 펴는 동안 봇이 없어서 **그 앞부분이 통째로 안 남는다**.
@@ -63,6 +64,14 @@ RETENTION_HOURS = 24 * 7
 #: 둔 기본값이 1200초(20분)라 이보다 훨씬 길다. 요금은 초 단위 정산이라
 #: 10분 × 월 30건 = 5시간, $2.5 정도가 더 든다.
 JOIN_EARLY = datetime.timedelta(minutes=10)
+
+
+def _download(url):
+    """녹음 원본을 받아 온다. 업체가 주는 서명 URL 은 곧 만료되므로 바로 쓴다."""
+    import urllib.request
+
+    with urllib.request.urlopen(url, timeout=TIMEOUT_SECONDS) as response:
+        return response.read()
 
 
 def base_url():
@@ -73,11 +82,13 @@ def base_url():
 class RecallAdapter(ConferenceAdapter):
     """방은 구글에서, 오디오는 Recall 에서, 전사는 주입한 엔진에서."""
 
-    def __init__(self, transport=None, conference=None, transcriber=None):
+    def __init__(self, transport=None, conference=None, transcriber=None, fetcher=None):
         self.transport = transport or urllib_transport
-        # 화상은 위임한다 — 이 클래스는 방을 만들 줄 모른다.
+        # 화상은 위임한다 — 이 클래스는 방을 만들 줄 모르고, 드라이브 보관도
+        # 저쪽이 안다(구글 API 지식은 한 곳에 모아 둔다).
         self.conference = conference or GoogleMeetAdapter(transport=transport)
         self._transcriber = transcriber
+        self._fetcher = fetcher or _download
 
     def create_space(self):
         return self.conference.create_space()
@@ -149,18 +160,40 @@ class RecallAdapter(ConferenceAdapter):
         audio = self._audio_url(found)
         if not audio:
             return None
-        text = self._transcribe(audio, file_as)
+        text = self._transcribe(audio)
         return Supervision(
             transcript_ref=found.get("id") or "",
-            transcript_url=audio,
+            # **업체 주소를 그대로 저장하지 않는다.** 서명된 임시 URL 이라 몇
+            # 시간이면 죽고, 업체 보관도 5일이다. 우리 드라이브로 옮긴 문서의
+            # 링크를 남긴다 — 그건 안 죽는다.
+            transcript_url=self._archive(file_as, text, audio),
             summary=text,
         )
 
-    def _transcribe(self, audio, file_as):
+    def _transcribe(self, audio):
         transcriber = self._transcriber
         if transcriber is None:
             from .clova import transcribe as transcriber
         return transcriber(audio, terms=())
+
+    def _archive(self, file_as, text, audio):
+        """전사를 문서로, 녹음을 파일로 우리 드라이브에 남기고 문서 링크를 준다.
+
+        정리할 경로가 없으면(관리자가 손으로 넣은 건 등) 아무것도 안 남기고
+        업체 주소를 그대로 돌려준다 — 곧 죽지만 없는 것보다는 낫다.
+        """
+        if not file_as:
+            return audio
+        link = self.conference.save_document(file_as, text)
+        # 녹음 원본까지 우리 것으로 — **여기는 덤이다.** 전사는 이미 문서로
+        # 남았으므로 원본 복사가 실패했다고 수집을 통째로 실패시키지 않는다.
+        # 넓게 잡는 이유: 내려받기는 네트워크·만료·디스크 등 업체 예외가 아닌
+        # 것으로도 깨지는데, 그 어느 것도 감독 자료를 버릴 사유가 아니다.
+        try:
+            self.conference.save_bytes(f"{file_as}.mp3", self._fetcher(audio), "audio/mpeg")
+        except Exception:  # noqa: BLE001 - 덤이라 무엇이 나든 넘어간다
+            pass
+        return link
 
     # -- 업체 응답 읽기 ----------------------------------------------------
 

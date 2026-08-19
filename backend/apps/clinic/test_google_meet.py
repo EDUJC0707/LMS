@@ -364,3 +364,72 @@ class CalendarEventTests(SimpleTestCase):
         transport = FakeTransport(TOKEN_OK, (503, b"upstream"))
         with self.assertRaises(TemporaryConferenceError):
             GoogleMeetAdapter(transport=transport).delete_event("clinic11")
+
+
+FOLDER_FOUND = (200, json.dumps({"files": [{"id": "folder-1"}]}).encode())
+FOLDER_NONE = (200, json.dumps({"files": []}).encode())
+FOLDER_MADE = (200, json.dumps({"id": "folder-1"}).encode())
+UPLOADED = (
+    200,
+    json.dumps(
+        {"id": "file-1", "webViewLink": "https://docs.google.com/document/d/file-1/edit"}
+    ).encode(),
+)
+
+
+@override_settings(**CREDENTIALS)
+class DriveArchiveTests(SimpleTestCase):
+    """감독 자료를 **우리 드라이브**에 남긴다.
+
+    업체 저장소는 5일 뒤 비워지고, 업체가 주는 다운로드 주소는 서명된 임시
+    URL 이라 몇 시간이면 죽는다(2026-08-18 실측 — `Signature`·보안 토큰이
+    붙어 있다). 그 주소를 DB 에 넣으면 **곧 죽는 링크를 저장하는 것**이라,
+    원본과 전사를 우리 쪽으로 옮기고 DB 에는 안 죽는 링크만 남긴다.
+    """
+
+    def test_writes_the_transcript_as_a_google_doc(self):
+        # 폴더 둘(clinic·2026-08)을 각각 한 번씩 찾고, 마지막이 업로드다
+        transport = FakeTransport(TOKEN_OK, FOLDER_FOUND, FOLDER_FOUND, UPLOADED)
+        url = GoogleMeetAdapter(transport=transport).save_document(
+            "clinic/2026-08/2026-08-19_1800_김하늘0001", "[1] 오답 원인은…"
+        )
+        upload = transport.calls[-1]
+        self.assertIn("uploadType=multipart", upload["url"])
+        body = upload["body"].decode()
+        # 텍스트로 올리면서 구글 문서로 변환시킨다 — 나중에 사람이 열어 고친다
+        self.assertIn("application/vnd.google-apps.document", body)
+        self.assertIn("[1] 오답 원인은…", body)
+        self.assertEqual(url, "https://docs.google.com/document/d/file-1/edit")
+
+    def test_files_it_under_the_path_we_asked_for(self):
+        # clinic → 2026-08 → 파일. 폴더는 있으면 쓰고 없으면 만든다.
+        transport = FakeTransport(
+            TOKEN_OK, FOLDER_NONE, FOLDER_MADE, FOLDER_NONE, FOLDER_MADE, UPLOADED
+        )
+        GoogleMeetAdapter(transport=transport).save_document(
+            "clinic/2026-08/2026-08-19_1800_김하늘0001", "본문"
+        )
+        # 업로드 본문은 multipart 라 JSON 이 아니다 — 폴더 생성만 골라 읽는다
+        folders = [
+            json.loads(c["body"].decode())
+            for c in transport.calls
+            if c["method"] == "POST" and c["url"].endswith("drive/v3/files")
+        ]
+        self.assertEqual([f["name"] for f in folders], ["clinic", "2026-08"])
+        self.assertIn("2026-08-19_1800_김하늘0001", transport.calls[-1]["body"].decode())
+
+    def test_copies_the_recording_next_to_it(self):
+        # 오디오 원본도 우리 것으로 만든다 — 업체 보관은 5일이다.
+        transport = FakeTransport(TOKEN_OK, FOLDER_FOUND, FOLDER_FOUND, UPLOADED)
+        GoogleMeetAdapter(transport=transport).save_bytes(
+            "clinic/2026-08/2026-08-19_1800_김하늘0001.mp3", b"ID3audio", "audio/mpeg"
+        )
+        body = transport.calls[-1]["body"]
+        self.assertIn(b"audio/mpeg", body)
+        self.assertIn(b"ID3audio", body)
+
+    def test_an_upload_failure_is_loud(self):
+        # 조용히 넘어가면 DB 에는 곧 죽을 업체 링크만 남는다
+        transport = FakeTransport(TOKEN_OK, FOLDER_FOUND, FOLDER_FOUND, (500, b"nope"))
+        with self.assertRaises(TemporaryConferenceError):
+            GoogleMeetAdapter(transport=transport).save_document("clinic/x/y", "본문")

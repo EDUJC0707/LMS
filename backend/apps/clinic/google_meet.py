@@ -129,6 +129,9 @@ CONFERENCE_RECORDS_ENDPOINT = "https://meet.googleapis.com/v2/conferenceRecords"
 #: 드라이브 — 문서 본문 내려받기와 정리(이동·개명).
 DRIVE_FILES_ENDPOINT = "https://www.googleapis.com/drive/v3/files"
 
+#: 드라이브 업로드는 주소가 다르다(`/upload` 접두사).
+DRIVE_UPLOAD_ENDPOINT = "https://www.googleapis.com/upload/drive/v3/files"
+
 #: 캘린더 — 감독 봇이 **시작 시각을 아는 유일한 경로**다. 봇은 붙어 있는 캘린더를
 #: 보고 알아서 들어오므로, 클리닉을 여기 올려 두는 것이 곧 예약이다.
 #: `primary` = 토큰 주인(`hjcedu@hjcedu.com`)의 기본 캘린더.
@@ -196,6 +199,61 @@ class GoogleMeetAdapter(ConferenceAdapter):
             ref=ref,
             url=url,
         )
+
+    # -- 드라이브 보관 ------------------------------------------------------
+
+    def save_document(self, path, text):
+        """전사를 **구글 문서**로 만들고 그 링크를 돌려준다.
+
+        업체 저장소에 기대지 않기 위한 자리다. 업체 보관은 5일이고, 업체가 주는
+        다운로드 주소는 **서명된 임시 URL** 이라 몇 시간이면 죽는다(2026-08-18
+        실측). 그걸 DB 에 넣으면 곧 죽는 링크를 저장하는 셈이라, 우리 드라이브에
+        옮기고 **안 죽는 링크**만 남긴다.
+
+        평문으로 올리면서 `application/vnd.google-apps.document` 로 변환시킨다 —
+        사람이 열어 읽고 고칠 수 있어야 감독 자료로 쓸모가 있다.
+        """
+        return self._upload(path, text.encode(), "text/plain", convert=True)
+
+    def save_bytes(self, path, blob, content_type):
+        """녹음 원본처럼 **변환하지 않는** 파일을 그대로 올린다."""
+        return self._upload(path, blob, content_type, convert=False)
+
+    def _upload(self, path, blob, content_type, *, convert):
+        token = self._access_token()
+        *folders, name = path.split("/")
+        parent = None
+        for folder in folders:
+            parent = self._folder(token, folder, parent)
+        meta = {"name": name}
+        if parent:
+            meta["parents"] = [parent]
+        if convert:
+            meta["mimeType"] = "application/vnd.google-apps.document"
+
+        # multipart/related — 첫 조각이 메타데이터, 둘째가 내용이다.
+        boundary = "clinic-boundary"
+        body = b"".join(
+            [
+                f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n".encode(),
+                json.dumps(meta, ensure_ascii=False).encode(),
+                f"\r\n--{boundary}\r\nContent-Type: {content_type}\r\n\r\n".encode(),
+                blob,
+                f"\r\n--{boundary}--\r\n".encode(),
+            ]
+        )
+        status, response = self._send(
+            "POST",
+            f"{DRIVE_UPLOAD_ENDPOINT}?uploadType=multipart&fields=id,webViewLink",
+            body,
+            {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": f"multipart/related; boundary={boundary}",
+            },
+        )
+        if status != 200:
+            raise self._translate(status, response, "감독 자료를 저장하지 못했습니다")
+        return self._json(response).get("webViewLink") or ""
 
     # -- 캘린더(감독 예약) --------------------------------------------------
 

@@ -102,8 +102,8 @@ class ScheduleTests(SimpleTestCase):
         self.assertIsNone(config["video_mixed_mp4"])
         # 업체 기본값은 **영구 보관**이다. 원본은 회의가 끝나면 우리 드라이브로
         # 옮기므로 저쪽은 옮기기가 몇 번 실패해도 될 여유만 있으면 된다.
-        # 7일까지가 업체 무료 보관 구간이라 거기서 끝낸다.
-        self.assertEqual(config["retention"], {"type": "timed", "hours": 24 * 7})
+        # 무료 구간이 7일이라 5일로 잡아 경계에 붙지 않게 한다.
+        self.assertEqual(config["retention"], {"type": "timed", "hours": 24 * 5})
         # 전사는 CLOVA 가 한다 — 업체 전사를 켜면 돈만 더 나가고 한국어는 더 나쁘다
         self.assertNotIn("transcript", json.dumps(config))
 
@@ -168,13 +168,63 @@ class FetchTests(SimpleTestCase):
             )
         )
 
+    def stub_archive(self):
+        class Archive:
+            saved = []
+
+            def save_document(self, path, text):
+                Archive.saved.append(("doc", path, text))
+                return "https://docs.google.com/document/d/doc-1/edit"
+
+            def save_bytes(self, path, blob, content_type):
+                Archive.saved.append(("bytes", path, content_type))
+                return "https://drive.google.com/file/d/audio-1/view"
+
+        Archive.saved = []
+        self.archive = Archive
+        return Archive()
+
     def test_sends_the_audio_to_our_own_engine(self):
         transport = FakeTransport(listed(bot()))
-        adapter = RecallAdapter(transport=transport, transcriber=self.stub_transcriber())
+        adapter = RecallAdapter(
+            transport=transport,
+            transcriber=self.stub_transcriber(),
+            conference=self.stub_archive(),
+            fetcher=lambda url: b"ID3audio",
+        )
         found = adapter.fetch_supervision("spaces/S1", file_as=TITLE, key=KEY)
         self.assertEqual(self.asked[0], "https://cdn.recall/audio.mp3")
         self.assertEqual(found.transcript_ref, "bot-1")
-        self.assertIn("오답 원인", found.summary)
+
+    def test_keeps_the_transcript_in_our_own_drive(self):
+        # 업체 보관은 5일이고 업체가 주는 주소는 몇 시간이면 죽는다. 우리
+        # 문서로 옮겨 두지 않으면 감독 근거가 통째로 사라진다.
+        transport = FakeTransport(listed(bot()))
+        adapter = RecallAdapter(
+            transport=transport,
+            transcriber=self.stub_transcriber(),
+            conference=self.stub_archive(),
+            fetcher=lambda url: b"ID3audio",
+        )
+        found = adapter.fetch_supervision("spaces/S1", file_as=TITLE, key=KEY)
+        kinds = [k for k, _, _ in self.archive.saved]
+        self.assertEqual(kinds, ["doc", "bytes"])
+        self.assertEqual(self.archive.saved[0][1], TITLE)
+        self.assertIn("오답 원인", self.archive.saved[0][2])
+        self.assertEqual(self.archive.saved[1][1], TITLE + ".mp3")
+        # **DB 에 남는 것은 안 죽는 링크다** — 업체의 서명 URL 이 아니라
+        self.assertEqual(found.transcript_url, "https://docs.google.com/document/d/doc-1/edit")
+
+    def test_the_recording_goes_to_drive_too(self):
+        transport = FakeTransport(listed(bot()))
+        adapter = RecallAdapter(
+            transport=transport,
+            transcriber=self.stub_transcriber(),
+            conference=self.stub_archive(),
+            fetcher=lambda url: b"ID3audio",
+        )
+        adapter.fetch_supervision("spaces/S1", file_as=TITLE, key=KEY)
+        self.assertEqual(self.archive.saved[1][2], "audio/mpeg")
 
     def test_a_dead_bot_does_not_wait_forever(self):
         # `fatal` 은 다시 물어도 안 생긴다 — 대기가 아니라 실패로 끝내야
@@ -189,7 +239,12 @@ class FetchTests(SimpleTestCase):
         # 옛 예약은 영상으로 녹음됐다(설정 키를 틀렸던 기간). 전사 엔진은
         # 영상에서도 소리를 읽으므로 버리지 않는다.
         transport = FakeTransport(listed(bot(audio=None, video="https://cdn.recall/v.mp4")))
-        adapter = RecallAdapter(transport=transport, transcriber=self.stub_transcriber())
+        adapter = RecallAdapter(
+            transport=transport,
+            transcriber=self.stub_transcriber(),
+            conference=self.stub_archive(),
+            fetcher=lambda url: b"ID3audio",
+        )
         adapter.fetch_supervision("spaces/S1", file_as=TITLE, key=KEY)
         self.assertEqual(self.asked[0], "https://cdn.recall/v.mp4")
 
