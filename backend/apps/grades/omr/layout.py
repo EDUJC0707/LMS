@@ -177,7 +177,8 @@ SURVEY_ONES_ROW0 = 7
 SURVEY_NOTE_ROWS = 2
 
 #: 조사 카드 답란은 **칸이 하나뿐**이라 34mm 를 다 쓰지 않는다(대표 2026-08-19).
-SURVEY_FIELD_W_MM = Decimal("26.0")
+#: 26 → 20mm 로 한 번 더 줄였다. 안내문은 답란 폭이 아니라 **박스 폭 전체**를 쓴다.
+SURVEY_FIELD_W_MM = Decimal("20.0")
 SURVEY_BOX_W_MM = NUMBER_COL_W_MM + SURVEY_FIELD_W_MM
 
 
