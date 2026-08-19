@@ -12,10 +12,16 @@
 업로드도 같은 축이다. 테스트가 진짜 `MEDIA_ROOT` 에 쓰면 **DB 는 롤백되는데
 파일은 남는다** — 실제로 실행마다 쌓여 110개 26MB 가 되어 있었다(2026-08-12).
 스토리지는 트랜잭션 밖이라 아무도 안 걷어 간다.
+
+Sentry 도 같다. 전역 클라이언트라 켜 놓고 안 끄면 **다음 테스트가 물려받는다** —
+`config.settings.prod` 는 import 만으로 켜므로 설정 한 줄을 읽으려던 테스트가
+그렇게 된다(2026-08-19, `pytest -n 8` 로 순서가 흔들리자 드러났다). 각 테스트에
+tearDown 을 다는 대신 여기서 한 번에 끈다.
 """
 import tempfile
 
 import pytest
+import sentry_sdk
 
 from apps.grades import ocr
 
@@ -39,3 +45,13 @@ def _media_in_a_tempdir():
     with tempfile.TemporaryDirectory() as folder:
         with override_settings(MEDIA_ROOT=folder):
             yield
+
+
+@pytest.fixture(autouse=True)
+def _sentry_stays_off():
+    """테스트가 켠 Sentry 를 다음 테스트에 물려주지 않는다."""
+    yield
+    client = sentry_sdk.get_client()
+    if client.is_active():
+        client.close(timeout=0.0)
+        sentry_sdk.get_global_scope().set_client(None)
