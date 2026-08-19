@@ -36,12 +36,23 @@ primary_region = "nrt"     # 도쿄
 #   fly redis create                      # Upstash 연동
 #   fly secrets set REDIS_URL=... CELERY_BROKER_URL=... -a edujc-lms
 #
-# **`-B` 로 beat 를 워커 안에 넣는다.** Fly 는 프로세스 그룹마다 머신을 하나씩
-# 띄우므로 worker·beat 를 따로 적으면 월 $3.32 가 두 번 나간다. 워커가 하나뿐이라
-# 스케줄이 중복 발행될 여지가 없고, 태스크도 멱등이라 합쳐도 안전하다.
-# (워커를 2대 이상으로 늘리는 날에는 beat 를 반드시 분리해야 한다 — 안 그러면
-#  같은 시각에 여러 머신이 같은 작업을 발행한다.)
+# ── beat 를 워커에서 뺐다 (2026-08-19) ───────────────────────────────────
+# ~~`-B` 로 beat 를 워커 안에 넣는다~~ → **분리했다.**
+#
+# 합쳐 둔 이유는 프로세스 그룹마다 머신이 하나씩 서서 월 $3.32 가 두 번 나가기
+# 때문이었다. 그 대가가 둘이다:
+#
+# - **워커가 1대에 묶인다.** 2대로 늘리는 순간 두 머신이 같은 시각에 같은 작업을
+#   발행한다. `fly scale count worker=2` 를 못 누른다는 뜻이다
+# - **워커가 죽으면 스케줄러도 같이 죽는다.** 판독 태스크가 멎어 자식이 통째로
+#   나가면 주기 작업이 조용히 멈추고, 아무도 그걸 모른다
+#
+# 둘째가 실제 위험이다 — OMR 배치가 워커에 올라온 뒤로는 워커가 무거운 일을 하는
+# 프로세스가 됐다. beat 는 DB 조회 한 번씩만 하는 가벼운 프로세스라 같이 죽을
+# 이유가 없다.
+#
 # beat 를 빠뜨리면 태스크는 등록돼 있는데 아무도 부르지 않아 조용히 안 돈다.
+# **beat 는 반드시 1대여야 한다** — `fly scale count beat=1` 을 넘기지 말 것.
 #
 # ── supercronic → Celery 로 옮겨 탔다 (2026-08-12) ────────────────────────
 # ~~주기 작업은 supercronic 이 맡는다(2026-08-05)~~ → **뒤집혔다.**
@@ -62,10 +73,16 @@ primary_region = "nrt"     # 도쿄
   web = ".venv/bin/gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
   # gossip·mingle·heartbeat 는 워커끼리 서로를 찾는 잡담이다. 워커가 하나뿐이라
   # 할 상대가 없는데 Redis 명령만 계속 먹는다 — 정액제라도 끄는 편이 조용하다.
-  worker = ".venv/bin/celery -A config worker -B -l info --without-gossip --without-mingle --without-heartbeat"
+  worker = ".venv/bin/celery -A config worker -l info --without-gossip --without-mingle --without-heartbeat"
+  # beat 는 스케줄만 발행한다. 동시성·시간 제한은 워커 쪽 설정이라 여기 없다.
+  beat = ".venv/bin/celery -A config beat -l info"
 
 # 워커 크기는 아래 [[vm]] 이 web 과 함께 정한다(512mb). 여기 256mb 로 따로 잡았다가
 # 아래 블록에 밀렸다 — Django + Celery 를 올리면 256mb 는 빠듯해서 그대로 둔다.
+#
+# 워커 동시성·시간 제한·메모리 상한은 **명령줄이 아니라 설정에 있다**
+# (`config/settings/base.py` 의 CELERY_WORKER_* / CELERY_TASK_*_TIME_LIMIT).
+# 두 군데에 적으면 반드시 한쪽만 고치는 날이 온다.
 
 [http_service]
   internal_port = 8000
@@ -105,3 +122,10 @@ primary_region = "nrt"     # 도쿄
   size = "shared-cpu-1x"
   memory = "512mb"
   processes = ["web", "worker"]
+
+# beat 는 스케줄을 발행만 한다 — 20분·1시간·1분 주기로 DB 를 한 번씩 볼 뿐이다.
+# 워커와 같은 512mb 를 줄 이유가 없다.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+  processes = ["beat"]

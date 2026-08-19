@@ -15,11 +15,11 @@ Fly org (도쿄 nrt)
 ├─ pg   edujc-pg      ← Postgres 1클러스터        · database: lms / qbank
 ├─ storage edujc-lms-storage    (Tigris/S3)     · OMR·워크북·PDF
 ├─ storage edujc-qbank-storage  (Tigris/S3)     · 문제·선지·표 이미지·원천PDF
-└─ redis edujc-redis  (Upstash)                 · Celery (일단 LMS) ⛔ **미생성 — 6장 참조**
+└─ redis edujc-redis  (Upstash Fixed 250MB)     · Celery 브로커 + 결과 백엔드
 ```
 
-> **실제 가동 현황(2026-07-22 확인)**: `edujc-lms` web 1대 + `edujc-pg` primary 1대만 떠 있다.
-> **Celery worker와 Redis는 의도적으로 미가동** — 이유·복구 절차는 [6장](#6-celery-워커--redis--미가동-보류-2026-07-22).
+> **실제 가동 현황(2026-08-19 기준)**: `edujc-lms` web · worker · beat + `edujc-pg` primary.
+> Celery 는 **2026-08-12 부터 돌고 있다** — 경위와 운영 규칙은 [6장](#6-celery-워커--beat--redis).
 
 ---
 
@@ -160,98 +160,68 @@ class AnswerSheet(models.Model):
 
 ---
 
-## 6. Celery 워커 / Redis — 미가동 (보류, 2026-07-22)
+## 6. Celery 워커 / beat / Redis
 
-**결정: 아직 띄우지 않는다.** 첫 Celery 태스크를 실제로 작성할 때 Redis와 묶어 한 번에 올린다.
+**돈다.** 2026-08-12 에 세웠고(`599ca82`), 그때 supercronic 을 걷어냈다.
 
-### 경위 (추측 금지 — 실제 확인된 사실)
+> 이 장은 오래 **"의도적으로 미가동"** 이라고 적혀 있었다. 그 문장이 2026-08-19
+> 까지 남아 있어서, 이 문서만 읽은 사람은 "워커가 없으니 OMR 판독을 어디에
+> 올릴지부터 정해야 한다"는 반대 결론에 도달한다. 실제로 그렇게 됐다.
 
-- 2026-07-21 15:09 KST 배포로 worker 머신(`8747747f672698`)이 생성됐다.
-- Redis가 없어서 Celery가 기본값 `redis://localhost:6379`로 붙으려다 **72회 재시도**하며 에러 로그만 쌓았다.
-- 2026-07-21 15:43 KST **`SOURCE=user`로 destroy** — 크래시가 아니라 사람이 명령으로 지웠다.
-  (머신 이벤트 로그 `destroying │ destroy │ user` 로 확인. flyd 자동 정리가 아님.)
-- 현재 `fly scale show`에 **worker 그룹 자체가 없다**(web 1대만).
+### 지금 뜨는 것
 
-### 왜 지금 안 띄우나
+| 프로세스 | 명령 | 크기 | 대수 |
+|---|---|---|---|
+| `web` | gunicorn (sync 3) | 512MB | 최소 1 (auto-start) |
+| `worker` | `celery -A config worker` | 512MB | 1 |
+| `beat` | `celery -A config beat` | 256MB | **정확히 1** |
 
-1. **할 일이 없다** — 2026-08-04 `apps/notifications/tasks.py` 로 첫 `@shared_task`
-   두 건(발송·재발송 배치)이 생겼지만 **부르는 곳이 아직 없다**: 발송 시점 목록이
-   미결(8-17)이라 태스크를 거는 트리거가 없고, 알리고 API 키가 없어 어댑터가
-   `_request` 에서 막힌다. 워커를 띄워도 여전히 idle 이다.
-1. ~~**할 일이 없다** — `@shared_task` 정의 0건~~ → **2026-08-04 부터는 있다.**
-   `apps/clinic/tasks.py`(클리닉 감독 자료 수집)가 첫 태스크이고 beat 일정도
-   `CELERY_BEAT_SCHEDULE` 에 20분 주기로 선언돼 있다.
-   **그래도 안 띄운다** — 배포 보류(2026-08-04 사용자 지시). 그동안 그 일은
-   `manage.py collect_clinic_supervision` 을 손으로 돌려 메운다. 배치가 멱등이라
-   언제 몇 번을 돌려도 결과가 같아서 이 우회가 성립한다.
-2. **auto-stop이 안 먹는다** — `fly.toml`의 `auto_stop_machines`는 `[http_service]`에만 걸린다.
-   워커는 HTTP로 깨우는 대상이 아니라 **한번 띄우면 24시간 계속 돈다.**
-3. 즉 지금 띄우면 20분에 한 번 2초 일하는 머신에 **월 ~$3.3**을 낸다.
+**beat 는 2026-08-19 에 워커에서 분리했다.** 그전에는 `-B` 로 워커 안에 있었고,
+머신 하나를 아끼는 대신 두 가지를 잃고 있었다:
 
-### 비용 (fly.io/docs/about/pricing, 2026-07-22 확인 — Fly 무료 티어 없음)
+- **워커를 2대로 못 늘린다** — 두 머신이 같은 시각에 같은 작업을 발행한다
+- **워커가 죽으면 스케줄러도 같이 죽는다** — OMR 배치가 워커에 올라온 뒤로
+  워커는 무거운 일을 하는 프로세스가 됐다. beat 는 DB 조회 한 번씩 하는 가벼운
+  프로세스라 같이 죽을 이유가 없다
+
+> ⚠ **`beat` 는 절대 2대로 올리지 말 것.** 스케줄이 중복 발행된다.
+> 워커는 얼마든지 늘려도 된다(`fly scale count worker=N`).
+
+### 워커 안전장치 (`config/settings/base.py`)
+
+명령줄이 아니라 **설정에** 있다 — 두 군데 적으면 한쪽만 고치는 날이 온다.
+
+| | 값 | 왜 |
+|---|---|---|
+| `task_soft_time_limit` / `task_time_limit` | 10분 / 12분 | OMR 실측이 386장 배치에 CPU 11초다. 분 단위면 진행이 아니라 멎은 것 |
+| `worker_max_memory_per_child` | 300MB | 머신이 512MB 인데 판독은 장마다 2400x1700 배열을 만든다. 누수 시 워커가 아니라 **머신이** OOM 으로 죽는다 |
+| `worker_concurrency` | 2 | 1 vCPU. 기본값(cpu_count)은 머신 크기를 바꿀 때 조용히 따라 변한다 |
+| `worker_prefetch_multiplier` | 1 | 기본 4 는 한 자식이 넷을 쥔 채 나머지가 논다 |
+
+### 비용 (2026-08-19)
 
 | 리소스 | 사양 | 월 |
 |---|---|---|
-| `edujc-lms` web (상시, `min_machines_running=1`) | shared-cpu-1x 512MB | ~$3.32 |
-| `edujc-pg` | shared-cpu-1x 256MB | ~$2.02 |
-| pg 볼륨 | 3GB × $0.15 | $0.45 |
-| **현재 합계** | | **~$5.8** |
-| *(추가 시)* worker | shared-cpu-1x 512MB | +~$3.32 |
-| *(추가 시)* Upstash Redis | pay-as-you-go, 최소요금 없음 | $0.20 / 100k 요청 |
+| web (상시) | shared-cpu-1x 512MB | ~$3.32 |
+| worker | shared-cpu-1x 512MB | ~$3.32 |
+| beat | shared-cpu-1x 256MB | ~$1.94 |
+| `edujc-pg` + 볼륨 3GB | shared-cpu-1x 256MB | ~$2.47 |
+| Upstash Redis Fixed 250MB | 정액 | $10 |
 
-Redis는 부담이 아니다 — 최소요금이 없어 요청이 없으면 사실상 $0. **비용은 워커 머신 쪽**이다.
+**종량제 Redis 를 쓰지 않는다** — Upstash 문서가 "Celery 는 큐가 비어도 계속
+폴링해서 종량제에서 비용이 커진다"고 명시한다(2026-08-12 에 종량제로 만들었다가
+이 줄을 읽고 정액으로 다시 만들었다).
 
-### 해제 트리거
-
-~~첫 `@shared_task` 를 작성하는 시점~~ → **옮김**(2026-08-04). 태스크는 이미 있고,
-있어도 부를 곳이 없어 워커는 idle 이다(위 참조). 실제 기준은 **알림을 처음 실제로
-보내는 시점** — 즉 ① 발송 시점 목록(8-17) 확정 + 알림톡 템플릿 승인 ② 알리고
-API 키 수령 **둘 다** 충족되는 날이다. 그날 아래 3단계를 함께 돌린다.
-~~**첫 `@shared_task` 를 작성하는 시점.**~~ → **도달했다(2026-08-04)** — 클리닉 감독
-자료 수집. 그런데 **띄우지 않기로 했다**: 손으로 돌리는 우회가 성립하고(배치가
-멱등), 알림톡 발송이 곧 같은 워커를 필요로 하니 그때 한 번에 세우는 편이 낫다.
-
-**다음 트리거 = 알림톡 발송 연동**(8-17 목록 도착 시). 그때 워커를 세우면 클리닉
-수집도 같이 자동으로 돈다 — beat 일정이 이미 선언돼 있어 코드는 손댈 것이 없다.
-
-> ⚠ **worker 만 켜지 말 것.** `beat` 를 같이 띄워야 주기 작업이 실제로 불린다.
-> worker 만 있으면 태스크가 등록만 된 채 아무도 안 불러 조용히 안 돈다.
-
-### 복구 절차 (트리거 도달 시, 3단계)
+### 확인
 
 ```bash
 export PATH="$HOME/.fly/bin:$PATH"
-cd /path/to/LMS
-
-# 1) Redis 생성 (--plan 미지정 시 pay-as-you-go)
-fly redis create --org EduJC --region nrt --name edujc-redis
-#    → 출력된 redis://... URL 을 복사
-
-# 2) secret 주입 (base.py 는 REDIS_URL 을 읽고 CELERY_BROKER_URL 기본값으로 재사용)
-fly secrets set REDIS_URL="redis://..." -a edujc-lms
-#    알림 발송을 켜는 것이면 알리고 자격증명도 함께(없으면 발송이 "API 키가
-#    설정되지 않았습니다" 로 실패한다 — base.py 알림 채널 절).
-#    업체는 2026-08-05 에 솔라피 → 알리고로 바뀌었다(docs/decisions.md §3-1).
-#    이름을 SOLAPI_* 로 넣으면 시크릿은 들어가고 발송만 조용히 실패한다.
-fly secrets set ALIGO_API_KEY="..." ALIGO_USER_ID="..." \
-                ALIGO_SENDER_PHONE="..." ALIGO_SENDER_KEY="..." -a edujc-lms
-
-# 3) 워커 기동 — fly.toml 의 [processes] worker 정의는 그대로 살아 있으므로 count 만 올리면 된다
-fly scale count worker=1 -a edujc-lms
-
-# 검증: 아래에 Redis 재시도 에러가 없고 "celery@... ready." 가 떠야 성공
-fly logs -a edujc-lms
-fly scale show -a edujc-lms          # worker 그룹이 COUNT 1 로 보여야 함
+fly scale show -a edujc-lms     # web / worker / beat 세 그룹
+fly logs -a edujc-lms           # "celery@... ready." · beat "Scheduler: Sending due task"
 ```
 
-> 되돌리기: `fly scale count worker=0 -a edujc-lms`
-
-> **실패 재발송 배치는 beat 가 있어야 돈다.** `CELERY_BEAT_SCHEDULE` 에
-> `retry-failed-notifications`(1시간 주기)가 등록돼 있지만, 스케줄러 프로세스가
-> 없으면 아무도 그것을 깨우지 않는다. 워커 하나뿐인 규모에서는 `fly.toml` 의
-> worker 커맨드에 `-B` 를 붙여 워커에 beat 를 태우는 쪽이 싸다(머신 추가 없음).
-> 단 **worker 를 2대 이상으로 늘리는 순간 `-B` 는 빼야 한다** — beat 가 중복
-> 실행돼 같은 배치가 여러 번 돈다.
+되돌리기: `fly scale count worker=0 beat=0 -a edujc-lms`.
+Redis 재시도 에러가 보이면 `REDIS_URL` 시크릿이 빠진 것이다.
 
 ---
 

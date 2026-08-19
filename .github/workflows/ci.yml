@@ -1,0 +1,65 @@
+# 테스트 게이트 — 배포가 이걸 통과해야 나간다(fly-deploy.yml 이 호출).
+#
+# **없었다**(2026-08-19까지). fly-deploy 가 checkout·flyctl·deploy 셋뿐이라
+# 어떤 회귀도 CI 에서 걸리지 않았고, 유일한 검사는 사람이 손으로 돌리는 것이었다.
+#
+# `pdftoppm`(poppler)를 깐다. 새 카드 판독 테스트가 렌더된 PDF 를 래스터해서
+# 실제로 읽어 보는데, 없으면 **조용히 스킵된다** — 통과처럼 보이는 미실행이
+# 제일 나쁘다. 배포 이미지에도 같은 이유로 들어간다(infra/Dockerfile).
+name: ci
+
+on:
+  # main 은 fly-deploy 가 workflow_call 로 부르므로 여기서 또 돌리지 않는다.
+  push:
+    branches-ignore: [main]
+  pull_request:
+  workflow_call:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: lms
+          POSTGRES_PASSWORD: lms
+          POSTGRES_DB: lms
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://lms:lms@localhost:5432/lms
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      # OMR 카드 테스트가 PDF 를 이미지로 굽는다. 없으면 그 테스트들이 스킵된다.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
