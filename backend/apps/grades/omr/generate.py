@@ -54,6 +54,8 @@ from . import layout as L
 FONT = "HYGothic-Medium"
 LATIN = "Helvetica"
 LATIN_BOLD = "Helvetica-Bold"
+#: 한글 CID 폰트에 없어서 **빈칸으로 찍히는** 기호들. `©` 가 실제로 사라졌다.
+LATIN_EXTRA = "©®™"
 _FONT_READY = False
 
 LOGO = pathlib.Path(__file__).parent / "assets" / "logo.png"
@@ -62,12 +64,21 @@ LOGO = pathlib.Path(__file__).parent / "assets" / "logo.png"
 PINK = Color(0xEE / 255, 0x26 / 255, 0x6D / 255)
 GREEN = Color(0x1D / 255, 0x75 / 255, 0x3F / 255)
 TINT = Color(0xC3 / 255, 0xE9 / 255, 0xC2 / 255)
-#: 약점 체크 열의 머리칸 — 연한 살구(대표 2026-08-19). 답을 적는 자리와 "더 받고
+#: 약점 체크 열의 머리칸 — 연한 남보라(대표 2026-08-19). 답을 적는 자리와 "더 받고
 #: 싶다"를 말하는 자리는 하는 일이 다르니 색으로도 갈라 준다.
 #:
-#: 초록 머리칸(#C3E9C2)과 **밝기를 맞췄다**(220 대 217) — 나란히 놓아도 한쪽이
+#: 수능 답안지가 실제로 쓰는 계열이고, 카드에 이미 있는 분홍(자홍)과 이어져
+#: 셋이 한 벌로 보인다. 하늘색은 초록·분홍이 둘 다 따뜻한 쪽이라 혼자 차가웠다.
+#:
+#: **따뜻한 색은 다 안 됐다.** 노랑·빨강·살구를 같은 밝기로 뽑아 나란히 보니
+#: 셋이 전부 베이지로 수렴해 서로도, 초록과도 잘 안 갈렸다. 옅게 깔면 색상이
+#: 날아가기 때문이다. 파랑만 분홍(따뜻한 자홍)·초록 양쪽에서 떨어진다.
+#:
+#: 빨강은 뜻도 틀렸다 — 약점 체크는 실수가 아니라 **요청**이다.
+#:
+#: 초록 머리칸(#C3E9C2)과 밝기를 맞췄다(215 대 217) — 나란히 놓아도 한쪽이
 #: 먼저 눈에 들어오지 않는다. 인쇄를 직접 하므로 색 하나 더 쓰는 데 비용이 없다.
-EXTRA_TINT = Color(0xFA / 255, 0xD6 / 255, 0xAA / 255)
+EXTRA_TINT = Color(0xCC / 255, 0xD2 / 255, 0xF0 / 255)
 INK = Color(0x23 / 255, 0x1F / 255, 0x20 / 255)
 
 #: 버블 안 글자 — 옛 카드에서 링 높이의 약 40% 다. 작게 그렸더니 원본보다
@@ -130,6 +141,16 @@ SURVEY_NOTE_PT = 7.4
 RULES_INDENT_MM = (1.40, 3.81, 3.05, 0.0)
 PHONE_INDENT_MM = (0.89, 2.54, 2.54, 7.75)
 TEXT_RIGHT_MM = 1.1
+
+#: 하단 저작권 — 옛 카드에도 있던 자리다(거기엔 `Copyright ⓒ 2012 튜터시스템`).
+#: 남의 표시라 비워 뒀던 곳을 우리 것으로 채운다.
+#:
+#: **주체는 강사다.** `시스템` 을 붙이면 인쇄 업체 이름(튜터시스템)을 따라가는
+#: 꼴이 되고, 우리는 시스템 벤더가 아니다(CLAUDE.md §8-1).
+COPYRIGHT = "Copyright © 2026 한종철 통합과학. All rights reserved."
+COPYRIGHT_PT = 7.5
+#: 옛 카드 실측 색 — 본문 먹보다 흐리다. 읽히되 지면을 안 끈다.
+COPYRIGHT_INK = Color(0x4F / 255, 0x4C / 255, 0x4D / 255)
 
 #: 5문항마다 구분선 — 옛 카드에 있다. 20줄이 한 덩어리면 줄을 잘못 탄다.
 GROUP_EVERY = 5
@@ -215,7 +236,7 @@ def _runs(body):
     """
     runs, current, latin = [], "", None
     for char in body:
-        is_latin = char.isascii()
+        is_latin = char.isascii() or char in LATIN_EXTRA
         if latin is None or is_latin == latin:
             current += char
         else:
@@ -881,7 +902,7 @@ def _survey_examples(pen, bu0, bu1, v0, card):
         _ = tens_last
 
 
-def render(card, title="한종철 생명과학", exam=""):
+def render(card, title="한종철 통합과학", exam=""):
     """카드 한 장을 PDF 바이트로.
 
     `card` 는 `layout.Layout`, `exam` 은 회차명(`2027 OMEGA black 3회`).
@@ -908,6 +929,18 @@ def render(card, title="한종철 생명과학", exam=""):
     else:
         _answer_block(pen, card)
 
+    _copyright(pen, card)
+
     pen.showPage()
     pen.save()
     return buffer.getvalue()
+
+
+def _copyright(pen, card):
+    """하단 우측 저작권 한 줄 — 마지막 답란 열의 오른쪽 끝에 맞춘다."""
+    columns = max(card.columns, 1)
+    right = (float(L.mm_to_u(L.ANSWER_COL_LEFT_MM))
+             + (columns - 1) * float(L.mm_to_u(L.ANSWER_COL_PITCH_MM))
+             + float(L.mm_to_u(L.ANSWER_BOX_W_MM + L.EXTRA_SEP_MM + L.EXTRA_COL_W_MM)))
+    _text(pen, right, BOX_ANSWER_V[1] + 0.026, COPYRIGHT,
+          size=COPYRIGHT_PT, anchor="right", colour=COPYRIGHT_INK)

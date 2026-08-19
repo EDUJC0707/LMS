@@ -22,7 +22,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--out", default="local/cards", help="출력 폴더")
         parser.add_argument("--layout", action="append", help="판형 이름(여러 번 가능)")
-        parser.add_argument("--title", default="한종철 생명과학")
+        parser.add_argument("--title", default="한종철 통합과학")
         parser.add_argument("--exam", default="", help="회차명 — 비우면 손으로 적는 줄이 남는다")
 
     def handle(self, *args, **options):
