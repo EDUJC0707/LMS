@@ -19,6 +19,8 @@ export interface SessionCourse {
 export interface SessionBlock {
   session_id: number;
   session_date: string;
+  /** 처음 `출결 확정` 을 누른 시각. 값이 있으면 이미 내보낸 회차다(FLOW 3-11). */
+  confirmed_at: string | null;
   session_no: number | null;
   target_grade: number | null;
   memo: string | null;
@@ -69,6 +71,8 @@ export interface AttendanceTriggers {
   counselings_removed: number;
   /** 결석(동보)로 확정돼 동보 지급까지 간 건수. */
   makeups_granted: number;
+  /** 큐에 쌓은 출결 통지 수 — **처음 확정할 때만** 0 이 아니다(FLOW 3-11). */
+  notifications_queued: number;
 }
 
 export interface SessionDetail {
@@ -79,7 +83,7 @@ export interface SessionDetail {
   triggers?: AttendanceTriggers;
 }
 
-/** PUT /api/admin/attendance/sessions/{id} 본문 한 줄. */
+/** PUT /api/admin/attendance/sessions/{id}(= `출결 확정`) 본문 한 줄. */
 export interface AttendanceEntry {
   student_id: number;
   status: AttendanceStatus;

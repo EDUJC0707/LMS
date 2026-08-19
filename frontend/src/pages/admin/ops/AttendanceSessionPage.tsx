@@ -6,8 +6,11 @@
  *
  * 설계 요지
  * - 집계 바를 상단에 고정한다. 30명을 훑는 동안에도 "몇 명 남았나"가 늘 보인다.
- * - 저장은 **바꾼 행만** 보낸다(부분 upsert). 손대지 않은 행은 건드리지 않는다.
- * - 저장 응답의 triggers 를 문장으로 옮긴다 — 이 시스템의 자동화를 사람이
+ * - **버튼은 저장이 아니라 `출결 확정` 이다**(FLOW 3-5·3-11). 출결표는 OMR 이
+ *   돌 때마다 스스로 바뀌므로 조교가 저장할 것이 없고, 누르는 뜻은 "이제
+ *   내보낸다" 다 — 그래서 **손댄 행이 없어도 눌린다.** 보내는 것은 바꾼 행만
+ *   이고(부분 upsert), 서버가 명단 전체에 지급을 돌린다.
+ * - 확정 응답의 triggers 를 문장으로 옮긴다 — 이 시스템의 자동화를 사람이
  *   체감하는 유일한 지점이다.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -77,7 +80,7 @@ export default function AttendanceSessionPage() {
   const [draft, setDraft] = useState<DraftMap>({});
   const [examMode, setExamMode] = useState(false);
   const [blankOnly, setBlankOnly] = useState(false);
-  const [saved, setSaved] = useState<AttendanceTriggers | null>(null);
+  const [result, setResult] = useState<AttendanceTriggers | null>(null);
   const [onsiteId, setOnsiteId] = useState("");
 
   const students = useMemo(() => detail.data?.students ?? [], [detail.data]);
@@ -142,15 +145,15 @@ export default function AttendanceSessionPage() {
         const row = draft[student.student_id];
         if (!row) return false;
         const nextExam = examMode ? row.examTaken : null;
-        const savedRow = student.attendance;
+        const stored = student.attendance;
         // 기록이 없는데 미입력이면 보낼 것이 없다 — 둘은 같은 뜻이다(FLOW 3-4)
-        if (!savedRow) return row.status !== "미입력";
-        return savedRow.status !== row.status || (savedRow.exam_taken ?? null) !== nextExam;
+        if (!stored) return row.status !== "미입력";
+        return stored.status !== row.status || (stored.exam_taken ?? null) !== nextExam;
       }),
     [entryTargets, draft, examMode],
   );
 
-  const save = useApiAction(async (entries: AttendanceEntry[]) => {
+  const confirmApi = useApiAction(async (entries: AttendanceEntry[]) => {
     const { data } = await http.put<SessionDetail>(
       `/admin/attendance/sessions/${sessionId}`,
       entries,
@@ -158,8 +161,7 @@ export default function AttendanceSessionPage() {
     return data;
   });
 
-  const runSave = useCallback(async () => {
-    if (changed.length === 0) return;
+  const runConfirm = useCallback(async () => {
     const entries: AttendanceEntry[] = changed.map((student) => {
       const row = draft[student.student_id];
       return {
@@ -168,10 +170,10 @@ export default function AttendanceSessionPage() {
         exam_taken: examMode ? row.examTaken : null,
       };
     });
-    const data = await save.run(entries);
+    const data = await confirmApi.run(entries);
     if (data) {
       detail.setData(data);
-      setSaved(data.triggers ?? null);
+      setResult(data.triggers ?? null);
       if (canMakeup) void makeups.reload();
     }
     // detail/makeups 는 매 렌더 새 객체라 의존성에서 뺀다.
@@ -192,21 +194,21 @@ export default function AttendanceSessionPage() {
     const data = await onsite.run(onsiteId.trim());
     if (!data) return;
     detail.setData(data);
-    setSaved(data.triggers ?? null);
+    setResult(data.triggers ?? null);
     setOnsiteId("");
   };
 
-  // ⌘S · Ctrl+S 로 저장 — 명단을 훑다가 손을 떼지 않고 저장한다.
+  // ⌘S · Ctrl+S 로 확정 — 명단을 훑다가 손을 떼지 않고 내보낸다.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
-        void runSave();
+        void runConfirm();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [runSave]);
+  }, [runConfirm]);
 
   const makeupByStudent = useMemo(() => {
     const map = new Map<number, MakeupRow>();
@@ -250,7 +252,7 @@ export default function AttendanceSessionPage() {
           <span>{r.name ?? "이름 미등록"}</span>
           {r.enrollment_status !== "등록" && <StatusBadge status={r.enrollment_status} />}
           <span className="sr-only">
-            {changed.some((c) => c.student_id === r.student_id) ? "저장 전 변경됨" : ""}
+            {changed.some((c) => c.student_id === r.student_id) ? "확정 전 변경됨" : ""}
           </span>
         </span>
       ),
@@ -324,7 +326,9 @@ export default function AttendanceSessionPage() {
       : []),
     {
       key: "recorded",
-      header: "저장된 값",
+      // "저장된 값" 이 아니다 — OMR 도 여기에 쓰므로(FLOW 3-2) 저장이라는 말이
+      // 주체를 사람으로 오해하게 만든다. 이 열은 **서버에 있는 지금 값**이다.
+      header: "현재 값",
       width: "10rem",
       cell: (r) =>
         r.attendance ? (
@@ -363,27 +367,29 @@ export default function AttendanceSessionPage() {
         </div>
 
         <div className="ops-bar__actions">
+          {session.confirmed_at && (
+            <span className="ops-bar__stamp">확정 {stamp(session.confirmed_at)}</span>
+          )}
           {changed.length > 0 && (
             <span className="ops-bar__dirty">
-              저장 전 변경 <b className="num">{changed.length}</b>명
+              확정 전 변경 <b className="num">{changed.length}</b>명
             </span>
           )}
           <Button
             size="sm"
             variant="primary"
-            loading={save.pending}
-            disabled={changed.length === 0}
-            onClick={() => void runSave()}
+            loading={confirmApi.pending}
+            onClick={() => void runConfirm()}
           >
-            저장
+            출결 확정
           </Button>
         </div>
       </div>
 
       <div className="ui-stack">
-        {save.error && <Alert tone="danger">{save.error}</Alert>}
+        {confirmApi.error && <Alert tone="danger">{confirmApi.error}</Alert>}
         {onsite.error && <Alert tone="danger">{onsite.error}</Alert>}
-        {saved && <SavedSummary triggers={saved} onClose={() => setSaved(null)} />}
+        {result && <ConfirmSummary triggers={result} onClose={() => setResult(null)} />}
 
         <Card padding="none" className="ops-tablecard">
           <div className="ops-toolbar ops-toolbar--center ops-cardbar">
@@ -429,7 +435,7 @@ export default function AttendanceSessionPage() {
                 <kbd>←</kbd> <kbd>→</kbd> 미입력 · 출석 · 결석 · 동보 · 현보
               </span>
               <span>
-                <kbd>⌘</kbd>+<kbd>S</kbd> 저장
+                <kbd>⌘</kbd>+<kbd>S</kbd> 출결 확정
               </span>
             </p>
           </div>
@@ -450,7 +456,7 @@ export default function AttendanceSessionPage() {
   );
 }
 
-function SavedSummary({
+function ConfirmSummary({
   triggers,
   onClose,
 }: {
@@ -469,12 +475,14 @@ function SavedSummary({
     parts.push(`결석 상담 카드 ${triggers.counselings_created}건 생성`);
   if (triggers.counselings_removed > 0)
     parts.push(`상담 카드 ${triggers.counselings_removed}건 정리`);
+  if (triggers.notifications_queued > 0)
+    parts.push(`출결 통지 ${triggers.notifications_queued}건`);
 
   return (
     <Alert tone="success" onClose={onClose}>
       {parts.length > 0
-        ? `출결을 저장했습니다 — ${parts.join(" · ")}`
-        : "출결을 저장했습니다"}
+        ? `출결을 확정했습니다 — ${parts.join(" · ")}`
+        : "출결을 확정했습니다"}
     </Alert>
   );
 }

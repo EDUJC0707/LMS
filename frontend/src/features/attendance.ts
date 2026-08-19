@@ -41,7 +41,7 @@ const TONE: Record<AttendanceStatus, AttendanceTone> = {
 };
 
 // 좁은 칸(캘린더 한 칸·라디오 버튼)에는 괄호를 뗀 이름을 쓴다. 사용자가 쓰는
-// 말 그대로다("동보", "현보") — 저장된 값 열에는 원문이 그대로 뜬다.
+// 말 그대로다("동보", "현보") — 현재 값 열에는 원문이 그대로 뜬다.
 const SHORT: Record<AttendanceStatus, string> = {
   미입력: "미입력",
   출석: "출석",
