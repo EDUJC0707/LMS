@@ -547,6 +547,12 @@
   background: var(--color-accent);
 }
 
+/* 중단원 행 — 자기 대단원 밑에 한 칸 들어간다(FLOW 4-3). */
+.st-unit-minor {
+  padding-left: var(--space-md);
+  color: var(--color-muted);
+}
+
 .st-cell-rate {
   display: flex;
   align-items: center;
@@ -607,6 +613,8 @@
 
 .st-guide__video {
   grid-column: 2;
+  /* 링크지만 줄 안에서만 넓어진다 — inline-flex 라 배지+제목까지가 과녁이다 */
+  justify-self: start;
   display: inline-flex;
   align-items: center;
   gap: var(--space-xs); /* 뱃지↔글자는 .ui-row 와 같은 8px */

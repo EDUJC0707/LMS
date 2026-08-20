@@ -13,7 +13,30 @@ baseline lms-db-spec.html Domain 5, PRD 3.1.5/3.2.5):
 그린필드이므로 baseline+delta 의 최종 상태로 바로 구현한다.
 인덱스는 설계 §4.7 기준(tuition 인덱스는 표 삭제로 함께 소멸).
 """
+import uuid
+from pathlib import PurePosixPath
+
+from django.core.exceptions import ValidationError
+from django.core.validators import FileExtensionValidator
 from django.db import models
+
+from apps.grades import media
+
+#: 표지 사진 상한. 워크북 사진(grades/workbook_admin.py)과 **같은 값·같은 문구**다 —
+#: 스마트폰 기본 화질 사진을 여유 있게 덮는 크기. 두 앱을 묶지 않으려고 여기 다시 적는다.
+COVER_MAX_SIZE = 10 * 1024 * 1024
+COVER_EXTENSIONS = ("jpg", "jpeg", "png", "webp")
+
+
+def _cover_path(instance, filename):
+    """업로드 원본명을 쓰지 않는다 — 경로 주입 차단(workbook_admin 과 같은 이유)."""
+    suffix = PurePosixPath(filename).suffix.lstrip(".").lower() or "jpg"
+    return media.product_cover(uuid.uuid4().hex, suffix)
+
+
+def _validate_cover_size(file):
+    if file.size > COVER_MAX_SIZE:
+        raise ValidationError("파일 크기는 10MB 이하여야 합니다.")
 
 
 class Product(models.Model):
@@ -51,6 +74,16 @@ class Product(models.Model):
     name = models.CharField("교재명", max_length=200)
     kind = models.CharField("구성", max_length=10, choices=Kind.choices, default=Kind.SINGLE)
     price = models.IntegerField("가격(원)")
+    # ImageField 가 아니라 FileField 다 — 폭·높이를 쓰는 자리가 없고, ImageField 는
+    # Pillow 를 요구하는데 그건 지금 reportlab 이 끌고 온 전이 의존일 뿐이다.
+    # 저장은 default_storage 를 그대로 타므로 로컬↔Tigris 전환도 워크북과 같다.
+    cover = models.FileField(
+        "표지 사진",
+        upload_to=_cover_path,
+        blank=True,
+        default="",
+        validators=[FileExtensionValidator(COVER_EXTENSIONS), _validate_cover_size],
+    )
     is_active = models.BooleanField("판매 여부", default=True)
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)
 

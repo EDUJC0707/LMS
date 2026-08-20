@@ -3,15 +3,36 @@
 재생 화면이 부르는 단 하나의 진입점(`build_playback`)이다. "볼 수 있는가"의
 판정과 "무엇을 찍는가"의 조립을 여기서 끝내고, 뷰는 None → 404 매핑만 한다.
 
-**권한 원천은 `VideoGrant` 하나다.** `MakeupGrant` 는 동보 신청·승인의 서류이지
-권한이 아니다 — 7일 만료(`expires_at`)도 회수(`revoked_at`)도 VideoGrant 에만
+**주차 영상의 권한 원천은 `VideoGrant` 하나다.** `MakeupGrant` 는 동보 신청·승인의
+서류이지 권한이 아니다 — 7일 만료(`expires_at`)도 회수(`revoked_at`)도 VideoGrant 에만
 있고, 출결 정정 시 실제로 권한을 끄는 것도 attendance_admin 이 VideoGrant 를
 revoke 하는 쪽이다(makeup.complete_makeup 이 `지급완료` 전이에서 VideoGrant(동보)
 를 만들어 두 경로가 여기서 합류한다). MakeupGrant 를 보고 판정하면 만료·회수가
-통째로 무시된다. 그래서 진입은 `VideoGrant.objects.active()` 단 하나다
+통째로 무시된다. 그래서 주차 영상의 진입은 `VideoGrant.objects.active()` 단 하나다
 (VideoGrant 모델 docstring 의 "소비자용 API 유일 진입" 계약).
 
-**이중 게이트**: `Video.status == 공개` + 그 **영상에 대한** 활성 권한.
+**오답 학습가이드 영상은 이 축 밖이다**(FLOW 1-7·4-3). 그것은 주차가 아니라
+**문항**에 붙어 있고(`Question.guide_video`), 그 회차 성적표를 볼 수 있으면 본다.
+출결 권한에 태우면 **정작 틀린 학생에게 막힌다** — 결석한 회차의 시험을 나중에
+본 학생, 권한이 이미 7일 지나 만료된 학생이 자기 오답 해설을 못 본다. 그래서
+VideoGrant 를 만들지 않는다: 만료 없는 권한을 흉내내려면 먼 미래 sentinel 이
+필요하고, 그러면 그 표 안에서 7일 만료·회수의 뜻이 깨진다.
+
+대신 규칙을 여기 적는다 — **자격은 그 학생이 그 문항을 틀렸는가** 하나다
+(`_guide_video_for`). 지급도 회수도 없고 만료도 없다(`expires_at` 이 None 으로
+나간다). 판정 축은 성적표의 오답 학습동선(`grades.report._wrong_guides`)과 같다.
+
+**회수된 주차 영상이 이 링크로 새지 않는가**: 이 경로는 `Question.guide_video`
+로 **지목된** 영상만 연다. 주차 영상 하나를 어느 문항의 가이드로도 지정하면
+그 문항을 틀린 학생에게는 주차 권한이 회수된 뒤에도 계속 열린다 — 감수한다
+(FLOW 1-7 이 경고한 자리다). 막으려면 관리 화면에서 주차 영상을 가이드로 고르지
+못하게 해야 하는데, 겹쳐 쓰고 싶은 자리(3-7 클리닉·동보 연결)를 같이 막게 된다.
+
+가이드 영상은 **복습영상 목록(`build_video_list`)에 뜨지 않는다** — 권한이 없기
+때문이고, 성적표 링크로만 닿는 것이 맞다.
+
+**이중 게이트**: `Video.status == 공개` + 그 **영상에 대한** 활성 권한(또는 위
+가이드 자격).
 지급 단위가 영상이라(2026-08-04 개정) 판정은 `권한.video == 영상` 직접 조인이다 —
 구 설계처럼 주차를 맞춰 보지 않는다. 그래서 관리자가 영상의 주차를 옮겨도 이미
 지급된 권한은 끊기지 않는다.
@@ -36,6 +57,8 @@ Asia/Seoul** 로 찍는다. 클라이언트가 자기 프로필·기기 시계�
 """
 from django.conf import settings
 from django.utils import timezone
+
+from apps.grades.models import SheetAnswer
 
 from . import mux
 from .models import Video, VideoGrant
@@ -142,6 +165,9 @@ def build_playback(student, video_id, now):
 
     - student: 로그인 세션에서 해석된 본인(호출측이 user 를 select_related).
     - now: 기준 시각. 권한 활성 판정과 시청 날짜가 **같은 한 시각**을 쓴다.
+
+    자격은 두 규칙 중 하나면 선다 — 주차 영상은 `VideoGrant`, 오답 학습가이드
+    영상은 문항 오답(파일 머리말). 진입점은 여전히 이 함수 하나다.
     """
     grant = (
         VideoGrant.objects.active(at=now)
@@ -150,10 +176,41 @@ def build_playback(student, video_id, now):
         .order_by("-expires_at")  # 재지급이 겹치면 늦게 끝나는 권한이 기준
         .first()
     )
-    if grant is None:
+    if grant is not None:
+        return _payload(student, grant.video, now, grant.expires_at)
+    video = _guide_video_for(student, video_id)
+    if video is None:
         return None
-    video = grant.video
-    # 주차 없는 특강 — 권한이 영상을 직접 가리키므로 재생은 성립한다.
+    # 만료가 없다 — 가이드 영상은 성적표가 살아 있는 동안 열린다(파일 머리말).
+    return _payload(student, video, now, None)
+
+
+def _guide_video_for(student, video_id):
+    """그 학생이 **틀린 문항**의 학습가이드 영상이면 그 영상, 아니면 None.
+
+    판정 축이 성적표의 오답 학습동선(`grades.report._wrong_guides`)과 같아야
+    한다 — 무응답·복수마킹은 오답이 아니므로 여기서도 아니다. 갈리면 "성적표엔
+    링크가 있는데 누르면 404" 가 난다.
+
+    `공개` 게이트는 권한 경로와 그대로 같이 간다.
+    """
+    wrong = SheetAnswer.objects.filter(
+        sheet__student=student,
+        question__guide_video_id=video_id,
+        result=SheetAnswer.Result.WRONG,
+    )
+    if not wrong.exists():
+        return None
+    return (
+        Video.objects.select_related("course_week__course")
+        .filter(video_id=video_id, status=Video.Status.PUBLISHED)
+        .first()
+    )
+
+
+def _payload(student, video, now, expires_at):
+    """재생 응답 한 벌. 두 자격 경로가 **같은** 워터마크·토큰·viewer_id 를 낸다."""
+    # 주차 없는 특강·가이드 영상 — 자격이 영상을 직접 가리키므로 재생은 성립한다.
     # 표시값만 비운다(build_video_list 와 같은 판단 — 두 경로가 갈리면
     # "목록엔 있는데 누르면 500" 이 난다).
     ref, is_mux = resolve_ref(video)
@@ -180,7 +237,7 @@ def build_playback(student, video_id, now):
         # 이름이 아니라 **내부 번호**를 쓴다: 업체 분석 화면에 실명을 흘리지 않고
         # 우리 DB 로만 사람을 되짚는다(Mux 권고 — viewer_user_id 에 PII 금지).
         "viewer_id": str(student.student_id),
-        "expires_at": timezone.localtime(grant.expires_at).isoformat(),
+        "expires_at": timezone.localtime(expires_at).isoformat() if expires_at else None,
     }
 
 

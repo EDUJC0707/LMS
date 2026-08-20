@@ -253,6 +253,12 @@ export interface ReportUnit {
   my_points: number;
   unit_max_points: number;
   correct_rate: number;
+  minors: ReportUnitMinor[];
+}
+
+/** 대단원 안의 중단원 한 줄(FLOW 4-3). 중단원이 안 붙은 문항은 행이 없다. */
+export interface ReportUnitMinor extends Omit<ReportUnit, "minors"> {
+  unit_minor: string;
 }
 
 export interface ReportQuestion {

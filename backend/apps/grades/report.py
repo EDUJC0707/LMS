@@ -283,16 +283,35 @@ def _wrong_rate_rows(exam):
 
 
 def _unit_blocks(sheet):
-    """② 대단원별 — questions.unit 축 × 내 답안(sheet_answers) DB 집계.
+    """② 대단원·중단원별 — questions.unit 축 × 내 답안(sheet_answers) DB 집계.
 
     문항 수·정답 수(틀린 수)·내 점수/단원 만점·정답률. 단원 순서는 시험지
     구성 순(단원 첫 문항 번호). 답안지가 없으면 빈 리스트(축 성립 불가).
+
+    **중단원은 대단원 안에 중첩한다**(FLOW 4-3 "대단원·중단원에서 어디가
+    무너지는지"). 같은 배열에 섞어 평탄하게 내면 `units` 를 세는 쪽이 조용히
+    두 번 센다. 중단원이 비어 있는 문항은 행을 만들지 않는다 — 대단원 합계에
+    이미 들어 있으므로 잃는 숫자가 없고, `미분류` 같은 이름을 지어내지 않는다.
     """
     if sheet is None:
         return []
-    rows = (
+    majors = [_unit_payload(row) for row in _unit_rows(sheet, "question__unit_major")]
+    minors = defaultdict(list)
+    for row in _unit_rows(sheet, "question__unit_major", "question__unit_minor"):
+        minor = row["question__unit_minor"]
+        if not minor:  # NULL 도 빈 문자열도 "중단원 없음"이다
+            continue
+        minors[row["question__unit_major"]].append(_unit_payload(row) | {"unit_minor": minor})
+    for block in majors:
+        block["minors"] = minors[block["unit_major"]]
+    return majors
+
+
+def _unit_rows(sheet, *group_fields):
+    """단원 축 집계 1회 — 대단원과 중단원이 같은 숫자 집합을 쓴다."""
+    return (
         SheetAnswer.objects.filter(sheet=sheet)
-        .values("question__unit_major")
+        .values(*group_fields)
         .annotate(
             question_count=Count("pk"),
             correct_count=Count("pk", filter=Q(result=SheetAnswer.Result.CORRECT)),
@@ -302,18 +321,19 @@ def _unit_blocks(sheet):
         )
         .order_by("first_q")
     )
-    return [
-        {
-            "unit_major": row["question__unit_major"],
-            "question_count": row["question_count"],
-            "correct_count": row["correct_count"],
-            "wrong_count": row["question_count"] - row["correct_count"],
-            "my_points": row["my_points"] if row["my_points"] is not None else 0,
-            "unit_max_points": row["unit_max_points"],
-            "correct_rate": rate(row["correct_count"], row["question_count"]),
-        }
-        for row in rows
-    ]
+
+
+def _unit_payload(row):
+    """집계 행 → 응답 한 줄. 파이썬은 조립만 한다(모듈 docstring)."""
+    return {
+        "unit_major": row["question__unit_major"],
+        "question_count": row["question_count"],
+        "correct_count": row["correct_count"],
+        "wrong_count": row["question_count"] - row["correct_count"],
+        "my_points": row["my_points"] if row["my_points"] is not None else 0,
+        "unit_max_points": row["unit_max_points"],
+        "correct_rate": rate(row["correct_count"], row["question_count"]),
+    }
 
 
 def _question_rows(questions, my_answers, wrong_rate_rows):

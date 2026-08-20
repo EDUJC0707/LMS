@@ -43,6 +43,7 @@ class DemoIsolationTests(SimpleTestCase):
             media.omr_scan(1, "d"),
             media.omr_batch(1, "t"),
             media.workbook_page(2026, 8, "t", "jpg"),
+            media.product_cover("t", "jpg"),
         )
 
         for path in real:

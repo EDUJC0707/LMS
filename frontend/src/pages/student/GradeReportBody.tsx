@@ -14,6 +14,8 @@
  * `./student.css` 를 여기서 import 하는 것이 인쇄 스타일을 관리자 화면까지
  * 데려가는 통로다(@media print).
  */
+import { Link } from "react-router-dom";
+
 import {
   Badge,
   Card,
@@ -27,6 +29,7 @@ import {
   ReportQuestion,
   ReportSummary,
   ReportUnit,
+  ReportUnitMinor,
   ThemeTrend,
   WrongAnswerGuide,
   num,
@@ -126,15 +129,26 @@ export function GradeReportBody({
         </div>
       </Card>
 
-      {/* ② 대단원별 */}
-      <Card title="대단원별 점수" aside={`${units.length}개 단원`} padding="none">
-        <Table<ReportUnit>
-          rows={units}
-          rowKey={(row) => row.unit_major}
-          caption="대단원별 점수와 정답률"
-          empty="대단원 구분이 없는 시험입니다"
+      {/* ② 대단원·중단원별 — 중단원은 자기 대단원 바로 밑에 들여쓴다(FLOW 4-3) */}
+      <Card title="단원별 점수" padding="none">
+        <Table<ReportUnit | ReportUnitMinor>
+          rows={units.flatMap((unit) => [unit, ...unit.minors])}
+          rowKey={(row) =>
+            "unit_minor" in row ? `${row.unit_major}/${row.unit_minor}` : row.unit_major
+          }
+          caption="단원별 점수와 정답률"
+          empty="단원 구분이 없는 시험입니다"
           columns={[
-            { key: "unit", header: "대단원", cell: (row) => row.unit_major },
+            {
+              key: "unit",
+              header: "단원",
+              cell: (row) =>
+                "unit_minor" in row ? (
+                  <span className="st-unit-minor">{row.unit_minor}</span>
+                ) : (
+                  row.unit_major
+                ),
+            },
             {
               key: "count",
               header: "문항",
@@ -269,10 +283,13 @@ export function GradeReportBody({
                 </span>
                 <span className="st-guide__text">{guide.study_guide}</span>
                 {guide.guide_video && (
-                  <span className="st-guide__video">
+                  <Link
+                    className="st-guide__video"
+                    to={`/student/videos/${guide.guide_video.video_id}`}
+                  >
                     <Badge tone="outline">가이드 영상</Badge>
                     {guide.guide_video.title}
-                  </span>
+                  </Link>
                 )}
               </div>
             ))}

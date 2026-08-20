@@ -102,6 +102,9 @@ export const router = createBrowserRouter([
           { path: "grades/:examId", element: <StudentGradeDetailPage /> },
           { path: "clinic", element: <StudentClinicPage /> },
           { path: "videos", element: <StudentVideoPage /> },
+          // 성적표의 오답 학습가이드가 여는 자리 — 목록에 없는 영상이라
+          // 번호로 바로 들어온다(FLOW 4-3).
+          { path: "videos/:videoId", element: <StudentVideoPage /> },
           { path: "makeup", element: <StudentMakeupPage /> },
           { path: "workbook", element: <StudentWorkbookPage /> },
           // 교재 결제는 예비등록생에게도 열린다 — 등록 가드를 두지 않는다(PRD §4).

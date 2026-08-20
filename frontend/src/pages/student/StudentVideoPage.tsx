@@ -21,6 +21,14 @@
  * (Mux 는 "본 시간" 이 아니라 **"내려간 시간"** 으로 과금한다) ② 목록 버튼이
  * `재생` 인데 실제 재생은 다음 화면에서 일어나면 이름과 동작이 어긋난다.
  *
+ * ## 번호로 바로 들어오는 길이 하나 더 있다
+ *
+ *   /student/videos/{id}   성적표의 오답 학습가이드가 가리키는 영상
+ *
+ * 가이드 영상은 **권한이 없어서** 위 목록에 없다(FLOW 1-7 — 주차가 아니라 문항에
+ * 붙어 있다). 그래서 목록을 거치지 않고 번호로 열고, 이때는 목록을 부르지도
+ * 그리지도 않는다. 뒤로가기는 성적표로 돌아간다.
+ *
  * ## 재생 참조는 서버가 정한다
  *
  * 시드 데이터는 재생될 수 없는 가짜 참조(`seed-*`)를 갖는데, 그 대체를 **서버가**
@@ -48,6 +56,7 @@
  */
 import MuxPlayer from "@mux/mux-player-react";
 import { useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 
 import { http, useApi, useApiAction } from "../../api";
 import {
@@ -86,7 +95,8 @@ interface Playback {
   watermark: string;
   /** Mux Data 시청자 축 — 실명이 아니라 학생 내부 번호다(playback.py). */
   viewer_id: string;
-  expires_at: string;
+  /** 가이드 영상은 만료가 없다 — null 로 온다(playback.py). */
+  expires_at: string | null;
 }
 
 /** "1800" → "30분". 없으면 빈 칸. */
@@ -136,9 +146,15 @@ function useWatermarkGuard(
 }
 
 export default function StudentVideoPage() {
+  const { videoId } = useParams();
+  const navigate = useNavigate();
   const list = useApi(
-    () => http.get<{ videos: VideoRow[] }>("/student/videos").then((r) => r.data.videos),
-    [],
+    () =>
+      // 번호로 들어온 경우 목록은 그리지 않는다 — 부르지도 않는다.
+      videoId
+        ? Promise.resolve([] as VideoRow[])
+        : http.get<{ videos: VideoRow[] }>("/student/videos").then((r) => r.data.videos),
+    [videoId],
   );
   const [playing, setPlaying] = useState<Playback | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -154,16 +170,29 @@ export default function StudentVideoPage() {
   const [openingId, setOpeningId] = useState<number | null>(null);
 
   // 재생 정보는 누르는 순간 받는다(파일 머리말 참조).
-  const open = useApiAction(async (videoId: number) => {
-    setOpeningId(videoId);
+  // 인자 이름이 라우트의 videoId 와 겹치지 않게 한다 — 같은 파일에서 하나는
+  // 문자열, 하나는 번호라 가려지면 어느 쪽인지 안 보인다.
+  const open = useApiAction(async (id: number) => {
+    setOpeningId(id);
     try {
-      const res = await http.get<Playback>(`/student/videos/${videoId}/playback`);
+      const res = await http.get<Playback>(`/student/videos/${id}/playback`);
       setPlaying(res.data);
       return true;
     } finally {
       setOpeningId(null);
     }
   });
+
+  // /student/videos/{id} 로 들어오면 그 영상을 바로 연다 — 성적표의 오답
+  // 학습가이드가 가리키는 영상은 목록(권한 기반)에 없다(playback.py).
+  useEffect(() => {
+    if (videoId) void open.run(Number(videoId));
+  }, [videoId, open.run]);
+
+  if (videoId && !playing) {
+    if (open.error) return <ErrorState description={open.error} />;
+    return <Loading label="영상을 불러오는 중…" />;
+  }
 
   if (list.initialLoading) return <Loading label="복습영상을 불러오는 중…" />;
   if (list.error) return <ErrorState description={list.error} onRetry={list.reload} />;
@@ -179,7 +208,7 @@ export default function StudentVideoPage() {
               <button
                 type="button"
                 className="vd-back"
-                onClick={() => setPlaying(null)}
+                onClick={() => (videoId ? navigate(-1) : setPlaying(null))}
                 aria-label="목록으로"
               >
                 {/* PageIcon 과 같은 결: viewBox 24 · stroke 1.7 · 둥근 끝 */}
@@ -197,7 +226,7 @@ export default function StudentVideoPage() {
               {playing.video.title}
             </span>
           }
-          aside={`${playing.video.week_no}주차`}
+          aside={playing.video.week_no === null ? undefined : `${playing.video.week_no}주차`}
           padding="none"
         >
           <div className="vd-stage" ref={stageRef}>

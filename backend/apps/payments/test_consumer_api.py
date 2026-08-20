@@ -13,6 +13,7 @@
 - 예비등록생(미등록)도 결제는 보인다 — PRD §4 상태 기반 노출에서 미등록에게
   열려 있는 것이 **교재 구매**다
 """
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
 from apps.accounts.models import Parent, ParentStudent, Student, User
@@ -232,6 +233,18 @@ class ProductListTests(TestCase):
         names = [r["name"] for r in self.client.get(self.URL).json()]
         self.assertNotIn("내신 생명과학 교재", names)
         self.assertNotIn("커리 미지정 교재", names)
+
+    def test_cover_photo_rides_along_when_there_is_one(self):
+        # 표지 사진이 쓰이는 자리가 여기다(FLOW 3-6). 없는 교재는 None 으로 나간다.
+        self.client.force_login(self.student_user)
+        self.assertIsNone(self.client.get(self.URL).json()[0]["cover_url"])
+
+        self.live.cover = SimpleUploadedFile("표지.jpg", b"x" * 32, content_type="image/jpeg")
+        self.live.save()
+        self.addCleanup(self.live.cover.delete)
+        self.assertEqual(
+            self.client.get(self.URL).json()[0]["cover_url"], self.live.cover.url
+        )
 
     def test_parent_sees_the_child_list(self):
         self.client.force_login(self.parent_user)

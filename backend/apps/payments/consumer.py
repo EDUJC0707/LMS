@@ -68,6 +68,13 @@ def purchasable_products(student):
         is_active=True, course_id__in=course_ids
     ).order_by("product_id")
     return [
-        {"product_id": p.product_id, "name": p.name, "kind": p.kind, "price": p.price}
+        {
+            "product_id": p.product_id,
+            "name": p.name,
+            "kind": p.kind,
+            "price": p.price,
+            # 표지 사진이 쓰이는 자리는 여기다(FLOW 3-6) — 관리자 목록·주문 내역은 아니다.
+            "cover_url": p.cover.url if p.cover else None,
+        }
         for p in products
     ]

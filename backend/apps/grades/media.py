@@ -9,6 +9,7 @@
     omr/scans/{시험}/{내용해시}.jpg     판독 대상 스캔 — **개인정보**
     omr/batches/{시험}/{uuid}.pdf       업로드 원본 — 판독 끝나면 지운다
     workbook/pages/{연}/{월}/{uuid}.ext 워크북 사진 — **개인정보**
+    product/covers/{uuid}.ext           교재 표지 — 공개해도 되는 것
     demo/…                              시드. 실제 데이터와 최상위에서 갈린다
 
 두 가지를 노린다:
@@ -38,6 +39,11 @@ def omr_batch(exam_id, token):
 def workbook_page(year, month, token, suffix):
     """워크북 마지막 페이지 사진. 월별로 나눠 한 폴더가 무한정 커지지 않게."""
     return f"workbook/pages/{year:04d}/{month:02d}/{token}.{suffix}"
+
+
+def product_cover(token, suffix):
+    """교재 표지 한 장(FLOW 1-6). 교재가 몇 행이라 아래를 더 나누지 않는다."""
+    return f"product/covers/{token}.{suffix}"
 
 
 def demo(*parts):

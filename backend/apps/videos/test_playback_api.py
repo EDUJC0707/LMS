@@ -3,8 +3,10 @@
 GET /api/student/videos/{video_id}/playback
 
 검증 축:
-- 권한 원천: `VideoGrant.objects.active()` 단 하나(모델 docstring의 "소비자용 API
-  유일 진입" 계약). 만료·회수·타인 권한·다른 영상 권한은 전부 못 본다
+- 주차 영상의 권한 원천: `VideoGrant.objects.active()` 단 하나(모델 docstring의
+  "소비자용 API 유일 진입" 계약). 만료·회수·타인 권한·다른 영상 권한은 전부 못 본다
+- 오답 학습가이드 영상은 그 축 밖이다(FLOW 1-7) — 자격은 문항 오답 하나이고
+  만료가 없다. 판정 축은 성적표의 오답 학습동선과 같다
 - 지급 단위는 **영상 1개**(2026-08-04 개정) — 권한은 영상에 붙어 있으므로
   관리자가 영상의 주차를 옮겨도 이미 지급된 권한은 끊기지 않는다
 - 존재 비노출(§4): 권한 밖 video_id 는 상태와 무관하게 404 — 403 으로 갈리면
@@ -16,6 +18,7 @@ GET /api/student/videos/{video_id}/playback
   (동보 API 테스트 freeze_now 선례)
 """
 import datetime
+from decimal import Decimal
 from unittest import mock
 
 from django.test import TestCase
@@ -23,6 +26,7 @@ from django.utils import timezone
 
 from apps.accounts.models import Parent, Student, User
 from apps.curriculum.models import Course, CourseWeek
+from apps.grades.models import AnswerSheet, Exam, Question, SheetAnswer
 
 from .models import Video, VideoGrant
 
@@ -273,3 +277,77 @@ class PlaybackWatermarkTests(PlaybackFixtureMixin, TestCase):
         body = self.play(self.video).json()
         self.assertIsInstance(body["watermark"], str)
         self.assertNotIn("student", body)
+
+
+class GuideVideoPlaybackTests(PlaybackFixtureMixin, TestCase):
+    """오답 학습가이드 영상 — 출결 권한 축 밖(FLOW 1-7·4-3).
+
+    자격은 `VideoGrant` 가 아니라 **그 문항을 틀렸는가** 하나다. 판정 축은
+    성적표의 오답 학습동선과 같아야 한다(무응답·복수마킹은 오답이 아니다) —
+    갈리면 "성적표엔 링크가 있는데 누르면 404" 가 난다.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.exam = Exam.objects.create(name="오메가블랙 1회", exam_date=datetime.date(2026, 7, 28))
+        cls.guide = Video.objects.create(title="중화반응 개념 강의", status=Video.Status.PUBLISHED)
+        cls.guide_preparing = Video.objects.create(
+            title="산화수 개념 강의", status=Video.Status.PREPARING
+        )
+        cls.question = Question.objects.create(
+            exam=cls.exam, q_number=1, answer="1", points=Decimal("20.0"), guide_video=cls.guide
+        )
+        cls.q_preparing = Question.objects.create(
+            exam=cls.exam,
+            q_number=2,
+            answer="2",
+            points=Decimal("20.0"),
+            guide_video=cls.guide_preparing,
+        )
+
+    def answer(self, student, question, result):
+        sheet = AnswerSheet.objects.create(
+            exam=self.exam,
+            student=student,
+            scan_image_path=f"scan/{question.pk}-{student.pk}.jpg",
+            match_status=AnswerSheet.MatchStatus.MATCHED,
+        )
+        return SheetAnswer.objects.create(
+            sheet=sheet, question=question, result=result, marked="3"
+        )
+
+    def test_wrong_answer_opens_the_guide_video_without_a_grant(self):
+        # 출결 권한에 태우면 정작 틀린 학생에게 막힌다(FLOW 1-7) — 권한 0건에서 열린다
+        self.answer(self.s1, self.question, SheetAnswer.Result.WRONG)
+        self.client.force_login(self.s1.user)
+        response = self.play(self.guide)
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["video"]["video_id"], self.guide.video_id)
+        self.assertEqual(body["watermark"], "고2 · 김하늘 · 2026-07-30")
+        # 만료가 없다 — 성적표가 살아 있는 동안 열린다
+        self.assertIsNone(body["expires_at"])
+
+    def test_only_a_wrong_answer_unlocks_the_guide_video(self):
+        # 성적표가 링크를 거는 축과 같아야 한다 — 정답도 무응답도 오답이 아니다
+        self.answer(self.s2, self.question, SheetAnswer.Result.CORRECT)
+        self.answer(self.s_no_grade, self.question, None)
+        for student in (self.s2, self.s_no_grade):
+            with self.subTest(student=student.matching_key):
+                self.client.force_login(student.user)
+                self.assert_not_found(self.play(self.guide))
+
+    def test_preparing_guide_video_is_not_found(self):
+        # `공개` 게이트는 권한 경로와 같이 간다 — 문항이 지목해도 준비중이면 없는 것이다
+        self.answer(self.s1, self.q_preparing, SheetAnswer.Result.WRONG)
+        self.client.force_login(self.s1.user)
+        self.assert_not_found(self.play(self.guide_preparing))
+
+    def test_guide_video_does_not_appear_in_the_review_list(self):
+        # 가이드 영상은 권한이 없다 — 복습영상 목록이 아니라 성적표 링크로만 닿는다
+        self.answer(self.s1, self.question, SheetAnswer.Result.WRONG)
+        self.client.force_login(self.s1.user)
+        with freeze_now():
+            body = self.client.get("/api/student/videos").json()
+        self.assertEqual(body["videos"], [])
