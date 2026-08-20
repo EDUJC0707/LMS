@@ -890,3 +890,9 @@
 .pm-marks__no {
   color: var(--color-muted);
 }
+
+/* 별칭표에 없던 학교 목록 — 이름만 세로로 쌓는다. */
+.pm-aliasmiss {
+  margin: 0;
+  padding-left: var(--space-lg);
+}

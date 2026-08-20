@@ -135,6 +135,8 @@ export interface BulkResult {
     parents_created: number;
     parents_linked: number;
   };
+  /** 별칭표에 없던 학교 — 온 그대로(FLOW 5-3). 조교가 별칭표에서 붙인다. */
+  unknown_schools: string[];
 }
 
 export interface RegisterResult {
