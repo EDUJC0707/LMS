@@ -158,18 +158,27 @@ def test_accepts_the_worst_real_trapezoid():
     np.testing.assert_allclose(corners, [c for c, _ in wide_bottom], atol=1.5)
 
 
-def test_to_source_many_matches_to_source_bit_for_bit():
-    """벡터판이 스칼라판과 마지막 비트까지 같아야 표본 픽셀이 한 자리도 안 움직인다."""
+def test_to_source_many_matches_to_source_within_one_ulp():
+    """벡터판과 스칼라판이 어긋나면 표본 픽셀이 움직인다 — 1 ULP 안이면 안 움직인다.
+
+    **비트 동일을 요구하지 않는다.** 벡터판은 행렬곱이고 스칼라판은 나눗셈이라
+    x86 은 FMA 로 접어 마지막 비트가 갈리고 arm64 는 안 갈린다(2026-08-20 CI 에서
+    드러났다 — 맥에서는 통과하고 CI 에서만 깨졌다). 지켜야 하는 것은 비트가 아니라
+    **표본 자리**이고, 몇 ULP 로는 `floor` 가 넘어가지 않는다(실측 1 ULP, 여유 4).
+    아래에서 정수 자리를 직접 확인하는 이유다.
+    """
     frame = normalize.locate_card(synth_scan(angle=-3.55))
     assert frame is not None
     points = np.random.default_rng(65).uniform(-0.5, 1.5, size=(2000, 2))
 
     xs, ys = frame.to_source_many(points)
 
-    for (u, v), x, y in zip(points, xs, ys):
-        expected = frame.to_source(u, v)
-        assert np.float64(x).tobytes() == np.float64(expected[0]).tobytes()
-        assert np.float64(y).tobytes() == np.float64(expected[1]).tobytes()
+    expected = np.array([frame.to_source(u, v) for u, v in points])
+    np.testing.assert_array_max_ulp(xs, expected[:, 0], maxulp=4)
+    np.testing.assert_array_max_ulp(ys, expected[:, 1], maxulp=4)
+    # 표본이 실제로 같은 픽셀에서 나오는가 — 이것이 지키려던 것이다.
+    assert np.array_equal(np.floor(xs), np.floor(expected[:, 0]))
+    assert np.array_equal(np.floor(ys), np.floor(expected[:, 1]))
 
 
 # --- 문턱: 톤이 밀려도 마커를 찾는다 ---------------------------------------

@@ -167,20 +167,30 @@ def scalar_sample_cells(image, frame, cells, radius):
     return {key: 255.0 - total / len(offsets) for key, total in totals.items()}
 
 
-def assert_bit_identical(actual, expected):
+def assert_same_ink(actual, expected):
+    """두 구현의 잉크량이 같은가 — **비트가 아니라 1 ULP 안**이면 같다고 본다.
+
+    벡터판은 (셀 x 표본점)을 한 번에 더하고 스칼라판은 하나씩 더한다. x86 은
+    그 합을 FMA 로 접어 마지막 비트들이 갈리고 arm64 는 안 갈린다(2026-08-20 CI
+    실측: 8 ULP). **누적합이라 좌표보다 오차가 크다.**
+
+    `rtol=1e-12` 는 잉크값(0~255) 기준으로 1e-10 쯤이다. 문턱 판정은 1 단위로
+    갈리므로 이 폭은 아무것도 못 바꾸고, **표본이 한 자리 어긋나거나 합산 순서가
+    바뀌면 그보다 여덟 자리 크게 벌어져** 여전히 잡힌다.
+    """
     assert list(actual) == list(expected)
     for key in expected:
-        assert np.float64(actual[key]).tobytes() == np.float64(expected[key]).tobytes(), key
+        np.testing.assert_allclose(actual[key], expected[key], rtol=1e-12, err_msg=str(key))
 
 
-def test_vectorised_sampling_matches_the_scalar_loop_bit_for_bit():
+def test_vectorised_sampling_matches_the_scalar_loop():
     """전 픽셀 난수 장 + 뒤틀린 프레임 — 표본이 한 자리만 어긋나도 합이 갈린다."""
     rng = np.random.default_rng(20260805)
     width, height = SCAN_SIZE
     image = rng.integers(0, 256, size=(height, width), dtype=np.uint8)
     frame = normalize.CardFrame(CARD_CORNERS + rng.uniform(-40.0, 40.0, size=(4, 2)))
 
-    assert_bit_identical(
+    assert_same_ink(
         read.sample_cells(image, frame, card.answer_cells(), card.ANSWER_BUBBLE_RADIUS),
         scalar_sample_cells(image, frame, card.answer_cells(), card.ANSWER_BUBBLE_RADIUS),
     )
@@ -195,7 +205,7 @@ def test_vectorised_sampling_clips_out_of_frame_points_like_the_loop():
     )
     cells = [((row, col), (col / 3.0, row / 3.0)) for row in range(4) for col in range(4)]
 
-    assert_bit_identical(
+    assert_same_ink(
         read.sample_cells(image, frame, cells, card.ANSWER_BUBBLE_RADIUS),
         scalar_sample_cells(image, frame, cells, card.ANSWER_BUBBLE_RADIUS),
     )
