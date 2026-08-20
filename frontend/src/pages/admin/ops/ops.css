@@ -495,3 +495,14 @@
   font-size: var(--text-2xs);
   color: var(--color-ink-2);
 }
+
+/* 성적표 일괄 인쇄 — 장 사이를 강제로 넘기려면 블록 흐름이어야 한다.
+   `ui-stack`(flex)에 두면 flex 아이템 사이의 개행이 엔진마다 갈려 한 장에
+   두 명이 겹쳐 나온다. 여백은 인쇄에서 안 보이므로 화면 간격만 맞춘다. */
+.op-print-sheets {
+  display: block;
+}
+
+.op-print-sheets > * + * {
+  margin-top: var(--space-lg);
+}

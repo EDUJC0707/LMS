@@ -13,7 +13,7 @@
 import { useParams, useSearchParams } from "react-router-dom";
 
 import { http, useApi } from "../../../api";
-import { Button, EmptyState, ErrorState, Loading } from "../../../components";
+import { Alert, Button, EmptyState, ErrorState, Loading } from "../../../components";
 import { GradeReportBody } from "../../student/GradeReportBody";
 import { GradeReport, reportIdentity } from "../../student/lib";
 
@@ -46,7 +46,9 @@ export default function SessionReportsPage() {
   }
 
   return (
-    <div className="ui-stack">
+    // `ui-stack` 은 flex 다. flex 아이템 사이의 강제 개행은 엔진마다 구현이 갈려
+    // 한 장에 두 명이 겹쳐 나올 수 있다 — 인쇄 대상 목록은 평범한 블록으로 둔다.
+    <div className="op-print-sheets">
       <div className="ui-row st-noprint">
         <Button variant="primary" onClick={() => window.print()}>
           인쇄
@@ -56,6 +58,9 @@ export default function SessionReportsPage() {
       {reports.data.map(({ student, exam, report: body }) =>
         body ? (
           <article key={student.student_id} className="st-sheet">
+            {/* 공지사항은 지면에도 실린다(PRD 3.1.1·3.2.1) — 배부 전에 적는 값이라
+                종이가 그 자리다. 한 장에 한 명이므로 학생마다 한 번 나온다. */}
+            {exam.notice && <Alert tone="info">{exam.notice}</Alert>}
             <GradeReportBody
               examName={exam.name}
               identity={reportIdentity(exam, student)}
