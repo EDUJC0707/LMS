@@ -6,6 +6,7 @@
 - PUT  /api/admin/attendance/sessions/{id}       출결 upsert + 파생 트리거 (출결입력)
 - POST /api/admin/attendance/sessions/{id}/notify 한 학생에게 출결 통지 (출결입력)
 - POST /api/admin/attendance/sessions/{id}/onsite 명단 밖 학생 현보 (출결입력)
+- GET  /api/admin/attendance/sessions/{id}/reports 인쇄용 성적표 묶음 (성적처리)
 - POST /api/admin/attendance/makeup              동보 관리자 체크 (영상지급관리)
 - POST·DELETE /api/admin/attendance/withdraw     퇴원 처리 · 퇴원 취소 (출결입력)
 
@@ -188,6 +189,40 @@ def _validate_entries(data, roster_ids, withdrawn_ids):
         ):
             return "exam_taken 값이 올바르지 않습니다."
     return None
+
+
+class AttendanceSessionReportsView(APIView):
+    """GET /api/admin/attendance/sessions/{id}/reports[?student_id=] — 인쇄용 성적표.
+
+    반 일괄과 학생 하나가 **같은 응답**이다(FLOW 3-11 "반 전체 일괄 프린트와
+    학생 하나만 프린트가 둘 다 된다") — `student_id` 가 오면 한 건짜리 묶음이고,
+    프런트는 어느 쪽이든 같은 코드로 그린다.
+
+    **확정 전에는 안 나간다.** 확정이 여는 것이 영상·문자·성적표다(FLOW 3-11).
+    확정은 풀리지 않으므로(정정해도 confirmed_at 은 남는다) 재인쇄가 막히는
+    일은 없다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
+
+    def get(self, request, session_id):
+        session = attendance_admin.load_session(session_id)
+        if session is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        if session.exam_id is None:
+            return Response(
+                {"detail": "이 회차에는 시험이 없습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if session.confirmed_at is None:
+            return Response(
+                {"detail": "출결 확정 전에는 성적표를 뽑을 수 없습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        student_id = _to_int(request.query_params.get("student_id"))
+        return Response(
+            {"reports": attendance_admin.session_reports(session, student_id)}
+        )
 
 
 class AttendanceNoticeView(APIView):

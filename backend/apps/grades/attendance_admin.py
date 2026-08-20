@@ -112,6 +112,7 @@ from apps.videos.makeup import (
 )
 from apps.videos.models import MakeupGrant, VideoGrant
 
+from . import report
 from .models import Attendance, ClassSession
 
 # --- 조회 ----------------------------------------------------------------
@@ -218,6 +219,10 @@ def session_block(session):
             else None
         ),
         "session_no": session.session_no,
+        # 그날 시험(FLOW 3-3 — 커리 주차가 정한다). 반이 혼자 더한 주차에는
+        # 없다. 화면은 이 값으로 성적표 인쇄 자리를 가른다 — FK 컬럼이라
+        # 조인이 붙지 않는다.
+        "exam_id": session.exam_id,
         "target_grade": session.target_grade,
         "memo": session.memo,
         "week_no": week.week_no if week else None,
@@ -363,6 +368,31 @@ def _attendance_block(att):
         "marked_at": timezone.localtime(att.created_at).isoformat() if att.created_at else None,
         "updated_at": timezone.localtime(att.updated_at).isoformat() if att.updated_at else None,
     }
+
+
+def session_reports(session, student_id=None):
+    """그 회차 시험의 성적표 묶음 — 명단 순서(FLOW 3-11 오프라인 지면).
+
+    학생·학부모가 보는 성적표와 **같은 조립 함수**를 쓴다(report.build_report).
+    지면과 화면이 다른 것을 말하면 안 되기 때문이다(FLOW 3-11 "LMS 에 들어가서
+    보는 것과 같은 화면").
+
+    성적이 없거나 미응시인 학생은 뺀다 — 미응시는 성적표를 만들지 않고
+    (PRD 3.1.1) 빈 장을 끼우면 종이만 나간다. 그래서 묶음 수는 명단 수보다
+    적을 수 있다. 퇴원생·현보 방문생은 **남긴다** — 그 시험을 봤으면 성적표가
+    있는 것이 맞다(load_roster 계약·FLOW 4 "기록이 있는 반").
+
+    `student_id` 를 주면 그 학생 한 명만 — 반 일괄과 개별이 같은 응답이다.
+    """
+    # ponytail: 학생 수만큼 build_report 를 돈다(1명당 10쿼리 남짓). 30명이면
+    # 300쿼리지만 주 1회 사람이 누르는 버튼이다. 느려지면 시험 단위 통계·문항을
+    # 한 번만 읽어 학생 루프에 넘기는 쪽으로 판다(파생 사본 저장은 금지 —
+    # key_considerations §6).
+    roster = load_roster(session)
+    if student_id is not None:
+        roster = [s for s in roster if s.student_id == student_id]
+    payloads = (report.build_report(s, session.exam_id) for s in roster)
+    return [p for p in payloads if p is not None and p.get("report")]
 
 
 # --- SSOT 쓰기 + 트리거 ---------------------------------------------------

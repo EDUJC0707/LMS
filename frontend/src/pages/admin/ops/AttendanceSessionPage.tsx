@@ -15,7 +15,7 @@
  *   체감하는 유일한 지점이다.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 import { http, useApi, useApiAction } from "../../../api";
 import { useMe } from "../../../auth";
@@ -61,8 +61,12 @@ function draftFrom(students: RosterStudent[]): DraftMap {
 
 export default function AttendanceSessionPage() {
   const { sessionId } = useParams();
+  const navigate = useNavigate();
   const { hasFeature } = useMe();
   const canMakeup = hasFeature("영상지급관리");
+  // 성적표 배부는 성적처리 키다(features.py) — 출결입력만 가진 조교에게는
+  // 확정 뒤에도 이 자리가 안 보인다.
+  const canPrint = hasFeature("성적처리");
 
   const detail = useApi(
     async () =>
@@ -398,6 +402,27 @@ export default function AttendanceSessionPage() {
           },
         ]
       : []),
+    // 확정이 성적표를 연다(FLOW 3-11). 여기 것은 그 학생 한 장만 — 반 전체는
+    // 상단 바에 있다.
+    ...(canPrint && session.confirmed_at && session.exam_id
+      ? [
+          {
+            key: "report",
+            header: "성적표",
+            align: "right" as const,
+            width: "7rem",
+            cell: (r: RosterStudent) => (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => navigate(`reports?student_id=${r.student_id}`)}
+              >
+                인쇄
+              </Button>
+            ),
+          },
+        ]
+      : []),
     {
       key: "recorded",
       // "저장된 값" 이 아니다 — OMR 도 여기에 쓰므로(FLOW 3-2) 저장이라는 말이
@@ -448,6 +473,11 @@ export default function AttendanceSessionPage() {
             <span className="ops-bar__dirty">
               확정 전 변경 <b className="num">{changed.length}</b>명
             </span>
+          )}
+          {canPrint && session.confirmed_at && session.exam_id && (
+            <Button size="sm" onClick={() => navigate("reports")}>
+              성적표 인쇄
+            </Button>
           )}
           <Button
             size="sm"

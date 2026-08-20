@@ -726,6 +726,16 @@
     display: none !important;
   }
 
+  /* 레일이 사라져도 셸 그리드는 남는다 — 그러면 본문이 레일 자리였던 240px
+     열로 밀려 들어가 지면 왼쪽 1/5 에 눌려 찍히고 나머지는 네이비로 빈다.
+     인쇄에서는 그리드를 풀고 바탕도 지운다.
+     `!important` 는 위 `.ui-rail` 과 같은 이유다 — 이 파일이 번들에서
+     components.css 보다 **앞에** 들어가서 같은 특이도로는 진다(실측). */
+  .ui-shell {
+    display: block !important;
+    background: none !important;
+  }
+
   .ui-page {
     max-width: none;
     padding: 0;
@@ -741,5 +751,16 @@
   .st-chart,
   .st-spark {
     break-inside: avoid;
+  }
+
+  /* 반 일괄 — 학생마다 새 장에서 시작해야 명단 순서대로 한 장씩 나온다
+     (FLOW 3-11 오프라인). 마지막 장 뒤에서도 넘기면 인쇄할 때마다 빈 장이
+     한 장 더 나가므로 거기서만 끈다 — 학생 하나만 뽑을 때도 같은 문제다. */
+  .st-sheet {
+    break-after: page;
+  }
+
+  .st-sheet:last-child {
+    break-after: auto;
   }
 }

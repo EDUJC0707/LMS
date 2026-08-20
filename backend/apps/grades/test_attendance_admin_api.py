@@ -35,7 +35,7 @@ from apps.curriculum.models import Class, Course, CourseEnrollment, CourseWeek
 from apps.notifications.models import Notification
 from apps.videos.models import MakeupGrant, Video, VideoGrant
 
-from .models import Attendance, ClassSession
+from .models import Attendance, ClassSession, Exam
 
 PASSWORD = "pw-Secret-77!"
 SESSIONS_URL = "/api/admin/attendance/sessions"
@@ -256,6 +256,22 @@ class SessionListTests(AttendanceAdminFixtureMixin, TestCase):
         # 주차 미매핑 회차는 강좌·주차가 비어 있다
         self.assertIsNone(sessions[2]["week_no"])
         self.assertIsNone(sessions[2]["course"])
+
+    def test_session_block_carries_the_exam_id(self):
+        """회차 블록은 그날 시험을 싣는다 — 없으면 성적표 인쇄 자리가 사라진다.
+
+        화면은 이 값 하나로 인쇄 버튼 둘을 가른다(`AttendanceSessionPage`
+        일괄·개별). 키를 지워도 나머지 검증은 전부 통과하므로 여기서 못 박는다.
+        시험이 안 붙은 회차는 `None` 이어야 한다 — 반이 혼자 더한 주차다(FLOW 3-3).
+        """
+        exam = Exam.objects.create(name="1주차 미니테스트", exam_date=datetime.date(2026, 7, 15))
+        self.session_w1.exam = exam
+        self.session_w1.save(update_fields=["exam"])
+
+        sessions = self.client.get(SESSIONS_URL).json()["sessions"]
+
+        self.assertEqual(sessions[0]["exam_id"], exam.exam_id)
+        self.assertIsNone(sessions[1]["exam_id"])
 
     def test_filters_by_course_id(self):
         res = self.client.get(SESSIONS_URL, {"course_id": self.course.course_id})
