@@ -3,7 +3,8 @@
  *
  * API
  *   GET  /api/admin/classes   커리로 묶은 반 목록(진행 주차·수강생 수)
- *   POST /api/admin/classes   {course_id | course_name+total_weeks, name, start_date}
+ *   POST /api/admin/classes   {course_id | course_name+total_weeks, name, start_date,
+ *                              uses_payssam}
  *   GET  /api/admin/classes/{id}                       주차 + 명단
  *   POST /api/admin/classes/{id}/sessions              주차 추가
  *   PATCH/DELETE .../sessions/{week_no}                날짜 수정 · 주차 삭제
@@ -178,6 +179,9 @@ function CreateClassModal({
   const [totalWeeks, setTotalWeeks] = useState("");
   const [name, setName] = useState("");
   const [startDate, setStartDate] = useState("");
+  // 교재값 수령처(FLOW 1-2 · 2-7). 장소로 자동 판정하지 않는다 — 러셀은 학원이
+  // 따로 받으므로 결제선생이 나가면 학부모가 같은 값을 두 번 낸다.
+  const [usesPayssam, setUsesPayssam] = useState("학원");
 
   const isNewCourse = courseKey === NEW_COURSE;
 
@@ -197,8 +201,14 @@ function CreateClassModal({
             total_weeks: Number(totalWeeks),
             name: name.trim(),
             start_date: startDate,
+            uses_payssam: usesPayssam === "결제선생",
           }
-        : { course_id: Number(courseKey), name: name.trim(), start_date: startDate },
+        : {
+            course_id: Number(courseKey),
+            name: name.trim(),
+            start_date: startDate,
+            uses_payssam: usesPayssam === "결제선생",
+          },
     );
     if (!created) return;
     setTrack("");
@@ -207,6 +217,7 @@ function CreateClassModal({
     setTotalWeeks("");
     setName("");
     setStartDate("");
+    setUsesPayssam("학원");
     onCreated();
   };
 
@@ -325,6 +336,19 @@ function CreateClassModal({
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
             />
+          )}
+        </Field>
+
+        <Field label="교재값 수령처" required>
+          {(props) => (
+            <Select
+              {...props}
+              value={usesPayssam}
+              onChange={(e) => setUsesPayssam(e.target.value)}
+            >
+              <option value="학원">학원</option>
+              <option value="결제선생">결제선생</option>
+            </Select>
           )}
         </Field>
       </form>

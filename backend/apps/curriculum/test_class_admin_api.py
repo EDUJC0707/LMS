@@ -93,6 +93,20 @@ class OpenClassTests(ClassAdminFixtureMixin, TestCase):
         "start_date": "2026-09-04",
     }
 
+    def test_payssam_is_off_unless_the_form_turns_it_on(self):
+        """교재값 수령처는 반을 만들 때 고른다(FLOW 1-2 · 2-7).
+
+        기본값이 꺼짐(학원이 따로 받는다)인 이유: 안 나간 청구는 켜고 다시 보내면
+        되지만, 잘못 나간 청구는 되돌려도 학부모가 이미 받았다.
+        """
+        default = Class.objects.get(pk=self.post_class(self.BODY).json()["class_id"])
+        self.assertFalse(default.uses_payssam)
+
+        res = self.post_class({**self.BODY, "name": "화 6.5 미래탐구", "uses_payssam": True})
+        self.assertEqual(res.status_code, 201)
+        self.assertTrue(res.json()["uses_payssam"])
+        self.assertTrue(Class.objects.get(pk=res.json()["class_id"]).uses_payssam)
+
     def test_creates_course_class_and_weekly_sessions(self):
         res = self.post_class(self.BODY)
         self.assertEqual(res.status_code, 201)

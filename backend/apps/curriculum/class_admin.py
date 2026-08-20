@@ -108,19 +108,42 @@ def class_block(klass):
         "week_count": week_count,
         "current_week": current_week,
         "student_count": student_count,
+        # 교재값 수령처(FLOW 2-7) — 청구 버튼이 이 값으로 갈린다
+        "uses_payssam": klass.uses_payssam,
     }
 
 
 @transaction.atomic
-def open_class(*, course_id, course_name, total_weeks, track, subject, name, start_date):
-    """커리(있으면 재사용) + 반 + 회차를 만든다. 입력 오류는 ValueError."""
+def open_class(
+    *,
+    course_id,
+    course_name,
+    total_weeks,
+    track,
+    subject,
+    name,
+    start_date,
+    uses_payssam=False,
+):
+    """커리(있으면 재사용) + 반 + 회차를 만든다. 입력 오류는 ValueError.
+
+    **교재값 수령처는 여기서 고른다**(FLOW 1-2 · 2-7). 장소로 자동 판정하지
+    않는다 — 러셀은 학원이 교재값을 따로 받으므로 결제선생이 나가면 학부모가 같은
+    값을 두 번 낸다. 안 준 값은 꺼짐(학원)이다: 안 나간 청구는 켜고 다시 보내면
+    되지만 잘못 나간 청구는 되돌려도 학부모가 이미 받았다.
+    """
     name = (name or "").strip() if isinstance(name, str) else ""
     if not name:
         raise ValueError("수강반명을 적어 주세요.")
     start_date = _parse_date(start_date)
     course = _resolve_course(course_id, course_name, total_weeks, track, subject)
     try:
-        klass = Class.objects.create(course=course, name=name, start_date=start_date)
+        klass = Class.objects.create(
+            course=course,
+            name=name,
+            start_date=start_date,
+            uses_payssam=bool(uses_payssam),
+        )
     except IntegrityError as exc:  # UQ(course, name)
         raise ValueError(f"이 커리에 같은 이름의 반이 있습니다: {name}") from exc
     _fill_sessions(klass, course.total_weeks, start_date)
