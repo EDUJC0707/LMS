@@ -60,15 +60,25 @@ import {
 import "./manage.css";
 import { StudentPicker } from "./StudentPicker";
 import {
+  AliasMap,
   ColumnChoice,
   EntryField,
+  FIELD_LABELS,
   PastedTable,
   assignColumn,
   isMapped,
+  newAliases,
   readPasted,
   toEntries,
 } from "./paste";
-import type { BulkResult, BulkResultRow, ClassList, SessionDetail, SessionRow } from "./types";
+import type {
+  AliasTables,
+  BulkResult,
+  BulkResultRow,
+  ClassList,
+  SessionDetail,
+  SessionRow,
+} from "./types";
 
 interface EntryRow {
   key: number;
@@ -90,7 +100,7 @@ interface PasteState extends PastedTable {
   text: string;
 }
 
-const emptyPaste = (): PasteState => ({ text: "", ...readPasted("") });
+const emptyPaste = (): PasteState => ({ text: "", ...readPasted("", {}) });
 
 let nextKey = 1;
 const blankRow = (): EntryRow => ({
@@ -103,11 +113,11 @@ const blankRow = (): EntryRow => ({
 });
 
 const COLUMNS: { field: EntryField; label: string; placeholder: string }[] = [
-  { field: "name", label: "이름", placeholder: "홍길동" },
-  { field: "phone", label: "학생 휴대폰", placeholder: "01012345678" },
-  { field: "parent_phone", label: "학부모 휴대폰", placeholder: "01087654321" },
-  { field: "grade", label: "학년", placeholder: "고2" },
-  { field: "school", label: "학교", placeholder: "세화고" },
+  { field: "name", label: FIELD_LABELS.name, placeholder: "홍길동" },
+  { field: "phone", label: FIELD_LABELS.phone, placeholder: "01012345678" },
+  { field: "parent_phone", label: FIELD_LABELS.parent_phone, placeholder: "01087654321" },
+  { field: "grade", label: FIELD_LABELS.grade, placeholder: "고2" },
+  { field: "school", label: FIELD_LABELS.school, placeholder: "세화고" },
 ];
 
 /**
@@ -154,11 +164,24 @@ export default function AccountsPage() {
   const [answering, setAnswering] = useState<number | null>(null);
   // 발급에 성공할 때마다 올린다 — 아래 전환 대기 명부가 새 학생을 바로 집어 온다.
   const [issuedCount, setIssuedCount] = useState(0);
+  // 조교가 새로 답한 머리줄. **발급이 성공해야** 별칭표에 남는다(FLOW 5-1) —
+  // 고르는 도중에 남기면 잘못 골랐다 되돌린 것까지 전역 표에 박힌다.
+  const [learned, setLearned] = useState<{ alias: string; target: EntryField }[]>([]);
 
   const classes = useApi(async () => {
     const { data } = await http.get<ClassList>("/admin/classes");
     return data.courses.flatMap((course) => course.classes);
   }, []);
+
+  // 머리줄을 맞춰 보는 표(FLOW 2-2). 열 값집합은 서버가 검증해 저장하므로
+  // 받은 값을 그대로 필드로 읽는다.
+  const aliases = useApi(async () => {
+    const { data } = await http.get<AliasTables>("/admin/aliases");
+    return Object.fromEntries(
+      data.columns.map((row) => [row.alias, row.target as EntryField]),
+    ) as AliasMap;
+  }, []);
+  const aliasMap = aliases.data ?? {};
 
   const issue = useApiAction(async (body: { class_id: number; rows: BulkRow[] }) => {
     const { data } = await http.post<BulkResult>("/admin/accounts/bulk", body);
@@ -178,12 +201,31 @@ export default function AccountsPage() {
     setResult(data);
     setSubmitted(payload);
     if (data.summary.created > 0) setIssuedCount((prev) => prev + 1);
+    void remember();
     // 성공한 행은 입력 격자에서 비운다 — 두 번 발급하는 사고를 막는다.
     const failedIndexes = new Set(
       data.results.filter((r) => r.status === "실패").map((r) => r.index),
     );
     const remaining = filled.filter((_, index) => failedIndexes.has(index));
     setRows(remaining.length > 0 ? remaining : [blankRow(), blankRow(), blankRow()]);
+  };
+
+  /**
+   * 조교가 답한 머리줄을 별칭표에 남긴다 — 다음번에는 묻지 않는다(FLOW 2-2).
+   * 실패는 삼킨다: 별칭은 다음 파일을 위한 것이라, 못 남겼다고 방금 끝난
+   * 발급 결과를 에러로 덮을 이유가 없다.
+   */
+  const remember = async () => {
+    if (learned.length === 0) return;
+    await Promise.all(
+      learned.map((entry) =>
+        http
+          .post("/admin/aliases", { table: "컬럼", alias: entry.alias, target: entry.target })
+          .catch(() => undefined),
+      ),
+    );
+    setLearned([]);
+    void aliases.reload();
   };
 
   /** 확인필요 행의 답 — 그 행 하나만 다시 보내고 결과 표의 같은 자리를 갈아 끼운다. */
@@ -321,7 +363,9 @@ export default function AccountsPage() {
                 rows={6}
                 aria-label="붙여넣기"
                 value={paste.text}
-                onChange={(e) => setPaste({ text: e.target.value, ...readPasted(e.target.value) })}
+                onChange={(e) =>
+                  setPaste({ text: e.target.value, ...readPasted(e.target.value, aliasMap) })
+                }
               />
 
               {paste.cells.length > 0 && <PasteColumns paste={paste} onChange={setPaste} />}
@@ -333,12 +377,19 @@ export default function AccountsPage() {
                     const entries = toEntries(paste);
                     if (entries.length === 0) return;
                     setRows(entries.map((entry) => ({ ...blankRow(), ...entry })));
+                    setLearned(newAliases(paste, aliasMap));
                     setPaste(emptyPaste());
                   }}
                 >
                   위 격자로 옮기기
                 </Button>
-                <Button variant="ghost" onClick={() => setPaste(emptyPaste())}>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setLearned([]);
+                    setPaste(emptyPaste());
+                  }}
+                >
                   지우기
                 </Button>
               </div>

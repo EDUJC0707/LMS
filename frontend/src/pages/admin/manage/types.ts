@@ -400,3 +400,18 @@ export interface SheetDetail extends SheetRow {
   questions: SheetQuestionRow[];
   total_score: number | null;
 }
+
+/* ── /api/admin/aliases ───────────────────────────────────────────── */
+
+export interface AliasRow {
+  id: number;
+  /** 공백·구두점을 뗀 소문자 — 서버가 저장할 때 만든 형태(aliases.alias_key). */
+  alias: string;
+  /** 붙는 값. 컬럼 별칭은 열 키(name·phone…), 학교 별칭은 정식 이름. */
+  target: string;
+}
+
+export interface AliasTables {
+  columns: AliasRow[];
+  schools: AliasRow[];
+}

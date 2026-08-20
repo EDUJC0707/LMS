@@ -72,6 +72,7 @@ from apps.curriculum.models import CourseEnrollment
 from apps.notifications.models import Notification
 from apps.notifications.sending import queue as queue_notification
 
+from .aliases import resolve_school
 from .login_id import (
     LoginIdError,
     issue_parent_login_id,
@@ -198,7 +199,9 @@ def _issue_row(row, klass):
         user=student_user,
         matching_key=matching_key,
         grade=grade,
-        school=(row.get("school") or "").strip(),
+        # 학교 별칭표를 서버에서 태운다(FLOW 2-2) — 붙여넣기 화면이 안 물어도
+        # 아는 이름이면 정식 이름으로 들어가고, 모르는 학교는 온 그대로다.
+        school=resolve_school(row.get("school")),
     )
 
     parent_block = None

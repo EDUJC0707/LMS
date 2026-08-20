@@ -47,4 +47,10 @@ urlpatterns = [
         views.AccountPasswordResetView.as_view(),
         name="accounts-password",
     ),
+    path("admin/aliases", views.AliasListView.as_view(), name="aliases"),
+    path(
+        "admin/aliases/<str:table>/<int:alias_id>",
+        views.AliasDetailView.as_view(),
+        name="alias-detail",
+    ),
 ]

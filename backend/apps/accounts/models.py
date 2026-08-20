@@ -342,3 +342,61 @@ class LoginAttempt(models.Model):
 
     def __str__(self):
         return f"{self.login_id} @ {self.ip or '-'}"
+
+
+class ColumnAlias(models.Model):
+    """`column_aliases` — 엑셀 머리줄 한 칸이 어느 열인가 (FLOW 2-2).
+
+    파일은 우리 서식이 아니라 **학원이 주는 것**이라 같은 뜻이 매번 다르게 온다
+    (`성명`·`학생이름`·`학생 성명`). 조교가 한 번 "이 열은 이름입니다" 라고
+    답하면 그 답이 여기 남고 **다시 묻지 않는다**.
+
+    **학원별로 나누지 않는다**(FLOW 2-2) — 어느 학원이 준 파일이든 같은 표를
+    본다. 그래서 학원·반 FK 가 없다.
+
+    - `alias` 는 **공백·구두점을 뗀 소문자**다(`aliases.alias_key`). 눈에 다른
+      `학생 HP`·`학생hp` 가 한 줄로 모이고, 화면이 보여 주는 값과 실제로
+      대조되는 값이 같아진다.
+    - `field` 는 코드가 정의한 닫힌 값집합(`aliases.COLUMN_FIELDS`)이고
+      DB CHECK 를 걸지 않는다(값 추가 시 무마이그레이션 — features 선례).
+      영문인 이유는 발급 요청 본문(`/api/admin/accounts/bulk` 의 행 키)이
+      이미 영문이라, 한국어로 저장하면 표와 본문 사이에 번역이 하나 더 끼기
+      때문이다.
+    """
+
+    alias = models.CharField("별칭", max_length=50, unique=True)
+    field = models.CharField("열", max_length=20)
+
+    class Meta:
+        db_table = "column_aliases"
+        verbose_name = "컬럼 별칭"
+        verbose_name_plural = "컬럼 별칭"
+
+    def __str__(self):
+        return f"{self.alias} → {self.field}"
+
+
+class SchoolAlias(models.Model):
+    """`school_aliases` — 학교의 다른 이름을 정식 이름으로 (FLOW 2-2).
+
+        숙명여자고등학교 ← 숙명고 · 숙명여고 · 숙대부속고등학교 · 숙명 여고
+
+    컬럼 별칭표와 달리 붙는 쪽(`canonical`)이 **열린 데이터**다. 학교 목록을
+    따로 두지 않고 `alias == alias_key(canonical)` 인 행을 넣는 것이 곧 새 학교
+    등록이다 — FLOW 2-2 의 두 가지 일("새 학교로 등록"·"기존 학교의 다른
+    이름으로 붙인다")이 한 표에서 끝난다.
+
+    **모르는 학교는 여기 없어도 된다.** 학교는 저장만 하고 계정 판정에 쓰지
+    않으므로(FLOW 2-3) 못 찾으면 온 그대로 저장하고 행은 그냥 지나간다.
+    """
+
+    alias = models.CharField("별칭", max_length=100, unique=True)
+    canonical = models.CharField("정식 이름", max_length=100, db_index=True)
+
+    class Meta:
+        db_table = "school_aliases"
+        verbose_name = "학교 별칭"
+        verbose_name_plural = "학교 별칭"
+
+    def __str__(self):
+        return f"{self.alias} → {self.canonical}"

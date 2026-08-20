@@ -16,6 +16,8 @@ GET /api/auth/csrf 로 쿠키를 먼저 받는다.
 - POST     /api/admin/accounts/{user_id}/password  임시 비밀번호 재발급 (계정관리)
 - GET      /api/admin/students                 학생 명부 조회 (직원 공통)
 - GET/PATCH /api/admin/students/{id}          학생 상세·수정 (계정관리)
+- GET/POST /api/admin/aliases                  별칭표 조회·추가 (계정관리 — FLOW 2-2)
+- PATCH/DELETE /api/admin/aliases/{table}/{id} 붙는 값 고치기·지우기 (계정관리)
 
 게이트·입력 검증·상태 코드만 여기서, DB 쓰기·페이로드 조립은 staff_admin·
 provisioning 서비스가 담당한다(attendance_admin 선례).
@@ -34,9 +36,10 @@ from rest_framework.views import APIView
 from apps.curriculum.models import Class, class_name_subquery
 
 from . import provisioning, staff_admin, student_directory
+from .aliases import COLUMN_FIELDS, alias_key
 from .features import FeatureKey, effective_features
-from .login_id import LoginIdError
-from .models import Parent, ParentStudent, Student, User
+from .login_id import LoginIdError, nfc
+from .models import ColumnAlias, Parent, ParentStudent, SchoolAlias, Student, User
 from .permissions import (
     STAFF_ROLES,
     FeatureRequired,
@@ -631,6 +634,128 @@ class StudentDirectoryView(APIView):
         return paginator.get_paginated_response(
             [student_directory.row(student, student.class_name) for student in page]
         )
+
+
+"""별칭표 두 개 — 표 이름 → (모델, 붙는 값이 들어가는 컬럼).
+
+컬럼 별칭은 닫힌 값집합(열 키)에, 학교 별칭은 열린 데이터(정식 이름)에
+붙지만 **화면에서는 같은 표 두 개**라 응답도 `{id, alias, target}` 하나로
+맞춘다 — 붙는 값을 부르는 이름이 표마다 다르면 화면이 두 벌 필요해진다.
+"""
+_ALIAS_TABLES = {"컬럼": (ColumnAlias, "field"), "학교": (SchoolAlias, "canonical")}
+
+
+def _alias_rows(table):
+    model, target = _ALIAS_TABLES[table]
+    return [
+        {"id": pk, "alias": alias, "target": value}
+        for pk, alias, value in model.objects.order_by("alias").values_list("pk", "alias", target)
+    ]
+
+
+def _clean_target(table, raw):
+    """붙는 값 검증 — (값, 에러 응답) 중 하나만 채워 돌려준다."""
+    target = nfc(raw).strip() if isinstance(raw, str) else ""
+    if not target:
+        return None, Response(
+            {"detail": "붙일 이름을 골라 주세요."}, status=status.HTTP_400_BAD_REQUEST
+        )
+    if table == "컬럼" and target not in COLUMN_FIELDS:
+        return None, Response(
+            {"detail": "알 수 없는 열입니다."}, status=status.HTTP_400_BAD_REQUEST
+        )
+    return target, None
+
+
+def _load_alias(table, alias_id):
+    """표 이름 + id → 행. 표 이름이 틀렸거나 없는 행이면 (None, 응답)."""
+    if table not in _ALIAS_TABLES:
+        return None, Response(
+            {"detail": "별칭표를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND
+        )
+    row = _ALIAS_TABLES[table][0].objects.filter(pk=alias_id).first()
+    if row is None:
+        return None, Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+    return row, None
+
+
+class AliasListView(APIView):
+    """GET·POST /api/admin/aliases — 별칭표 (계정관리).
+
+    **한 번 잘못 붙이면 이후 모든 명단이 조용히 오염된다**(FLOW 5-1) — 표가
+    전역이라 어느 학원 파일이든 같은 답을 쓴다. 그래서 보고 고치는 자리가
+    있어야 하고, 이 API 가 그 화면의 뒤다.
+
+    게이트는 이 표를 소비하는 계정 발급과 같은 `계정관리` 다 — 붙여넣기
+    화면을 못 여는 사람이 그 화면이 쓰는 표를 고칠 이유가 없다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.ACCOUNT_ADMIN)]
+
+    def get(self, request):
+        return Response({"columns": _alias_rows("컬럼"), "schools": _alias_rows("학교")})
+
+    def post(self, request):
+        body = request.data if isinstance(request.data, dict) else {}
+        table = body.get("table")
+        if table not in _ALIAS_TABLES:
+            return Response(
+                {"detail": "별칭표를 찾을 수 없습니다."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        # 저장하는 것은 대조되는 형태다 — 화면이 보여 주는 값과 실제로 맞춰
+        # 보는 값이 갈리면 "표에 있는데 왜 안 맞나"가 된다(aliases.alias_key).
+        alias = alias_key(body.get("alias"))
+        if not alias:
+            return Response(
+                {"detail": "별칭을 적어 주세요."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        target, error = _clean_target(table, body.get("target"))
+        if error is not None:
+            return error
+        model, field = _ALIAS_TABLES[table]
+        if model.objects.filter(alias=alias).exists():
+            return Response(
+                {"detail": "이미 있는 별칭입니다."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        row = model.objects.create(alias=alias, **{field: target})
+        return Response(
+            {"id": row.pk, "alias": alias, "target": target}, status=status.HTTP_201_CREATED
+        )
+
+
+class AliasDetailView(APIView):
+    """PATCH·DELETE /api/admin/aliases/{table}/{alias_id} — 고치기·지우기 (계정관리).
+
+    **별칭 자체는 고치지 않는다.** 별칭을 바꾸는 것은 다른 머리줄을 붙이는
+    것이지 이 줄을 고치는 것이 아니다 — 지우고 새로 넣는 것과 같은 일이라
+    두 길을 두지 않는다. 고칠 것은 **어디에 붙느냐**뿐이다.
+
+    지우기는 흔적을 남기지 않는다(FLOW 5-1 이 요구한 것은 고칠 자리이지
+    이력이 아니다) — 잘못 붙인 별칭이 지워지면 그것이 있었다는 사실도, 그
+    사이 들어온 명단이 무엇에 물들었는지도 남지 않는다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.ACCOUNT_ADMIN)]
+
+    def patch(self, request, table, alias_id):
+        row, error = _load_alias(table, alias_id)
+        if error is not None:
+            return error
+        body = request.data if isinstance(request.data, dict) else {}
+        target, error = _clean_target(table, body.get("target"))
+        if error is not None:
+            return error
+        field = _ALIAS_TABLES[table][1]
+        setattr(row, field, target)
+        row.save(update_fields=[field])
+        return Response({"id": row.pk, "alias": row.alias, "target": target})
+
+    def delete(self, request, table, alias_id):
+        row, error = _load_alias(table, alias_id)
+        if error is not None:
+            return error
+        row.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")

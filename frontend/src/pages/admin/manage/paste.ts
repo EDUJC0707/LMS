@@ -10,9 +10,9 @@
  * 그래서 자르는 것과 **어느 열이 무엇인지**를 나눈다. 머리줄이 있으면 아는
  * 이름은 맞춰 두고(FLOW 2-2 ②), 모르면 비워 둔 채 조교가 고른다(③).
  *
- * **별칭표는 아직 없다**(FLOW 2-2 는 저장을 말한다). 같은 학원 파일은 머리줄도
- * 같아서 다음번에도 자동으로 맞고, 안 맞는 것만 사람이 고른다 — 표를 만들어
- * 저장하는 것은 그 다음 문제다.
+ * **아는 이름은 별칭표에서 온다**(FLOW 2-2). 표는 서버에 있고 전역이라 어느
+ * 학원 파일이든 같은 표를 본다 — 이 모듈은 표를 받아 맞춰만 보고, 조교가 새로
+ * 답한 것은 화면이 발급 성공 뒤에 표에 넣는다(`newAliases`).
  */
 
 /** 발급 행이 받는 값 — AccountsPage 의 EntryRow 와 같은 축. */
@@ -20,6 +20,19 @@ export type EntryField = "name" | "phone" | "parent_phone" | "grade" | "school";
 
 /** 열에 붙는 것: 필드 하나 또는 "쓰지 않음"(빈 문자열). */
 export type ColumnChoice = EntryField | "";
+
+/**
+ * 열 이름 — 발급 화면의 열 지정과 별칭표 화면이 **같은 문자열**을 쓴다.
+ * 별칭표에 붙일 열을 고르는 자리와 붙여넣은 표의 열을 고르는 자리가 다른
+ * 이름을 쓰면, 조교가 저장한 답과 화면에 보이는 답이 달라 보인다.
+ */
+export const FIELD_LABELS: Record<EntryField, string> = {
+  name: "이름",
+  phone: "학생 휴대폰",
+  parent_phone: "학부모 휴대폰",
+  grade: "학년",
+  school: "학교",
+};
 
 export interface PastedTable {
   /** 붙여넣은 그대로 — 자르기만 했다. */
@@ -30,63 +43,45 @@ export interface PastedTable {
   headerRow: boolean;
 }
 
+/** 별칭표 — `squash` 한 머리줄 → 열. 서버 `GET /api/admin/aliases` 가 준다. */
+export type AliasMap = Record<string, EntryField>;
+
+
+const FIELDS = Object.keys(FIELD_LABELS) as EntryField[];
+
 /**
- * 머리줄에서 아는 이름들. 공백·구두점을 뗀 소문자로 비교한다.
- * 여기 없는 이름은 조교가 고르는 쪽으로 넘어간다 — 억지로 맞히지 않는다.
+ * 별칭 대조 키. **`backend/apps/accounts/aliases.py` 의 `alias_key()` 와 글자까지
+ * 같은 값**을 내야 한다 — 여기서 맞춰 보고 저쪽이 저장·조회하므로, 두 규칙이
+ * 갈리면 조교가 방금 답한 별칭이 다음 파일에서 안 맞는다.
  */
-const ALIASES: Record<EntryField, string[]> = {
-  name: ["이름", "성명", "학생이름", "학생성명", "학생명", "name"],
-  phone: [
-    "학생휴대폰",
-    "학생휴대전화",
-    "학생핸드폰",
-    "학생폰",
-    "학생전화",
-    "학생전화번호",
-    "학생연락처",
-    "학생번호",
-    "학생hp",
-    "휴대폰",
-    "휴대전화",
-    "핸드폰",
-    "전화",
-    "전화번호",
-    "연락처",
-  ],
-  parent_phone: [
-    "학부모휴대폰",
-    "학부모휴대전화",
-    "학부모핸드폰",
-    "학부모폰",
-    "학부모전화",
-    "학부모전화번호",
-    "학부모연락처",
-    "학부모번호",
-    "학부모hp",
-    "학부모",
-    "보호자휴대폰",
-    "보호자핸드폰",
-    "보호자폰",
-    "보호자전화",
-    "보호자연락처",
-    "보호자",
-    "부모님연락처",
-    "모연락처",
-    "부연락처",
-  ],
-  grade: ["학년", "재학학년"],
-  school: ["학교", "학교명", "출신학교", "재학학교", "고교"],
-};
+const squash = (cell: string) =>
+  // **NFC 를 먼저 건다.** 맥에서 만든 파일의 머리줄은 자모가 분해된 NFD 로 오고
+  // (FLOW 2-2 ①), 서버 키는 NFC 다. 안 맞추면 `학생연락처` 가 눈으로는 같은데
+  // 대조에서 빗나가 **모든 열이 수동 매핑으로 떨어진다.**
+  cell.normalize("NFC").replace(/[\s.·_/()-]/g, "").toLowerCase();
 
-const FIELDS = Object.keys(ALIASES) as EntryField[];
+/** 머리줄 한 칸 → 필드. 표에 없으면 "". */
+export function guessField(cell: string, aliases: AliasMap): ColumnChoice {
+  return aliases[squash(cell)] ?? "";
+}
 
-const squash = (cell: string) => cell.replace(/[\s.·_/()-]/g, "").toLowerCase();
-
-/** 머리줄 한 칸 → 필드. 모르면 "". */
-export function guessField(cell: string): ColumnChoice {
-  const key = squash(cell);
-  if (!key) return "";
-  return FIELDS.find((field) => ALIASES[field].includes(key)) ?? "";
+/**
+ * 이 표에서 **조교가 새로 답한** 머리줄 — 표에 이미 있는 것은 뺀다.
+ *
+ * 저장은 화면이 발급에 성공한 뒤에 한다(FLOW 5-1). 표가 전역이라 잘못 붙은
+ * 별칭 하나가 이후 모든 명단을 조용히 물들이므로, 고르는 도중에는 남기지
+ * 않는다.
+ */
+export function newAliases(
+  table: PastedTable,
+  aliases: AliasMap,
+): { alias: string; target: EntryField }[] {
+  if (!table.headerRow) return [];
+  return table.mapping.flatMap((choice, index) => {
+    const header = table.cells[0]?.[index] ?? "";
+    if (!choice || !squash(header) || guessField(header, aliases)) return [];
+    return [{ alias: header, target: choice }];
+  });
 }
 
 /** 엑셀·메모장에서 복사한 덩어리를 격자로 자른다(탭·쉼표 모두 허용). */
@@ -105,13 +100,13 @@ export function splitPasted(text: string): string[][] {
  * 있어서(학교 이름이 "학년"인 경우는 없지만 이름이 "연락처"인 학생도 없다),
  * 사람 줄 하나를 통째로 날리는 쪽보다 안 맞히는 쪽이 낫다.
  */
-export function readPasted(text: string): PastedTable {
+export function readPasted(text: string, aliases: AliasMap): PastedTable {
   const cells = splitPasted(text);
   const width = cells.reduce((max, row) => Math.max(max, row.length), 0);
   const blank: ColumnChoice[] = Array.from({ length: width }, () => "");
   if (cells.length === 0) return { cells, mapping: blank, headerRow: false };
 
-  const guessed = blank.map((_, index) => guessField(cells[0][index] ?? ""));
+  const guessed = blank.map((_, index) => guessField(cells[0][index] ?? "", aliases));
   const known = guessed.filter((choice) => choice !== "").length;
   if (known < 2) return { cells, mapping: blank, headerRow: false };
   // 같은 필드가 두 열에 걸리면 앞 열만 남긴다 — 뒤 열은 조교가 고른다.
