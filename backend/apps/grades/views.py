@@ -4,6 +4,7 @@
 - GET  /api/admin/attendance/sessions            회차 목록 (출결입력)
 - GET  /api/admin/attendance/sessions/{id}       회차 명단 + 출결 + 집계 (출결입력)
 - PUT  /api/admin/attendance/sessions/{id}       출결 upsert + 파생 트리거 (출결입력)
+- POST /api/admin/attendance/sessions/{id}/notify 한 학생에게 출결 통지 (출결입력)
 - POST /api/admin/attendance/sessions/{id}/onsite 명단 밖 학생 현보 (출결입력)
 - POST /api/admin/attendance/makeup              동보 관리자 체크 (영상지급관리)
 - POST·DELETE /api/admin/attendance/withdraw     퇴원 처리 · 퇴원 취소 (출결입력)
@@ -183,6 +184,57 @@ def _validate_entries(data, roster_ids, withdrawn_ids):
         ):
             return "exam_taken 값이 올바르지 않습니다."
     return None
+
+
+class AttendanceNoticeView(APIView):
+    """POST /api/admin/attendance/sessions/{id}/notify — 한 학생에게 출결 통지.
+
+    첫 확정에만 문자가 자동으로 나가므로(FLOW 3-11), 그 뒤에 정정된 학생·확정
+    당시 대상이 아니었던 학생은 조교가 화면에서 눌러 보낸다. body `{student_id}`.
+
+    **확정 전에는 안 눌린다** — 확정이 곧 "이제 내보낸다"이고, 그 전에 개별로
+    보내면 확정이 여는 순서가 무너진다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.ATTENDANCE_ENTRY)]
+
+    def post(self, request, session_id):
+        session = attendance_admin.load_session(session_id)
+        if session is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        if session.confirmed_at is None:
+            return Response(
+                {"detail": "아직 확정하지 않은 회차입니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        body = request.data if isinstance(request.data, dict) else {}
+        student_id = body.get("student_id")
+        if not isinstance(student_id, int) or isinstance(student_id, bool):
+            return Response(
+                {"detail": "student_id가 올바르지 않습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        roster = attendance_admin.load_roster(session)
+        student = next((s for s in roster if s.student_id == student_id), None)
+        if student is None:
+            return Response(
+                {"detail": "명단에 없는 학생입니다."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        att_map = attendance_admin.load_attendance_map(
+            session, [s.student_id for s in roster]
+        )
+        try:
+            queued = attendance_admin.notify_student(
+                session, student, att_map.get(student_id)
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        payload = attendance_admin.build_detail_payload(session, roster, att_map)
+        payload["triggers"] = {
+            **attendance_admin.empty_triggers(),
+            "notifications_queued": queued,
+        }
+        return Response(payload)
 
 
 class AttendanceOnsiteView(APIView):

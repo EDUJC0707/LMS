@@ -402,7 +402,8 @@ class SessionDetailTests(AttendanceAdminFixtureMixin, TestCase):
 
     def test_detail_query_count_is_fixed(self):
         Attendance.objects.create(session=self.session_w2, student=self.s1, status="출석")
-        with self.assertNumQueries(6):  # 세션인증 2 + 기능키 1 + 회차 1 + 명단 1 + 출결 1
+        # 세션인증 2 + 기능키 1 + 회차 1 + 명단 1 + 출결 1 + 통지내역 1
+        with self.assertNumQueries(7):
             self.client.get(self.detail_url(self.session_w2.session_id))
 
 
@@ -1089,7 +1090,8 @@ class AttendanceUpsertTests(AttendanceAdminFixtureMixin, TestCase):
         #   **출석한 학생만 대상이다**(FLOW 3-11) — 결석 계열은 다음날 전화라
         #   문자를 안 보낸다(3-12). **처음 확정할 때 한 번뿐**이고 두 번째부터는
         #   이 넷이 통째로 빠진다
-        with freeze_now(), self.assertNumQueries(22):
+        # + 응답 조립의 통지내역 1(누가 문자를 받았나 — FLOW 3-11 상태 열)
+        with freeze_now(), self.assertNumQueries(23):
             self.client.put(
                 self.detail_url(self.session_w2.session_id),
                 data=json.dumps(entries),
@@ -1209,6 +1211,159 @@ class ConfirmTests(AttendanceAdminFixtureMixin, TestCase):
         # 확정 시각은 처음 누른 그대로다 — 날짜가 아니라 그 시점이 기준이다
         self.session_w2.refresh_from_db()
         self.assertEqual(self.session_w2.confirmed_at, first_stamp)
+
+
+class NoticeStateTests(AttendanceAdminFixtureMixin, TestCase):
+    """명단의 `notice` 열 + 개별 `보내기` (FLOW 3-11).
+
+    확정 뒤로는 문자가 자동으로 나가지 않으므로, **누구에게 무엇이 안 나갔는지**를
+    화면이 표시하고 조교가 눌러 보낸다.
+
+    **결석은 `해당 없음` 이다.** 안 보낸 것이 아니라 보낼 것이 없는 것이라 버튼도
+    없다 — `미발송` 으로 두면 조교가 채우려고 누르고, 출결 칸이 `왔다` 하나뿐인
+    문자가 결석한 집으로 간다.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.parent = Parent.objects.create(name="김학부모", phone="010-1111-2222")
+        ParentStudent.objects.create(parent=cls.parent, student=cls.s1)
+
+    def setUp(self):
+        self.login(self.admin)
+
+    def notify_url(self, session_id=None):
+        return f"{SESSIONS_URL}/{session_id or self.session_w2.session_id}/notify"
+
+    def notify(self, student, at=NOW):
+        with freeze_now(at):
+            return self.client.post(
+                self.notify_url(),
+                data=json.dumps({"student_id": student.student_id}),
+                content_type="application/json",
+            )
+
+    def notices(self, body):
+        return {row["student_id"]: row["notice"] for row in body["students"]}
+
+    def test_absent_rows_read_해당_없음_not_미발송(self):
+        body = self.put_attendance(
+            self.session_w2.session_id,
+            [
+                {"student_id": self.s1.student_id, "status": "출석"},
+                {"student_id": self.s2.student_id, "status": "결석"},
+                {"student_id": self.s3.student_id, "status": "결석(동보)"},
+            ],
+        ).json()
+        notices = self.notices(body)
+        self.assertEqual(notices[self.s1.student_id], "발송")
+        self.assertEqual(notices[self.s2.student_id], "해당 없음")
+        self.assertEqual(notices[self.s3.student_id], "해당 없음")
+
+    def test_unentered_rows_read_해당_없음(self):
+        """`미입력` 에서는 아무것도 나가지 않는다(FLOW 3-4) — 보낼 것이 없다."""
+        self.put_attendance(
+            self.session_w2.session_id,
+            [{"student_id": self.s1.student_id, "status": "출석"}],
+        )
+        body = self.client.get(self.detail_url(self.session_w2.session_id)).json()
+        self.assertEqual(self.notices(body)[self.s2.student_id], "해당 없음")
+
+    def test_a_student_who_turned_present_after_the_confirm_reads_미발송(self):
+        self.put_attendance(
+            self.session_w2.session_id,
+            [{"student_id": self.s1.student_id, "status": "출석"}],
+        )
+        body = self.put_attendance(
+            self.session_w2.session_id,
+            [{"student_id": self.s2.student_id, "status": "출석"}],
+            at=NOW + datetime.timedelta(minutes=30),
+        ).json()
+        self.assertEqual(self.notices(body)[self.s2.student_id], "미발송")
+
+    def test_a_corrected_student_reads_재발송_필요(self):
+        """결석 → 출석처럼 학부모가 알아야 하는 변화만 골라 보내야 한다."""
+        self.put_attendance(
+            self.session_w2.session_id,
+            [{"student_id": self.s1.student_id, "status": "출석"}],
+        )
+        body = self.put_attendance(
+            self.session_w2.session_id,
+            [{"student_id": self.s1.student_id, "status": "결석"}],
+            at=NOW + datetime.timedelta(minutes=30),
+        ).json()
+        self.assertEqual(self.notices(body)[self.s1.student_id], "해당 없음")
+        body = self.put_attendance(
+            self.session_w2.session_id,
+            [{"student_id": self.s1.student_id, "status": "출석"}],
+            at=NOW + datetime.timedelta(minutes=40),
+        ).json()
+        self.assertEqual(self.notices(body)[self.s1.student_id], "재발송 필요")
+
+    def test_보내기_queues_the_student_and_the_parent(self):
+        self.put_attendance(
+            self.session_w2.session_id,
+            [{"student_id": self.s1.student_id, "status": "출석"}],
+        )
+        self.put_attendance(
+            self.session_w2.session_id,
+            [{"student_id": self.s2.student_id, "status": "출석"}],
+            at=NOW + datetime.timedelta(minutes=30),
+        )
+        before = Notification.objects.count()
+        res = self.notify(self.s2, at=NOW + datetime.timedelta(minutes=40))
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["triggers"]["notifications_queued"], 1)
+        self.assertEqual(Notification.objects.count(), before + 1)
+        self.assertEqual(self.notices(res.json())[self.s2.student_id], "발송")
+
+        # s1 은 학부모가 있다 — 개별 발송도 학부모를 빼먹지 않는다
+        res = self.notify(self.s1, at=NOW + datetime.timedelta(minutes=41))
+        self.assertEqual(res.json()["triggers"]["notifications_queued"], 2)
+
+    def test_보내기_refuses_an_absent_student(self):
+        """서버가 한 번 더 판정한다 — 화면이 버튼을 안 그리는 것과 같은 규칙이다."""
+        self.put_attendance(
+            self.session_w2.session_id,
+            [
+                {"student_id": self.s1.student_id, "status": "출석"},
+                {"student_id": self.s2.student_id, "status": "결석"},
+            ],
+        )
+        before = Notification.objects.count()
+        self.assertEqual(self.notify(self.s2).status_code, 400)
+        self.assertEqual(Notification.objects.count(), before)
+
+    def test_보내기_before_the_confirm_is_rejected(self):
+        Attendance.objects.create(session=self.session_w2, student=self.s1, status="출석")
+        self.assertEqual(self.notify(self.s1).status_code, 400)
+        self.assertFalse(Notification.objects.exists())
+
+    def test_보내기_input_and_gates(self):
+        self.put_attendance(
+            self.session_w2.session_id,
+            [{"student_id": self.s1.student_id, "status": "출석"}],
+        )
+        self.assertEqual(
+            self.client.post(
+                self.notify_url(),
+                data=json.dumps({"student_id": "abc"}),
+                content_type="application/json",
+            ).status_code,
+            400,
+        )
+        self.assertEqual(
+            self.client.post(
+                self.notify_url(),
+                data=json.dumps({"student_id": self.s_other.student_id}),
+                content_type="application/json",
+            ).status_code,
+            400,
+        )
+        self.assertEqual(self.client.post(self.notify_url(999999)).status_code, 404)
+        self.login(self.s1.user)  # 출결입력 키는 직원의 것이다
+        self.assertEqual(self.notify(self.s1).status_code, 403)
 
 
 class MakeupCheckTests(AttendanceAdminFixtureMixin, TestCase):
