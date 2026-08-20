@@ -230,25 +230,23 @@ export interface ExamListRow {
   pending_sheet_count: number;
 }
 
-/** 시험을 묶을 회차 — 시험은 반도 주차도 모른다. 이 연결이 명단을 만든다. */
-export interface ExamSessionOption {
-  session_id: number;
-  week_no: number | null;
-  session_date: string;
-  /** 이미 다른 시험이 걸린 회차. */
+/** 시험이 붙는 자리 — 커리 주차다. 그 주차를 듣는 반의 회차가 가리킨다. */
+export interface ExamWeekOption {
+  week_id: number;
+  week_no: number;
+  /** 이미 시험이 있는 주차 — 한 주차에 시험 하나다. */
   exam_id: number | null;
 }
 
-export interface ExamClassOption {
-  class_id: number;
+export interface ExamCourseOption {
+  course_id: number;
   name: string;
-  course_name: string;
-  sessions: ExamSessionOption[];
+  weeks: ExamWeekOption[];
 }
 
 export interface ExamList {
   exams: ExamListRow[];
-  classes: ExamClassOption[];
+  courses: ExamCourseOption[];
 }
 
 export interface ExamStudentRow {
@@ -294,6 +292,8 @@ export interface ExamDetail {
     round_no: number | null;
     target_grade: number | null;
     notice: string | null;
+    /** 비우면 그 시험 평균으로 클리닉 대상을 가른다 */
+    clinic_cutoff: number | null;
   };
   stats: {
     taker_count: number;

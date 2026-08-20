@@ -1,7 +1,7 @@
 /**
  * /admin/exams — 시험 회차 목록.
  *
- * API  GET /api/admin/exams  → {exams: [...], classes: [...]}
+ * API  GET /api/admin/exams  → {exams: [...], courses: [...]}
  *
  * 화면 설계
  * - 회차·응시자·평균·처리 상태를 한 표에서 비교하는 게 이 화면의 전부다.
@@ -51,8 +51,9 @@ export default function ExamsPage() {
   const [examDate, setExamDate] = useState("");
   const [kind, setKind] = useState<ExamKind>("미니테스트");
   const [fullScore, setFullScore] = useState("");
-  const [classId, setClassId] = useState("");
-  const [sessionId, setSessionId] = useState("");
+  const [cutoff, setCutoff] = useState("");
+  const [courseId, setCourseId] = useState("");
+  const [weekId, setWeekId] = useState("");
 
   const create = useApiAction(async () => {
     const { data } = await http.post<{ exam_id: number }>("/admin/exams", {
@@ -60,17 +61,18 @@ export default function ExamsPage() {
       exam_date: examDate,
       kind,
       full_score: fullScore || null,
-      session_id: sessionId || null,
+      course_week_id: weekId || null,
+      clinic_cutoff: cutoff || null,
     });
     return data.exam_id;
   });
 
-  const classes = exams.data?.classes ?? [];
-  // 이미 시험이 걸린 회차는 고를 수 없다 — 회차 하나에 시험 하나다.
+  const courses = exams.data?.courses ?? [];
+  // 이미 시험이 있는 주차는 고를 수 없다 — 한 주차에 시험 하나다.
   const weeks =
-    classes.find((row) => String(row.class_id) === classId)?.sessions.filter(
-      (session) => session.exam_id === null,
-    ) ?? [];
+    courses
+      .find((row) => String(row.course_id) === courseId)
+      ?.weeks.filter((week) => week.exam_id === null) ?? [];
 
   const rows = useMemo(() => {
     const list = exams.data?.exams ?? [];
@@ -202,8 +204,9 @@ export default function ExamsPage() {
               setExamDate("");
               setKind("미니테스트");
               setFullScore("");
-              setClassId("");
-              setSessionId("");
+              setCutoff("");
+              setCourseId("");
+              setWeekId("");
               navigate(String(id));
             }}
           >
@@ -245,44 +248,57 @@ export default function ExamsPage() {
             </Select>
           )}
         </Field>
-        {/* 시험은 반도 주차도 모른다 — 이 연결이 명단·출결·미제출을 낸다. */}
-        <Field label="반">
+        {/* 시험은 커리 주차에 붙는다 — 그 주차를 듣는 반들의 회차가 가리킨다. */}
+        <Field label="커리">
           {(props) => (
             <Select
               {...props}
-              value={classId}
+              value={courseId}
               onChange={(e) => {
-                setClassId(e.target.value);
-                setSessionId("");
+                setCourseId(e.target.value);
+                setWeekId("");
               }}
             >
               <option value="">선택</option>
-              {classes.map((row) => (
-                <option key={row.class_id} value={row.class_id}>
-                  {row.course_name} · {row.name}
+              {courses.map((row) => (
+                <option key={row.course_id} value={row.course_id}>
+                  {row.name}
                 </option>
               ))}
             </Select>
           )}
         </Field>
-        {classId && (
+        {courseId && (
           <Field label="주차">
             {(props) => (
               <Select
                 {...props}
-                value={sessionId}
-                onChange={(e) => setSessionId(e.target.value)}
+                value={weekId}
+                onChange={(e) => setWeekId(e.target.value)}
               >
                 <option value="">선택</option>
-                {weeks.map((session) => (
-                  <option key={session.session_id} value={session.session_id}>
-                    {session.week_no ? `${session.week_no}주차` : session.session_date}
+                {weeks.map((week) => (
+                  <option key={week.week_id} value={week.week_id}>
+                    {week.week_no}주차
                   </option>
                 ))}
               </Select>
             )}
           </Field>
         )}
+        {/* 비우면 그 시험 평균이 컷이다. */}
+        <Field label="클리닉 컷">
+          {(props) => (
+            <Input
+              {...props}
+              type="number"
+              min="0"
+              step="0.5"
+              value={cutoff}
+              onChange={(e) => setCutoff(e.target.value)}
+            />
+          )}
+        </Field>
         {/* 모의고사는 문항이 없어 만점을 딴 데서 못 구한다. */}
         {kind === "모의고사" && (
           <Field label="만점">

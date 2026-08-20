@@ -14,10 +14,15 @@
 **답안지가 안 들어온 학생의 성적 행을 `is_taken=False` 로 만든다.** 그 전에는
 그 행을 아무도 안 만들어서(시드 제외) 미제출 학생이 성적 화면에 아예 없었다.
 
-명단은 **그 시험을 묶은 회차의 반**에서 온다(`class_sessions.exam` → `klass`).
+명단은 **그 시험을 가리키는 회차의 반**에서 온다(`class_sessions.exam` → `klass`).
 회차가 안 매여 있으면 명단을 알 수 없으므로 아무것도 만들지 않는다 —
 지어내지 않는다. 출결 행이 있는 학생도 함께 센다: 현보로 온 학생은 이 반에
 수강이 없지만 그 자리에서 시험을 봤다(FLOW 3-4).
+
+**시험 하나를 반 여럿이 가리킨다**(FLOW 3-3 — 시험은 커리 주차에 붙는다).
+그래서 명단은 반마다 따로 세고, **답안지도 성적도 하나 없는 반은 뺀다** —
+목반이 목요일에 본 시험을 화반은 다음 화요일에 보므로, 안 가르면 아직 시험을
+치지도 않은 반이 그날 통째로 미제출이 된다.
 
 ## OMR 이 대조되면 출석이 찍힌다 (2026-08-19)
 
@@ -71,7 +76,6 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from django.utils import timezone
 
-from apps.accounts.models import Student
 from apps.clinic.models import ClinicEligibility
 
 from . import attendance_admin
@@ -157,28 +161,34 @@ def mark_missing(exam):
     """답안지가 안 들어온 학생에게 `is_taken=False` 성적 행을 만든다.
 
     이미 성적이 있는 학생은 건드리지 않는다 — 답안지가 왔다는 뜻이다.
+    **아직 흔적이 없는 반은 통째로 건너뛴다**(모듈 docstring) — 같은 시험을
+    다른 요일에 보는 반이 있기 때문이다.
     """
-    sessions = ClassSession.objects.filter(exam=exam)
-    if not sessions.exists():
+    sessions = list(ClassSession.objects.filter(exam=exam))
+    if not sessions:
         # 회차가 안 매여 있으면 "이 시험을 봤어야 할 사람"을 알 수 없다.
         return 0
-    roster = set(
-        Student.objects.filter(attendances__session__in=sessions).values_list("pk", flat=True)
-    )
-    # 출결 행만 보면 **아무도 안 걸린다** — 조교가 출결표를 열기 전이면 행이
-    # 없고, OMR 이 찍은 행은 제출한 학생뿐이라 빼고 나면 남는 것이 없다.
-    # 봤어야 할 사람은 그 회차 반의 명단이다(퇴원생 제외 — 입력 대상이 아니다).
-    roster |= {
-        sid
-        for session in sessions
-        for sid in attendance_admin.entry_target_ids(attendance_admin.load_roster(session))
-    }
     submitted = set(
         AnswerSheet.objects.filter(exam=exam)
         .exclude(student=None)
         .values_list("student_id", flat=True)
     )
     scored = set(Score.objects.filter(exam=exam).values_list("student_id", flat=True))
+    # 이 시험을 이미 치른 표시 — 들어온 답안지거나 이미 난 성적이다.
+    evidence = submitted | scored
+    roster = set()
+    for session in sessions:
+        # 출결 행만 보면 **아무도 안 걸린다** — 조교가 출결표를 열기 전이면 행이
+        # 없고, OMR 이 찍은 행은 제출한 학생뿐이라 빼고 나면 남는 것이 없다.
+        # 봤어야 할 사람은 그 회차 반의 명단이다(퇴원생 제외 — 입력 대상이 아니다).
+        ids = set(attendance_admin.entry_target_ids(attendance_admin.load_roster(session)))
+        ids |= set(session.attendances.values_list("student_id", flat=True))
+        # **아무 흔적도 없는 반은 아직 안 봤다.** 시험은 커리 주차에 붙으므로
+        # (FLOW 3-3) 목반이 목요일에 본 시험을 화반은 다음 화요일에 본다 —
+        # 여기서 안 가르면 화반 전원이 그날 미제출로 찍히고, 클리닉 판정까지
+        # 따라 돈다.
+        if ids & evidence:
+            roster |= ids
     missing = roster - submitted - scored
     Score.objects.bulk_create(
         [Score(exam=exam, student_id=pk, is_taken=False) for pk in sorted(missing)]
@@ -288,13 +298,15 @@ def mark_clinic_targets(exam):
 
 
 def _threshold(exam, scores):
-    """평균 미달의 기준점 — 관리자 컷이 있으면 그것, 없으면 그 시험 전체 평균.
+    """평균 미달의 기준점 — **컷이 있으면 그것, 없으면 그 시험 전체 평균**.
 
-    컷을 담는 자리가 아직 없어서(미결 8-10) 지금은 언제나 평균이다. 평균은
-    `exam_admin._average` 와 같은 축으로 낸다 — 저장 캐시 우선, 없으면 응시 점수와
-    익명 확정 장을 합쳐서. 화면이 보여 주는 평균과 판정에 쓴 기준점이 갈리면
-    "평균 아래인데 왜 대상이 아니냐"를 설명할 수 없다.
+    컷은 시험에 미리 넣어 둔다(FLOW 3-3·3-7 — `Exam.clinic_cutoff`). 비어 있을
+    때의 평균은 `exam_admin._average` 와 같은 축으로 낸다 — 저장 캐시 우선, 없으면
+    응시 점수와 익명 확정 장을 합쳐서. 화면이 보여 주는 평균과 판정에 쓴 기준점이
+    갈리면 "평균 아래인데 왜 대상이 아니냐"를 설명할 수 없다.
     """
+    if exam.clinic_cutoff is not None:
+        return exam.clinic_cutoff
     if exam.avg_score is not None:
         return exam.avg_score
     totals = [s.total_score for s in scores if s.is_taken and s.total_score is not None]

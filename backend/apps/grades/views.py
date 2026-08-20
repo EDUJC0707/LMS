@@ -16,6 +16,7 @@
 - GET  /api/admin/exams                          시험 목록 (성적처리)
 - POST /api/admin/exams                          시험 만들기 (성적처리)
 - GET  /api/admin/exams/{exam_id}                시험 상세 (성적처리)
+- PATCH /api/admin/exams/{exam_id}               클리닉 컷 (성적처리)
 - GET/PUT /api/admin/exams/{exam_id}/questions   정답 키 (성적처리)
 - GET/POST /api/admin/exams/{exam_id}/sheets     보정 목록 · 스캔 업로드 (성적처리)
 - POST /api/admin/exams/{exam_id}/reread         저장된 스캔 재판독 → 202 (성적처리)
@@ -38,6 +39,7 @@ SSOT 쓰기·트리거·페이로드 조립은 attendance_admin 서비스가 담
 """
 import datetime
 import uuid
+from decimal import Decimal
 
 from celery.result import AsyncResult
 from django.core.files.storage import default_storage
@@ -701,6 +703,10 @@ class AdminExamListView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
+            cutoff = _parse_cutoff(request.data.get("clinic_cutoff"))
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        try:
             exam = exam_admin.create_exam(
                 name,
                 exam_date,
@@ -708,7 +714,8 @@ class AdminExamListView(APIView):
                 target_grade=request.data.get("target_grade") or None,
                 kind=kind,
                 full_score=request.data.get("full_score") or None,
-                session_id=request.data.get("session_id") or None,
+                course_week_id=request.data.get("course_week_id") or None,
+                clinic_cutoff=cutoff,
             )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -969,8 +976,21 @@ def _validate_questions(rows):
     return None
 
 
+def _parse_cutoff(raw):
+    """클리닉 컷 — 빈 값은 None(평균으로 가른다). 음수·숫자 아님은 거절."""
+    if raw in (None, ""):
+        return None
+    try:
+        cutoff = Decimal(str(raw))
+    except (ArithmeticError, TypeError, ValueError) as exc:
+        raise ValueError("클리닉 컷은 숫자로 넣어 주세요.") from exc
+    if cutoff < 0:
+        raise ValueError("클리닉 컷은 0 이상이어야 합니다.")
+    return cutoff
+
+
 class AdminExamDetailView(APIView):
-    """GET /api/admin/exams/{exam_id} — 학생별 점수 테이블 + 문항별 정답률."""
+    """GET·PATCH /api/admin/exams/{exam_id} — 점수·문항 표 / 클리닉 컷."""
 
     permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
 
@@ -979,3 +999,14 @@ class AdminExamDetailView(APIView):
         if exam is None:
             return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
         return Response(exam_admin.build_exam_detail(exam))
+
+    def patch(self, request, exam_id):
+        exam = exam_admin.load_exam(exam_id)
+        if exam is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            cutoff = _parse_cutoff(request.data.get("clinic_cutoff"))
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        targets = exam_admin.set_clinic_cutoff(exam, cutoff)
+        return Response({"clinic_cutoff": cutoff, "clinic_target_count": targets})

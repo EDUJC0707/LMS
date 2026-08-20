@@ -166,12 +166,23 @@ def _fill_sessions(klass, total_weeks, start_date):
     """
     for week_no in range(1, total_weeks + 1):
         week_start = start_date + datetime.timedelta(weeks=week_no - 1)
+        week = _course_week(klass.course, week_no)
         ClassSession.objects.create(
             klass=klass,
             week_no=week_no,
             session_date=week_start,
-            course_week=_course_week(klass.course, week_no),
+            course_week=week,
+            exam=_week_exam(week),
         )
+
+
+def _week_exam(week):
+    """그 커리 주차가 정한 시험 — 회차는 그것을 가리킬 뿐이다(FLOW 3-3).
+
+    시험은 커리를 만들 때 미리 채워 두므로, 나중에 열린 반의 회차도 그 자리에서
+    같은 시험을 물고 시작한다. 조교가 반마다 다시 고르지 않는다.
+    """
+    return getattr(week, "exam", None)
 
 
 def _course_week(course, week_no):
@@ -259,11 +270,13 @@ def add_week(klass):
         week_no, session_date = 1, klass.start_date
     else:
         raise ValueError("개강일이 없는 반입니다.")
+    week = _course_week(klass.course, week_no)
     ClassSession.objects.create(
         klass=klass,
         week_no=week_no,
         session_date=session_date,
-        course_week=_course_week(klass.course, week_no),
+        course_week=week,
+        exam=_week_exam(week),
     )
     return list_sessions(klass)
 
@@ -280,6 +293,11 @@ def remove_week(klass, week_no):
     같이 사라지고, 워크북·청구는 회차를 가리키던 끈이 끊긴다 — 조교의 실수 한
     번으로 되돌릴 수 없는 소실이 난다(key_considerations §5 — 파괴적 작업).
     커리 주차(`CourseWeek`)는 다른 반도 쓰므로 남긴다.
+
+    **시험은 막지 않는다**(2026-08-20). 시험은 커리 주차의 것이고 회차는 그것을
+    가리킬 뿐이라(FLOW 3-3) 회차를 지워도 문항·정답·성적은 그대로 남고, 주차를
+    다시 더하면 그 자리에서 다시 붙는다. 옛 세계에서는 회차가 시험을 담고 있어
+    지우면 사라졌다.
     """
     last = klass.sessions.order_by("-week_no").first()
     if last is None or last.week_no != week_no:
@@ -291,10 +309,9 @@ def remove_week(klass, week_no):
 
 
 def _has_records(session):
-    """출결·시험·과제·워크북·청구가 걸린 회차인가."""
+    """출결·과제·워크북·청구가 걸린 회차인가."""
     return (
-        session.exam_id is not None
-        or session.attendances.exists()
+        session.attendances.exists()
         or session.assignments.exists()
         or session.workbook_submissions.exists()
         or session.triggered_orders.exists()

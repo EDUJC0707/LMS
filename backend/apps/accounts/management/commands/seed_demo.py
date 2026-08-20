@@ -359,6 +359,8 @@ class Command(BaseCommand):
                 round_no=round_no,
                 target_grade=2,
                 notice=f"{round_no}회차 성적표입니다. 오답 문항은 학습가이드를 따라 복습하세요.",
+                # 시험은 커리 주차의 것이고 회차는 그것을 가리킨다(FLOW 3-3)
+                course_week=session.course_week,
             )
             session.exam = exam
             session.save(update_fields=["exam"])

@@ -18,8 +18,10 @@ from django.test import TestCase
 
 from apps.accounts.features import FeatureKey
 from apps.accounts.models import StaffFeatureGrant, User
+from apps.curriculum import class_admin
+from apps.curriculum.models import CourseWeek
 
-from .models import AnswerSheet, Exam
+from .models import AnswerSheet, ClassSession, Exam
 from .test_grade_report_api import GradeFixtureMixin, make_user
 
 ADMIN_EXAMS = "/api/admin/exams"
@@ -137,7 +139,7 @@ class ExamAdminListTests(ExamAdminFixtureMixin, TestCase):
     def test_query_budget(self):
         self.login_admin()
         # 세션인증 2 + 기능키 1 + 시험·성적 annotate 1 + 보정대기 1 + 익명 장 1
-        # + 반·회차 드롭다운 1. 익명 집계와 회차 목록은 **시험 수와 무관한 한
+        # + 커리·주차 드롭다운 1. 익명 집계와 주차 목록은 **시험 수와 무관한 한
         # 쿼리씩**이다 — 시험마다 summary_stats 를 부르면 시험 수만큼 늘어난다.
         with self.assertNumQueries(7):
             self.assertEqual(self.client.get(ADMIN_EXAMS).status_code, 200)
@@ -156,6 +158,43 @@ class ExamAdminDetailTests(ExamAdminFixtureMixin, TestCase):
         self.login_admin()
         self.assertEqual(self.client.get(f"{ADMIN_EXAMS}/999999").status_code, 404)
 
+    def test_saving_a_clinic_cut(self):
+        """컷은 OMR 쪽에서 넣는다(FLOW 3-3) — 시험 관리 화면이 그 자리다."""
+        self.login_admin()
+
+        res = self.client.patch(
+            self.detail_url(self.exam2),
+            data=json.dumps({"clinic_cutoff": "60"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(float(Exam.objects.get(pk=self.exam2.pk).clinic_cutoff), 60.0)
+
+    def test_clearing_the_cut_leaves_the_average(self):
+        self.login_admin()
+        Exam.objects.filter(pk=self.exam2.pk).update(clinic_cutoff="60")
+
+        res = self.client.patch(
+            self.detail_url(self.exam2),
+            data=json.dumps({"clinic_cutoff": ""}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 200)
+        self.assertIsNone(Exam.objects.get(pk=self.exam2.pk).clinic_cutoff)
+
+    def test_a_negative_cut_is_rejected(self):
+        self.login_admin()
+
+        res = self.client.patch(
+            self.detail_url(self.exam2),
+            data=json.dumps({"clinic_cutoff": "-1"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 400)
+
     def test_exam_and_stats_blocks(self):
         body = self.get_detail(self.exam2)
         self.assertEqual(
@@ -169,6 +208,7 @@ class ExamAdminDetailTests(ExamAdminFixtureMixin, TestCase):
                 "round_no": 2,
                 "target_grade": None,
                 "notice": "7월 성적표 공지",
+                "clinic_cutoff": None,  # 비어 있으면 그 시험 평균으로 가른다
             },
         )
         self.assertEqual(
@@ -273,6 +313,51 @@ class ExamCreateAndKeyTests(ExamAdminFixtureMixin, TestCase):
 
         self.assertEqual(res.status_code, 201)
         self.assertTrue(Exam.objects.filter(pk=res.json()["exam_id"]).exists())
+
+    def test_creating_an_exam_on_a_week_attaches_the_classes(self):
+        """시험은 커리 주차에 붙고 그 주차를 듣는 반들의 회차가 가리킨다(FLOW 3-3)."""
+        self.login_admin()
+        klass = class_admin.open_class(
+            course_id=None, course_name="2026 여름 N제 2기", total_weeks=3,
+            track="수능", subject="통합과학",
+            name="목 6.5 대치러셀", start_date="2026-09-03",
+        )
+        week = CourseWeek.objects.get(course=klass.course, week_no=2)
+
+        res = self.client.post(
+            ADMIN_EXAMS,
+            data=json.dumps({
+                "name": "2주차 미니", "exam_date": "2026-09-10",
+                "course_week_id": week.week_id, "clinic_cutoff": "55.5",
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 201)
+        exam = Exam.objects.get(pk=res.json()["exam_id"])
+        self.assertEqual(exam.course_week_id, week.week_id)
+        self.assertEqual(float(exam.clinic_cutoff), 55.5)
+        self.assertEqual(
+            ClassSession.objects.get(klass=klass, week_no=2).exam_id, exam.pk
+        )
+
+    def test_rejects_a_week_that_already_has_an_exam(self):
+        """한 커리 주차 = 시험 하나. 덮으면 앞 시험의 문항이 조용히 사라진다."""
+        self.login_admin()
+        klass = class_admin.open_class(
+            course_id=None, course_name="2026 여름 N제 3기", total_weeks=2,
+            track="수능", subject="통합과학",
+            name="화 6.5 대치러셀", start_date="2026-09-01",
+        )
+        week = CourseWeek.objects.get(course=klass.course, week_no=1)
+        payload = {"name": "1주차 미니", "exam_date": "2026-09-01", "course_week_id": week.week_id}
+        self.client.post(ADMIN_EXAMS, data=json.dumps(payload), content_type="application/json")
+
+        res = self.client.post(
+            ADMIN_EXAMS, data=json.dumps(payload), content_type="application/json"
+        )
+
+        self.assertEqual(res.status_code, 400)
 
     def test_rejects_an_exam_without_a_date(self):
         self.login_admin()

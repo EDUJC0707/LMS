@@ -16,7 +16,7 @@ from django.db import transaction
 from django.db.models import Count, F, Q, Sum
 
 from apps.accounts import student_directory
-from apps.curriculum.models import class_name_subquery
+from apps.curriculum.models import CourseWeek, class_name_subquery
 
 from . import omr_store, report, scoring
 from .models import AnswerSheet, ClassSession, Exam, Question, Score, SheetAnswer
@@ -37,7 +37,7 @@ def build_exam_list():
     pending = _pending_sheet_counts()
     anonymous = _anonymous_stats([exam.exam_id for exam in exams])
     return {
-        "classes": class_session_options(),
+        "courses": course_week_options(),
         "exams": [
             {
                 "exam_id": exam.exam_id,
@@ -84,6 +84,8 @@ def build_exam_detail(exam):
             "round_no": exam.round_no,
             "target_grade": exam.target_grade,
             "notice": exam.notice,
+            # 비어 있으면 그 시험 평균으로 가른다(scoring._threshold)
+            "clinic_cutoff": exam.clinic_cutoff,
         },
         "stats": {
             "taker_count": exam.taker_count + len(anonymous),
@@ -259,54 +261,74 @@ def _question_stat_rows(exam):
 # --- 시험 만들기 · 정답 키 입력 (PRD 3.1.1 문항 정보 입력) -------------------
 
 
-def class_session_options(today=None):
-    """반 → 주차 드롭다운 근거 — 시험을 어느 회차에 묶을지 고르는 자리.
+def course_week_options():
+    """커리 → 주차 드롭다운 근거 — 시험이 붙는 자리 (FLOW 3-3).
 
-    시험은 반도 주차도 모른다. 회차가 그 연결이므로(`class_sessions.exam`)
-    묶이지 않은 시험은 **미제출 명단도 출결도 낼 수 없다** — 누가 봤어야 할
-    사람인지 알 방법이 없다(scoring.mark_missing · mark_present).
+    **반이 아니라 커리다.** 목반과 화반이 같은 시험지를 보므로 반에 붙이면
+    문항·정답·배점을 반 수만큼 다시 넣게 된다. 주차에 붙여 두면 그 주차를 듣는
+    반들의 회차가 한꺼번에 그 시험을 가리킨다(`attach_sessions`).
+
+    이미 시험이 있는 주차는 `exam_id` 가 차 있다 — 한 주차 = 시험 하나다.
     """
-    rows = (
-        ClassSession.objects.filter(klass__isnull=False, klass__is_active=True)
-        .select_related("klass__course")
-        .order_by("-klass__course_id", "klass_id", "week_no", "session_date")
+    rows = CourseWeek.objects.select_related("course", "exam").order_by(
+        "-course_id", "week_no"
     )
-    classes, by_class = [], {}
-    for session in rows:
-        block = by_class.get(session.klass_id)
+    courses, by_course = [], {}
+    for week in rows:
+        block = by_course.get(week.course_id)
         if block is None:
             block = {
-                "class_id": session.klass_id,
-                "name": session.klass.name,
-                "course_name": session.klass.course.name,
-                "sessions": [],
+                "course_id": week.course_id,
+                "name": week.course.name,
+                "weeks": [],
             }
-            by_class[session.klass_id] = block
-            classes.append(block)
-        block["sessions"].append(
+            by_course[week.course_id] = block
+            courses.append(block)
+        exam = getattr(week, "exam", None)
+        block["weeks"].append(
             {
-                "session_id": session.session_id,
-                "week_no": session.week_no,
-                "session_date": session.session_date.isoformat(),
-                "exam_id": session.exam_id,
+                "week_id": week.week_id,
+                "week_no": week.week_no,
+                "exam_id": exam.exam_id if exam else None,
             }
         )
-    return classes
+    return courses
+
+
+def attach_sessions(exam):
+    """그 주차를 듣는 반들의 회차가 이 시험을 가리키게 한다. (붙은 회차 수)
+
+    **조교가 반마다 다시 고르지 않는다**(FLOW 3-3) — 커리 주차가 정하면 회차는
+    따라온다. 이미 다른 시험이 걸린 회차는 안 건드린다(옛 데이터).
+    """
+    if exam.course_week_id is None:
+        return 0
+    return ClassSession.objects.filter(
+        course_week_id=exam.course_week_id, exam__isnull=True
+    ).update(exam=exam)
 
 
 def create_exam(
     name, exam_date, round_no=None, target_grade=None, kind=None, full_score=None,
-    session_id=None,
+    course_week_id=None, clinic_cutoff=None,
 ):
     """시험 한 건. 문항은 따로 넣는다 — 시험을 먼저 만들고 키는 나중에 채운다.
 
     kind 는 **어느 카드가 들어오는지**를 정한다(omr_ingest) — 모의고사는
     문항 없이 자기보고 점수만 오므로 정답 키를 채울 일이 없다.
 
-    session_id 를 주면 그 회차에 묶는다. 회차 하나에 시험 하나이므로 이미 다른
-    시험이 걸린 회차는 거절한다 — 덮으면 앞 시험의 명단이 조용히 사라진다.
+    course_week_id 를 주면 그 커리 주차에 붙이고 그 주차의 회차들이 이 시험을
+    가리킨다. 주차 하나에 시험 하나이므로 이미 시험이 있는 주차는 거절한다 —
+    덮으면 앞 시험의 문항과 명단이 조용히 사라진다.
     """
     with transaction.atomic():
+        week = None
+        if course_week_id is not None:
+            week = CourseWeek.objects.filter(pk=course_week_id).first()
+            if week is None:
+                raise ValueError("커리 주차를 찾을 수 없습니다.")
+            if Exam.objects.filter(course_week=week).exists():
+                raise ValueError("이 주차에는 이미 시험이 있습니다.")
         exam = Exam.objects.create(
             name=name,
             exam_date=exam_date,
@@ -315,16 +337,22 @@ def create_exam(
             kind=kind or Exam.Kind.MINI,
             # 만점은 모의고사에만 필요하다 — 미니테스트는 문항 배점의 합이다.
             full_score=full_score,
+            course_week=week,
+            clinic_cutoff=clinic_cutoff,
         )
-        if session_id is not None:
-            session = ClassSession.objects.filter(pk=session_id).first()
-            if session is None:
-                raise ValueError("회차를 찾을 수 없습니다.")
-            if session.exam_id is not None:
-                raise ValueError("이 회차에는 이미 시험이 묶여 있습니다.")
-            session.exam = exam
-            session.save(update_fields=["exam"])
+        attach_sessions(exam)
     return exam
+
+
+def set_clinic_cutoff(exam, cutoff):
+    """클리닉 컷을 넣고 **그 자리에서 대상을 다시 가른다** (FLOW 3-3·3-7).
+
+    판정을 다시 안 돌리면 컷은 다음 채점까지 아무 일도 안 한다 — 조교가 컷을
+    바꿔 놓고 왜 대상이 그대로인지 알 수 없다. 비우면 다시 평균으로 갈린다.
+    """
+    exam.clinic_cutoff = cutoff
+    exam.save(update_fields=["clinic_cutoff"])
+    return scoring.mark_clinic_targets(exam)
 
 
 def save_questions(exam, rows):

@@ -54,6 +54,11 @@ export default function ExamDetailPage() {
 
   const [tab, setTab] = useState<TakenTab>("제출");
   const [query, setQuery] = useState("");
+  // 서버 값이 초기값이다 — 저장하고 다시 불러오면 null 로 되돌려 다시 맞춘다.
+  const [cutoff, setCutoff] = useState<string | null>(null);
+  const saveCutoff = useApiAction(async (value: string) => {
+    await http.patch(`/admin/exams/${examId}`, { clinic_cutoff: value || null });
+  });
 
   const students = useMemo(() => {
     const list = detail.data?.students ?? [];
@@ -76,6 +81,7 @@ export default function ExamDetailPage() {
   }
 
   const { exam, stats, questions } = detail.data;
+  const cutoffValue = cutoff ?? (exam.clinic_cutoff === null ? "" : String(exam.clinic_cutoff));
 
   return (
     <div className="ui-stack">
@@ -144,6 +150,35 @@ export default function ExamDetailPage() {
               <dd className="num">{stats.pending_sheet_count}장</dd>
             </div>
           </dl>
+
+          {/* 비우면 그 시험 평균이 컷이다. */}
+          <div className="pm-toolbar">
+            <Field label="클리닉 컷">
+              {(props) => (
+                <Input
+                  {...props}
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={cutoffValue}
+                  onChange={(e) => setCutoff(e.target.value)}
+                />
+              )}
+            </Field>
+            <div className="pm-toolbar__end">
+              <Button
+                loading={saveCutoff.pending}
+                onClick={async () => {
+                  await saveCutoff.run(cutoffValue);
+                  setCutoff(null);
+                  void detail.reload();
+                }}
+              >
+                저장
+              </Button>
+            </div>
+          </div>
+          {saveCutoff.error && <Alert tone="danger">{saveCutoff.error}</Alert>}
 
           {exam.notice && (
             <dl className="pm-defs">

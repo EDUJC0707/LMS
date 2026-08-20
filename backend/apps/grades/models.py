@@ -26,7 +26,11 @@ from django.db import models
 class ClassSession(models.Model):
     """`class_sessions` — 수업 회차 (설계 문서 도메인 2 `class_sessions`).
 
-    - exam: 그날 본 시험(없으면 NULL). 시험 삭제 시 회차 기록은 유지(SET_NULL).
+    - exam: 그날 본 시험(없으면 NULL). **커리 주차가 정한 시험을 가리킬 뿐이다**
+      (FLOW 3-3 — `Exam.course_week`). 회차를 만들 때 그 주차에 시험이 있으면
+      저절로 붙고(curriculum.class_admin), 시험을 만들면 그 주차를 듣는 반들의
+      회차가 한 번에 가리킨다. 반이 혼자 더한 주차(FLOW 1-3)에는 시험이 없다.
+      시험 삭제 시 회차 기록은 유지(SET_NULL).
     - course_week: 수업회차 ↔ 커리큘럼 주차 매핑(캘린더 커리큘럼 표시,
       PRD 3.2.0). 주차 삭제 시 회차 기록은 유지(SET_NULL).
     - klass·week_no: **반의 주차가 곧 이 회차다**(FLOW 1-1 — 주 1회라 주차와
@@ -218,6 +222,14 @@ class Exam(models.Model):
 
     `max_score` 는 **최고점**(누가 제일 잘 봤나)이고 `full_score` 는 **만점**이다 —
     이름이 비슷해 섞기 쉬우니 주의.
+
+    - course_week: **시험은 커리 주차에 붙는다**(FLOW 3-3). 목반과 화반이 같은
+      시험지를 보므로 반에 붙이면 문항·정답·배점·단원·가이드를 반 수만큼 다시
+      넣어야 하고 한쪽만 고치면 두 반 성적이 갈린다. **한 주차 = 시험 하나**라
+      1:1 이고, 반의 회차는 그 시험을 **가리킬 뿐**이다(`ClassSession.exam`).
+      주차가 사라져도 성적은 남아야 하므로 SET_NULL.
+    - clinic_cutoff: 클리닉 대상을 가르는 컷(FLOW 3-3·3-7). **비우면 그 시험
+      평균**이다(scoring._threshold) — 미리 넣어 두는 값이라 채점 전에도 찍힌다.
     """
 
     class Kind(models.TextChoices):
@@ -228,6 +240,15 @@ class Exam(models.Model):
         MOCK = "모의고사", "모의고사"
 
     exam_id = models.BigAutoField(primary_key=True)
+    course_week = models.OneToOneField(
+        "curriculum.CourseWeek",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_column="course_week_id",
+        related_name="exam",
+        verbose_name="커리 주차",
+    )
     name = models.CharField("시험명", max_length=100)
     kind = models.CharField(
         "시험 종류", max_length=20, choices=Kind.choices, default=Kind.MINI
@@ -253,6 +274,9 @@ class Exam(models.Model):
     )
     top30_score = models.DecimalField(
         "상위 30% 점수", max_digits=6, decimal_places=2, null=True, blank=True
+    )
+    clinic_cutoff = models.DecimalField(
+        "클리닉 컷", max_digits=6, decimal_places=2, null=True, blank=True
     )
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)
 

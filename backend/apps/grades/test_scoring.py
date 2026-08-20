@@ -11,9 +11,10 @@ from django.test import TestCase
 
 from apps.accounts.models import User
 from apps.clinic.models import ClinicEligibility
+from apps.curriculum import class_admin
 from apps.curriculum.models import Class, Course, CourseEnrollment, CourseWeek
 
-from . import scoring
+from . import exam_admin, scoring
 from .models import AnswerSheet, Attendance, ClassSession, Exam, Score
 from .test_grade_report_api import make_student
 
@@ -395,9 +396,133 @@ class ClinicTargetTests(TestCase):
         self.assertTrue(self.eligibility(self.high).is_target)
 
     def test_an_admin_cut_replaces_the_average(self):
-        """기준점은 관리자 컷 우선 — 담을 자리가 `avg_score` 뿐이라 지금은 그것이다."""
+        """기준점은 저장된 평균 우선 — 화면이 보여 주는 평균과 같은 축이다."""
         Exam.objects.filter(pk=self.exam.pk).update(avg_score=Decimal("30"))
 
         scoring.mark_clinic_targets(Exam.objects.get(pk=self.exam.pk))
 
         self.assertFalse(self.eligibility(self.low).is_target)
+
+    def test_the_clinic_cut_beats_the_average(self):
+        """컷을 넣으면 평균이 아니라 컷으로 갈린다 (FLOW 3-3·3-7).
+
+        평균 60 에서는 40 만 대상이지만, 컷 85 는 80 도 대상으로 끌어온다.
+        """
+        Exam.objects.filter(pk=self.exam.pk).update(clinic_cutoff=Decimal("85"))
+
+        scoring.mark_clinic_targets(Exam.objects.get(pk=self.exam.pk))
+
+        self.assertTrue(self.eligibility(self.low).is_target)
+        high = self.eligibility(self.high)
+        self.assertTrue(high.is_target)
+        self.assertEqual(float(high.cutoff_score), 85.0)
+
+    def test_clearing_the_cut_goes_back_to_the_average(self):
+        Exam.objects.filter(pk=self.exam.pk).update(clinic_cutoff=Decimal("85"))
+        scoring.mark_clinic_targets(Exam.objects.get(pk=self.exam.pk))
+
+        Exam.objects.filter(pk=self.exam.pk).update(clinic_cutoff=None)
+        scoring.mark_clinic_targets(Exam.objects.get(pk=self.exam.pk))
+
+        self.assertFalse(self.eligibility(self.high).is_target)
+        self.assertEqual(self.eligibility(self.high).reason, ClinicEligibility.Reason.ABOVE_AVG)
+
+
+class SharedExamAcrossClassesTests(TestCase):
+    """시험은 커리 주차의 것이고 반들의 회차는 그것을 가리킨다 (FLOW 3-3).
+
+    목반과 화반이 같은 시험지를 본다. 그래서 문항·정답은 한 벌이지만 **채점은
+    반마다 따로 일어난다** — 목반이 목요일에 본 것을 화반은 다음 화요일에 본다.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.thu = class_admin.open_class(
+            course_id=None, course_name="2026 여름 N제", total_weeks=3,
+            track="수능", subject="통합과학",
+            name="목 6.5 대치러셀", start_date="2026-09-03",
+        )
+        cls.tue = class_admin.open_class(
+            course_id=cls.thu.course_id, course_name=None, total_weeks=None,
+            track=None, subject=None,
+            name="화 6.5 대치러셀", start_date="2026-09-01",
+        )
+        cls.week3 = CourseWeek.objects.get(course=cls.thu.course, week_no=3)
+        cls.exam = exam_admin.create_exam(
+            "3주차 미니", datetime.date(2026, 9, 17), course_week_id=cls.week3.week_id
+        )
+        cls.thu_student = make_student("stu-thu", "김하늘")
+        cls.tue_student = make_student("stu-tue", "이서준")
+        for student, klass in ((cls.thu_student, cls.thu), (cls.tue_student, cls.tue)):
+            CourseEnrollment.objects.create(
+                student=student, course=cls.thu.course, klass=klass
+            )
+
+    def session(self, klass):
+        return ClassSession.objects.get(klass=klass, week_no=3)
+
+    def test_both_classes_point_at_the_one_exam(self):
+        self.assertEqual(self.session(self.thu).exam_id, self.exam.pk)
+        self.assertEqual(self.session(self.tue).exam_id, self.exam.pk)
+
+    def test_a_class_opened_later_picks_the_exam_up(self):
+        """시험은 미리 만들어 둔다 — 나중에 연 반도 그 자리에서 물고 시작한다."""
+        late = class_admin.open_class(
+            course_id=self.thu.course_id, course_name=None, total_weeks=None,
+            track=None, subject=None,
+            name="금 6.5 대치러셀", start_date="2026-09-04",
+        )
+
+        self.assertEqual(self.session(late).exam_id, self.exam.pk)
+
+    def test_a_week_the_class_added_alone_has_no_exam(self):
+        """커리에 대응 주차가 없는 주차는 시험도 없다 (FLOW 1-3)."""
+        class_admin.add_week(self.thu)
+
+        self.assertIsNone(ClassSession.objects.get(klass=self.thu, week_no=4).exam_id)
+
+    def test_grading_one_class_leaves_the_other_alone(self):
+        """화반은 아직 이 시험을 안 봤다 — 그날 미제출로 찍히면 안 된다."""
+        AnswerSheet.objects.create(
+            exam=self.exam, student=self.thu_student, scan_image_path="omr/thu.png",
+            match_status=AnswerSheet.MatchStatus.MATCHED,
+        )
+        Score.objects.create(
+            exam=self.exam, student=self.thu_student,
+            total_score=Decimal("40"), is_taken=True,
+        )
+
+        scoring.finalize_exam(self.exam)
+
+        self.assertEqual(
+            Attendance.objects.get(
+                session=self.session(self.thu), student=self.thu_student
+            ).status,
+            Attendance.Status.PRESENT,
+        )
+        self.assertFalse(Score.objects.filter(student=self.tue_student).exists())
+        self.assertFalse(Attendance.objects.filter(student=self.tue_student).exists())
+        self.assertFalse(ClinicEligibility.objects.filter(student=self.tue_student).exists())
+
+    def test_the_other_class_lands_when_its_sheets_come_in(self):
+        """다음 주 화요일 — 화반 답안지가 들어오면 그 반 명단이 그때 선다."""
+        AnswerSheet.objects.create(
+            exam=self.exam, student=self.tue_student, scan_image_path="omr/tue.png",
+            match_status=AnswerSheet.MatchStatus.MATCHED,
+        )
+        Score.objects.create(
+            exam=self.exam, student=self.tue_student,
+            total_score=Decimal("70"), is_taken=True,
+        )
+
+        scoring.finalize_exam(self.exam)
+
+        self.assertTrue(Score.objects.filter(student=self.tue_student).exists())
+        self.assertFalse(Score.objects.filter(student=self.thu_student).exists())
+
+    def test_one_week_holds_one_exam(self):
+        with self.assertRaises(ValueError):
+            exam_admin.create_exam(
+                "같은 주차 두 번째", datetime.date(2026, 9, 17),
+                course_week_id=self.week3.week_id,
+            )
