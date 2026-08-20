@@ -1,6 +1,7 @@
 """grades 뷰 — 출결 입력 3차 + 성적·성적표 조회 5차 슬라이스.
 
 3차(PRD 3.1.6·3.1.4①·3.2.3):
+- GET  /api/admin/attendance/classes/{id}       반별 격자 — 주차 × 학생 (출결입력)
 - GET  /api/admin/attendance/sessions            회차 목록 (출결입력)
 - GET  /api/admin/attendance/sessions/{id}       회차 명단 + 출결 + 집계 (출결입력)
 - PUT  /api/admin/attendance/sessions/{id}       출결 upsert + 파생 트리거 (출결입력)
@@ -61,6 +62,7 @@ from apps.videos.models import MakeupGrant
 
 from . import (
     attendance_admin,
+    attendance_grid,
     exam_admin,
     media,
     omr_store,
@@ -80,6 +82,27 @@ _MAKEUP_ELIGIBLE_STATUSES = {
     Attendance.Status.ABSENT,
     Attendance.Status.ABSENT_MAKEUP,
 }
+
+
+class AttendanceClassGridView(APIView):
+    """GET /api/admin/attendance/classes/{class_id} — 반별 격자 (FLOW 3-1).
+
+    반 개설 화면의 `GET /api/admin/classes/{id}` 와 **다른 문**이다. 그쪽은
+    `계정관리` 로 잠겨 있는데 조교 프리셋에는 그 키가 없다(features.py) —
+    같은 문에 얹으면 FLOW 3-1 이 "조교가 연다" 고 적은 화면에서 조교가 403 을
+    받는다. 격자가 보여 주는 것은 출결이므로 게이트도 `출결입력` 이 맞다.
+
+    **GET 뿐이다.** 칸을 바로 고치는 문을 내면 그 쓰기가 `출결 확정`(3-5)을
+    지나치므로 영상과 통지가 출결과 갈린다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.ATTENDANCE_ENTRY)]
+
+    def get(self, request, class_id):
+        klass = attendance_grid.load_class(class_id)
+        if klass is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return Response(attendance_grid.build_grid_payload(klass))
 
 
 class AttendanceSessionListView(APIView):

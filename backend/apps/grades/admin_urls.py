@@ -12,6 +12,11 @@ app_name = "attendance_admin"
 
 urlpatterns = [
     path(
+        "admin/attendance/classes/<int:class_id>",
+        views.AttendanceClassGridView.as_view(),
+        name="attendance-class-grid",
+    ),
+    path(
         "admin/attendance/sessions",
         views.AttendanceSessionListView.as_view(),
         name="attendance-session-list",
