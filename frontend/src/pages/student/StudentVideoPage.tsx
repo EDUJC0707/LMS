@@ -48,6 +48,7 @@
  */
 import MuxPlayer from "@mux/mux-player-react";
 import { useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 
 import { http, useApi, useApiAction } from "../../api";
 import {
@@ -86,7 +87,8 @@ interface Playback {
   watermark: string;
   /** Mux Data 시청자 축 — 실명이 아니라 학생 내부 번호다(playback.py). */
   viewer_id: string;
-  expires_at: string;
+  /** 가이드 영상은 만료가 없다 — null 로 온다(playback.py). */
+  expires_at: string | null;
 }
 
 /** "1800" → "30분". 없으면 빈 칸. */
@@ -136,9 +138,15 @@ function useWatermarkGuard(
 }
 
 export default function StudentVideoPage() {
+  const { videoId } = useParams();
+  const navigate = useNavigate();
   const list = useApi(
-    () => http.get<{ videos: VideoRow[] }>("/student/videos").then((r) => r.data.videos),
-    [],
+    () =>
+      // 번호로 들어온 경우 목록은 그리지 않는다 — 부르지도 않는다.
+      videoId
+        ? Promise.resolve([] as VideoRow[])
+        : http.get<{ videos: VideoRow[] }>("/student/videos").then((r) => r.data.videos),
+    [videoId],
   );
   const [playing, setPlaying] = useState<Playback | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -165,6 +173,17 @@ export default function StudentVideoPage() {
     }
   });
 
+  // /student/videos/{id} 로 들어오면 그 영상을 바로 연다 — 성적표의 오답
+  // 학습가이드가 가리키는 영상은 목록(권한 기반)에 없다(playback.py).
+  useEffect(() => {
+    if (videoId) void open.run(Number(videoId));
+  }, [videoId, open.run]);
+
+  if (videoId && !playing) {
+    if (open.error) return <ErrorState description={open.error} />;
+    return <Loading label="영상을 불러오는 중…" />;
+  }
+
   if (list.initialLoading) return <Loading label="복습영상을 불러오는 중…" />;
   if (list.error) return <ErrorState description={list.error} onRetry={list.reload} />;
 
@@ -179,7 +198,7 @@ export default function StudentVideoPage() {
               <button
                 type="button"
                 className="vd-back"
-                onClick={() => setPlaying(null)}
+                onClick={() => (videoId ? navigate(-1) : setPlaying(null))}
                 aria-label="목록으로"
               >
                 {/* PageIcon 과 같은 결: viewBox 24 · stroke 1.7 · 둥근 끝 */}
@@ -197,7 +216,7 @@ export default function StudentVideoPage() {
               {playing.video.title}
             </span>
           }
-          aside={`${playing.video.week_no}주차`}
+          aside={playing.video.week_no === null ? undefined : `${playing.video.week_no}주차`}
           padding="none"
         >
           <div className="vd-stage" ref={stageRef}>

@@ -299,10 +299,13 @@ export default function StudentGradeDetailPage() {
                 </span>
                 <span className="st-guide__text">{guide.study_guide}</span>
                 {guide.guide_video && (
-                  <span className="st-guide__video">
+                  <Link
+                    className="st-guide__video"
+                    to={`/student/videos/${guide.guide_video.video_id}`}
+                  >
                     <Badge tone="outline">가이드 영상</Badge>
                     {guide.guide_video.title}
-                  </span>
+                  </Link>
                 )}
               </div>
             ))}
