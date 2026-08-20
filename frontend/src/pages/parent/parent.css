@@ -136,6 +136,12 @@
 
 /* ── 안내 문장(권한 경계·비어 있는 이유) ───────────────────────── */
 
+/* 중단원 행 — 자기 대단원 밑에 한 칸 들어간다(FLOW 4-3). */
+.parent-unit-minor {
+  padding-left: var(--space-md);
+  color: var(--color-muted);
+}
+
 .parent-note {
   margin: 0;
   font-size: var(--text-xs);

@@ -8,7 +8,14 @@
 import { Badge, Card, DetailsPanel, EmptyState, Table } from "../../components";
 import { score, shortDay } from "./format";
 import "./parent.css";
-import { ReportGuide, ReportQuestion, ReportSummary, ReportUnit, ThemeTrend } from "./types";
+import {
+  ReportGuide,
+  ReportQuestion,
+  ReportSummary,
+  ReportUnit,
+  ReportUnitMinor,
+  ThemeTrend,
+} from "./types";
 
 export interface GradeReportViewProps {
   /** 첫 카드 제목 — 시험 이름. 상단바는 "성적"만 말하므로 본문이 들고 있어야 한다. */
@@ -66,14 +73,26 @@ export function GradeReportView({
         </dl>
       </Card>
 
+      {/* 중단원은 자기 대단원 바로 밑에 들여쓴다(FLOW 4-3) */}
       <Card title="단원별 점수" padding="none">
-        <Table
-          rows={units}
-          rowKey={(row) => row.unit_major}
-          caption="대단원별 점수와 정답률"
+        <Table<ReportUnit | ReportUnitMinor>
+          rows={units.flatMap((unit) => [unit, ...unit.minors])}
+          rowKey={(row) =>
+            "unit_minor" in row ? `${row.unit_major}/${row.unit_minor}` : row.unit_major
+          }
+          caption="단원별 점수와 정답률"
           empty="이 시험에는 단원이 나뉘어 있지 않습니다"
           columns={[
-            { key: "unit", header: "단원", cell: (row) => row.unit_major },
+            {
+              key: "unit",
+              header: "단원",
+              cell: (row) =>
+                "unit_minor" in row ? (
+                  <span className="parent-unit-minor">{row.unit_minor}</span>
+                ) : (
+                  row.unit_major
+                ),
+            },
             {
               key: "count",
               header: "문항",
@@ -100,7 +119,8 @@ export function GradeReportView({
               header: "정답률",
               align: "right",
               numeric: true,
-              sortValue: (row) => row.correct_rate,
+              // 정렬을 열지 않는다 — 행이 대단원·중단원 두 층이라 섞어 세우면
+              // 중단원이 자기 대단원에서 떨어져 나간다.
               cell: (row) => `${score(row.correct_rate)}%`,
             },
           ]}

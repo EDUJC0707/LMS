@@ -26,6 +26,7 @@ import {
   GradeReport,
   ReportQuestion,
   ReportUnit,
+  ReportUnitMinor,
   ThemeTrend,
   WrongAnswerGuide,
   num,
@@ -140,15 +141,26 @@ export default function StudentGradeDetailPage() {
         </div>
       </Card>
 
-      {/* ② 대단원별 */}
-      <Card title="대단원별 점수" aside={`${units.length}개 단원`} padding="none">
-        <Table<ReportUnit>
-          rows={units}
-          rowKey={(row) => row.unit_major}
-          caption="대단원별 점수와 정답률"
-          empty="대단원 구분이 없는 시험입니다"
+      {/* ② 대단원·중단원별 — 중단원은 자기 대단원 바로 밑에 들여쓴다(FLOW 4-3) */}
+      <Card title="단원별 점수" padding="none">
+        <Table<ReportUnit | ReportUnitMinor>
+          rows={units.flatMap((unit) => [unit, ...unit.minors])}
+          rowKey={(row) =>
+            "unit_minor" in row ? `${row.unit_major}/${row.unit_minor}` : row.unit_major
+          }
+          caption="단원별 점수와 정답률"
+          empty="단원 구분이 없는 시험입니다"
           columns={[
-            { key: "unit", header: "대단원", cell: (row) => row.unit_major },
+            {
+              key: "unit",
+              header: "단원",
+              cell: (row) =>
+                "unit_minor" in row ? (
+                  <span className="st-unit-minor">{row.unit_minor}</span>
+                ) : (
+                  row.unit_major
+                ),
+            },
             {
               key: "count",
               header: "문항",
@@ -174,10 +186,14 @@ export default function StudentGradeDetailPage() {
               key: "rate",
               header: "정답률",
               width: "15rem",
-              sortValue: (row) => row.correct_rate,
+              // 정렬을 열지 않는다 — 행이 대단원·중단원 두 층이라 섞어 세우면
+              // 중단원이 자기 대단원에서 떨어져 나가 어느 층인지 알 수 없게 된다.
               cell: (row) => (
                 <span className="st-cell-rate">
-                  <RateBar rate={row.correct_rate} caption={`${row.unit_major} 정답률`} />
+                  <RateBar
+                    rate={row.correct_rate}
+                    caption={`${"unit_minor" in row ? row.unit_minor : row.unit_major} 정답률`}
+                  />
                   <b className="num">{num(row.correct_rate)}%</b>
                 </span>
               ),

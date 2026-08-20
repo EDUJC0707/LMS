@@ -547,6 +547,12 @@
   background: var(--color-accent);
 }
 
+/* 중단원 행 — 자기 대단원 밑에 한 칸 들어간다(FLOW 4-3). */
+.st-unit-minor {
+  padding-left: var(--space-md);
+  color: var(--color-muted);
+}
+
 .st-cell-rate {
   display: flex;
   align-items: center;

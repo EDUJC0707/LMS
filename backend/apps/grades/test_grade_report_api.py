@@ -452,7 +452,12 @@ class StudentGradeReportDetailTests(GradeFixtureMixin, TestCase):
         self.assertEqual(summary["percentile"], 40.0)
 
     def test_unit_blocks(self):
-        """② 대단원별 — 문항 수·정답 수(틀린 수)·내 점수/단원 만점·정답률."""
+        """② 대단원·중단원별 — 문항 수·정답 수(틀린 수)·내 점수/단원 만점·정답률.
+
+        중단원은 대단원 안에 중첩된다(FLOW 4-3). E2 는 q1 만 중단원(`중화`)이
+        붙어 있어 산염기는 중단원 1줄, 산화환원은 빈 리스트다 — 중단원이 없는
+        문항으로 행을 지어내지 않는다.
+        """
         units = self.get_detail(self.exam2)["report"]["units"]
         self.assertEqual(
             units,
@@ -465,6 +470,18 @@ class StudentGradeReportDetailTests(GradeFixtureMixin, TestCase):
                     "my_points": 20.0,
                     "unit_max_points": 40.0,
                     "correct_rate": 50.0,
+                    "minors": [
+                        {
+                            "unit_major": "산염기",
+                            "unit_minor": "중화",
+                            "question_count": 1,
+                            "correct_count": 1,
+                            "wrong_count": 0,
+                            "my_points": 20.0,
+                            "unit_max_points": 20.0,
+                            "correct_rate": 100.0,
+                        }
+                    ],
                 },
                 {
                     "unit_major": "산화환원",
@@ -474,6 +491,7 @@ class StudentGradeReportDetailTests(GradeFixtureMixin, TestCase):
                     "my_points": 40.0,
                     "unit_max_points": 60.0,
                     "correct_rate": 66.7,
+                    "minors": [],
                 },
             ],
         )
@@ -664,10 +682,10 @@ class StudentGradeReportDetailTests(GradeFixtureMixin, TestCase):
 
     def test_query_budget(self):
         self.login_student()
-        # 세션인증 2 + 학생 1 + 반 이름 1 + 성적·시험 1 + 답안지 1 + 대단원 집계 1
+        # 세션인증 2 + 학생 1 + 반 이름 1 + 성적·시험 1 + 답안지 1 + 대단원 1 + 중단원 1
         # + 문항 1 + 내 답안 1 + 오답률 집계 1 + 요약 집계 1 + 상위30 1 + 백분위 1
         # + 추이 성적 1 + 추이 답안지 1 + 추이 집계 1
-        with self.assertNumQueries(16):
+        with self.assertNumQueries(17):
             self.assertEqual(self.client.get(self.detail_url(self.exam2)).status_code, 200)
 
 
