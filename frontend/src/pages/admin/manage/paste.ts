@@ -54,7 +54,11 @@ const FIELDS = Object.keys(FIELD_LABELS) as EntryField[];
  * 같은 값**을 내야 한다 — 여기서 맞춰 보고 저쪽이 저장·조회하므로, 두 규칙이
  * 갈리면 조교가 방금 답한 별칭이 다음 파일에서 안 맞는다.
  */
-const squash = (cell: string) => cell.replace(/[\s.·_/()-]/g, "").toLowerCase();
+const squash = (cell: string) =>
+  // **NFC 를 먼저 건다.** 맥에서 만든 파일의 머리줄은 자모가 분해된 NFD 로 오고
+  // (FLOW 2-2 ①), 서버 키는 NFC 다. 안 맞추면 `학생연락처` 가 눈으로는 같은데
+  // 대조에서 빗나가 **모든 열이 수동 매핑으로 떨어진다.**
+  cell.normalize("NFC").replace(/[\s.·_/()-]/g, "").toLowerCase();
 
 /** 머리줄 한 칸 → 필드. 표에 없으면 "". */
 export function guessField(cell: string, aliases: AliasMap): ColumnChoice {

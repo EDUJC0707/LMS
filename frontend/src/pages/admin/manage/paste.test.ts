@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { AliasMap } from "./paste.ts";
-import { assignColumn, isMapped, newAliases, readPasted, toEntries } from "./paste.ts";
+import { assignColumn, guessField, isMapped, newAliases, readPasted, toEntries } from "./paste.ts";
 
 /** 서버 별칭표 자리 — 이 모듈은 표를 받아 맞춰만 보고 갖고 있지 않다. */
 const ALIASES: AliasMap = {
@@ -107,4 +107,13 @@ test("조교가 새로 답한 머리줄만 별칭표로 올라간다", () => {
 test("머리줄이 아니면 남길 별칭이 없다", () => {
   const table = readPasted("김하늘\t01011112222", ALIASES);
   assert.deepEqual(newAliases({ ...table, mapping: ["name", "phone"] }, ALIASES), []);
+});
+
+test("맥에서 만든 머리줄(NFD)도 별칭표에 맞는다", () => {
+  // 별칭표는 NFC 로 저장된다(서버 `alias_key`). 맥 파일은 자모가 분해돼 오므로
+  // 정규화를 빠뜨리면 눈으로 같은 글자가 대조에서 빗나가 열이 전부 수동으로 떨어진다.
+  const aliases: AliasMap = { 학생연락처: "phone" };
+
+  assert.equal(guessField("학생 연락처".normalize("NFD"), aliases), "phone");
+  assert.equal(guessField("학생 연락처".normalize("NFC"), aliases), "phone");
 });
