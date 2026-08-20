@@ -1,7 +1,9 @@
 # EduJC 인프라 구조 (living doc)
 
-> 최종 갱신: 2026-07-21 — empty 배포 완료 시점 기준.
-> 상세 셋업 명령·순서는 [`infra/DEPLOY.md`](../../infra/DEPLOY.md) 참조. 이 문서는 **"지금 뭐가 어디에 떠 있는가"**의 단일 기준.
+> 최종 갱신: 2026-08-20 — `flyctl machines list` 실측 반영.
+> **가동 현황의 기준은 [`infra/DEPLOY.md`](../../infra/DEPLOY.md) 다.** 머신·시크릿·비용은 거기 한 곳에만 적는다 —
+> 2026-07-21 부터 이 문서가 따로 들고 있다가 한 달 내내 틀린 값을 말했다.
+> 이 문서에 남는 것은 **구조 그림과 계정·권한**이다.
 
 ## 1. 전체 구조
 
@@ -29,53 +31,28 @@ Vercel ──────────────┐            Fly.io org: EDUJ
 - LMS는 `lms` database만 사용. **LMS 스키마에 문제은행(qbank) 표는 없다** — 문제 DB는 전적으로 도훈 레포/`qbank` database 소유.
 - 큰 파일(이미지·PDF)은 DB에 넣지 않고 오브젝트 스토리지에, DB에는 경로만.
 
-## 2. 현재 상태 (2026-07-21)
+## 2. 현재 상태
 
-| 리소스 | 값 | 상태 |
-|---|---|---|
-| Fly org | `EDUJC` (slug `edujc`) · 카드 등록됨 · Pay-As-You-Go | ✅ |
-| `edujc-lms` | https://edujc-lms.fly.dev — web 1대(shared-cpu-1x 512MB), `/healthz` 200 | ✅ 배포 |
-| — worker | Celery 프로세스 그룹 **0대로 꺼둠**(설계는 유지) | ⏸ |
-| `edujc-pg` | postgres-flex, nrt, shared-cpu-1x 256MB, 볼륨 3GB, 단일 노드 | ✅ |
-| — database `lms` | user `lms`, `DATABASE_URL`은 edujc-lms 시크릿에 자동 주입 | ✅ 마이그레이션 적용됨 |
-| — database `qbank` | user `qbank`, `DATABASE_URL`은 edujc-qbank 시크릿에 주입 | ✅ (빈 DB) |
-| `edujc-qbank` | 앱 생성만 됨. 배포는 도훈 레포에서 (`Dockerfile`+`fly.toml` 추가 후 `fly deploy`) | 🔲 |
-| Tigris 스토리지 | 미생성 — 파일 업로드 기능 붙일 때 `fly storage create` (앱별 버킷) | 🔲 |
-| Upstash Redis | 미생성 — 첫 백그라운드 작업(알림톡 일괄발송·OMR 채점) 때 | 🔲 |
-| 프런트 (LMS) | `frontend/`(Vite+React) → **Vercel** 배포 예정. 미연결 | 🔲 |
-| GitHub Actions | `.github/workflows/fly-deploy.yml` 준비됨. repo secret `FLY_API_TOKEN` 등록 시 push=자동배포 | 🔲 |
+**표는 [`infra/DEPLOY.md`](../../infra/DEPLOY.md#6-celery-워커--beat--redis) 에 있다.** 요약만 적는다(2026-08-20):
 
-### edujc-lms 시크릿 (fly secrets)
-`DJANGO_SECRET_KEY` · `DATABASE_URL`(attach 자동) · `DJANGO_DEBUG=False` · `ALLOWED_HOSTS=*`(임시 — §4) · `CSRF_TRUSTED_ORIGINS` · `DJANGO_SECURE_SSL_REDIRECT=False`(임시)
+- `edujc-lms` web · worker · beat 가 **전부 돌고 있다**. Celery 는 2026-08-12 부터 가동
+- `edujc-pg` postgres-flex 단일 노드 256MB + 볼륨 3GB. database `lms`·`qbank` 공용
+- Tigris 버킷 2개, Upstash Redis `edujc-redis`(Fixed 250MB) **모두 생성됨**
+- 프런트는 Vercel, 도메인은 `lms.hjcedu.com`·`api.hjcedu.com`·`hjcedu.com` 셋 다 연결됨
+- `edujc-qbank` 는 배포됨(도훈 레포). 같은 org·같은 PG 볼륨을 쓴다
+- `jc-search` 라는 **이 레포와 무관한 앱**이 같은 org 에서 상시 가동 중이라 청구서에 같이 실린다
 
-## 3. 배포 방법
+> **PG 단일 노드 256MB 는 그대로다.** 오픈 전 HA·스케일업 검토는 아직 안 했다.
+> 볼륨 3GB 를 qbank 와 나눠 쓰는 것도 그대로다 — 저쪽이 부으면 우리가 같이 좁아진다.
 
-```bash
-# LMS 백엔드 (이 레포 루트에서 — 로컬 소스 빌드, GitHub 안 거침)
-fly deploy -c infra/fly.toml -a edujc-lms --remote-only
+## 5. 비용
 
-# worker 켜기/끄기 (Celery 필요해질 때)
-fly scale count worker=1 -a edujc-lms   # + REDIS_URL 시크릿 필요
-fly scale count worker=0 -a edujc-lms
-```
+**표는 [`infra/DEPLOY.md`](../../infra/DEPLOY.md) 에 있다.** 여기 적지 않는다 — 두 군데 있으면 한쪽이 낡는다.
 
-- Docker 로컬 불필요(원격 빌더). 이미지: `infra/Dockerfile` (uv, `.venv/bin/*` 직접 실행 — 부팅 지연 방지).
-- 배포마다 release command로 `migrate --noinput` 자동 실행.
-- qbank: 도훈 레포에서 동일 패턴으로. 앱·DB는 이미 있으므로 `fly deploy -a edujc-qbank`만 하면 됨.
-
-## 4. 임시 설정 (되돌릴 것)
-
-| 항목 | 현재 | 조일 시점 |
-|---|---|---|
-| `ALLOWED_HOSTS=*` | health check(Host: 127.0.0.1)가 400 나는 문제 회피용 | 실제 도메인 확정 시 도메인 목록으로 (또는 check에 Host 헤더 지정) |
-| `DJANGO_SECURE_SSL_REDIRECT=False` | fly-proxy가 이미 force_https | 그대로 둬도 무방 (프록시가 처리) |
-| PG 단일 노드·256MB | 개발용 최소 | 오픈 전 HA(2노드)·스케일업 검토 |
-
-## 5. 비용 (대략)
-
-- 현재(개발): web 1대 + PG 1대 ≈ **월 $5~10**. Tigris/Redis 미사용 = $0.
-- 오픈 후(수백 명): web 상시 1~2대 + worker + PG + 스토리지 ≈ **월 $15~40** 수준.
-- Redis(Upstash) 무료 티어로 시작 가능. Tigris는 저장 $0.02/GB, egress 무료.
+2026-08-20 실측 요약: fly 전체 **~$34.76/월**(이 레포 몫 $20.76 · qbank+jc-search $13.85),
+Google Workspace 별도 $16.80. **전부 정액이고 손님 0명일 때도 나간다.**
+오픈 때 켜지는 종량 항목은 `docs/2026-08-04-영상호스팅-비용재계산.md`(Mux) 와
+`docs/2026-08-05-알림발송-비용과-업체선정.md`(알리고) 에 있다.
 
 ## 6. 계정·권한 메모
 
@@ -85,9 +62,13 @@ fly scale count worker=0 -a edujc-lms
 
 ## 7. 남은 TODO
 
-1. 프런트 Vercel 프로젝트 생성 → `frontend/` 연결, API 도메인/CORS(`CORS_ALLOWED_ORIGINS`) 설정
-2. GitHub repo에 `FLY_API_TOKEN` secret → push 자동배포 활성화 (repo admin 권한 필요)
-3. qbank 레포에 Dockerfile/fly.toml → 첫 배포 (도훈)
-4. 파일 업로드 시작 시: `fly storage create` (lms/qbank 각자 버킷) + django-storages 연결(설정은 이미 env 기반으로 준비됨)
-5. 알림톡/OMR 등 첫 비동기 기능 시: Upstash Redis + worker=1
-6. 커스텀 도메인 + `ALLOWED_HOSTS` 조이기
+2026-07-21 에 적어 둔 여섯은 **전부 끝났다** — Vercel 연결 · `FLY_API_TOKEN` 자동배포 ·
+qbank 첫 배포 · Tigris 버킷 · Redis+worker · 커스텀 도메인과 `ALLOWED_HOSTS`.
+
+인프라에 남은 것은 둘이다.
+
+1. **PG 를 오픈 전에 키운다.** 단일 노드 256MB · 볼륨 3GB 이고 qbank 와 나눠 쓴다.
+2. **`jc-search` 가 필요한지 정한다.** 이 레포 것이 아닌데 shared-cpu-2x 로 상시 가동이라
+   fly 청구서에서 제일 큰 머신이다.
+
+나머지 할 일은 인프라가 아니라 제품이라 `.claude/to-do.md` 에 있다.
