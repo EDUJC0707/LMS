@@ -380,7 +380,7 @@
 
 @media (hover: hover) {
   .ops-seg__opt input:not(:checked):hover + span {
-    background: var(--color-paper-3);
+    background: var(--color-paper-1);
   }
 }
 
@@ -421,7 +421,7 @@
 
 /* 미입력도 골라 찍는 값이다 — 상태색은 안 쓰되 눌린 것은 보여야 한다. */
 .ops-seg__opt--blank input:checked + span {
-  background: var(--color-paper-3);
+  background: var(--color-paper-1);
   color: var(--color-ink);
 }
 
@@ -490,7 +490,7 @@
   padding: 0 var(--space-2xs);
   border: 1px solid var(--color-rule);
   border-radius: var(--radius-xs);
-  background: var(--color-paper-3);
+  background: var(--color-paper-1);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   color: var(--color-ink-2);
@@ -504,7 +504,7 @@
 .ops-grid .ui-table td:first-child {
   position: sticky;
   left: 0;
-  background: var(--color-paper-3);
+  background: var(--color-paper-1);
 }
 
 .ops-grid .ui-table thead th:first-child {
@@ -532,11 +532,10 @@
   color: var(--color-danger);
 }
 
-.ops-grid__mark--blank {
-  color: var(--color-ink-2);
-}
 
 /* 그때 이 반에 없던 칸. 미입력(빈 칸)보다 약하게 둔다 — 채울 것이 없는 자리다. */
 .ops-grid__none {
-  color: var(--color-neutral);
+  /* `x` 는 FLOW 3-1 이 네 문단을 쓴 표시다 — placeholder 토큰(대비 3.3:1)이 아니라
+     읽히는 글자여야 한다. */
+  color: var(--color-ink-2);
 }

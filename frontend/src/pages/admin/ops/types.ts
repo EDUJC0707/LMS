@@ -115,8 +115,6 @@ export interface GridWeek {
 export interface GridStudent {
   student_id: number;
   name: string | null;
-  /** 원번(유일). 계정 미발급이면 null */
-  login_id: string | null;
   enrollment_status: string;
   /** **`weeks` 와 자리가 맞는** 리스트다(주차 번호를 키로 쓰지 않는다).
    *  null 은 그 주차에 출결 레코드가 없다는 뜻이고, 값이 있는 첫 칸보다 앞은
@@ -125,7 +123,7 @@ export interface GridStudent {
 }
 
 export interface ClassGrid {
-  klass: { class_id: number; name: string; course_name: string };
+  klass: { class_id: number; name: string };
   weeks: GridWeek[];
   students: GridStudent[];
 }

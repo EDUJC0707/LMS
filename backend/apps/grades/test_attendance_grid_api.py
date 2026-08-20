@@ -150,9 +150,21 @@ class AttendanceGridApiTests(TestCase):
         self.login(self.admin)
         _, by_name = self.rows()
         self.assertEqual(by_name["최현보"]["cells"], ["결석(현보)", None, None, None])
-        # 화반 격자에는 이 학생의 목반 기록이 섞이지 않는다
+        # 두 반 모두에 기록이 있는 학생은 **각 격자에 그 반 것만** 나온다.
+        # 화반에 회차와 기록을 실제로 만들어 둬야 이 검증이 뜻을 갖는다 —
+        # 회차가 없으면 `cells` 가 양쪽 다 `[]` 라 무엇을 해도 통과한다.
+        other_session = ClassSession.objects.create(
+            session_date=datetime.date(2026, 7, 14), session_no=91, klass=self.other
+        )
+        Attendance.objects.create(
+            session=other_session, student=self.hyunbo, status=Attendance.Status.PRESENT
+        )
+
         _, other = self.rows(self.other.class_id)
-        self.assertEqual(other["최현보"]["cells"], [])
+        self.assertEqual(other["최현보"]["cells"], ["출석"])
+        # 목반 격자는 그대로다 — 화반의 `출석` 이 넘어오지 않는다
+        _, mine = self.rows()
+        self.assertEqual(mine["최현보"]["cells"], ["결석(현보)", None, None, None])
 
     def test_withdrawn_student_stays_with_his_status(self):
         """퇴원생도 줄을 남긴다 — 다녔던 주차가 그 학생의 이력이다."""

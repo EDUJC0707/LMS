@@ -121,8 +121,8 @@ class Command(BaseCommand):
             self._wipe()
             staff = self._create_staff()
             students, parents = self._create_students_and_parents(now)
-            course, weeks = self._create_course(students, today)
-            sessions = self._create_sessions(course, weeks)
+            course, weeks, classes = self._create_course(students, today)
+            sessions = self._create_sessions(course, weeks, classes)
             exams = self._create_exams(sessions, weeks)
             videos = self._create_videos(weeks, today)
             self._attach_guide_videos(exams, videos)
@@ -326,15 +326,17 @@ class Command(BaseCommand):
                 klass=classes["수요반" if wednesday else "토요반"],
                 primary_weekday=3 if wednesday else 6,  # 0=일…6=토(수/토)
             )
-        return course, weeks
+        return course, weeks, classes
 
     @staticmethod
-    def _create_sessions(course, weeks):
+    def _create_sessions(course, weeks, classes):
         """매주 수·토 회차(주차당 2회, 총 20회)."""
         sessions = []
         session_no = 0
         for week in weeks:
-            for offset in (2, 5):  # 월요일 시작 기준 수(+2)·토(+5)
+            # 회차는 반의 것이다(FLOW 1-1) — 요일이 곧 반이라 여기서 붙인다.
+            # 안 붙이면 반으로 고르는 화면(반별 격자)이 시드에서 문이 없다.
+            for offset, klass in ((2, classes["수요반"]), (5, classes["토요반"])):
                 session_no += 1
                 sessions.append(
                     ClassSession.objects.create(
@@ -342,6 +344,7 @@ class Command(BaseCommand):
                         session_no=session_no,
                         target_grade=2,
                         course_week=week,
+                        klass=klass,
                     )
                 )
         return sessions

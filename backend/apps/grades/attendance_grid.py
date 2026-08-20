@@ -22,6 +22,7 @@
 (3-5) 하나다. 칸을 여기서 바로 고치게 하면 영상과 통지가 확정을 거치지 않고 갈린다.
 """
 from django.db import models
+from django.db.models import F
 
 from apps.accounts.models import Student
 from apps.curriculum.models import Class, CourseEnrollment
@@ -41,7 +42,10 @@ def build_grid_payload(klass):
     학생 × 주차라 한 번만 새도 그대로 N+1 이 된다 — 출결은 조인 없이
     `values_list` 로 통째로 받아 파이썬에서 자리에 꽂는다.
     """
-    weeks = list(klass.sessions.order_by("week_no", "session_id"))
+    # 주차 번호가 없는 회차(반이 혼자 더한 것)를 날짜로 끼워 넣는다. 그냥
+    # `week_no` 로 정렬하면 Postgres 가 NULL 을 맨 뒤로 보내, 학생의 유일한
+    # 기록이 그런 회차에 있으면 **앞선 진짜 주차가 전부 x 로 뒤집힌다**.
+    weeks = list(klass.sessions.order_by(F("week_no").asc(nulls_first=True), "session_date"))
     position = {s.session_id: i for i, s in enumerate(weeks)}
     students = list(
         Student.objects.filter(
@@ -67,7 +71,6 @@ def build_grid_payload(klass):
         "klass": {
             "class_id": klass.class_id,
             "name": klass.name,
-            "course_name": klass.course.name,
         },
         "weeks": [
             {
@@ -81,7 +84,6 @@ def build_grid_payload(klass):
             {
                 "student_id": s.student_id,
                 "name": s.user.name if s.user else None,
-                "login_id": s.user.login_id if s.user else None,
                 "enrollment_status": s.enrollment_status,
                 "cells": cells[s.student_id],
             }
