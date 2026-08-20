@@ -17,15 +17,19 @@
 
 **승인이 없다**(FLOW 3-4, 2026-08-18). 결석했다는 근거가 이미 출결 SSOT 에 있어
 사람이 한 번 더 볼 것이 없다. 지급 조건은 **신청 + 결석 확인** 둘뿐이고 순서는
-상관없다 — 여기 오는 신청은 결석이 이미 확정된 것이라 받는 자리에서 바로 지급되고
-(grades.attendance_admin.grant_makeup), 결석이 아직이면 출결표 저장이 낸다
-(트리거 ③). 구 `POST /admin/makeup-requests/{id}/approve` 와 `승인` 값은 제거됐다.
+상관없다 — 결석이 이미 찍혀 있으면 받는 자리에서 바로 지급되고
+(grades.attendance_admin.grant_makeup), 아직이면 출결표 저장이 낸다(트리거 ③).
+구 `POST /admin/makeup-requests/{id}/approve` 와 `승인` 값은 제거됐다.
 **클리닉은 그대로 승인제**다(FLOW 3-7) — 자리를 배정하는 일이라 별개다.
 
-**자격 강제(§4 상태 기반 노출)**: 동보 신청은 결석생에게만 존재한다 — 본인
-(자녀)의 `결석` 출결이 아니면 이 API 자체가 4xx 다. 소유 밖 출결은 존재
-여부와 무관하게 404(2차 슬라이스 자녀 소유 검증 패턴 — 존재 비노출),
-소유 안이지만 결석이 아니면 400.
+**신청이 출결 값을 바꾸지 않는다**(FLOW 3-4). `미입력` 인 칸에도 신청은 받지만
+(결석이 확정되기 전에도 눌러 둘 수 있다) 출결표는 건드리지 않는다 — 학생이
+눌렀다고 셀이 `결석(동보)` 가 되면 조교가 그 학생을 "아직 안 본 칸"에서 못 찾고,
+`결석` 이 안 찍혀 영상이 영영 안 나간다.
+
+**자격 강제(§4 상태 기반 노출)**: 소유 밖 출결은 존재 여부와 무관하게
+404(2차 슬라이스 자녀 소유 검증 패턴 — 존재 비노출). 소유 안이라도
+`출석`·`결석(현보)` 는 400 — 결석이 아닌 것이 확실한 값이다.
 
 **중복 계약**: 같은 결석에 신청/지급완료가 하나라도 있으면 400 —
 거절된 신청만 재신청을 허용한다(관리자 재검토 경로).
@@ -53,6 +57,9 @@ from .models import MakeupGrant, Video, VideoGrant, WatermarkTamper
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
 # 거절만 재신청 허용 — 신청/지급완료는 살아있는 신청으로 본다(중복 400).
 _ACTIVE_STATUSES = (MakeupGrant.Status.REQUESTED, MakeupGrant.Status.GRANTED)
+# 결석이 아닌 것이 확실한 값 — 여기만 신청을 막는다. `미입력` 은 "아직 안 봤다"
+# 이지 "왔다" 가 아니므로(FLOW 3-4) 막지 않는다.
+_PRESENT_STATUSES = (Attendance.Status.PRESENT, Attendance.Status.ABSENT_ONSITE)
 
 
 def _iso(value):
@@ -110,11 +117,9 @@ def _create_makeup_request(request, source, owner_filter):
     if attendance is None:
         # 소유 밖 출결은 존재 여부와 무관하게 404 — 타인 결석을 노출하지 않는다
         return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
-    if attendance.status != Attendance.Status.ABSENT:
-        # §4: 결석이 없으면 동보 신청 자격 자체가 없다
+    if attendance.status in _PRESENT_STATUSES:
         return Response(
-            {"detail": "결석 출결에만 동보를 신청할 수 있습니다."},
-            status=status.HTTP_400_BAD_REQUEST,
+            {"detail": "그 수업은 결석이 아닙니다."}, status=status.HTTP_400_BAD_REQUEST
         )
     if MakeupGrant.objects.filter(
         attendance=attendance, status__in=_ACTIVE_STATUSES
@@ -129,9 +134,13 @@ def _create_makeup_request(request, source, owner_filter):
         source=source,
         requested_by=request.user,
     )
-    # 결석은 위 검사로 이미 확정돼 있다 — 조건 둘이 다 찼으므로 여기서 나간다
-    # (FLOW 3-4). 지급 처리자·출결 입력자는 비운다: 신청을 받아 준 사람이 없다.
-    attendance_admin.grant_makeup(attendance, None)
+    # **신청이 출결 값을 바꾸지 않는다**(FLOW 3-4). 결석이 이미 찍혀 있으면 조건
+    # 둘이 다 찼으므로 여기서 나가고(지급 처리자는 비운다 — 받아 준 사람이 없다),
+    # 아직이면 접수만 하고 출결표는 그대로 둔다. 미입력 칸을 신청이 `결석(동보)`
+    # 로 덮으면 조교가 그 학생을 "아직 안 본 칸"에서 못 찾고, `결석` 이 안 찍혀
+    # 영상이 영영 안 나간다 — 지급은 결석이 찍히는 그 자리(트리거 ③)가 낸다.
+    if attendance.status in Attendance.ABSENT_STATUSES - {Attendance.Status.ABSENT_ONSITE}:
+        attendance_admin.grant_makeup(attendance, None)
     # fields 를 주면 그 필드만 다시 읽는다 — select_related 로 잡아 둔 회차·주차가
     # 살아 있어야 아래 블록이 추가 쿼리를 내지 않는다.
     makeup.refresh_from_db(fields=["status", "granted_at"])

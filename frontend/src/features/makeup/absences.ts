@@ -32,8 +32,8 @@ const ACTIVE_STATUSES = ["신청", "지급완료"];
 
 /**
  * 동보 축에 있는 출결 값 — 서버 `_MAKEUP_TRACK_STATUSES`(curriculum/home.py)와 같다.
- * `결석(현보)` 는 뺀다: 현장 보강이 끝난 결석이라 서버가 동보 신청을 400 으로 막는다.
- * (출결 값집합은 2026-07-29 개편으로 출석/결석/결석(동보)/결석(현보) 4종)
+ * `출석`·`결석(현보)` 는 뺀다: 결석이 아닌 것이 확실한 값이라 서버가 400 으로 막는다
+ * (backend/apps/videos/views.py `_PRESENT_STATUSES`).
  */
 const MAKEUP_TRACK_STATUSES = ["결석", "결석(동보)"];
 

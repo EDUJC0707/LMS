@@ -241,6 +241,33 @@ class StudentMakeupRequestTests(MakeupFixtureMixin, TestCase):
         self.assertEqual(res.status_code, 201)
         self.assertEqual(MakeupGrant.objects.filter(attendance=self.att_s1_absent).count(), 2)
 
+    def test_request_on_an_unmarked_cell_does_not_touch_the_attendance(self):
+        """**신청이 출결 값을 바꾸지 않는다**(FLOW 3-4).
+
+        학생이 눌렀다고 미입력 칸이 `결석(동보)` 가 되면 조교는 그 학생을 "아직
+        안 본 칸"에서 못 찾고, `결석` 이 안 찍혀 영상이 영영 안 나간다 — 화면은
+        이미 동보라고 말하는데. 신청은 받아 두고 지급은 결석이 찍힐 때 난다.
+        """
+        attendance = self.att_s1_absent
+        attendance.status = Attendance.Status.UNENTERED
+        attendance.save(update_fields=["status"])
+        res = self.request_makeup(STUDENT_URL, attendance)
+        self.assertEqual(res.status_code, 201)
+        attendance.refresh_from_db()
+        self.assertEqual(attendance.status, Attendance.Status.UNENTERED)
+        self.assertIsNone(attendance.updated_at)
+        makeup = MakeupGrant.objects.get(attendance=attendance)
+        self.assertEqual(makeup.status, MakeupGrant.Status.REQUESTED)
+        self.assertFalse(VideoGrant.objects.filter(makeup=makeup).exists())
+
+    def test_request_on_an_onsite_makeup_is_400(self):
+        """현보는 그 주 수업을 이미 들었다 — 결석이 아닌 것이 확실한 값이다."""
+        self.att_s1_absent.status = Attendance.Status.ABSENT_ONSITE
+        self.att_s1_absent.save(update_fields=["status"])
+        res = self.request_makeup(STUDENT_URL, self.att_s1_absent)
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(MakeupGrant.objects.exists())
+
     def test_request_unmapped_week_still_allowed(self):
         """주차 미매핑은 관리자가 고칠 데이터 문제 — 신청은 받고 영상만 0건이다.
 
