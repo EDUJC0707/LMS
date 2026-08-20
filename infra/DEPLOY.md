@@ -59,14 +59,13 @@ fly secrets set REDIS_URL="<위 출력의 redis:// URL>" CELERY_BROKER_URL="<동
 
 # 2-4) Tigris 오브젝트 스토리지 (이미지/PDF 버킷)
 fly storage create --org EduJC -a edujc-lms --name edujc-lms-storage
-#   ⚠️ Tigris는 AWS_ACCESS_KEY_ID/SECRET/ENDPOINT_URL_S3/BUCKET_NAME 을 주입하지만,
-#   base.py 는 AWS_STORAGE_BUCKET_NAME · AWS_S3_ENDPOINT_URL 이름을 읽는다 → 별칭 set:
-fly secrets set \
-  AWS_STORAGE_BUCKET_NAME="edujc-lms-storage" \
-  AWS_S3_ENDPOINT_URL="https://t3.storage.dev" \
-  AWS_S3_REGION_NAME="auto" \
-  -a edujc-lms
-#   (ACCESS_KEY_ID/SECRET_ACCESS_KEY 는 fly storage create가 이미 주입함)
+#   ✅ 이게 전부다. 별칭을 손으로 set 할 필요 없다 — base.py 가 Tigris 가 넣어 주는
+#   이름(BUCKET_NAME · AWS_ENDPOINT_URL_S3 · AWS_REGION)을 그대로 읽는다.
+#
+#   ⚠️ 2026-08-12 경위: 예전에는 여기 "별칭을 손으로 set 하라"는 단계가 있었고
+#   **그 단계가 빠져 있었다.** 버킷은 만들어져 있는데 Django 는 못 읽어서 앱이
+#   아무 소리 없이 컨테이너 파일시스템에 쓰고 있었다(재배포마다 사라지는 자리).
+#   손 절차는 잊힌다 — 그래서 코드가 두 이름을 다 읽도록 바꿨다(config/tests.py 가 고정).
 
 # 2-5) 앱 시크릿
 fly secrets set \
