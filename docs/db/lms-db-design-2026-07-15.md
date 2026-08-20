@@ -288,7 +288,7 @@ baseline(`id` PK, `sheet_id` FK, `question_id` FK, `marked`, `result`, `is_corre
 | enrollment_id | BIGINT | PK | |
 | student_id | BIGINT | FK students, NN | |
 | course_id | BIGINT | FK courses, NN | |
-| class_name | VARCHAR(30) | NULL | 반(반 이동 대응) |
+| ~~class_name~~ → klass_id | BIGINT FK | NULL | **반은 실체다**(FLOW 1-1) — 이름 사본을 두면 반 이름을 고칠 때 사본이 옛 이름으로 남는다 |
 | primary_weekday | SMALLINT | NULL | 주 수업 요일(0=일…6=토) -- 잠정: 다요일 반복 시 확장 |
 | status | VARCHAR(15) | NN, 기본 `수강` | `수강`/`종료`/`중단` |
 | enrolled_at | TIMESTAMP | NN, 기본 now | |
@@ -431,7 +431,7 @@ baseline(`clinic_id` PK, `student_id` FK, `requested_date`, `requested_time`, `s
 
 - UQ(exam_id, student_id). 전제 = 출석(`attendances`) + 응시(`scores.is_taken`/`attendances.exam_taken`) + 평균미달.
 
-- **[구현 각주 2026-07-22]** 도메인 6 전체를 `backend/apps/clinic`에 그린필드 최종 상태로 구현(슬롯·신청·판정 + baseline 평가 3표, §4.8 인덱스 포함). 편차·확정 2건: ① `clinic_evaluations`는 baseline 문구("클리닉 1건당 1개")를 OneToOne(UQ)로 DB 강제. ② 출석·응시 값은 `clinic_eligibilities`에 복사하지 않고 grades(`attendances`/`scores.is_taken`/`exams.avg_score`) 참조·계산 경로를 모델 docstring 계약으로 명시(cutoff_score NULL=전체평균 자동 판정 — 헤더 노트 ⑤). 정원 마감(활성 신청 수 ≥ capacity — capacity 는 1 고정, 2026-07-28 각주 참조)·전날 마감(당일 신청·변경·취소 불가 — 2026-07-29 확정, 구 "당일 8시 마감" 폐기)·**신청 창구의 끝**(신청 가능 날짜 ≤ `exams.exam_date` + 6일(다음 수업 전날) — 2026-07-30 확정, `clinic/booking.py::booking_window_end` 가 유일한 계산 지점. 신청·변경에만 걸고 취소에는 걸지 않는다)·노쇼 누적(`students.noshow_count`/`clinic_banned`가 원천)은 앱 레이어 계약. 창구는 **컬럼을 만들지 않았다**: 시험일에서 순수 계산되는 값이라 저장하면 `exam_date` 와 어긋날 수 있는 사본이 하나 더 생긴다.
+- **[구현 각주 2026-07-22]** 도메인 6 전체를 `backend/apps/clinic`에 그린필드 최종 상태로 구현(슬롯·신청·판정 + baseline 평가 3표, §4.8 인덱스 포함). 편차·확정 2건: ① `clinic_evaluations`는 baseline 문구("클리닉 1건당 1개")를 OneToOne(UQ)로 DB 강제. ② 출석·응시 값은 `clinic_eligibilities`에 복사하지 않고 grades(`attendances`/`scores.is_taken`/`exams.avg_score`) 참조·계산 경로를 모델 docstring 계약으로 명시(cutoff_score NULL=전체평균 자동 판정 — 헤더 노트 ⑤). 정원 마감(활성 신청 수 ≥ capacity — ~~capacity 는 1 고정~~ → **클리닉 조교 수**, 2026-08-19 대표)·전날 마감(당일 신청·변경·취소 불가 — 2026-07-29 확정, 구 "당일 8시 마감" 폐기)·**신청 창구의 끝**(신청 가능 날짜 ≤ `exams.exam_date` + 6일(다음 수업 전날) — 2026-07-30 확정, `clinic/booking.py::booking_window_end` 가 유일한 계산 지점. 신청·변경에만 걸고 취소에는 걸지 않는다)·노쇼 누적(`students.noshow_count`/`clinic_banned`가 원천)은 앱 레이어 계약. 창구는 **컬럼을 만들지 않았다**: 시험일에서 순수 계산되는 값이라 저장하면 `exam_date` 와 어긋날 수 있는 사본이 하나 더 생긴다.
 
 ### 도메인 7 — 게시판 · 문의 · 상담
 
@@ -751,10 +751,27 @@ CREATE TABLE parent_students (
 -- 커리큘럼/일정 --------------------------------------------------------
 CREATE TABLE courses (
     course_id    BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    subject_id   BIGINT REFERENCES subjects(subject_id),  -- 과목은 커리의 위층(FLOW 1-1)
     name         VARCHAR(100) NOT NULL,
+    total_weeks  SMALLINT NOT NULL DEFAULT 0,             -- 총주차는 커리의 것(FLOW 1-2)
     target_grade SMALLINT,
+    -- 클리닉 시간대는 커리가 갖는다(FLOW 1-1·3-7). 이 창에서 한 시간 단위로
+    -- clinic_slots 가 선다 — 없으면 sync_course_slots 가 읽을 것이 없다.
+    clinic_start_time TIME,
+    clinic_end_time   TIME,
     is_active    BOOLEAN NOT NULL DEFAULT true,
     created_at   TIMESTAMP NOT NULL DEFAULT now()
+);
+-- 반은 실체다(FLOW 1-1) — 문자열이 아니다. 같은 커리를 목반·화반이 같이 듣는다.
+CREATE TABLE classes (
+    class_id     BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    course_id    BIGINT NOT NULL REFERENCES courses(course_id),
+    name         VARCHAR(50) NOT NULL,
+    start_date   DATE,
+    is_active    BOOLEAN NOT NULL DEFAULT true,
+    uses_payssam BOOLEAN NOT NULL DEFAULT false,  -- 교재값 수령처(FLOW 2-7)
+    created_at   TIMESTAMP NOT NULL DEFAULT now(),
+    UNIQUE (course_id, name)
 );
 CREATE TABLE course_weeks (
     week_id        BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -779,12 +796,14 @@ CREATE TABLE course_enrollments (
     enrollment_id   BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     student_id      BIGINT NOT NULL REFERENCES students(student_id),
     course_id       BIGINT NOT NULL REFERENCES courses(course_id),
-    class_name      VARCHAR(30),
+    klass_id        BIGINT REFERENCES classes(class_id),   -- 반 이름 사본 금지
     primary_weekday SMALLINT,                 -- 잠정: 다요일 반복 확장
     status          VARCHAR(15) NOT NULL DEFAULT '수강',
     enrolled_at     TIMESTAMP NOT NULL DEFAULT now(),
     ended_at        TIMESTAMP,
-    UNIQUE (student_id, course_id)
+    -- ~~UNIQUE (student_id, course_id)~~ → **반 기준이다.** 수능 반과 내신 반을
+    -- 같이 듣는 학생이 있어(FLOW 1-1) 커리 기준으로 묶으면 그것을 막는다.
+    UNIQUE (student_id, klass_id)
 );
 
 -- 문제은행 -------------------------------------------------------------
