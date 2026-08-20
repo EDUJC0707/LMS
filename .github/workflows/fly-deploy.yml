@@ -6,7 +6,13 @@ on:
   # 의미 없는 커밋을 밀 수는 없다.
   workflow_dispatch:
 jobs:
+  # 배포 전에 테스트가 돈다(2026-08-19). 그전에는 이 워크플로가 checkout·flyctl·
+  # deploy 셋뿐이라 **어떤 회귀도 CI 에서 안 걸렸다.**
+  test:
+    uses: ./.github/workflows/ci.yml
+
   deploy:
+    needs: test
     runs-on: ubuntu-latest
     concurrency: deploy-group
     steps:

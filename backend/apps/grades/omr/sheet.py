@@ -29,11 +29,21 @@ card 는 순수 데이터고, read 는 잉크만 알고 뜻을 모른다. 여기
 16문항짜리 하프였다). 안 쓴 줄을 판정에 넣으면 그 장의 중앙 lead 가 최대
 11.6% 내려가고, 흐린 장에서 인쇄 글리프가 답으로 승격된다 — 실제로 그렇게
 유령답 3건이 났었다. 그래서 문항 수는 **호출부가 반드시 준다.**
+
+## 좌표도 호출부가 준다
+
+예전에는 `card.py`(옛 튜터시스템 카드)를 직접 임포트했다. 그래서 우리 카드를
+읽을 방법이 없었다 — 판형을 고를 자리가 서명 어디에도 없었기 때문이다. 이제
+`grid.Grid` 를 받는다. 안 주면 옛 카드다(막대 없는 지면이 그렇다).
+
+**판정 알고리즘은 판형을 모른다.** 열 기준선을 선택지 번호로 잡으므로 25문항이
+두 열로 넘어가도 그대로 선다 — 지면의 어느 열에 있든 ①은 ①이다.
 """
 import cv2
 import numpy as np
 
 from . import card, decode, normalize, read
+from . import grid as grids
 
 #: 마커를 못 찾았거나 방향을 못 가렸다 — 다시 스캔.
 CARD_NOT_FOUND = "카드 없음"
@@ -43,6 +53,13 @@ MARKS_UNTRUSTED = "판독 불가"
 CARD_UNMARKED = "마킹 없음"
 #: 조사 카드인데 점수칸을 못 읽었다. 조사 카드는 점수가 전부라 답이 없는 것과 같다.
 SCORE_UNREADABLE = "점수 판독 불가"
+#: 카드는 찾았는데 가장자리 막대가 어느 판형인지 말을 안 한다(좌우 불일치 ·
+#: 패리티 실패). **`CARD_NOT_FOUND` 와 뭉치면 안 된다** — 그쪽은 "다시 스캔",
+#: 이쪽은 "이 장이 이 시험 카드가 맞는지 보라"다.
+LAYOUT_UNKNOWN = "판형 불명"
+#: 판형은 읽혔는데 그 카드가 이 시험을 못 담는다(25문항 시험에 20문항 카드).
+#: 다시 스캔해도 안 바뀐다 — 다른 종이를 넣었거나 시험 설정이 틀렸다.
+LAYOUT_MISMATCH = "판형 불일치"
 
 #: 조사 카드가 "칠해졌다"고 보는 최소 눈금. 실물 94장은 **두 무리로 갈렸다** —
 #: 백지 쪽 10~19(34장), 칠한 쪽 58~160(60장). 그 사이 빈 구간에 둔다
@@ -61,10 +78,12 @@ class SheetReading:
     않는다: 답은 멀쩡하고 조교는 "누구 것인지만" 골라 주면 된다.
     """
 
-    __slots__ = ("answers", "held", "frame", "name", "phone", "matching_key")
+    __slots__ = ("answers", "held", "frame", "name", "phone", "matching_key",
+                 "extra", "layout_id")
 
     def __init__(
-        self, answers=None, held=None, frame=None, name=None, phone=None, matching_key=None
+        self, answers=None, held=None, frame=None, name=None, phone=None,
+        matching_key=None, extra=None, layout_id=None
     ):
         self.answers = answers
         self.held = held
@@ -72,6 +91,9 @@ class SheetReading:
         self.name = name
         self.phone = phone
         self.matching_key = matching_key
+        #: {문항: True} — 약점 체크를 칠한 문항. 그 칸이 없는 판형이면 빈 딕셔너리.
+        self.extra = extra or {}
+        self.layout_id = layout_id
 
     def __repr__(self):
         if self.held is not None:
@@ -79,29 +101,59 @@ class SheetReading:
         return f"SheetReading(answers={len(self.answers)}문항)"
 
 
-def read_sheet(image, question_count):
+def read_sheet(image, question_count, grid=None, frame=None):
     """장 하나를 읽는다. `question_count` 는 **그 시험의** 문항 수다.
+
+    `grid` 는 좌표 한 벌(`grid.Grid`)이고 안 주면 옛 카드다. `frame` 을 미리
+    세워 두었으면(판형 막대를 읽느라 그랬다) 넘겨서 두 번 계산하지 않는다.
 
     `frame` 을 함께 돌려주는 이유는 보정 화면이 같은 변환으로 셀 자리를
     다시 그려야 하기 때문이다 — 두 번 계산하면 두 값이 갈린다.
     """
-    cells = answer_cells_for(question_count)
-    frame = normalize.locate_card(image)
+    grid = grid or grids.VENDOR
+    cells = grid.answer_cells(question_count)
+    frame = frame if frame is not None else normalize.locate_card(image)
     if frame is None:
         return SheetReading(held=CARD_NOT_FOUND)
-    inks = read.sample_cells(image, frame, cells, card.ANSWER_BUBBLE_RADIUS)
+    inks = read.sample_cells(image, frame, cells, grid.answer_radius)
     rows = group_by_row(inks)
     readings = read.classify_answers(rows)
     if readings is None:
-        return SheetReading(held=MARKS_UNTRUSTED, frame=frame)
-    name, phone = read_identity(image, frame, read.sheet_scale(rows))
+        return SheetReading(held=MARKS_UNTRUSTED, frame=frame, layout_id=grid.layout_id)
+    scale = read.sheet_scale(rows)
+    name, phone = read_identity(image, frame, scale, grid)
     return SheetReading(
         answers=readings,
         frame=frame,
         name=name,
         phone=phone,
         matching_key=decode.matching_key(name, phone),
+        extra=read_extra(image, frame, scale, grid, question_count),
+        layout_id=grid.layout_id,
     )
+
+
+def read_extra(image, frame, scale, grid, question_count):
+    """약점 체크 — `{문항: True}`. 그 칸이 없는 판형이면 빈 딕셔너리.
+
+    문항마다 칸이 **하나**라 답란처럼 이웃과 견줄 수 없다. 기준선은 그 장의
+    아래 4분위에서 잡는다 — 대부분의 문항은 안 칠하므로 거기가 빈칸 값이다.
+    중앙값을 쓰면 절반 넘게 칠한 학생에서 기준선이 마킹 위로 올라가 **칠한
+    것이 통째로 안 칠한 것이 된다.**
+
+    눈금은 답란에서 잰 그 장의 연필 세기를 빌린다(성명·전화와 같은 이유).
+    """
+    cells = grid.extra_cells(question_count)
+    if not cells:
+        return {}
+    inks = read.sample_cells(image, frame, cells, grid.answer_radius)
+    values = sorted(inks.values())
+    floor = values[max(len(values) // 4 - 1, 0)]
+    return {
+        question: True
+        for (question, _column), ink in inks.items()
+        if ink - floor >= read.LEAD_FRACTION * scale
+    }
 
 
 class SurveyReading:
@@ -196,29 +248,19 @@ def score_box_image(image, frame):
     return cv2.imencode(".png", flat)[1].tobytes()
 
 
-def read_identity(image, frame, scale):
+def read_identity(image, frame, scale, grid=None):
     """성명·전화 격자 → (이름, 뒷4자리). 각각 못 읽으면 그쪽만 None.
 
     `scale` 은 **답란에서 잰 그 장의 연필 세기**다. 성명 열은 14~19칸에 마킹이
     하나, 전화 열은 10칸에 하나뿐이라 그 안에서는 필압의 눈금이 안 나온다 —
     같은 연필이 쓴 답란에서 눈금을 빌려 온다.
     """
-    name_inks = read.sample_cells(image, frame, card.name_cells(), card.NAME_BUBBLE_RADIUS)
-    phone_inks = read.sample_cells(
-        image, frame, card.phone_cells(), card.PHONE_BUBBLE_RADIUS
-    )
+    grid = grid or grids.VENDOR
+    name_inks = read.sample_cells(image, frame, grid.names, grid.name_radius)
+    phone_inks = read.sample_cells(image, frame, grid.phones, grid.phone_radius)
     name = decode.decode_name(read.classify_fields(group_by_row(name_inks), scale))
     phone = decode.decode_phone(read.classify_fields(group_by_row(phone_inks), scale))
     return name, phone
-
-
-def answer_cells_for(question_count):
-    """그 시험이 실제로 쓰는 문항의 셀만. 카드 범위를 넘으면 ValueError."""
-    if not 1 <= question_count <= card.ANSWER_QUESTIONS:
-        raise ValueError(
-            f"문항 수 {question_count} 는 카드 범위(1~{card.ANSWER_QUESTIONS}) 밖이다."
-        )
-    return [cell for cell in card.answer_cells() if cell[0][0] <= question_count]
 
 
 def group_by_row(inks):

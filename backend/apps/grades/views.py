@@ -20,6 +20,7 @@
 - PATCH /api/admin/exams/{exam_id}               클리닉 컷 (성적처리)
 - GET/PUT /api/admin/exams/{exam_id}/questions   정답 키 (성적처리)
 - GET/POST /api/admin/exams/{exam_id}/sheets     보정 목록 · 스캔 업로드 (성적처리)
+- GET  /api/admin/exams/{exam_id}/cards          그 회차의 OMR 카드 PDF (성적처리)
 - POST /api/admin/exams/{exam_id}/reread         저장된 스캔 재판독 → 202 (성적처리)
 - GET  /api/admin/omr-batches/{task_id}          판독 진행 상태 (성적처리)
 - GET/PATCH /api/admin/sheets/{sheet_id}         보정 화면 한 장 (성적처리)
@@ -41,10 +42,11 @@ SSOT 쓰기·트리거·페이로드 조립은 attendance_admin 서비스가 담
 import datetime
 import uuid
 from decimal import Decimal
+from urllib.parse import quote
 
 from celery.result import AsyncResult
 from django.core.files.storage import default_storage
-from django.http import FileResponse
+from django.http import FileResponse, HttpResponse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -67,7 +69,7 @@ from . import (
     workbook_admin,
 )
 from .models import AnswerSheet, Attendance, ClassSession, Exam, WorkbookSubmission
-from .omr import card
+from .omr import card, generate, grid, layout
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
 _STATUS_VALUES = set(Attendance.Status.values)
@@ -829,9 +831,9 @@ class AdminExamSheetsView(APIView):
         # 모의고사는 지면에 문항이 없다(성적 조사 카드) — 문항 수를 묻지 않는다.
         # 미니테스트는 카드가 20줄이고, 범위 밖을 그냥 넘기면 워커에서 ValueError
         # 로 죽어 사용자는 "판독 실패" 만 보게 된다 — 여기서 막는다.
-        if exam.kind != Exam.Kind.MOCK and not 1 <= question_count <= card.ANSWER_QUESTIONS:
+        if exam.kind != Exam.Kind.MOCK and not 1 <= question_count <= grid.MAX_QUESTIONS:
             return Response(
-                {"detail": f"문항 수를 1~{card.ANSWER_QUESTIONS} 사이로 지정해 주세요."},
+                {"detail": f"문항 수를 1~{grid.MAX_QUESTIONS} 사이로 지정해 주세요."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         path = default_storage.save(media.omr_batch(exam.pk, uuid.uuid4().hex), pdf)
@@ -860,6 +862,50 @@ class AdminExamRereadView(APIView):
             )
         task = tasks.reread_omr_sheets.delay(exam.pk, question_count)
         return Response({"task_id": task.id}, status=status.HTTP_202_ACCEPTED)
+
+
+class AdminExamCardsView(APIView):
+    """GET /api/admin/exams/{exam_id}/cards — 그 회차의 OMR 카드 PDF.
+
+    **저장하지 않는다**(대표 2026-08-19: "생성이 얼마나 걸리는데 그냥 바로
+    프린트 가능한 상태면 되는거 아니야?"). 생성이 한 장에 수백 ms 라 눌렀을 때
+    만들어 내려보내는 편이 파일을 들고 관리하는 것보다 싸고, 회차명이 바뀌면
+    다음 요청이 저절로 맞다.
+
+    판형은 **정답 키 문항 수가 정한다** — 20문항 이하면 답안20, 21~25면 답안25.
+    고를 것이 없으므로 화면에도 선택지를 두지 않는다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.GRADE_PROCESSING)]
+
+    def get(self, request, exam_id):
+        exam = exam_admin.load_exam(exam_id)
+        if exam is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        count = exam.questions.count()
+        if not count:
+            return Response(
+                {"detail": "정답 키를 먼저 입력해 주세요."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        sheet_layout = layout.for_questions(count)
+        if sheet_layout is None:
+            return Response(
+                {"detail": f"{count}문항을 담는 카드가 없습니다(최대 {grid.MAX_QUESTIONS})."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            pdf = generate.render(sheet_layout, exam=exam.name)
+        except ValueError as error:
+            # 회차명이 제목 자리에 안 들어간다 — 지면이 아니라 이름이 문제다.
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+        response = HttpResponse(pdf, content_type="application/pdf")
+        # 판형 이름이 한글이라 헤더를 ASCII 로 둘 수 없다. 값 전체가 비ASCII 면
+        # Django 가 RFC2047 로 통째로 감싸 버려 `attachment` 조차 안 보인다 —
+        # RFC5987 로 파일 이름만 인코딩한다.
+        name = quote(f"omr-{sheet_layout.name}-{exam.pk}.pdf")
+        response["Content-Disposition"] = f"attachment; filename*=UTF-8\'\'{name}"
+        return response
 
 
 class AdminOmrBatchView(APIView):

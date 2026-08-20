@@ -47,6 +47,19 @@ export default function ExamDetailPage() {
   const reread = useApiAction(async () => {
     await http.post(`/admin/exams/${examId}/reread`);
   });
+  // 그 회차의 OMR 카드를 받는다. 서버가 저장하지 않고 바로 만들어 내려보내므로
+  // 회차명이 바뀌면 다음에 받는 것이 저절로 맞다.
+  const cards = useApiAction(async () => {
+    const res = await http.get(`/admin/exams/${examId}/cards`, {
+      responseType: "blob",
+    });
+    const url = URL.createObjectURL(res.data as Blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `omr-${detail.data?.exam.name ?? examId}.pdf`;
+    link.click();
+    URL.revokeObjectURL(url);
+  });
   const detail = useApi(
     () => http.get<ExamDetail>(`/admin/exams/${examId}`).then((r) => r.data),
     [examId],
@@ -90,6 +103,11 @@ export default function ExamDetailPage() {
           {reread.error}
         </Alert>
       )}
+      {cards.error && (
+        <Alert tone="danger" onClose={cards.clearError}>
+          {cards.error}
+        </Alert>
+      )}
       {/* 상단바는 "시험·성적"까지만 말한다 — 어느 회차인지는 첫 카드가 든다. */}
       <Card
         title={exam.name}
@@ -107,6 +125,11 @@ export default function ExamDetailPage() {
             >
               다시 판독
             </Button>
+            {exam.kind !== "모의고사" && (
+              <Button size="sm" loading={cards.pending} onClick={() => void cards.run()}>
+                OMR 카드
+              </Button>
+            )}
             <Button size="sm" onClick={() => navigate("sheets")}>
               스캔 보정
             </Button>

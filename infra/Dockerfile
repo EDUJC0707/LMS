@@ -14,6 +14,14 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 # 주기 작업은 Celery beat 가 맡는다(2026-08-12, docs/decisions.md §9) —
 # supercronic 설치와 `infra/crontab` 은 그때 걷어냈다.
 
+# poppler(`pdftoppm`) — PDF 를 이미지로 굽는다. 여기까지 이 이미지에는
+# **시스템 패키지가 하나도 없었고**(apt-get 줄이 0개), 그래서 OMR 카드 판독
+# 테스트 다섯 건이 이미지 안에서 조용히 스킵됐다. 통과처럼 보이는 미실행이라
+# 제일 나쁜 종류다. `--no-install-recommends` 로 최소만 깐다.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # 1) 의존성 레이어(캐시 최적화) — 소스보다 먼저 매니페스트/락만 복사.

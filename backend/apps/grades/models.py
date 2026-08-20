@@ -411,6 +411,15 @@ class AnswerSheet(models.Model):
         # 사실이다 — 학생이 붙기 전에는 scores 행이 생기지 않는다).
         "손글씨에서 읽음", default=False
     )
+    layout_id = models.PositiveSmallIntegerField(
+        # 이 장을 **어느 판형으로 읽었나** — 지면의 가장자리 막대가 말한 값이다
+        # (`omr.layout.LAYOUTS`). 옛 튜터시스템 카드는 막대가 없으므로 NULL 이다.
+        #
+        # 저장하는 이유는 한 배치에 20문항과 25문항 카드가 섞일 수 있어서다.
+        # 안 적어 두면 재판독도 보정 화면도 그 장이 무슨 종이였는지 알 방법이
+        # 없고, 스캔 이미지를 다시 읽는 수밖에 없다.
+        "판형", null=True, blank=True
+    )
     match_status = models.CharField("대조 상태", max_length=20, choices=MatchStatus.choices)
     is_corrected = models.BooleanField("수동 보정 완료", default=False)
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)

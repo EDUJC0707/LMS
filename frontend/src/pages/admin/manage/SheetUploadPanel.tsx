@@ -20,6 +20,9 @@ import { Alert, Button, Card, Field, Input } from "../../../components";
 import "./manage.css";
 import type { ExamKind } from "./types";
 
+/** 우리 카드 중 제일 큰 판형(답안25). 옛 카드는 20까지고, 서버가 판형별로 다시 본다. */
+const MAX_QUESTIONS = 25;
+
 interface UploadSummary {
   pages: number;
   read: number;
@@ -116,7 +119,7 @@ export default function SheetUploadPanel({
                   {...props}
                   type="number"
                   min="1"
-                  max="20"
+                  max={MAX_QUESTIONS}
                   value={count}
                   onChange={(e) => setCount(e.target.value)}
                 />

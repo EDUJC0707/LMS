@@ -100,11 +100,45 @@ CELERY_BROKER_URL = env("CELERY_BROKER_URL", default=REDIS_URL)
 CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_TIMEZONE = "Asia/Seoul"
 CELERY_TASK_TRACK_STARTED = True
+
+# --- 워커 안전장치 (2026-08-19) ---------------------------------------------
+# 여기까지 셋 다 **설정된 적이 없었다.** 그래서 워커는 1 vCPU 머신에서
+# `os.cpu_count()` 만큼 자식을 포크했고, 시간 제한도 메모리 상한도 없었다.
+# 페이지 하나가 멎으면 아무도 끊지 않는다.
+#
+# OMR 실측(2026-08-19)이 값의 근거다: 판독 20~26ms/장, 386장 배치의 CPU 작업이
+# 11초. 즉 **정상 태스크는 초 단위**이고, 분 단위로 가 있으면 그건 진행이 아니라
+# 멎은 것이다.
+#
+# soft 가 먼저 예외로 깨워 정리할 틈을 주고, hard 가 그래도 안 끝나면 죽인다.
+# 둘을 같은 값으로 두면 정리 코드가 돌 자리가 없다.
+CELERY_TASK_SOFT_TIME_LIMIT = 10 * 60
+CELERY_TASK_TIME_LIMIT = 12 * 60
+#: 자식 하나가 이만큼(KB) 쓰면 태스크를 마치고 스스로 교체된다.
+#:
+#: **실측(2026-08-19)**: Django 로드 97MB → OMR 임포트 117MB → 실물 65장을 읽고
+#: **252MB**. 증가가 187→228→240→252 로 꺾이므로 누수가 아니라 할당자 보유다.
+#: 386장이면 300MB 안팎으로 본다.
+#:
+#: 배치가 끝나면 자식을 갈아 그 메모리를 돌려준다 — 안 그러면 워커가 하루 종일
+#: 250MB 를 쥐고 앉아 있는다.
+CELERY_WORKER_MAX_MEMORY_PER_CHILD = 250 * 1024
+#: **자식 하나.** 처음에 둘로 뒀다가 산수가 안 맞아 고쳤다 — 자식 둘이면 최대
+#: 505MB 에 부모까지 750MB 라 **512MB 머신이 OOM 으로 죽는다.**
+#:
+#: 둘로 늘릴 이유도 없다. 판독은 CPU 작업이고 머신은 1 vCPU 라(386장 CPU 11초)
+#: 자식을 늘려도 처리량이 안 는다. 진짜 필요해지면 **머신을 1GB 로 키우는 것이
+#: 아니라 워커 대수를 늘린다**(beat 를 분리해 뒀으므로 이제 가능하다).
+CELERY_WORKER_CONCURRENCY = 1
+#: 자식이 한 번에 한 개씩만 가져간다. 기본 4 는 긴 태스크에서 **한 자식이 넷을
+#: 쥔 채 나머지가 논다** — 배치 판독처럼 길이가 들쭉날쭉한 일에 특히 나쁘다.
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 # 주기 작업 — **한 딕셔너리에 모은다.** 트랙마다 각자 `CELERY_BEAT_SCHEDULE = {...}`
 # 를 새로 쓰면 git 은 충돌 없이 합쳐 놓고 **나중 대입이 앞의 것을 통째로 덮는다**
 # (2026-08-05 병합에서 실제로 retry-failed-notifications 가 조용히 사라졌다).
 # 항목을 추가할 때는 새 대입이 아니라 이 딕셔너리에 키를 더한다.
-# beat 프로세스는 아직 안 뜬다 — 켜는 시점은 infra/DEPLOY.md 6장.
+# beat 는 **별도 프로세스 그룹**으로 돈다(2026-08-19 분리, infra/DEPLOY.md 6장).
+# 정확히 1대여야 한다 — 2대면 같은 시각에 같은 작업이 두 번 발행된다.
 CELERY_BEAT_SCHEDULE = {
     # 실패·정체 알림 재발송(apps.notifications.tasks)
     "retry-failed-notifications": {
@@ -156,8 +190,7 @@ ALIGO_USER_ID = env("ALIGO_USER_ID", default="")
 ALIGO_SENDER_PHONE = env("ALIGO_SENDER_PHONE", default="")  # 사전 등록된 발신번호
 ALIGO_SENDER_KEY = env("ALIGO_SENDER_KEY", default="")  # 카카오 발신프로필키(senderkey)
 
-# beat 주기 작업. **워커가 아직 안 떠 있어서 지금은 아무도 안 부른다** —
-# 켜는 절차는 infra/DEPLOY.md 6장(Redis 프로비저닝 → 시크릿 → 워커 프로세스).
+# beat 주기 작업. 워커·beat 는 2026-08-12 부터 실제로 돈다(infra/DEPLOY.md 6장).
 # 여기 선언해 두는 이유는 주기가 코드에 남아 버전 관리되게 하기 위해서다.
 
 # --- 비밀번호 검증 -------------------------------------------------------

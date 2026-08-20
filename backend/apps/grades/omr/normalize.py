@@ -46,10 +46,21 @@ import numpy as np
 DARK_LOW_PERCENTILE = 1.0
 DARK_HIGH_PERCENTILE = 99.0
 DARK_FRACTION = 0.30
-#: 마커 크기 허용 범위(px @200dpi) — 실측 좌 21x18 · 우 36x18 에 여유를 둔 값.
-MARK_MIN_W, MARK_MAX_W = 15, 50
-MARK_MIN_H, MARK_MAX_H = 12, 30
-MARK_MIN_AREA = 250
+#: 마커 크기 허용 범위 — 실측 좌 21x18 · 우 36x18 에 여유를 둔 값이다.
+#:
+#: **지면 짧은 변 대비 비율로 적는다.** 예전에는 200dpi 픽셀 절대값이었는데,
+#: 그러면 스캐너 해상도가 그 한 값에 묶인다 — 실측(2026-08-19) 창이 175~250dpi
+#: 뿐이었고 **300dpi 는 카드를 아예 못 찾았다.** 300 은 스캐너 기본값으로 흔해서
+#: 조용히 전부 보류로 떨어질 자리였다. 이 모듈이 이미 자리(BAND·SIDE_BAND)와
+#: 문턱(dark_threshold)을 비율로 잡고 있으므로 크기만 절대값으로 남을 이유가 없다.
+#:
+#: 기준 짧은 변은 200dpi A4 세로 스캔의 1654px 다 — 그래서 **200dpi 에서는 아래
+#: 값들이 종전 15/50 · 12/30 · 250 과 같은 픽셀로 떨어진다.** 실물 65장으로
+#: 검증한 판정이 그대로 산다.
+REFERENCE_SHORT_PX = 1654.0
+MARK_MIN_W_RATIO, MARK_MAX_W_RATIO = 15 / REFERENCE_SHORT_PX, 50 / REFERENCE_SHORT_PX
+MARK_MIN_H_RATIO, MARK_MAX_H_RATIO = 12 / REFERENCE_SHORT_PX, 30 / REFERENCE_SHORT_PX
+MARK_MIN_AREA_RATIO = 250 / REFERENCE_SHORT_PX**2
 #: 채움률 하한 — 모듈 docstring 참조. 낮추면 글자 획이 섞인다.
 MARK_MIN_FILL = 0.70
 #: 마커가 있을 수 있는 띠 — 상·하 각 14%, 좌·우 각 20%.
@@ -161,14 +172,16 @@ def _mark_candidates(image):
     count, _, stats, centroids = cv2.connectedComponentsWithStats(
         (image < dark_threshold(image)).astype(np.uint8), connectivity=8
     )
+    short = float(min(height, width))
     found = []
     for index in range(1, count):
         w = stats[index, cv2.CC_STAT_WIDTH]
         h = stats[index, cv2.CC_STAT_HEIGHT]
         area = stats[index, cv2.CC_STAT_AREA]
-        if not (MARK_MIN_W <= w <= MARK_MAX_W and MARK_MIN_H <= h <= MARK_MAX_H):
+        if not (MARK_MIN_W_RATIO * short <= w <= MARK_MAX_W_RATIO * short
+                and MARK_MIN_H_RATIO * short <= h <= MARK_MAX_H_RATIO * short):
             continue
-        if area < MARK_MIN_AREA or area / (w * h) < MARK_MIN_FILL:
+        if area < MARK_MIN_AREA_RATIO * short**2 or area / (w * h) < MARK_MIN_FILL:
             continue
         cx, cy = centroids[index]
         if BAND * height < cy < (1 - BAND) * height:
