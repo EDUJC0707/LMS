@@ -38,6 +38,7 @@ import ParentPaymentPage from "../pages/parent/ParentPaymentPage";
 import AdminDashboardPage from "../pages/admin/ops/AdminDashboardPage";
 import AttendancePage from "../pages/admin/ops/AttendancePage";
 import AttendanceSessionPage from "../pages/admin/ops/AttendanceSessionPage";
+import ClassGridPage from "../pages/admin/ops/ClassGridPage";
 import MakeupOpsPage from "../pages/admin/ops/MakeupOpsPage";
 import CounselingPage from "../pages/admin/ops/CounselingPage";
 import PaymentsPage from "../pages/admin/ops/PaymentsPage";
@@ -135,6 +136,8 @@ export const router = createBrowserRouter([
             children: [
               { path: "attendance", element: <AttendancePage /> },
               { path: "attendance/:sessionId", element: <AttendanceSessionPage /> },
+              { path: "class", element: <ClassGridPage /> },
+              { path: "class/:classId", element: <ClassGridPage /> },
             ],
           },
           {

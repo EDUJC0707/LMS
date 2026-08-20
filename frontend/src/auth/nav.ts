@@ -67,6 +67,7 @@ const ENTRIES: Entry[] = [
   // ── 관리자 · 운영 ────────────────────────────────────────────────
   { group: "운영", to: "/admin", label: "대시보드", icon: "dashboard", match: "exact", gate: { kind: "role", roles: ["대표", "관리자", "조교"] } },
   { group: "운영", to: "/admin/attendance", label: "출결 입력", icon: "checklist", match: "prefix", gate: { kind: "feature", feature: "출결입력" } },
+  { group: "운영", to: "/admin/class", label: "반별 관리", icon: "checklist", match: "prefix", gate: { kind: "feature", feature: "출결입력" } },
   { group: "운영", to: "/admin/makeup", label: "동보 관리", icon: "play", match: "prefix", gate: { kind: "feature", feature: "영상지급관리" } },
   { group: "운영", to: "/admin/counseling", label: "전화 대기", icon: "counsel", match: "prefix", gate: { kind: "feature", feature: "상담기록" } },
   { group: "운영", to: "/admin/payments", label: "교재 결제", icon: "key", match: "prefix", gate: { kind: "feature", feature: "결제확인" } },
