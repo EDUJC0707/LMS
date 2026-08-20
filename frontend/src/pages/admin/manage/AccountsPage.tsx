@@ -62,6 +62,7 @@ import { StudentPicker } from "./StudentPicker";
 import {
   ColumnChoice,
   EntryField,
+  FIELD_LABELS,
   PastedTable,
   assignColumn,
   isMapped,
@@ -103,11 +104,11 @@ const blankRow = (): EntryRow => ({
 });
 
 const COLUMNS: { field: EntryField; label: string; placeholder: string }[] = [
-  { field: "name", label: "이름", placeholder: "홍길동" },
-  { field: "phone", label: "학생 휴대폰", placeholder: "01012345678" },
-  { field: "parent_phone", label: "학부모 휴대폰", placeholder: "01087654321" },
-  { field: "grade", label: "학년", placeholder: "고2" },
-  { field: "school", label: "학교", placeholder: "세화고" },
+  { field: "name", label: FIELD_LABELS.name, placeholder: "홍길동" },
+  { field: "phone", label: FIELD_LABELS.phone, placeholder: "01012345678" },
+  { field: "parent_phone", label: FIELD_LABELS.parent_phone, placeholder: "01087654321" },
+  { field: "grade", label: FIELD_LABELS.grade, placeholder: "고2" },
+  { field: "school", label: FIELD_LABELS.school, placeholder: "세화고" },
 ];
 
 /**

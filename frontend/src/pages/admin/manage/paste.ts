@@ -21,6 +21,19 @@ export type EntryField = "name" | "phone" | "parent_phone" | "grade" | "school";
 /** 열에 붙는 것: 필드 하나 또는 "쓰지 않음"(빈 문자열). */
 export type ColumnChoice = EntryField | "";
 
+/**
+ * 열 이름 — 발급 화면의 열 지정과 별칭표 화면이 **같은 문자열**을 쓴다.
+ * 별칭표에 붙일 열을 고르는 자리와 붙여넣은 표의 열을 고르는 자리가 다른
+ * 이름을 쓰면, 조교가 저장한 답과 화면에 보이는 답이 달라 보인다.
+ */
+export const FIELD_LABELS: Record<EntryField, string> = {
+  name: "이름",
+  phone: "학생 휴대폰",
+  parent_phone: "학부모 휴대폰",
+  grade: "학년",
+  school: "학교",
+};
+
 export interface PastedTable {
   /** 붙여넣은 그대로 — 자르기만 했다. */
   cells: string[][];
@@ -78,7 +91,7 @@ const ALIASES: Record<EntryField, string[]> = {
   school: ["학교", "학교명", "출신학교", "재학학교", "고교"],
 };
 
-const FIELDS = Object.keys(ALIASES) as EntryField[];
+const FIELDS = Object.keys(FIELD_LABELS) as EntryField[];
 
 const squash = (cell: string) => cell.replace(/[\s.·_/()-]/g, "").toLowerCase();
 
