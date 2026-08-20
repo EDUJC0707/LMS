@@ -1,12 +1,14 @@
 /**
- * 영상 하나의 지급 내역 — 개별 회수 (FLOW §5)
+ * 영상 하나의 지급 내역 — 개별 회수·회수 취소 (FLOW §5)
  *
  *   GET  /api/admin/videos/grants?video_id=
  *   POST /api/admin/videos/grants/{id}/revoke
+ *   POST /api/admin/videos/grants/{id}/unrevoke
  *
- * **손으로 하는 것은 회수뿐이다.** 지급은 `출결 확정` 이 묶음으로 하고
- * 수동 지급은 만들지 않기로 했다 — 그래서 이 표의 유일한 버튼이 회수다.
- * 회수된 줄도 남는다(지급·회수는 이력이다).
+ * **손으로 하는 것은 회수와 그 취소뿐이다.** 지급은 `출결 확정` 이 묶음으로 하고
+ * 수동 지급은 만들지 않기로 했다 — 대신 회수를 무를 수 있어야 한다. 이름이
+ * 줄지어 선 표라 옆줄을 누르기 쉽고, 그때 되돌릴 길이 없으면 안 된다.
+ * 회수된 줄도 남는다(지급·회수는 이력이다). 무르면 만료는 처음 준 시점 그대로다.
  */
 import { http, useApi, useApiAction } from "../../../api";
 import {
@@ -53,6 +55,11 @@ export function VideoGrantsModal({
     await list.reload();
     return true;
   });
+  const unrevoke = useApiAction(async (grantId: number) => {
+    await http.post(`/admin/videos/grants/${grantId}/unrevoke`);
+    await list.reload();
+    return true;
+  });
 
   const rows = list.data ?? [];
 
@@ -66,6 +73,9 @@ export function VideoGrantsModal({
         <>
           {revoke.error && (
             <ErrorState description={revoke.error} onRetry={revoke.clearError} />
+          )}
+          {unrevoke.error && (
+            <ErrorState description={unrevoke.error} onRetry={unrevoke.clearError} />
           )}
           <Table<GrantRow>
             rows={rows}
@@ -87,10 +97,19 @@ export function VideoGrantsModal({
                 key: "actions",
                 header: "",
                 align: "right",
-                width: "6rem",
+                width: "12rem",
                 cell: (row) =>
                   row.revoked_at ? (
-                    <span className="pm-none">회수 {day(row.revoked_at)}</span>
+                    <>
+                      <span className="pm-none">회수 {day(row.revoked_at)}</span>{" "}
+                      <Button
+                        size="sm"
+                        loading={unrevoke.pending}
+                        onClick={() => void unrevoke.run(row.grant_id)}
+                      >
+                        회수 취소
+                      </Button>
+                    </>
                   ) : (
                     <Button
                       size="sm"

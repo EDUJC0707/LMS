@@ -1,10 +1,13 @@
-"""영상 권한 개별 회수 — 지급 내역과 회수 (FLOW §5).
+"""영상 권한 개별 회수·회수 취소 — 지급 내역 (FLOW §5).
 
-**손으로 하는 것은 회수뿐이다.** 지급은 `출결 확정` 이 묶음으로 하고(3-5),
-수동 지급은 만들지 않기로 했다(§5). 그래서 이 API 는 회수 한 방향이다.
+**손으로 하는 것은 회수와 그 취소뿐이다.** 지급은 `출결 확정` 이 묶음으로 하고
+(3-5) 수동 지급은 만들지 않기로 했다(§5) — 대신 **회수를 무를 수 있어야 한다.**
+이름이 줄지어 선 화면에서 옆줄을 누르면 되돌릴 길이 없기 때문이다.
 
 회수는 `revoked_at` 스탬프다 — 행을 지우지 않는다. 소비자 진입이
 `VideoGrant.objects.active()` 하나라(모델 계약) 스탬프만으로 시청이 끊긴다.
+취소는 그 스탬프만 지운다 — **만료는 처음 준 시점 그대로**라, 잘못 누른 회수
+한 번이 시청 기간을 늘리지 않는다.
 """
 import datetime
 
@@ -49,6 +52,9 @@ class GrantAdminApiTests(TestCase):
 
     def revoke_url(self, grant):
         return f"/api/admin/videos/grants/{grant.grant_id}/revoke"
+
+    def unrevoke_url(self, grant):
+        return f"/api/admin/videos/grants/{grant.grant_id}/unrevoke"
 
     def test_grants_are_listed_with_the_student_and_video(self):
         rows = self.client.get("/api/admin/videos/grants").json()["grants"]
@@ -107,4 +113,50 @@ class GrantAdminApiTests(TestCase):
     def test_unknown_grant_is_404(self):
         self.assertEqual(
             self.client.post("/api/admin/videos/grants/999999/revoke").status_code, 404
+        )
+
+    def test_unrevoking_puts_the_video_back(self):
+        self.client.post(self.revoke_url(self.grant))
+        response = self.client.post(self.unrevoke_url(self.grant))
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["grant"]["revoked_at"])
+        self.grant.refresh_from_db()
+        self.assertIsNone(self.grant.revoked_at)
+        self.assertEqual(VideoGrant.objects.active().count(), 1)
+
+    def test_unrevoking_keeps_the_original_expiry(self):
+        """무르는 것은 회수이지 지급이 아니다 — 만료를 다시 잡으면 수동 지급의 뒷문이다."""
+        granted_at, expires_at = self.grant.granted_at, self.grant.expires_at
+        self.client.post(self.revoke_url(self.grant))
+        self.client.post(self.unrevoke_url(self.grant))
+        self.grant.refresh_from_db()
+        self.assertEqual(self.grant.granted_at, granted_at)
+        self.assertEqual(self.grant.expires_at, expires_at)
+
+    def test_unrevoking_an_expired_grant_does_not_revive_it(self):
+        expired = VideoGrant.objects.create(
+            student=self.student,
+            video=Video.objects.create(title="2주차 1강", status=Video.Status.PUBLISHED),
+            source=VideoGrant.Source.MAKEUP,
+            granted_at=timezone.now() - datetime.timedelta(days=14),
+            expires_at=timezone.now() - datetime.timedelta(days=7),
+            revoked_at=timezone.now(),
+        )
+        self.client.post(self.unrevoke_url(expired))
+        expired.refresh_from_db()
+        self.assertIsNone(expired.revoked_at)
+        self.assertNotIn(expired, VideoGrant.objects.active())
+
+    def test_unrevoking_a_live_grant_changes_nothing(self):
+        self.assertEqual(self.client.post(self.unrevoke_url(self.grant)).status_code, 200)
+        self.grant.refresh_from_db()
+        self.assertIsNone(self.grant.revoked_at)
+
+    def test_unrevoking_needs_the_video_feature(self):
+        self.client.force_login(self.assistant)
+        self.assertEqual(self.client.post(self.unrevoke_url(self.grant)).status_code, 403)
+
+    def test_unknown_grant_is_404_on_unrevoke(self):
+        self.assertEqual(
+            self.client.post("/api/admin/videos/grants/999999/unrevoke").status_code, 404
         )

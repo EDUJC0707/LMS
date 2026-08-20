@@ -265,8 +265,11 @@ def build_detail_payload(session, roster, attendance_by_student):
     - `attendance_id` 는 동보 즉시 지급(POST /api/admin/attendance/makeup)의
       body 키다 — 명단에서 결석 학생에게 바로 지급하려면 기존 출결의 PK 가
       응답에 있어야 한다(2026-07-28 보강). 미입력 학생은 null(키는 항상 존재).
+    - `notice` 는 그 학생에게 출결 통지가 나갔는가다(FLOW 3-11) — `발송` ·
+      `재발송 필요` · `미발송` · `해당 없음` 넷. 판정은 `notice_state` 참조.
     """
     students = []
+    notices = _notice_sent_map(session, [s.student_id for s in roster])
     counts = {status: 0 for status in Attendance.Status.values}
     withdrawn = 0
     for student in roster:
@@ -287,6 +290,7 @@ def build_detail_payload(session, roster, attendance_by_student):
                 "is_withdrawn": not entry_target,
                 "attendance_id": att.id if att is not None else None,
                 "attendance": _attendance_block(att),
+                "notice": notice_state(att, notices.get(student.student_id)),
             }
         )
     total = len(roster) - withdrawn
@@ -297,6 +301,57 @@ def build_detail_payload(session, roster, attendance_by_student):
     summary["퇴원"] = withdrawn
     summary["total"] = total
     return {"session": session_block(session), "students": students, "summary": summary}
+
+
+#: 출결 통지의 `ref_type` — 이 회차가 원인이라고 적는 값(Notification 계약).
+NOTICE_REF_TYPE = "class_sessions"
+
+#: 통지가 나가는 출결 값. `미입력` 과 결석 계열은 여기 없다(FLOW 3-11 · 3-4).
+NOTICE_TARGET_STATUSES = frozenset({Attendance.Status.PRESENT})
+
+
+def notice_state(att, sent_at):
+    """그 학생의 출결 통지 상태 — 화면이 그대로 그리는 값(FLOW 3-11).
+
+    | 값 | 언제 |
+    |---|---|
+    | `해당 없음` | 통지 대상이 아닌 출결(`미입력` · 결석 계열 · 레코드 없음) |
+    | `미발송` | 대상인데 아직 나간 적이 없다 |
+    | `재발송 필요` | 나간 뒤에 값이 바뀌었다(`updated_at` 이 발송보다 나중) |
+    | `발송` | 나갔고 그 뒤로 안 바뀌었다 |
+
+    **결석이 `미발송` 이면 안 된다.** 안 보낸 것이 아니라 보낼 것이 없는 것이라
+    화면이 버튼을 그리지 않아야 한다 — `미발송` 으로 두면 조교가 채우려고 누르고,
+    출결 칸이 `왔다` 하나뿐인 문자가 결석한 집으로 간다.
+    """
+    if att is None or att.status not in NOTICE_TARGET_STATUSES:
+        return "해당 없음"
+    if sent_at is None:
+        return "미발송"
+    if att.updated_at is not None and att.updated_at > sent_at:
+        return "재발송 필요"
+    return "발송"
+
+
+def _notice_sent_map(session, student_ids):
+    """{student_id: 마지막 출결 통지 시각} — 명단 전체를 1쿼리로.
+
+    학생 행만 본다. 학부모 행은 같은 자리에서 함께 만들어지므로(_queue_notice)
+    학생 행이 곧 그 발송의 대표다.
+    """
+    if not student_ids:
+        return {}
+    rows = (
+        Notification.objects.filter(
+            ref_type=NOTICE_REF_TYPE,
+            ref_id=session.session_id,
+            type=Notification.Type.REPORT,
+            student_id__in=student_ids,
+        )
+        .order_by("created_at")
+        .values_list("student_id", "created_at")
+    )
+    return dict(rows)
 
 
 def _attendance_block(att):
@@ -382,19 +437,27 @@ def _notify_confirmed(session, roster, att_map):
     전화를 걸므로(3-12) 문자가 먼저 가면 같은 이야기를 두 번 하는 셈이다.
     그래서 이 통지에 담기는 것도 온 학생 기준이다 — "안 왔다" 를 적을 자리가 없다.
     """
-    sent_to = {Attendance.Status.PRESENT}
     targets = [
         student
         for student in roster
         if is_entry_target(student)
         and att_map.get(student.student_id) is not None
-        and att_map[student.student_id].status in sent_to
+        and att_map[student.student_id].status in NOTICE_TARGET_STATUSES
     ]
+    return _queue_notice(session, targets)
+
+
+def _queue_notice(session, students):
+    """학생 + 그 학부모에게 출결 통지 행을 쌓는다. 반환은 쌓인 행 수.
+
+    첫 확정(_notify_confirmed)과 조교의 개별 `보내기`(notify_student)가 같은 함수를
+    쓴다 — 갈라 두면 한쪽만 학부모를 빼먹는다.
+    """
     parents = {}
-    for link in ParentStudent.objects.filter(student__in=targets).select_related("parent"):
+    for link in ParentStudent.objects.filter(student__in=students).select_related("parent"):
         parents.setdefault(link.student_id, []).append(link.parent)
     queued = 0
-    for student in targets:
+    for student in students:
         recipients = [{"student": student}]
         recipients += [{"parent": p} for p in parents.get(student.student_id, [])]
         for recipient in recipients:
@@ -402,12 +465,24 @@ def _notify_confirmed(session, roster, att_map):
                 type=Notification.Type.REPORT,
                 channel=Notification.Channel.KAKAO,
                 title="출결 통지",
-                ref_type="class_sessions",
+                ref_type=NOTICE_REF_TYPE,
                 ref_id=session.session_id,
                 **recipient,
             )
             queued += 1
     return queued
+
+
+def notify_student(session, student, att):
+    """조교가 `보내기` 를 눌렀다 — 그 학생 하나에게만 출결 통지(FLOW 3-11).
+
+    첫 확정 뒤로는 문자가 자동으로 나가지 않으므로(모듈 docstring) 정정된 학생은
+    조교가 손으로 보낸다. **통지 대상이 아닌 출결은 여기서도 거절한다** —
+    화면이 버튼을 안 그리는 것과 같은 규칙을 서버가 한 번 더 판정한다.
+    """
+    if att is None or att.status not in NOTICE_TARGET_STATUSES:
+        raise ValueError("그 학생에게 보낼 출결 통지가 없습니다.")
+    return _queue_notice(session, [student])
 
 
 def empty_triggers():

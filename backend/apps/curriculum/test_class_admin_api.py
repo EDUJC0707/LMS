@@ -93,6 +93,20 @@ class OpenClassTests(ClassAdminFixtureMixin, TestCase):
         "start_date": "2026-09-04",
     }
 
+    def test_payssam_is_off_unless_the_form_turns_it_on(self):
+        """교재값 수령처는 반을 만들 때 고른다(FLOW 1-2 · 2-7).
+
+        기본값이 꺼짐(학원이 따로 받는다)인 이유: 안 나간 청구는 켜고 다시 보내면
+        되지만, 잘못 나간 청구는 되돌려도 학부모가 이미 받았다.
+        """
+        default = Class.objects.get(pk=self.post_class(self.BODY).json()["class_id"])
+        self.assertFalse(default.uses_payssam)
+
+        res = self.post_class({**self.BODY, "name": "화 6.5 미래탐구", "uses_payssam": True})
+        self.assertEqual(res.status_code, 201)
+        self.assertTrue(res.json()["uses_payssam"])
+        self.assertTrue(Class.objects.get(pk=res.json()["class_id"]).uses_payssam)
+
     def test_creates_course_class_and_weekly_sessions(self):
         res = self.post_class(self.BODY)
         self.assertEqual(res.status_code, 201)
@@ -536,6 +550,24 @@ class ClassMoveTests(ClassAdminFixtureMixin, TestCase):
         self.assertEqual([w["week_no"] for w in data["sessions"]], [1, 2, 3])
         self.assertEqual(data["sessions"][0]["session_date"], "2026-09-04")
         self.assertEqual([s["name"] for s in data["students"]], ["박지우"])
+
+    def test_roster_carries_the_first_week_the_student_has_a_record_in(self):
+        """격자가 `x` 를 그리는 근거(FLOW 3-1) — 합류 주차를 따로 저장하지 않는다.
+
+        3주차에 들어온 학생의 1·2주차를 `미입력` 으로 두면 조교가 영원히 채워야
+        할 칸으로 남는다. 첫 기록보다 앞선 주차면 화면이 `x` 로 그린다.
+        """
+        self.client.force_login(self.admin)
+        third = ClassSession.objects.get(klass_id=self.first["class_id"], week_no=3)
+        Attendance.objects.create(session=third, student=self.student, status="출석")
+        row = self.client.get(f"{URL}/{self.first['class_id']}").json()["students"][0]
+        self.assertEqual(row["first_week_no"], 3)
+
+    def test_a_student_without_a_record_has_no_first_week(self):
+        """기록이 없으면 앞선 칸도 없다 — 전부 `미입력` 이지 `x` 가 아니다."""
+        self.client.force_login(self.admin)
+        row = self.client.get(f"{URL}/{self.first['class_id']}").json()["students"][0]
+        self.assertIsNone(row["first_week_no"])
 
     def test_assistant_without_feature_gets_403(self):
         self.assertEqual(

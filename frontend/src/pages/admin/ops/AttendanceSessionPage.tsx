@@ -3,6 +3,7 @@
  *
  * 호출: GET·PUT /api/admin/attendance/sessions/{id}
  *      · GET  /api/admin/makeup-requests            (동보 지급 여부 확인)
+ *      · POST /api/admin/attendance/sessions/{id}/notify  (개별 출결 통지)
  *
  * 설계 요지
  * - 집계 바를 상단에 고정한다. 30명을 훑는 동안에도 "몇 명 남았나"가 늘 보인다.
@@ -203,6 +204,23 @@ export default function AttendanceSessionPage() {
     void detail.reload();
   };
 
+  // 첫 확정에만 문자가 자동으로 나간다(FLOW 3-11) — 그 뒤에 정정된 학생은
+  // 조교가 이 버튼으로 보낸다. 결석에는 버튼 자체가 없다(아래 열).
+  const notify = useApiAction(async (studentId: number) => {
+    const { data } = await http.post<SessionDetail>(
+      `/admin/attendance/sessions/${sessionId}/notify`,
+      { student_id: studentId },
+    );
+    return data;
+  });
+
+  const runNotify = async (studentId: number) => {
+    const data = await notify.run(studentId);
+    if (!data) return;
+    detail.setData(data);
+    setResult(data.triggers ?? null);
+  };
+
   const runOnsite = async () => {
     const data = await onsite.run(onsiteId.trim());
     if (!data) return;
@@ -353,6 +371,33 @@ export default function AttendanceSessionPage() {
         </Button>
       ),
     },
+    ...(session.confirmed_at
+      ? [
+          {
+            key: "notice",
+            header: "출결 통지",
+            width: "11rem",
+            cell: (r: RosterStudent) =>
+              r.notice === "해당 없음" ? (
+                <span className="ops-dash">— 해당 없음</span>
+              ) : r.notice === "발송" ? (
+                <span className="ops-sub">✓ 발송</span>
+              ) : (
+                <span className="ops-name">
+                  <span className="ops-sub">⚠ {r.notice}</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    loading={notify.pending}
+                    onClick={() => void runNotify(r.student_id)}
+                  >
+                    보내기
+                  </Button>
+                </span>
+              ),
+          },
+        ]
+      : []),
     {
       key: "recorded",
       // "저장된 값" 이 아니다 — OMR 도 여기에 쓰므로(FLOW 3-2) 저장이라는 말이
@@ -418,6 +463,7 @@ export default function AttendanceSessionPage() {
       <div className="ui-stack">
         {confirmApi.error && <Alert tone="danger">{confirmApi.error}</Alert>}
         {onsite.error && <Alert tone="danger">{onsite.error}</Alert>}
+        {notify.error && <Alert tone="danger">{notify.error}</Alert>}
         {withdrawal.error && <Alert tone="danger">{withdrawal.error}</Alert>}
         {result && <ConfirmSummary triggers={result} onClose={() => setResult(null)} />}
 

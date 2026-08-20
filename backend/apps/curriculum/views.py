@@ -125,6 +125,9 @@ class AdminClassListView(APIView):
     `subject` 는 이름이라 없으면 만들어지고, `track` 은 값집합 밖이면 400 이다.
     GET 이 그 둘의 고를 값(`tracks`·`subjects`)을 같이 내린다.
 
+    **교재값 수령처(`uses_payssam`)도 여기서 받는다**(FLOW 1-2 · 2-7) — 안 주면
+    꺼짐(학원이 따로 받는다)이다.
+
     만들면 **커리 총주차만큼 회차가 개강일부터 주 단위로 채워진다**(FLOW 1-3).
     반의 주차는 별도 표가 아니라 `grades.ClassSession` 이고(주 1회라 주차 =
     회차 — FLOW 1-1), 커리 쪽 주차(`CourseWeek`)는 내용·영상이 붙는 자리라
@@ -155,6 +158,7 @@ class AdminClassListView(APIView):
                 subject=body.get("subject"),
                 name=body.get("name"),
                 start_date=body.get("start_date"),
+                uses_payssam=body.get("uses_payssam"),
             )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)

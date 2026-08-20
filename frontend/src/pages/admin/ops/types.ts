@@ -57,7 +57,12 @@ export interface RosterStudent {
    *  로그인도 이 값과 같이 막힌다(FLOW 3-4). */
   is_withdrawn: boolean;
   attendance: AttendanceBlock | null;
+  /** 출결 통지가 나갔는가(FLOW 3-11). 결석·미입력은 `해당 없음` — 안 보낸 것이
+   *  아니라 보낼 것이 없는 것이라 버튼도 없다. */
+  notice: NoticeState;
 }
+
+export type NoticeState = "발송" | "재발송 필요" | "미발송" | "해당 없음";
 
 /** 값 5종의 합이 total. `미입력` 칸은 레코드 없는 학생과 명시적 `미입력` 행을
  *  합친 수다(둘은 같은 뜻 — FLOW 3-4). 퇴원은 입력 대상 밖이라 total 에 안 든다. */

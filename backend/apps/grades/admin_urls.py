@@ -22,6 +22,11 @@ urlpatterns = [
         name="attendance-session-detail",
     ),
     path(
+        "admin/attendance/sessions/<int:session_id>/notify",
+        views.AttendanceNoticeView.as_view(),
+        name="attendance-session-notify",
+    ),
+    path(
         "admin/attendance/sessions/<int:session_id>/onsite",
         views.AttendanceOnsiteView.as_view(),
         name="attendance-session-onsite",

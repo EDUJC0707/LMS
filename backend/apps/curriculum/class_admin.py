@@ -28,7 +28,7 @@ from django.db import IntegrityError, models, transaction
 from django.utils import timezone
 
 from apps.accounts.models import Student
-from apps.grades.models import ClassSession
+from apps.grades.models import Attendance, ClassSession
 
 from .models import Class, Course, CourseEnrollment, CourseWeek, Subject
 
@@ -108,19 +108,42 @@ def class_block(klass):
         "week_count": week_count,
         "current_week": current_week,
         "student_count": student_count,
+        # 교재값 수령처(FLOW 2-7) — 청구 버튼이 이 값으로 갈린다
+        "uses_payssam": klass.uses_payssam,
     }
 
 
 @transaction.atomic
-def open_class(*, course_id, course_name, total_weeks, track, subject, name, start_date):
-    """커리(있으면 재사용) + 반 + 회차를 만든다. 입력 오류는 ValueError."""
+def open_class(
+    *,
+    course_id,
+    course_name,
+    total_weeks,
+    track,
+    subject,
+    name,
+    start_date,
+    uses_payssam=False,
+):
+    """커리(있으면 재사용) + 반 + 회차를 만든다. 입력 오류는 ValueError.
+
+    **교재값 수령처는 여기서 고른다**(FLOW 1-2 · 2-7). 장소로 자동 판정하지
+    않는다 — 러셀은 학원이 교재값을 따로 받으므로 결제선생이 나가면 학부모가 같은
+    값을 두 번 낸다. 안 준 값은 꺼짐(학원)이다: 안 나간 청구는 켜고 다시 보내면
+    되지만 잘못 나간 청구는 되돌려도 학부모가 이미 받았다.
+    """
     name = (name or "").strip() if isinstance(name, str) else ""
     if not name:
         raise ValueError("수강반명을 적어 주세요.")
     start_date = _parse_date(start_date)
     course = _resolve_course(course_id, course_name, total_weeks, track, subject)
     try:
-        klass = Class.objects.create(course=course, name=name, start_date=start_date)
+        klass = Class.objects.create(
+            course=course,
+            name=name,
+            start_date=start_date,
+            uses_payssam=bool(uses_payssam),
+        )
     except IntegrityError as exc:  # UQ(course, name)
         raise ValueError(f"이 커리에 같은 이름의 반이 있습니다: {name}") from exc
     _fill_sessions(klass, course.total_weeks, start_date)
@@ -214,14 +237,30 @@ def list_sessions(klass):
 
 
 def class_detail(klass):
-    """반 하나 — 주차와 명단. 주차 편집·반 이동 화면이 같이 쓴다."""
-    students = (
+    """반 하나 — 주차와 명단. 주차 편집·반 이동 화면이 같이 쓴다.
+
+    `first_week_no` 는 그 학생의 **이 반에서의 첫 출결 기록 주차**다(FLOW 3-1).
+    격자가 `x`(그때 이 반에 없었다)와 `미입력`(아직 안 봤다)을 가르는 근거이고,
+    **이 주차보다 앞선 칸이 `x`** 다. 합류 주차를 따로 저장하지 않는 이유가
+    이것이다 — 값집합에도 안 들어가고, 반을 옮겨도 기록이 곧 답이다.
+    기록이 하나도 없으면 null 이며, 그때는 앞선 칸이 없으므로 전부 `미입력` 이다.
+    """
+    students = list(
         Student.objects.filter(
             course_enrollments__klass=klass,
             course_enrollments__status=CourseEnrollment.Status.ENROLLED,
         )
         .select_related("user")
         .order_by("student_id")
+    )
+    first_weeks = dict(
+        Attendance.objects.filter(
+            session__klass=klass, student__in=students, session__week_no__isnull=False
+        )
+        .values("student_id")
+        .annotate(first_week=models.Min("session__week_no"))
+        .order_by()
+        .values_list("student_id", "first_week")
     )
     return {
         "class": class_block(klass),
@@ -231,6 +270,7 @@ def class_detail(klass):
                 "student_id": s.student_id,
                 "name": s.user.name if s.user else None,
                 "login_id": s.user.login_id if s.user else None,
+                "first_week_no": first_weeks.get(s.student_id),
             }
             for s in students
         ],

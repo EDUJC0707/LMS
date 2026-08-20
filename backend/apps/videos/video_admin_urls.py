@@ -29,6 +29,11 @@ urlpatterns = [
         name="admin-video-grant-revoke",
     ),
     path(
+        "admin/videos/grants/<int:grant_id>/unrevoke",
+        views.AdminVideoGrantUnrevokeView.as_view(),
+        name="admin-video-grant-unrevoke",
+    ),
+    path(
         "admin/videos/uploads",
         views.AdminVideoUploadView.as_view(),
         name="admin-video-upload",
