@@ -551,6 +551,24 @@ class ClassMoveTests(ClassAdminFixtureMixin, TestCase):
         self.assertEqual(data["sessions"][0]["session_date"], "2026-09-04")
         self.assertEqual([s["name"] for s in data["students"]], ["박지우"])
 
+    def test_roster_carries_the_first_week_the_student_has_a_record_in(self):
+        """격자가 `x` 를 그리는 근거(FLOW 3-1) — 합류 주차를 따로 저장하지 않는다.
+
+        3주차에 들어온 학생의 1·2주차를 `미입력` 으로 두면 조교가 영원히 채워야
+        할 칸으로 남는다. 첫 기록보다 앞선 주차면 화면이 `x` 로 그린다.
+        """
+        self.client.force_login(self.admin)
+        third = ClassSession.objects.get(klass_id=self.first["class_id"], week_no=3)
+        Attendance.objects.create(session=third, student=self.student, status="출석")
+        row = self.client.get(f"{URL}/{self.first['class_id']}").json()["students"][0]
+        self.assertEqual(row["first_week_no"], 3)
+
+    def test_a_student_without_a_record_has_no_first_week(self):
+        """기록이 없으면 앞선 칸도 없다 — 전부 `미입력` 이지 `x` 가 아니다."""
+        self.client.force_login(self.admin)
+        row = self.client.get(f"{URL}/{self.first['class_id']}").json()["students"][0]
+        self.assertIsNone(row["first_week_no"])
+
     def test_assistant_without_feature_gets_403(self):
         self.assertEqual(
             self.move(self.second["class_id"], user=self.assistant).status_code, 403

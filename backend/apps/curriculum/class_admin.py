@@ -28,7 +28,7 @@ from django.db import IntegrityError, models, transaction
 from django.utils import timezone
 
 from apps.accounts.models import Student
-from apps.grades.models import ClassSession
+from apps.grades.models import Attendance, ClassSession
 
 from .models import Class, Course, CourseEnrollment, CourseWeek, Subject
 
@@ -226,14 +226,30 @@ def list_sessions(klass):
 
 
 def class_detail(klass):
-    """반 하나 — 주차와 명단. 주차 편집·반 이동 화면이 같이 쓴다."""
-    students = (
+    """반 하나 — 주차와 명단. 주차 편집·반 이동 화면이 같이 쓴다.
+
+    `first_week_no` 는 그 학생의 **이 반에서의 첫 출결 기록 주차**다(FLOW 3-1).
+    격자가 `x`(그때 이 반에 없었다)와 `미입력`(아직 안 봤다)을 가르는 근거이고,
+    **이 주차보다 앞선 칸이 `x`** 다. 합류 주차를 따로 저장하지 않는 이유가
+    이것이다 — 값집합에도 안 들어가고, 반을 옮겨도 기록이 곧 답이다.
+    기록이 하나도 없으면 null 이며, 그때는 앞선 칸이 없으므로 전부 `미입력` 이다.
+    """
+    students = list(
         Student.objects.filter(
             course_enrollments__klass=klass,
             course_enrollments__status=CourseEnrollment.Status.ENROLLED,
         )
         .select_related("user")
         .order_by("student_id")
+    )
+    first_weeks = dict(
+        Attendance.objects.filter(
+            session__klass=klass, student__in=students, session__week_no__isnull=False
+        )
+        .values("student_id")
+        .annotate(first_week=models.Min("session__week_no"))
+        .order_by()
+        .values_list("student_id", "first_week")
     )
     return {
         "class": class_block(klass),
@@ -243,6 +259,7 @@ def class_detail(klass):
                 "student_id": s.student_id,
                 "name": s.user.name if s.user else None,
                 "login_id": s.user.login_id if s.user else None,
+                "first_week_no": first_weeks.get(s.student_id),
             }
             for s in students
         ],
