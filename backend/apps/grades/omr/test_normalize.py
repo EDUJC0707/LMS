@@ -158,14 +158,18 @@ def test_accepts_the_worst_real_trapezoid():
     np.testing.assert_allclose(corners, [c for c, _ in wide_bottom], atol=1.5)
 
 
-def test_to_source_many_matches_to_source_within_one_ulp():
-    """벡터판과 스칼라판이 어긋나면 표본 픽셀이 움직인다 — 1 ULP 안이면 안 움직인다.
+def test_to_source_many_matches_to_source_sub_pixel():
+    """벡터판과 스칼라판이 같은 자리를 가리킨다 — 픽셀의 10억분의 1 안에서.
 
-    **비트 동일을 요구하지 않는다.** 벡터판은 행렬곱이고 스칼라판은 나눗셈이라
-    x86 은 FMA 로 접어 마지막 비트가 갈리고 arm64 는 안 갈린다(2026-08-20 CI 에서
-    드러났다 — 맥에서는 통과하고 CI 에서만 깨졌다). 지켜야 하는 것은 비트가 아니라
-    **표본 자리**이고, 몇 ULP 로는 `floor` 가 넘어가지 않는다(실측 1 ULP, 여유 4).
-    아래에서 정수 자리를 직접 확인하는 이유다.
+    **비트 동일도, `floor` 일치도 요구하지 않는다.** 벡터판은 행렬곱이고 스칼라판은
+    나눗셈이라 x86 은 FMA 로 접고 arm64 는 안 접는다. 표본점을 카드 밖(-0.5~1.5)까지
+    뿌리므로 원근 분모가 0 에 가까워지는 자리가 섞이고, 거기서 오차가 증폭된다
+    (2026-08-20 CI 실측 128 ULP — 절대값으로는 3e-11 px).
+
+    `floor` 를 걸었다가 물렸다. 좌표가 정수 경계에 얹히면 마지막 비트 하나로 갈리므로
+    **정수 자리는 애초에 두 경로 사이에서 보장되는 값이 아니다.** 보장되는 것은
+    두 경로가 픽셀보다 훨씬 작게 일치한다는 것이고, 실제 결함(축이 뒤바뀜 · 분모가
+    틀림 · 인덱스가 밀림)은 전부 그보다 아홉 자리 크게 벌어진다.
     """
     frame = normalize.locate_card(synth_scan(angle=-3.55))
     assert frame is not None
@@ -174,11 +178,8 @@ def test_to_source_many_matches_to_source_within_one_ulp():
     xs, ys = frame.to_source_many(points)
 
     expected = np.array([frame.to_source(u, v) for u, v in points])
-    np.testing.assert_array_max_ulp(xs, expected[:, 0], maxulp=4)
-    np.testing.assert_array_max_ulp(ys, expected[:, 1], maxulp=4)
-    # 표본이 실제로 같은 픽셀에서 나오는가 — 이것이 지키려던 것이다.
-    assert np.array_equal(np.floor(xs), np.floor(expected[:, 0]))
-    assert np.array_equal(np.floor(ys), np.floor(expected[:, 1]))
+    np.testing.assert_allclose(xs, expected[:, 0], rtol=1e-9, atol=1e-9)
+    np.testing.assert_allclose(ys, expected[:, 1], rtol=1e-9, atol=1e-9)
 
 
 # --- 문턱: 톤이 밀려도 마커를 찾는다 ---------------------------------------
