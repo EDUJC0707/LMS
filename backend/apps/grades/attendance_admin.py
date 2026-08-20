@@ -219,6 +219,10 @@ def session_block(session):
             else None
         ),
         "session_no": session.session_no,
+        # 그날 시험(FLOW 3-3 — 커리 주차가 정한다). 반이 혼자 더한 주차에는
+        # 없다. 화면은 이 값으로 성적표 인쇄 자리를 가른다 — FK 컬럼이라
+        # 조인이 붙지 않는다.
+        "exam_id": session.exam_id,
         "target_grade": session.target_grade,
         "memo": session.memo,
         "week_no": week.week_no if week else None,

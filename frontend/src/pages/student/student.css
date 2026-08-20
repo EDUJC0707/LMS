@@ -749,4 +749,15 @@
   .st-spark {
     break-inside: avoid;
   }
+
+  /* 반 일괄 — 학생마다 새 장에서 시작해야 명단 순서대로 한 장씩 나온다
+     (FLOW 3-11 오프라인). 마지막 장 뒤에서도 넘기면 인쇄할 때마다 빈 장이
+     한 장 더 나가므로 거기서만 끈다 — 학생 하나만 뽑을 때도 같은 문제다. */
+  .st-sheet {
+    break-after: page;
+  }
+
+  .st-sheet:last-child {
+    break-after: auto;
+  }
 }

@@ -27,6 +27,8 @@ export interface SessionBlock {
   /** 처음 `출결 확정` 을 누른 시각. 값이 있으면 이미 내보낸 회차다(FLOW 3-11). */
   confirmed_at: string | null;
   session_no: number | null;
+  /** 그날 시험. 커리 주차가 정한다(FLOW 3-3) — 반이 혼자 더한 주차에는 없다. */
+  exam_id: number | null;
   target_grade: number | null;
   memo: string | null;
   week_no: number | null;

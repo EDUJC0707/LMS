@@ -38,6 +38,7 @@ import ParentPaymentPage from "../pages/parent/ParentPaymentPage";
 import AdminDashboardPage from "../pages/admin/ops/AdminDashboardPage";
 import AttendancePage from "../pages/admin/ops/AttendancePage";
 import AttendanceSessionPage from "../pages/admin/ops/AttendanceSessionPage";
+import SessionReportsPage from "../pages/admin/ops/SessionReportsPage";
 import MakeupOpsPage from "../pages/admin/ops/MakeupOpsPage";
 import CounselingPage from "../pages/admin/ops/CounselingPage";
 import PaymentsPage from "../pages/admin/ops/PaymentsPage";
@@ -174,6 +175,10 @@ export const router = createBrowserRouter([
               { path: "exams", element: <ExamsPage /> },
               { path: "exams/:examId", element: <ExamDetailPage /> },
               { path: "exams/:examId/sheets", element: <SheetReviewPage /> },
+              // 성적표 인쇄는 회차에서만 들어간다(레일에 없다) — 경로가
+              // /admin/attendance/* 라 상단바는 출결 화면 것을 그대로 쓰지만,
+              // 게이트는 출결입력이 아니라 성적처리다(FLOW 3-11 배부).
+              { path: "attendance/:sessionId/reports", element: <SessionReportsPage /> },
             ],
           },
           {
