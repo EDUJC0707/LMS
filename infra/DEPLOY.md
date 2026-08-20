@@ -83,10 +83,14 @@ fly storage create --org EduJC -a edujc-lms --name edujc-lms-storage
 fly secrets set \
   DJANGO_SECRET_KEY="$(python3 -c 'import secrets;print(secrets.token_urlsafe(64))')" \
   DJANGO_DEBUG="False" \
-  ALLOWED_HOSTS="edujc-lms.fly.dev" \
+  ALLOWED_HOSTS="api.hjcedu.com,edujc-lms.fly.dev" \
   CSRF_TRUSTED_ORIGINS="https://edujc-lms.fly.dev" \
   CORS_ALLOWED_ORIGINS="https://<프론트도메인>" \
   -a edujc-lms
+#   ⚠️ `api.hjcedu.com` 을 빼지 말 것 — fly.toml 헬스체크가 그 Host 로 들어온다
+#   (`[http_service.checks.headers]`. 체크는 사설망으로 붙어 Host 가 사설 IPv6
+#   리터럴이 되므로 거기 박아 둔 값이다). 목록에서 빠지면 `CommonMiddleware` 가
+#   400 을 내고 체크가 실패해 **머신이 통째로 트래픽에서 빠진다.**
 #   (SENTRY_DSN 은 8장 — 가입부터 수집 검증까지 절차가 거기 있다)
 
 # 2-6) 복습영상(Mux) — **없으면 영상이 통째로 안 나온다.**
@@ -95,11 +99,16 @@ fly secrets set \
 #   signed 정책 자산은 Mux 가 전부 403 을 내는데 **서버 로그에는 아무것도 안 남는다** —
 #   화면에서 "권한 없음" 과 구분되지 않는다. 넣었는지 반드시 확인할 것.
 fly secrets set \
+  MUX_TOKEN_ID="..." \
+  MUX_TOKEN_SECRET="..." \
   MUX_SIGNING_KEY_ID="..." \
   MUX_SIGNING_PRIVATE_KEY="<base64 개인키>" \
   MUX_PLAYBACK_RESTRICTION_ID="..." \
   -a edujc-lms
-#   MUX_TOKEN_ID/SECRET 은 업로드 커맨드 전용이라 웹 프로세스에는 필요 없다.
+#   MUX_TOKEN_ID/MUX_TOKEN_SECRET 도 **웹 프로세스에 필요하다** — 커맨드 전용이 아니다.
+#   관리자 영상 업로드(`POST /api/admin/videos/uploads`)가 요청 안에서 Mux 에 업로드
+#   자리를 만든다. 없으면 `mux.api_configured()` 가 False 라 `_api` 가 던지고 뷰는
+#   그걸 502 로 바꿔 내려보낸다(`videos/views.py` AdminVideoUploadView).
 #   MUX_DEMO_PLAYBACK_ID 는 **운영에서 비워 둔다**(시드 대체용 개발 편의).
 #   MUX_PLAYBACK_RESTRICTION_ID 를 빠뜨리면 서명 URL 을 복사해 curl 로 스트림을
 #   받아갈 수 있다 — 규칙은 `manage.py mux_restriction --domain <운영도메인>` 으로 만든다.
@@ -141,16 +150,27 @@ fly tokens create deploy -a edujc-lms      # 이 앱 배포 전용(생성 권한
 
 ## 5. 🗂 이미지/파일 스토리지 규약 (어디에 뭐가 들어가나)
 
-**원칙**: 큰 파일은 **DB에 넣지 않는다.** 오브젝트 스토리지(Tigris/S3)에 두고 **DB엔 경로(`*_path`)만.**
-Django 모델의 `FileField/ImageField` 가 자동으로 default storage(=Tigris)로 업로드됨.
+**원칙**: 큰 파일은 **DB에 넣지 않는다.** 오브젝트 스토리지(Tigris/S3)에 두고 **DB엔 경로만.**
+
+**경로를 손으로 짓지 않는다** — `backend/apps/grades/media.py` 의 함수가 유일한 자리다.
+예전엔 네 파일에 f-string 으로 흩어져 있었고 시드 정리(`seed_demo`)가 지울 접두사를 손으로
+따라 적고 있었다(왜 그렇게 갈랐는지는 그 모듈 docstring에 있다).
+
+저장은 두 갈래지만 **경로는 어느 쪽이든 `media.py` 를 거친다** — `default_storage.save(media.…(), f)`
+를 직접 부르는 쪽(OMR·워크북)과 `FileField(upload_to=…)` 가 대신 불러 주는 쪽(교재 표지 하나뿐)이다.
+OMR·워크북의 DB 컬럼은 `FileField` 가 아니라 **`CharField`** 다.
 
 ### LMS 버킷 `edujc-lms-storage`
-| 용도 | `upload_to` 경로 규약 | DB 참조 |
+| 용도 | 경로 (`grades/media.py`) | DB 참조 |
 |---|---|---|
-| OMR 스캔본(PDF/jpeg) | `omr/{exam_id}/{sheet_id}.pdf` | `answer_sheets.scan_image_path` |
-| 워크북 사진 | `workbook/{session_id}/{student_id}.jpg` | `workbook_submissions.image_path` |
-| 약점체크 PDF | `weakness/{exam_id}/{student_id}.pdf` | `weakness_check_pdfs.pdf_path` |
-| 성적표 PDF | `report/{exam_id}/{student_id}.pdf` | (해당 표) |
+| OMR 스캔 낱장 | `omr/scans/{exam_id}/{내용해시}.jpg` — 이름이 **내용 주소**라 같은 지면이면 같은 자리 | `answer_sheets.scan_image_path` |
+| OMR 업로드 묶음 | `omr/batches/{exam_id}/{uuid}.pdf` — 판독이 끝나면 **지운다** | (없음 — 태스크 인자로만 산다) |
+| 워크북 사진 | `workbook/pages/{연}/{월}/{uuid}.{ext}` | `workbook_submissions.image_path` |
+| 교재 표지 | `product/covers/{uuid}.{ext}` — 공개해도 되는 것 | `products.cover` (유일한 `FileField`) |
+| 시드 산출물 | `demo/…` — `seed_demo` 가 이 하나만 지운다 | (해당 표) |
+
+> 약점체크·성적표 PDF 는 **아직 저장하지 않는다.** `weakness_check_pdfs.pdf_path` 컬럼은
+> 있지만 쓰는 코드가 없다. 붙일 때 경로도 `media.py` 에 함수로 넣는다.
 
 ### 문제툴 버킷 `edujc-qbank-storage` (도훈 소유, LMS는 관여 안 함)
 | 용도 | 경로 규약(예시) |
@@ -161,13 +181,6 @@ Django 모델의 `FileField/ImageField` 가 자동으로 default storage(=Tigris
 
 > **선지 안 이미지·표 안 이미지**의 복잡성은 전부 문제툴 버킷+스키마 안에서 처리하고,
 > LMS는 published된 **렌더 스냅샷 1장**만 참조한다(투 레이어). LMS 버킷엔 문제 이미지가 안 들어옴.
-
-**모델 예시 (참고)**
-```python
-class AnswerSheet(models.Model):
-    scan = models.FileField(upload_to="omr/%(exam_id)s/")   # → Tigris 자동 업로드
-    # DB엔 이 필드의 경로 문자열만 저장됨
-```
 
 ---
 
@@ -230,7 +243,12 @@ class AnswerSheet(models.Model):
 |---|---|---|
 | `edujc-qbank` worker | shared-cpu-1x 1024MB 상시 | ~$5.70 |
 | `jc-search` app | shared-cpu-2x 1024MB 상시 | ~$8.15 |
-| | | **~$13.85** |
+| 정지 머신 3대 (`edujc-qbank` app·worker, `jc-search` 1대) | 루트 디스크만 | ~$0.15 |
+| | | **~$14.00** |
+
+> 정지분 `~$0.15` 는 머신별로 잰 값이 아니라 **실측 총액에서 역산한 나머지**다. 위 표가
+> 자기 정지분(beat 대기 `~$0.05`)을 세는데 이 표는 안 세고 있었고, 그래서 두 표의 합이
+> 아래 총액과 15센트 어긋나 있었다.
 
 **fly 전체 ~$34.76/월.** 여기에 Google Workspace(₩24,700 ≈ $16.80)가 별도로 붙는다.
 
@@ -396,8 +414,10 @@ SDK 기본 스크러버는 `password`·`token` 류만 잡는다(이름·전화�
 - **500 한 건 = 이벤트 1건.** Django 가 500 마다 `django.request` 로 ERROR 로그도 남기지만
   중복 이벤트가 되지 않는다. 무료 한도(에러 5천건/월)가 반으로 줄지 않는다는 뜻이다
 - **Celery 도 이미 잡힌다.** 활성 통합에 `celery`·`redis`·`boto3` 가 자동으로 들어간다
-  (`prod.py` 는 Django 만 명시하지만 SDK 가 설치된 패키지를 감지해 붙인다). 워커를 띄우는
-  날(6장) 알림 발송 태스크 실패는 별도 작업 없이 수집된다
+  (`prod.py` 는 Django 만 명시하지만 SDK 가 설치된 패키지를 감지해 붙인다).
+  ~~워커를 띄우는 날(6장)~~ → **워커는 2026-08-12 부터 돈다**(6장). 잡히는 것도 알림
+  발송뿐이 아니다 — OMR 판독(`grades.ingest_omr_batch`)·클리닉 수집·리마인더 실패가
+  전부 별도 작업 없이 수집된다
 - **`release` 는 빌드가 넣는다**(2026-08-04 처리). 이미지에 `.git` 이 없어 SDK 가 스스로
   추론할 수단이 없다 → `Dockerfile` 의 `ARG GIT_SHA` → `ENV SENTRY_RELEASE`.
   넘기는 쪽은 두 군데뿐이다: CI(`--build-arg GIT_SHA=${{ github.sha }}`)와 `make deploy`.
