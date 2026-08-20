@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { cellFor } from "./grid.ts";
+import { cellFor, enteredWeeks } from "./grid.ts";
 
 test("첫 기록보다 앞선 주차는 x 다", () => {
   const 박지우 = [null, null, "출석", null] as const;
@@ -26,4 +26,24 @@ test("기록이 하나도 없으면 전부 미입력이다", () => {
 test("명시적 `미입력` 행도 기록이라 그 앞이 x 가 된다", () => {
   assert.equal(cellFor([null, "미입력", "출석"], 0), "x");
   assert.equal(cellFor([null, "미입력", "출석"], 1), "미입력");
+});
+
+test("아직 아무도 안 찍은 주차는 반 전체가 미입력이다", () => {
+  // 2주차만 찍고 1주차는 아직 안 찍은 반 — 늦게 온 OMR·건너뛴 주차에서 생긴다.
+  const 반 = [{ cells: ["출석", null] as ("출석" | null)[] }, { cells: ["결석", null] as ("결석" | null)[] }];
+  const 아직 = enteredWeeks(반 as never, 2);
+
+  assert.deepEqual(아직, [true, false]);
+  // 학생만 보면 2주차는 "첫 기록보다 뒤" 라 미입력이고, 여기서도 미입력이어야 한다
+  assert.equal(cellFor(반[0].cells as never, 1, 아직[1]), "미입력");
+});
+
+test("반 전체가 빈 주차라도 그 뒤에 기록이 있으면 x 가 아니다", () => {
+  // 1주차를 아무도 안 찍었고 2주차부터 찍은 반. 1주차가 x 로 찍히면
+  // "반에 없었다" 가 되어 미입력(아직 안 봤다)과 뜻이 뒤집힌다.
+  const 반 = [{ cells: [null, "출석"] as (string | null)[] }, { cells: [null, "출석"] as (string | null)[] }];
+  const 아직 = enteredWeeks(반 as never, 2);
+
+  assert.deepEqual(아직, [false, true]);
+  assert.equal(cellFor(반[0].cells as never, 0, 아직[0]), "미입력");
 });

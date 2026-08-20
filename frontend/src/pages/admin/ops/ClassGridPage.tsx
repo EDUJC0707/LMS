@@ -18,7 +18,7 @@ import { Card, ErrorState, Loading, Select, StatusBadge, Table } from "../../../
 import type { Column } from "../../../components";
 import { attendanceTone, shortAttendance } from "../../../features/attendance";
 import { shortDate } from "./format";
-import { cellFor } from "./grid";
+import { cellFor, enteredWeeks } from "./grid";
 import "./ops.css";
 import type { ClassGrid, GridStudent, SessionBlock } from "./types";
 
@@ -49,7 +49,9 @@ export default function ClassGridPage() {
   );
 
   const weeks = grid.data?.weeks ?? [];
-
+  const students = grid.data?.students ?? [];
+  // 아직 아무도 안 찍은 주차는 반 전체가 미입력이다 — 학생 하나만 보면 x 로 보인다.
+  const entered = enteredWeeks(students, weeks.length);
   const columns: Column<GridStudent>[] = [
     {
       key: "name",
@@ -73,7 +75,7 @@ export default function ClassGridPage() {
         </Link>
       ),
       cell: (r: GridStudent) => {
-        const value = cellFor(r.cells, index);
+        const value = cellFor(r.cells, index, entered[index]);
         if (value === "미입력") return null;
         if (value === "x") return <span className="ops-grid__none">x</span>;
         return (
@@ -121,7 +123,7 @@ export default function ClassGridPage() {
               caption={grid.data ? `${grid.data.klass.name} 출결` : "반별 출결"}
               dense
               columns={columns}
-              rows={grid.data?.students ?? []}
+              rows={students}
               rowKey={(r) => r.student_id}
               empty={classId ? "이 반에는 학생이 없습니다" : "반을 고르세요"}
             />
