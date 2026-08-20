@@ -7,7 +7,7 @@
 > **레포와 무관**: `fly deploy`는 로컬 소스를 빌드해 올린다(GitHub 안 거침).
 > 로컬 도커 불필요(Fly 원격 빌더 사용). GitHub 로그인 없이 push만 되는 상태로 OK.
 
-레포 2개 / 앱 2개 / 서버·DB 공용:
+레포 2개 / **fly 앱 4개** / 서버·DB 공용:
 ```
 Fly org (도쿄 nrt)
 ├─ app  edujc-lms     ← 이 레포                (Django A)
@@ -15,11 +15,21 @@ Fly org (도쿄 nrt)
 ├─ pg   edujc-pg      ← Postgres 1클러스터        · database: lms / qbank
 ├─ storage edujc-lms-storage    (Tigris/S3)     · OMR·워크북·PDF
 ├─ storage edujc-qbank-storage  (Tigris/S3)     · 문제·선지·표 이미지·원천PDF
-└─ redis edujc-redis  (Upstash Fixed 250MB)     · Celery 브로커 + 결과 백엔드
+├─ redis edujc-redis  (Upstash Fixed 250MB)     · Celery 브로커 + 결과 백엔드
+└─ app  jc-search     ← 이 레포와 무관              · 2026-08-19 부터 상시 가동
 ```
 
-> **실제 가동 현황(2026-08-19 기준)**: `edujc-lms` web · worker · beat + `edujc-pg` primary.
+> **실제 가동 현황(2026-08-20 `flyctl machines list` 실측)**
+>
+> | 앱 | 머신 |
+> |---|---|
+> | `edujc-lms` | web 512MB · worker 512MB · beat 256MB **가동** + beat 대기 1대 정지 |
+> | `edujc-pg` | primary 256MB + 볼륨 3GB |
+> | `edujc-qbank` | worker **1024MB 가동** + app 512MB 정지 + worker 1024MB 정지 |
+> | `jc-search` | app **shared-cpu-2x 1024MB 가동** + 1대 정지 |
+>
 > Celery 는 **2026-08-12 부터 돌고 있다** — 경위와 운영 규칙은 [6장](#6-celery-워커--beat--redis).
+> **`jc-search` 는 이 레포의 것이 아니다** — 같은 org 라 청구서에 같이 실린다.
 
 ---
 
@@ -53,7 +63,9 @@ fly postgres attach edujc-pg -a edujc-lms --database-name lms --database-user lm
 #   (참고: PRD는 Managed Postgres[MPG] 명시 — 안정화 시 `fly mpg create`로 대체 가능)
 #   ⚠️ 실제 생성된 것은 shared-cpu-1x:256MB + 볼륨 3GB(--volume-size 10 아님). 2026-07-22 확인.
 
-# 2-3) Redis (Upstash) — ⛔ 아직 실행하지 않음. 6장의 보류 결정을 먼저 읽을 것.
+# 2-3) Redis (Upstash) — ✅ 이미 만들어져 있다(2026-08-20 `fly redis list` 확인).
+#   `edujc-redis` Fixed 250MB / nrt, `REDIS_URL` 시크릿도 Deployed.
+#   아래는 **처음부터 다시 세울 때**의 절차다.
 fly redis create --org EduJC --region nrt --name edujc-redis
 fly secrets set REDIS_URL="<위 출력의 redis:// URL>" CELERY_BROKER_URL="<동일>" -a edujc-lms
 
@@ -197,15 +209,34 @@ class AnswerSheet(models.Model):
 | `worker_concurrency` | **1** | 자식 둘이면 505MB + 부모라 **512MB 머신이 OOM 으로 죽는다.** 늘릴 이유도 없다 — 1 vCPU 에 CPU 작업이라 처리량이 안 는다 |
 | `worker_prefetch_multiplier` | 1 | 기본 4 는 한 자식이 넷을 쥔 채 나머지가 논다 |
 
-### 비용 (2026-08-19)
+### 비용 (2026-08-20 실측)
+
+**이 레포 몫**
 
 | 리소스 | 사양 | 월 |
 |---|---|---|
-| web (상시) | shared-cpu-1x 512MB | ~$3.32 |
-| worker | shared-cpu-1x 512MB | ~$3.32 |
+| web (상시) | shared-cpu-1x 512MB | ~$3.19 |
+| worker | shared-cpu-1x 512MB | ~$3.19 |
 | beat | shared-cpu-1x 256MB | ~$1.94 |
-| `edujc-pg` + 볼륨 3GB | shared-cpu-1x 256MB | ~$2.47 |
+| beat 대기 (정지) | shared-cpu-1x 256MB | ~$0.05 |
+| `edujc-pg` + 볼륨 3GB | shared-cpu-1x 256MB | ~$2.39 |
 | Upstash Redis Fixed 250MB | 정액 | $10 |
+| Tigris `edujc-lms-storage` | $0.02/GB·월, 전송 무료 | ~$0 (버킷이 거의 비어 있다) |
+| | | **~$20.76** |
+
+**같은 청구서에 실리지만 이 레포가 아닌 것**
+
+| 리소스 | 사양 | 월 |
+|---|---|---|
+| `edujc-qbank` worker | shared-cpu-1x 1024MB 상시 | ~$5.70 |
+| `jc-search` app | shared-cpu-2x 1024MB 상시 | ~$8.15 |
+| | | **~$13.85** |
+
+**fly 전체 ~$34.76/월.** 여기에 Google Workspace(₩24,700 ≈ $16.80)가 별도로 붙는다.
+
+**전부 정액이고 전부 손님 0명일 때도 나간다.** 종량으로 도는 미터는 아직 없다 —
+알리고·카카오·Mux·Recall 은 키가 없거나 안 켰다. 오픈 때 켜지는 값은
+`docs/2026-08-04-영상호스팅-비용재계산.md` 와 `docs/2026-08-05-알림발송-비용과-업체선정.md` 에 있다.
 
 **종량제 Redis 를 쓰지 않는다** — Upstash 문서가 "Celery 는 큐가 비어도 계속
 폴링해서 종량제에서 비용이 커진다"고 명시한다(2026-08-12 에 종량제로 만들었다가
