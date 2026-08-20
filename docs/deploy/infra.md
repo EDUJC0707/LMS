@@ -18,12 +18,13 @@
 Vercel ──────────────┐            Fly.io org: EDUJC (slug: edujc, 도쿄 nrt)
   LMS 프런트          │   API      ┌──────────────────────────────────────────┐
   (React SPA,        ├──────────▶ │ app edujc-lms    Django+DRF  ✅ 배포됨     │
-   frontend/ 디렉터리) │            │ app edujc-qbank  Django      🔲 앱만 생성  │
+   frontend/ 디렉터리) │            │ app edujc-qbank  Django      ✅ worker 가동 │
                      │            │ app edujc-pg     PostgreSQL  ✅            │
                      │            │   ├ database lms   (user lms)   ← LMS 전용 │
                      │            │   └ database qbank (user qbank) ← 문제툴 전용│
+                     │            │ app jc-search    ← 이 레포와 무관 ✅ 가동  │
                      │            └──────────────────────────────────────────┘
-                     │            (예정) Tigris 버킷 2개 · Upstash Redis
+                     │            Tigris 버킷 2개 · Upstash Redis edujc-redis ✅
 ```
 
 **원칙**

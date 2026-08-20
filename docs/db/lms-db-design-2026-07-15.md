@@ -33,7 +33,7 @@
 | 9 | `workbook_submissions` | 과제/워크북 | 워크북 사진 업로드·수행도 도장 |
 | 10 | `makeup_grants` | 영상/동보 | 동보(동영상 보강) 기록 |
 | 11 | `tuition_charges` | 결제/수강료 | 동보생 수강료 청구 |
-| 12 | `clinic_slots` | 클리닉 | 요일×시간 슬롯·정원 |
+| 12 | `clinic_slots` | 클리닉 | 커리×요일×시간 슬롯·정원 |
 | 13 | `clinic_eligibilities` | 클리닉 | 관리자 평균 입력 → 대상자 판정 |
 | 14 | `absence_counselings` | 상담 | 결석 전화상담 기록 |
 | 15 | `parent_counsel_requests` | 상담 | 학부모 상담 신청 기록 |
@@ -400,18 +400,21 @@ baseline(`clinic_id` PK, `student_id` FK, `requested_date`, `requested_time`, `s
 
 - `status` 값 확장: `대기`/`승인배정`/`미승인`/`취소`. 노쇼 카운트·영구제한은 `students.noshow_count`·`clinic_banned`(baseline) 유지.
 
-#### 🆕 `clinic_slots` — 요일×시간 슬롯·정원
+#### 🆕 `clinic_slots` — 커리×요일×시간 슬롯·정원
 | 컬럼 | 자료형 | 제약 | 설명 |
 |---|---|---|---|
 | slot_id | BIGINT | PK | |
+| course_id | BIGINT | FK courses, NULL | 커리 — 슬롯은 커리의 클리닉 창에서 자동으로 선다(NULL = 커리 층 이전의 옛 슬롯) |
 | weekday | SMALLINT | NN | 0=일…6=토 (월~금 운영) |
 | start_time | TIME | NN | 예: 19:00 |
 | end_time | TIME | NN | 예: 20:00 |
-| capacity | SMALLINT | NN, 기본 1 | 정원 — **1 고정**(구현 각주 ① 참조) |
+| capacity | SMALLINT | NN, 기본 1 | 정원 = **클리닉 조교 수**(구현 각주 2026-08-19 참조). 1 은 조교가 한 명일 때의 기본값이고 관리자가 바꾼다 |
 | is_active | BOOLEAN | NN, 기본 true | |
 
-- UQ(weekday, start_time).
-- **[구현 각주 2026-07-28] 정원 1 고정**: 표의 원래 설명 "정원(조교 배정 수)"은 2026-07-15 회의 기준이었고 **2026-07-21 회의로 뒤집혔다** — "클리닉이 한 시간에 여러 개 일어나는 경우도 있나요?" → "시간별로 학생 한 명씩"(그래서 구글 미트 계정 1개로 충분). 정원은 관리자 설정값이 아니라 운영의 고정 사실이므로 `capacity`는 **컬럼을 유지한 채 1로 못 박았다**(마이그레이션 `clinic/0002_clinic_slot_capacity_fixed_one`): 기존 행 정규화 → `CHECK (capacity = 1)`(`ck_clinic_slots_capacity_one`) + `editable=False`. 컬럼을 남긴 이유는 ① 본 설계·baseline 스키마가 정의한 컬럼이라 삭제가 되돌리기 비싼 변경이고 ② 마감 판정식(활성 신청 수 ≥ capacity)이 컬럼을 그대로 읽어 1의 출처가 코드에 드러나며 ③ 운영 전제가 바뀌면 CHECK 완화만으로 열 수 있기 때문. 관리자 API·화면에는 정원 편집 경로를 두지 않는다. 값이 1뿐이라 소비자 응답에서 `capacity`/`remaining`은 폐지.
+- UQ(course_id, weekday, start_time) — 커리가 다르면 같은 시각이 또 선다.
+- **[구현 각주 2026-08-19] 슬롯은 커리가 갖는다**: `course_id` FK(PROTECT, NULL 허용 — 커리 층이 생기기 전의 옛 슬롯)가 붙었다(마이그레이션 `clinic/0008_clinic_slots_belong_to_a_course`, 옛 슬롯은 지우지 않고 `is_active=false` 로 폐지). **슬롯은 손으로 만들지 않는다** — 커리의 클리닉 창(`courses.clinic_start_time`~`clinic_end_time`)을 한 시간 단위로 쪼갠 것이 슬롯이고, 창을 고치면 `clinic/slots.py::sync_course_slots` 가 표를 맞춘다(월~금만, 끝에 한 시간이 안 되게 남는 자투리는 버린다). 창에서 빠진 시간도 지우지 않고 폐지한다 — 이미 그 시간에 잡아 둔 신청이 살아 있어야 하고 `ClinicRequest.slot` 이 PROTECT 다.
+- **[구현 각주 2026-07-28] ~~정원 1 고정~~ — 2026-08-19 에 되뒤집혔다(다음 각주). 아래는 그때의 기록이다**: 표의 원래 설명 "정원(조교 배정 수)"은 2026-07-15 회의 기준이었고 **2026-07-21 회의로 뒤집혔다** — "클리닉이 한 시간에 여러 개 일어나는 경우도 있나요?" → "시간별로 학생 한 명씩"(그래서 구글 미트 계정 1개로 충분). 정원은 관리자 설정값이 아니라 운영의 고정 사실이므로 `capacity`는 **컬럼을 유지한 채 1로 못 박았다**(마이그레이션 `clinic/0002_clinic_slot_capacity_fixed_one`): 기존 행 정규화 → `CHECK (capacity = 1)`(`ck_clinic_slots_capacity_one`) + `editable=False`. 컬럼을 남긴 이유는 ① 본 설계·baseline 스키마가 정의한 컬럼이라 삭제가 되돌리기 비싼 변경이고 ② 마감 판정식(활성 신청 수 ≥ capacity)이 컬럼을 그대로 읽어 1의 출처가 코드에 드러나며 ③ 운영 전제가 바뀌면 CHECK 완화만으로 열 수 있기 때문. 관리자 API·화면에는 정원 편집 경로를 두지 않는다. 값이 1뿐이라 소비자 응답에서 `capacity`/`remaining`은 폐지.
+- **[구현 각주 2026-08-19] 정원은 다시 조교 수다**: 위 각주의 "시간별로 학생 한 명씩"은 **조교가 한 명이었을 때의 사실**이었고, FLOW 3-7 대표 구술("한 타임에 조교 수만큼 받는다")로 `capacity`는 다시 **관리자 설정값**이 됐다. 마이그레이션 `clinic/0008_clinic_slots_belong_to_a_course` 가 `CHECK (capacity = 1)`(`ck_clinic_slots_capacity_one`)과 `editable=False`를 함께 걷어냈고, 편집 경로는 `GET·PUT /api/admin/clinic/capacity`다. 마감 판정식(활성 신청 수 ≥ capacity)은 그대로다 — 바뀐 것은 1의 출처뿐이다. **고친 값은 그날 이후부터만 듣는다**: 정원을 줄여도 이미 잡힌 신청은 다시 검사하지 않는다 — 소급해 취소하면 학생이 온다고 한 자리가 말없이 사라진다. 소비자 응답에 `capacity`/`remaining`을 싣지 않는 결론만 살아남았고 **이유가 바뀌었다** — "값이 1뿐이라"가 아니라 학생이 정하는 것은 "이 시간에 되나" 하나뿐이라서다(2026-08-20 대표). 잔여석 사본 컬럼은 여전히 금지.
 - **[구현 각주 2026-07-28] 날짜 축 조회**: 소비자 조회는 "요일 슬롯 + 슬롯별 next_date" 축을 폐기하고 `GET /api/student/clinic/availability?exam_id=&from=&to=`(날짜별 예약 가능 시간)로 이관했다 — 달력에서 날짜를 고르는 흐름(Calendly 형, PRD 3.2.4)을 그리려면 날짜 축 응답이 필요하다. 예약 가능 구간은 기본 14일·최대 31일(앱 레이어 상수).
 
 #### 🆕 `clinic_eligibilities` — 대상자 판정
@@ -852,12 +855,17 @@ CREATE TABLE makeup_grants (
 -- 클리닉 ---------------------------------------------------------------
 CREATE TABLE clinic_slots (
     slot_id    BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    weekday    SMALLINT NOT NULL,               -- 0=일..6=토
+    -- [추가 2026-08-19] 시간대는 커리가 갖는다. NULL = 커리 층 이전의 옛 슬롯(폐지 처리)
+    course_id  BIGINT REFERENCES courses(course_id),
+    weekday    SMALLINT NOT NULL,               -- 0=일..6=토 (월~금만 연다)
     start_time TIME NOT NULL,
     end_time   TIME NOT NULL,
-    capacity   SMALLINT NOT NULL DEFAULT 1 CHECK (capacity = 1),  -- 한 타임 1명 고정(0721 회의)
+    -- [개정 2026-08-19] 구 `CHECK (capacity = 1)`(ck_clinic_slots_capacity_one) 삭제 —
+    -- 정원은 클리닉 조교 수다(도메인 6 각주). 조교가 둘인데 값이 하나뿐이면 거짓말이 된다
+    capacity   SMALLINT NOT NULL DEFAULT 1,     -- 조교 수 — 관리자가 고친다
     is_active  BOOLEAN NOT NULL DEFAULT true,
-    UNIQUE (weekday, start_time)
+    -- [개정 2026-08-19] 구 `UNIQUE (weekday, start_time)` — 커리가 다르면 같은 시각이 또 선다
+    UNIQUE (course_id, weekday, start_time)
 );
 CREATE TABLE clinic_eligibilities (
     eligibility_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
