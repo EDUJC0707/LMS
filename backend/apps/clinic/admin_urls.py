@@ -42,6 +42,16 @@ urlpatterns = [
         name="clinic-eval-criteria",
     ),
     path(
+        "admin/clinic/courses/<int:course_id>/hours",
+        views.AdminClinicHoursView.as_view(),
+        name="clinic-hours",
+    ),
+    path(
+        "admin/clinic/capacity",
+        views.AdminClinicCapacityView.as_view(),
+        name="clinic-capacity",
+    ),
+    path(
         "admin/clinic/students/<int:student_id>/unban",
         views.AdminClinicUnbanView.as_view(),
         name="clinic-unban",

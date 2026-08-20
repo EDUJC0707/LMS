@@ -6,11 +6,11 @@ baseline lms-db-spec.html Domain 4, PRD 3.2.4(클리닉 신청).
 """
 import datetime
 
-from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.test import TestCase
 
 from apps.accounts.models import Student, User
+from apps.curriculum.models import Course
 from apps.grades.models import Exam
 
 from .models import (
@@ -45,49 +45,47 @@ class ClinicSlotTests(TestCase):
         self.assertEqual(ClinicSlot._meta.db_table, "clinic_slots")
         self.assertEqual(ClinicSlot._meta.pk.column, "slot_id")
 
-    def test_unique_per_weekday_and_start_time(self):
-        # 설계: UQ(weekday, start_time) — 같은 요일·같은 시작시간 슬롯 중복 금지
-        make_slot()
+    def test_unique_per_course_weekday_and_start_time(self):
+        """같은 커리 안에서 요일×시각은 하나뿐이다 — 커리가 다르면 또 설 수 있다.
+
+        커리를 반드시 붙여서 본다: 유니크가 `(course, weekday, start_time)` 인데
+        Postgres 는 NULL 끼리를 서로 다른 값으로 보므로 커리 없는 옛 슬롯은
+        이 제약이 못 잡는다. 그 행들은 마이그레이션 0008 에서 전부 폐지됐고
+        새로 서는 슬롯은 항상 커리를 갖는다(slots.sync_course_slots).
+        """
+        course = Course.objects.create(name="로직엔제", total_weeks=8)
+        other = Course.objects.create(name="오메가", total_weeks=8)
+
+        make_slot(course=course)
+        make_slot(course=other)  # 다른 커리의 같은 시각은 선다
+
         with self.assertRaises(IntegrityError):
-            make_slot()
+            make_slot(course=course)
 
     def test_capacity_defaults_to_one_and_active(self):
-        # 설계: capacity NN 기본 1, is_active NN 기본 true
+        # 조교 한 명일 때의 값이다 — 고정이 아니라 기본값(FLOW 3-7).
         slot = make_slot()
         self.assertEqual(slot.capacity, 1)
         self.assertTrue(slot.is_active)
 
-    def test_capacity_cannot_be_stored_other_than_one(self):
-        # 2026-07-21 회의: 클리닉은 "시간별로 학생 한 명씩" — 정원은 관리자가
-        # 정하는 값이 아니라 운영의 고정 사실이므로 DB 가 직접 막는다.
-        with self.assertRaises(IntegrityError):
-            make_slot(weekday=2, capacity=2)
+    def test_capacity_can_be_raised(self):
+        """정원은 클리닉 조교 수다 — 조교가 둘이면 두 명을 받는다(FLOW 3-7).
 
-    def test_capacity_zero_is_also_rejected(self):
-        with self.assertRaises(IntegrityError):
-            make_slot(weekday=2, capacity=0)
+        2026-07-21 회의의 "시간별로 학생 한 명씩" 은 조교가 하나였을 때의
+        사실이었고 2026-08-19 대표 구술로 뒤집혔다. 그때 걸어 둔 세 겹
+        (`editable=False` · `CheckConstraint` · `clean()`)이 전부 풀렸는지 본다.
+        """
+        slot = make_slot(weekday=2, capacity=2)
 
-    def test_capacity_validation_rejects_other_than_one(self):
-        # 폼·직접 호출 경로(full_clean)에서도 같은 불변식을 잡는다.
-        slot = ClinicSlot(
-            weekday=2,
-            start_time=datetime.time(19, 0),
-            end_time=datetime.time(20, 0),
-            capacity=3,
-        )
-        with self.assertRaises(ValidationError):
-            slot.full_clean()
+        slot.refresh_from_db()
+        self.assertEqual(slot.capacity, 2)
+        self.assertTrue(ClinicSlot._meta.get_field("capacity").editable)
+        slot.full_clean()  # 폼 경로도 안 막는다
 
-    def test_capacity_is_not_editable(self):
-        # 관리자 화면·폼에 정원 입력칸이 뜨지 않게 한다(편집 불가 필드).
-        self.assertFalse(ClinicSlot._meta.get_field("capacity").editable)
-
-    def test_fixed_capacity_contract_documented(self):
-        # 정원 고정의 근거(0721 회의)와 마감 판정 계약이 docstring 에 있어야 한다.
-        doc = ClinicSlot.__doc__
-        self.assertIn("한 타임 1명", doc)
-        self.assertIn("2026-07-21", doc)
-        self.assertNotIn("조교 수", doc)
+    def test_slot_belongs_to_a_course(self):
+        """시간대는 커리가 갖는다(FLOW 1-1) — 슬롯이 어느 커리 것인지 안다."""
+        self.assertTrue(ClinicSlot._meta.get_field("course").null)
+        self.assertEqual(ClinicSlot._meta.get_field("course").column, "course_id")
 
 
 class ClinicRequestTests(TestCase):

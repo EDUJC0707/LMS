@@ -314,8 +314,8 @@ export interface GradeReport {
 /* ── /api/student/clinic ──────────────────────────────────────────── */
 
 /**
- * 시간 한 칸. 정원·잔여석은 계약에 없다 — 한 타임 1명 고정이라
- * 잔여석이 늘 1이고, 그 사실은 `available` 하나로 전부 표현된다.
+ * 시간 한 칸. **잔여석은 계약에 없다**(2026-08-20 대표) — 학생이 정하는 것은
+ * "이 시간에 되나" 하나뿐이고 `available` 이 그걸 말한다. 정원은 관리자 숫자다.
  */
 export interface AvailabilityTime {
   slot_id: number;

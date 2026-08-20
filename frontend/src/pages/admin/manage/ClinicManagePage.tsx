@@ -9,6 +9,8 @@
  *   POST /api/admin/clinic/requests/{id}/evaluation  {items[], overall_result?}
  *   GET  /api/admin/clinic/eval-criteria
  *   POST /api/admin/clinic/students/{id}/unban       (대표 전용)
+ *   GET  /api/admin/clinic/capacity                  정원
+ *   PUT  /api/admin/clinic/capacity                  {capacity}
  *
  * 화면 설계
  * - 왼쪽 대기열 · 오른쪽 처리판. 신청 하나를 고르면 그 건에 지금 할 수 있는
@@ -20,6 +22,9 @@
  *     제한해제 = 제한 중 학생 + 대표 계정
  * - 결석은 되돌릴 수 없고 2회면 자동 제한이 걸린다. 노쇼 1회인 학생에게는
  *   결석 버튼 위에 경고를 먼저 띄운다.
+ * - **정원은 클리닉 조교 수다**(FLOW 3-7). 한 타임에 몇 명을 받는가라 시간마다
+ *   다를 이유가 없어 숫자 하나이고, 고치면 살아 있는 슬롯 전부에 걸린다.
+ *   지난 것은 안 건드린다 — 줄여도 이미 잡힌 신청은 그대로다.
  */
 import { useMemo, useState } from "react";
 import Markdown from "react-markdown";
@@ -114,6 +119,8 @@ export default function ClinicManagePage() {
     <div className="ui-stack">
       {/* 상태 탭과 날짜는 같은 일(대기열 좁히기)을 한다 — 한 덩어리로 묶어
           16px 으로 붙이고, 대기열·처리판과는 24px 로 띄운다. */}
+      <CapacityCard />
+
       <div className="ui-stack ui-stack--md">
         <Tabs items={TABS} value={tab} onChange={setTab} label="신청 상태" />
 
@@ -258,6 +265,53 @@ export default function ClinicManagePage() {
 }
 
 /* ── 선택한 신청 하나의 처리판 ──────────────────────────────────────── */
+
+/** 정원 — 클리닉 조교 수(FLOW 3-7). 고치면 살아 있는 슬롯 전부에 걸린다. */
+function CapacityCard() {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const current = useApi(async () => {
+    const { data } = await http.get<{ capacity: number }>("/admin/clinic/capacity");
+    return data.capacity;
+  }, []);
+
+  const save = useApiAction(async (value: number) => {
+    const { data } = await http.put<{ capacity: number }>("/admin/clinic/capacity", {
+      capacity: value,
+    });
+    current.setData(data.capacity);
+    setDraft(null);
+  });
+
+  if (current.loading) return <Loading label="정원을 불러오는 중…" />;
+  if (current.error) return <ErrorState description={current.error} onRetry={current.reload} />;
+
+  const value = draft ?? String(current.data ?? "");
+  const parsed = Number(value);
+  const dirty = draft !== null && Number.isInteger(parsed) && parsed >= 1;
+
+  return (
+    <Card title="정원">
+      {save.error && <Alert tone="danger">{save.error}</Alert>}
+      <div className="pm-toolbar">
+        {/* 카드 제목이 이미 "정원"이라 칸에 라벨을 또 붙이지 않는다. */}
+        <Input
+          aria-label="정원"
+          type="number"
+          min={1}
+          value={value}
+          onChange={(e) => setDraft(e.target.value)}
+        />
+        {dirty && (
+          <Button disabled={save.pending} onClick={() => void save.run(parsed)}>
+            저장
+          </Button>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 
 function RequestPanel({
   request,

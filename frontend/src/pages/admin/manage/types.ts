@@ -55,6 +55,9 @@ export interface CourseGroup {
   /** 과목명. 과목 층이 생기기 전에 만들어진 커리는 비어 있다. */
   subject: string | null;
   total_weeks: number;
+  /** 클리닉 시간대(FLOW 1-1). 둘 다 null 이면 그 커리는 클리닉을 안 연다. */
+  clinic_start_time: string | null;
+  clinic_end_time: string | null;
   classes: ClassRow[];
 }
 

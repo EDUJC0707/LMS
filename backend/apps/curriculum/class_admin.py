@@ -36,6 +36,10 @@ from .models import Class, Course, CourseEnrollment, CourseWeek, Subject
 MAX_TOTAL_WEEKS = 52
 
 
+def _hhmm(value):
+    return value.strftime("%H:%M") if value else None
+
+
 def list_courses(today=None):
     """커리로 묶은 반 목록 — 반이 하나도 없는 커리는 빠진다(FLOW 1-2).
 
@@ -69,6 +73,10 @@ def list_courses(today=None):
                 "name": klass.course.name,
                 "subject": klass.course.subject.name if klass.course.subject else None,
                 "total_weeks": klass.course.total_weeks,
+                # 클리닉 시간대는 커리의 것이다(FLOW 1-1) — 반이 아니라 묶음
+                # 머리에 붙는다. 비어 있으면 그 커리는 클리닉을 안 연다.
+                "clinic_start_time": _hhmm(klass.course.clinic_start_time),
+                "clinic_end_time": _hhmm(klass.course.clinic_end_time),
                 "classes": [],
             }
             by_course[klass.course_id] = group

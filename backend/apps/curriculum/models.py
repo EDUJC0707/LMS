@@ -76,6 +76,12 @@ class Course(models.Model):
     # (FLOW 1-3), 그 뒤 반에서 주차를 더하고 지워도 이 값은 안 바뀐다(1-5).
     total_weeks = models.PositiveSmallIntegerField("총주차", default=0)
     target_grade = models.SmallIntegerField("대상 학년", null=True, blank=True)
+    # 클리닉 시간대는 커리가 갖는다(FLOW 1-1·3-7). 이 창에서 한 시간 단위로
+    # 슬롯이 서고(clinic.slots.sync_course_slots), 언제든 고칠 수 있다 —
+    # **고친 날 이후부터만** 적용되고 이미 잡힌 신청은 안 움직인다.
+    # 둘 다 NULL 이면 그 커리는 클리닉을 안 연다.
+    clinic_start_time = models.TimeField("클리닉 시작", null=True, blank=True)
+    clinic_end_time = models.TimeField("클리닉 종료", null=True, blank=True)
     is_active = models.BooleanField("활성", default=True)
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)
 

@@ -39,6 +39,7 @@ from apps.accounts.permissions import STAFF_ROLES
 from apps.notifications.models import Notification
 from apps.notifications.sending import queue as queue_notification
 
+from . import slots
 from .booking import ClinicError
 from .conferencing import (
     Conference,
@@ -52,6 +53,7 @@ from .models import (
     ClinicEvaluation,
     ClinicEvaluationItem,
     ClinicRequest,
+    ClinicSlot,
 )
 
 # 노쇼 영구제한 임계값(PRD 3.2.4 — 누적 2회). 컷값 변경은 대표 전용 후보라
@@ -69,6 +71,27 @@ CLINIC_REF_TYPE = "clinic"
 PERIOD_PAST = "지난"
 PERIOD_UPCOMING = "예정"
 PERIODS = (PERIOD_PAST, PERIOD_UPCOMING)
+
+
+def capacity_row():
+    """지금 정원 — 클리닉 화면이 보고 고치는 숫자(FLOW 3-7)."""
+    return {"capacity": slots.current_capacity()}
+
+
+def set_capacity(value):
+    """정원을 바꾼다 — **살아 있는 슬롯 전부**에 같은 값이 걸린다(FLOW 3-7).
+
+    정원은 클리닉 조교 수라 시간마다 다를 이유가 없다. 값은 슬롯 행이 들고
+    있지만 화면에서는 숫자 하나다.
+
+    **지난 것은 안 건드린다.** 이미 잡힌 신청은 다시 검사하지 않으므로 정원을
+    줄여도 두 명이 잡아 둔 지난 슬롯은 그대로 남는다 — 소급해 취소하면 학생이
+    온다고 한 자리가 말없이 사라진다.
+    """
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise ClinicError("정원은 1 이상의 정수여야 합니다.")
+    ClinicSlot.objects.filter(is_active=True).update(capacity=value)
+    return capacity_row()
 
 
 def queue_rows(status_filter=None, date_filter=None, period=None):

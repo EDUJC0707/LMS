@@ -9,6 +9,7 @@
  *   POST /api/admin/classes/{id}/sessions              주차 추가
  *   PATCH/DELETE .../sessions/{week_no}                날짜 수정 · 주차 삭제
  *   POST /api/admin/classes/{id}/students              반 이동
+ *   PUT  /api/admin/clinic/courses/{id}/hours          커리 클리닉 시간대
  *
  * 화면 설계
  * - 커리로 묶어 한 표에 둔다. 커리명은 그 묶음의 첫 줄에만 적는다 — 같은 커리를
@@ -28,6 +29,10 @@
  *   번호를 다시 매기는 것은 FLOW 1-3 이 기각한 것이다.
  * - 반 이동은 명단 줄의 반 칸이다(FLOW 3-9). 고를 수 있는 것은 같은 커리의
  *   다른 반뿐이라 목록에서 이미 받은 묶음을 그대로 쓴다.
+ * - **클리닉 시간대는 커리의 것이다**(FLOW 1-1) — 반 표 아래 커리 단위로 둔다.
+ *   여기서 고치면 슬롯이 한 시간 단위로 다시 서고, 고친 날 이후부터만
+ *   적용된다(FLOW 3-7). 반 줄에 붙이면 같은 커리를 듣는 목반·화반에 같은 칸이
+ *   두 번 생겨 어느 쪽을 고쳐야 하는지 알 수 없다.
  */
 import { FormEvent, useState } from "react";
 
@@ -130,6 +135,8 @@ export default function ClassesPage() {
           />
         )}
       </Card>
+
+      <ClinicHoursCard courses={courses} onChanged={list.reload} />
 
       <ClassDetailModal
         line={opened}
@@ -513,5 +520,99 @@ function ClassDetailModal({
         </div>
       )}
     </Modal>
+  );
+}
+
+
+/** 커리의 클리닉 시간대(FLOW 1-1). 비워 두면 그 커리는 클리닉을 안 연다. */
+function ClinicHoursCard({
+  courses,
+  onChanged,
+}: {
+  courses: CourseGroup[];
+  onChanged: () => void;
+}) {
+  // 입력 중인 값만 담는다 — 안 건드린 커리는 서버 값을 그대로 보여 준다.
+  const [draft, setDraft] = useState<Record<number, { start: string; end: string }>>({});
+
+  const save = useApiAction(async (courseId: number, start: string, end: string) => {
+    await http.put(`/admin/clinic/courses/${courseId}/hours`, {
+      clinic_start_time: start || null,
+      clinic_end_time: end || null,
+    });
+    setDraft((prev) => {
+      const next = { ...prev };
+      delete next[courseId];
+      return next;
+    });
+    onChanged();
+  });
+
+  const valueOf = (course: CourseGroup) =>
+    draft[course.course_id] ?? {
+      start: course.clinic_start_time ?? "",
+      end: course.clinic_end_time ?? "",
+    };
+
+  const change = (course: CourseGroup, part: "start" | "end", value: string) =>
+    setDraft((prev) => ({ ...prev, [course.course_id]: { ...valueOf(course), [part]: value } }));
+
+  if (!courses.length) return null;
+
+  return (
+    <Card title="클리닉 시간대" padding="none">
+      {save.error && <Alert tone="danger">{save.error}</Alert>}
+      <Table<CourseGroup>
+        rows={courses}
+        rowKey={(row) => row.course_id}
+        dense
+        caption="커리별 클리닉 시간대"
+        columns={[
+          { key: "course", header: "커리", cell: (row) => row.name },
+          {
+            key: "start",
+            header: "시작",
+            width: "9rem",
+            cell: (row) => (
+              <Input
+                type="time"
+                step={3600}
+                value={valueOf(row).start}
+                onChange={(e) => change(row, "start", e.target.value)}
+              />
+            ),
+          },
+          {
+            key: "end",
+            header: "종료",
+            width: "9rem",
+            cell: (row) => (
+              <Input
+                type="time"
+                step={3600}
+                value={valueOf(row).end}
+                onChange={(e) => change(row, "end", e.target.value)}
+              />
+            ),
+          },
+          {
+            key: "save",
+            header: "",
+            width: "6rem",
+            cell: (row) =>
+              draft[row.course_id] ? (
+                <Button
+                  disabled={save.pending}
+                  onClick={() =>
+                    void save.run(row.course_id, valueOf(row).start, valueOf(row).end)
+                  }
+                >
+                  저장
+                </Button>
+              ) : null,
+          },
+        ]}
+      />
+    </Card>
   );
 }
