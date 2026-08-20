@@ -104,8 +104,10 @@ function AliasCard({
   const [alias, setAlias] = useState("");
   const [target, setTarget] = useState(options ? options[0].value : "");
 
-  const add = useApiAction(async () => {
-    await http.post("/admin/aliases", { table, alias, target });
+  // 값은 **인자로** 넘긴다 — useApiAction 은 첫 렌더의 함수를 붙들고 있어서
+  // 클로저로 읽으면 처음 상태(빈 문자열)가 그대로 나간다.
+  const add = useApiAction(async (body: { alias: string; target: string }) => {
+    await http.post("/admin/aliases", { table, ...body });
     return true;
   });
   const retarget = useApiAction(async (id: number, next: string) => {
@@ -120,7 +122,7 @@ function AliasCard({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!(await add.run())) return;
+    if (!(await add.run({ alias, target }))) return;
     setAlias("");
     await onReload();
   };
