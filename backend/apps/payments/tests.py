@@ -5,6 +5,8 @@ tuition_charges 삭제), §4.7(결제 중복 방지 인덱스), baseline lms-db-
 Domain 5, PRD 3.1.5(양측 결제·sync)·3.2.5(교재 구매).
 핵심은 부분 UQ(활성 청구 1건)와 Provider 추상화(업체 종속 컬럼 금지)다.
 """
+from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
 from django.test import TestCase
 
@@ -30,6 +32,38 @@ class ProductTests(TestCase):
     def test_defaults_follow_design(self):
         # baseline: is_active NN 기본 true(판매 여부 — 폐기는 soft-off)
         self.assertTrue(make_product().is_active)
+
+
+class ProductCoverTests(TestCase):
+    """표지 사진(FLOW 1-6) — 저장 계약은 워크북 사진(grades/workbook_admin.py)과 같다.
+
+    쓰기 화면이 Django admin 하나뿐이라 검증을 모델 validator 로 건다. admin 의
+    ModelForm 이 full_clean 을 부르므로 그 한 자리가 곧 조교가 만나는 경계다.
+    """
+
+    def upload(self, name, size=1024):
+        return SimpleUploadedFile(name, b"x" * size, content_type="image/jpeg")
+
+    def test_cover_is_capped_at_10mb_and_photo_formats_only(self):
+        product = make_product()
+        product.cover = self.upload("표지.jpg", size=payments_models.COVER_MAX_SIZE + 1)
+        with self.assertRaises(ValidationError) as caught:
+            product.full_clean()
+        self.assertIn("파일 크기는 10MB 이하여야 합니다.", caught.exception.message_dict["cover"])
+
+        # 브라우저가 그대로 못 그리는 포맷은 표지가 될 수 없다(워크북과 같은 넷)
+        product.cover = self.upload("표지.pdf")
+        with self.assertRaises(ValidationError):
+            product.full_clean()
+
+    def test_the_uploaded_name_never_becomes_the_path(self):
+        """경로 주입 차단 — 원본명에서는 확장자만 가져온다(workbook_admin 과 같은 이유)."""
+        product = make_product()
+        product.cover = self.upload("../../etc/passwd.png")
+        product.save()
+        self.assertTrue(product.cover.name.startswith("product/covers/"))
+        self.assertTrue(product.cover.name.endswith(".png"))
+        self.assertNotIn("passwd", product.cover.name)
 
 
 class OrderTests(TestCase):

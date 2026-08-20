@@ -46,6 +46,8 @@ export interface PurchasableProduct {
   /** 세트 · 낱개 (FLOW 1-6). 포함 관계는 서버도 모른다 — 표시뿐이다. */
   kind: string;
   price: number;
+  /** 표지 사진(FLOW 1-6). 아직 안 올린 교재는 null. */
+  cover_url: string | null;
 }
 
 interface BillResult {
@@ -130,6 +132,20 @@ export function PaymentPanel({ ordersPath, billPath, studentId }: PaymentPanelPr
             rowKey={(row) => row.product_id}
             caption="구매할 수 있는 교재"
             columns={[
+              {
+                key: "cover",
+                header: "",
+                width: "4rem",
+                // 바로 옆 칸이 교재명이다 — alt 를 채우면 스크린리더가 두 번 읽는다
+                cell: (row) =>
+                  row.cover_url ? (
+                    <img
+                      src={row.cover_url}
+                      alt=""
+                      style={{ display: "block", width: "3rem", borderRadius: "2px" }}
+                    />
+                  ) : null,
+              },
               { key: "name", header: "교재", cell: (row) => row.name },
               { key: "kind", header: "구성", cell: (row) => row.kind },
               {
