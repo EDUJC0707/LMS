@@ -19,6 +19,8 @@
 - 등록 전환: 예비등록→등록 + registered_at (그 외 상태 400)
 - 계정 안내(FLOW 3-11 #1): 발급마다 `계정발급` 알림이 **큐에 쌓인다** —
   학생 몫 + 새 학부모 몫, 무전화 학생은 학부모가 대신 받는다
+- 학교 별칭(FLOW 2-2): 아는 별칭은 서버가 정식 이름으로 바꿔 저장하고,
+  **모르는 학교는 행을 세우지 않고 온 그대로** 저장한다(FLOW 2-3)
 - 한글 정규화(FLOW 2-2 ①): 맥 파일의 분해형(NFD) 이름이 NFC 와 **같은
   아이디·같은 대조키**를 만들고, 같은 학생으로 판정된다
 - 비밀번호 재발급(FLOW 2-4): 관리자가 임시 비밀번호를 다시 내보낸다 —
@@ -34,7 +36,7 @@ from apps.curriculum.models import Class, Course, CourseEnrollment
 from apps.notifications.models import Notification
 
 from .features import FeatureKey
-from .models import Parent, ParentStudent, StaffFeatureGrant, Student, User
+from .models import Parent, ParentStudent, SchoolAlias, StaffFeatureGrant, Student, User
 
 PASSWORD = "pw-Secret-77!"
 BULK_URL = "/api/admin/accounts/bulk"
@@ -445,6 +447,23 @@ class BulkPhoneNormalizationTests(ProvisioningFixtureMixin, TestCase):
         self.assertEqual(again["results"][0]["status"], "기존")
         self.assertEqual(again["results"][0]["student_id"], first["results"][0]["student_id"])
         self.assertEqual(Student.objects.filter(user__name="엑셀생").count(), 1)
+
+
+class BulkSchoolAliasTests(ProvisioningFixtureMixin, TestCase):
+    """학교 별칭은 서버에서 붙는다 — FLOW 2-2 · 2-3."""
+
+    def test_known_alias_lands_canonical(self):
+        SchoolAlias.objects.create(alias="숙명여고", canonical="숙명여자고등학교")
+        self.post_bulk([{"name": "숙명생", "phone": "01011114831", "school": "숙명 여고"}])
+        self.assertEqual(
+            Student.objects.get(user__login_id="숙명생4831").school, "숙명여자고등학교"
+        )
+
+    def test_unknown_school_still_issues(self):
+        """모르는 학교라고 행을 세우지 않는다 — 학교는 판정에 쓰지 않는다(FLOW 2-3)."""
+        res = self.post_bulk([{"name": "무명생", "phone": "01011114832", "school": " 세화고 "}])
+        self.assertEqual(res.json()["results"][0]["status"], "생성")
+        self.assertEqual(Student.objects.get(user__login_id="무명생4832").school, "세화고")
 
 
 class BulkMatchVerdictTests(ProvisioningFixtureMixin, TestCase):
