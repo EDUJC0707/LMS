@@ -1,6 +1,13 @@
 # 한종철 LMS
 
-수능 강사 LMS 모노레포. React SPA(프런트) + Django/DRF/Celery(백엔드) 구조의 개발 스켈레톤.
+수능 강사 한종철의 LMS. React SPA(프런트) + Django/DRF/Celery(백엔드) 모노레포.
+
+**돌고 있다.** fly.io(도쿄)에 web·worker·beat 가 상시 가동 중이고 도메인 셋이 붙어 있다
+(`lms.hjcedu.com` · `api.hjcedu.com` · `hjcedu.com`). 아직 **오픈 전**이라 실제 학생은 없고,
+문자·알림톡은 키가 없어 한 통도 안 나간다.
+
+- **제품이 어떻게 흘러가는가**는 `docs/FLOW.md` 가 기준이다. 새 화면·모델을 설계하기 전에 거기부터 본다
+- **남은 일**은 `.claude/to-do.md`, **해 온 일**은 `.claude/progress.md`
 
 ## 스택
 
@@ -60,13 +67,16 @@ uv run python manage.py runserver
 
 ```bash
 cd frontend
-cp .env.example .env           # VITE_API_URL 확인
 npm install
 npm run dev                    # http://localhost:5173
+
+# 백엔드를 기본 포트가 아닌 데 띄웠으면
+VITE_API_TARGET=http://127.0.0.1:8010 npm run dev -- --port 5180 --strictPort
 ```
 
 ## 참고
 
 - 도메인/데이터 모델 설계: `docs/db/lms-db-design-2026-07-15.md` (8도메인).
-  현재 각 앱의 `models.py`는 **도메인 주석만** 있는 placeholder다. DB 설계 확정 후 모델을 채운다.
+  모델은 **다 들어가 있다** — 8개 앱 합쳐 약 3,000줄. 설계 문서와 어긋나는 곳은 코드가 맞다.
+- 배포·운영 현황(머신·시크릿·비용): `infra/DEPLOY.md` 한 곳만 본다.
 - 배포 설정: `infra/fly.toml`, `infra/Dockerfile`.
