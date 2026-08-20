@@ -476,10 +476,12 @@ def _taken_map(student, slots, start, end):
 
 
 def time_block(slot, taken=None):
-    """가용 시간 1칸 — 예약가능 여부와 사유(마감/내신청), 그리고 남은 자리.
+    """가용 시간 1칸 — 예약가능 여부와 사유(마감/내신청).
 
-    `remaining` 은 정원이 조교 수를 따라 2 이상이 될 수 있어 뜻을 갖는다
-    (FLOW 3-7). 정원이 1 이던 시절에는 성공한 순간 늘 0 이라 싣지 않았다.
+    **남은 자리는 안 내려보낸다**(2026-08-20 대표). 정원이 조교 수를 따라 2 가
+    될 수 있어 값 자체는 뜻을 갖지만, 학생이 볼 이유가 없다 — 학생이 정하는
+    것은 "이 시간에 되나" 하나뿐이고 그건 `available` 이 이미 말한다.
+    정원은 관리자 쪽 숫자다(clinic_admin.capacity_row).
     """
     count, mine = taken or (0, 0)
     is_full = count >= slot.capacity
@@ -488,7 +490,6 @@ def time_block(slot, taken=None):
         "start_time": slot.start_time.strftime("%H:%M"),
         "end_time": slot.end_time.strftime("%H:%M"),
         "available": not is_full,
-        "remaining": max(0, slot.capacity - count),
         "reason": (REASON_MINE if mine else REASON_FULL) if is_full else None,
     }
 

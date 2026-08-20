@@ -313,17 +313,15 @@ export interface GradeReport {
 
 /* ── /api/student/clinic ──────────────────────────────────────────── */
 
-/** 시간 한 칸. */
+/**
+ * 시간 한 칸. **잔여석은 계약에 없다**(2026-08-20 대표) — 학생이 정하는 것은
+ * "이 시간에 되나" 하나뿐이고 `available` 이 그걸 말한다. 정원은 관리자 숫자다.
+ */
 export interface AvailabilityTime {
   slot_id: number;
   start_time: string;
   end_time: string;
   available: boolean;
-  /**
-   * 남은 자리. 정원이 클리닉 조교 수라 2 이상이 될 수 있어 뜻을 갖는다(FLOW 3-7).
-   * **아직 화면에 그리지 않는다** — 칸마다 숫자를 띄울지는 대표가 정할 일이다.
-   */
-  remaining: number;
   /** 불가 사유. "마감" = 남이 찼다 · "내신청" = 내 활성 신청이 그 칸이다. */
   reason: string | null;
 }

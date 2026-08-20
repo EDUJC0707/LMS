@@ -74,11 +74,8 @@ PERIODS = (PERIOD_PAST, PERIOD_UPCOMING)
 
 
 def capacity_row():
-    """지금 정원과 그 값을 쓰는 슬롯 수 — 클리닉 화면이 보여 주는 것(FLOW 3-7)."""
-    return {
-        "capacity": slots.current_capacity(),
-        "slot_count": ClinicSlot.objects.filter(is_active=True).count(),
-    }
+    """지금 정원 — 클리닉 화면이 보고 고치는 숫자(FLOW 3-7)."""
+    return {"capacity": slots.current_capacity()}
 
 
 def set_capacity(value):

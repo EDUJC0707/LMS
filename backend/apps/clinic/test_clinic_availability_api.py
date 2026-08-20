@@ -14,8 +14,8 @@ Calendly 형 흐름(날짜 선택 → 그 날 가능한 시간 목록 → 하나
   월요일**에서 끝난다. 더 먼 날짜를 요청해도 창구 끝으로 잘리고, 창구가
   지났으면 403 이 아니라 **빈 days**(자격은 있는데 기간이 끝난 것이라
   다른 사실이다)
-- 정원: 활성 신청 수가 정원에 닿으면 마감. 남은 자리는 `remaining` 으로 내려
-  준다 — 정원이 조교 수를 따라 2 이상이 될 수 있어 뜻을 갖는다(FLOW 3-7)
+- 정원: 활성 신청 수가 정원에 닿으면 마감. **남은 자리 수는 안 내려보낸다**
+  (2026-08-20 대표) — 학생이 정하는 것은 "이 시간에 되나" 하나뿐이다
 - 자격(§4): 비대상·무판정·영구제한은 403 — 시간표 자체를 못 본다
 - 쿼리 수: 날짜×슬롯이 늘어도 고정(N+1 회귀 방지)
 
@@ -160,7 +160,6 @@ class ClinicAvailabilityTests(AvailabilityFixtureMixin, TestCase):
                     "start_time": "19:00",
                     "end_time": "20:00",
                     "available": True,
-                    "remaining": 1,
                     "reason": None,
                 },
                 {
@@ -168,7 +167,6 @@ class ClinicAvailabilityTests(AvailabilityFixtureMixin, TestCase):
                     "start_time": "20:00",
                     "end_time": "21:00",
                     "available": True,
-                    "remaining": 1,
                     "reason": None,
                 },
             ],
