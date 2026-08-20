@@ -194,8 +194,8 @@ class AnswerSheet(models.Model):
 | | 값 | 왜 |
 |---|---|---|
 | `task_soft_time_limit` / `task_time_limit` | 10분 / 12분 | OMR 실측이 386장 배치에 CPU 11초다. 분 단위면 진행이 아니라 멎은 것 |
-| `worker_max_memory_per_child` | 300MB | 머신이 512MB 인데 판독은 장마다 2400x1700 배열을 만든다. 누수 시 워커가 아니라 **머신이** OOM 으로 죽는다 |
-| `worker_concurrency` | 2 | 1 vCPU. 기본값(cpu_count)은 머신 크기를 바꿀 때 조용히 따라 변한다 |
+| `worker_max_memory_per_child` | 250MB | 실측: Django 97MB → OMR 임포트 117MB → 실물 65장 읽고 **252MB**. 배치가 끝나면 자식을 갈아 돌려준다 |
+| `worker_concurrency` | **1** | 자식 둘이면 505MB + 부모라 **512MB 머신이 OOM 으로 죽는다.** 늘릴 이유도 없다 — 1 vCPU 에 CPU 작업이라 처리량이 안 는다 |
 | `worker_prefetch_multiplier` | 1 | 기본 4 는 한 자식이 넷을 쥔 채 나머지가 논다 |
 
 ### 비용 (2026-08-19)
@@ -222,6 +222,11 @@ fly logs -a edujc-lms           # "celery@... ready." · beat "Scheduler: Sendin
 
 되돌리기: `fly scale count worker=0 beat=0 -a edujc-lms`.
 Redis 재시도 에러가 보이면 `REDIS_URL` 시크릿이 빠진 것이다.
+
+### 판독이 느려지면 — 머신을 키우지 말고 대수를 늘린다
+
+`fly scale count worker=2`. 자식을 늘리는(concurrency) 쪽은 1 vCPU 라 처리량이
+안 늘고 메모리만 먹는다. **beat 를 분리해 뒀으므로 워커 대수는 이제 자유다.**
 
 ---
 
