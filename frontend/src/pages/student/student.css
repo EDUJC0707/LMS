@@ -726,6 +726,13 @@
     display: none !important;
   }
 
+  /* 레일을 숨겨도 셸 그리드는 240px 열을 그대로 잡고 있다 — 장마다 왼쪽에
+     네이비 여백이 한 줄 찍힌다. 인쇄에서는 그리드를 풀고 바탕도 지운다. */
+  .ui-shell {
+    display: block;
+    background: none;
+  }
+
   .ui-page {
     max-width: none;
     padding: 0;

@@ -311,6 +311,18 @@ export interface GradeReport {
   } | null;
 }
 
+/**
+ * 성적표 첫 카드의 aside — 회차·응시일·이름·원번.
+ *
+ * 인쇄하면 상단바가 빠지므로(student.css @media print) 어느 회차의 누구
+ * 성적표인지는 본문이 들고 있어야 한다. 관리자가 뽑는 지면도 같은 줄을
+ * 써야 학생이 화면에서 보던 것과 대조된다(FLOW 3-11).
+ */
+export function reportIdentity(exam: GradeReport["exam"], student: GradeStudent): string {
+  const round = exam.round_no !== null ? `${exam.round_no}회 · ` : "";
+  return `${round}${exam.exam_date} · ${student.name} · 원번 ${student.login_id ?? student.matching_key}`;
+}
+
 /* ── /api/student/clinic ──────────────────────────────────────────── */
 
 /**
