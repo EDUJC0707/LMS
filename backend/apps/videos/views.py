@@ -6,6 +6,8 @@
 - PATCH      /api/admin/videos/{id}             메타·자산 수정
 - POST       /api/admin/videos/{id}/publish     `공개` 전환(조건 강제)
 - POST       /api/admin/videos/{id}/archive     `아카이브` 전환
+- POST       /api/admin/videos/grants/{id}/revoke   개별 회수
+- POST       /api/admin/videos/grants/{id}/unrevoke 회수 취소
 - GET        /api/admin/videos/course-weeks     등록 폼 주차 선택지
 - GET        /api/admin/videos/{id}/preview     관리자 미리보기(상태·권한 무시)
 - POST       /api/admin/videos/uploads          업로드 자리 발급(파일은 서버를 안 지남)
@@ -331,6 +333,26 @@ class AdminVideoGrantRevokeView(APIView):
         if grant is None:
             return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
         return Response({"grant": video_admin.grant_row(video_admin.revoke_grant(grant))})
+
+
+class AdminVideoGrantUnrevokeView(APIView):
+    """POST /api/admin/videos/grants/{grant_id}/unrevoke — 회수 취소(FLOW §5).
+
+    회수의 짝이다. 만료는 **처음 준 시점 그대로** 둔다(video_admin.unrevoke_grant)
+    — 다시 잡으면 이 버튼이 수동 지급의 뒷문이 된다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.VIDEO_GRANT_ADMIN)]
+
+    def post(self, request, grant_id):
+        grant = (
+            VideoGrant.objects.select_related("student__user", "video")
+            .filter(pk=grant_id)
+            .first()
+        )
+        if grant is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"grant": video_admin.grant_row(video_admin.unrevoke_grant(grant))})
 
 
 class AdminVideoListView(APIView):

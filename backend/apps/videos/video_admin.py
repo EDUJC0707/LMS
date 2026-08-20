@@ -363,8 +363,8 @@ def grant_row(grant):
 def list_grants(video_id=None, student_id=None):
     """지급 내역 — 회수된 것도 보인다(관리 경로는 상태를 가리지 않는다).
 
-    **회수는 개별이다**(FLOW §5). 지급은 `출결 확정` 이 묶음으로 하고 손으로
-    하는 것은 회수뿐이라, 이 목록의 유일한 쓰기가 회수 하나다.
+    **회수는 개별이고 무를 수 있다**(FLOW §5). 지급은 `출결 확정` 이 묶음으로 하고
+    손으로 하는 것은 회수와 그 취소뿐이라, 이 목록의 쓰기가 그 둘이다.
     """
     rows = VideoGrant.objects.select_related("student__user", "video").order_by("-grant_id")
     if video_id is not None:
@@ -385,5 +385,24 @@ def revoke_grant(grant, now=None):
     """
     if grant.revoked_at is None:
         grant.revoked_at = now or timezone.now()
+        grant.save(update_fields=["revoked_at"])
+    return grant
+
+
+def unrevoke_grant(grant):
+    """회수를 무른다 — `revoked_at` 만 지운다(FLOW §5).
+
+    이름이 줄지어 선 화면에서 옆줄을 누르는 일이 있어 되돌릴 길이 필요하다.
+
+    **만료는 처음 준 시점 그대로다.** `granted_at`·`expires_at` 을 다시 잡지
+    않는다 — 잡으면 잘못 누른 회수 한 번이 시청 기간을 일주일 늘리고, 이 버튼이
+    **수동 지급의 뒷문**이 된다. FLOW §5 가 수동 지급을 만들지 않기로 하면서
+    회수 취소만 둔 이유가 그것이다. 그래서 이미 만료된 권한을 무르면 회수 표시만
+    사라지고 학생에게는 여전히 안 보인다 — 무른 것은 회수이지 지급이 아니다.
+    (출결 정정의 재활성은 다른 축이다 — 그쪽은 학생이 자격을 다시 얻은 것이라
+     attendance_admin 이 지급 시각을 새로 잡는다.)
+    """
+    if grant.revoked_at is not None:
+        grant.revoked_at = None
         grant.save(update_fields=["revoked_at"])
     return grant
