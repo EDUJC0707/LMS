@@ -71,3 +71,19 @@ export function sessionLabel(session: {
   if (session.klass) return rest === "" ? session.klass.name : `${session.klass.name} · ${rest}`;
   return rest === "" ? "커리큘럼 미매핑 회차" : rest;
 }
+
+/** 확정을 안 누른 채 지나간 회차 — FLOW 5-1 이 전체 레벨에 모으라는 그것.
+ *
+ *  **아직 안 온 회차는 빼먹은 것이 아니다.** 날짜가 아무것도 발동시키지
+ *  않으므로(FLOW 1-4) 앞 주차는 그냥 앞일이고, 오늘 회차는 수업이 끝나야
+ *  누른다(FLOW 5-1 "조교가 목요일 저녁에는 반으로 들어가 그 주차를 끝내고").
+ *  그래서 경계가 `session_date < today` 다.
+ *
+ *  순서는 서버가 준 그대로 둔다 — 목록이 날짜 오름차순으로 오므로 가장 오래
+ *  방치된 것이 맨 위에 온다.
+ */
+export function unconfirmedSessions<
+  T extends { session_date: string; confirmed_at: string | null },
+>(sessions: T[], today: string): T[] {
+  return sessions.filter((s) => s.confirmed_at === null && s.session_date < today);
+}
