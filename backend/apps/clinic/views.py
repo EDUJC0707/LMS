@@ -14,6 +14,9 @@
 - POST /api/admin/clinic/requests/{id}/attendance    출결 처리·노쇼 (클리닉배정)
 - POST /api/admin/clinic/requests/{id}/evaluation    평가 기록 (클리닉배정)
 - GET  /api/admin/clinic/eval-criteria               평가 항목 (클리닉배정)
+- PUT  /api/admin/clinic/courses/{id}/hours          커리 클리닉 시간대 (클리닉배정)
+- GET  /api/admin/clinic/capacity                    정원 조회 (클리닉배정)
+- PUT  /api/admin/clinic/capacity                    정원 변경 (클리닉배정) {capacity}
 - POST /api/admin/clinic/students/{id}/unban         제한 해제 (**대표 전용**)
 
 규칙 강제·페이로드 조립은 booking(소비자)·clinic_admin(관리자) 서비스가
@@ -22,6 +25,7 @@
 """
 import datetime
 
+from django.db import transaction
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -29,9 +33,10 @@ from rest_framework.views import APIView
 from apps.accounts.features import FeatureKey
 from apps.accounts.models import Student, User
 from apps.accounts.permissions import FeatureRequired, IsOwner, IsStudent
+from apps.curriculum.models import Course
 from apps.grades.models import Exam
 
-from . import booking, clinic_admin
+from . import booking, clinic_admin, slots
 from .models import ClinicEvalCriteria, ClinicEvaluationItem, ClinicRequest, ClinicSlot
 
 _NOT_FOUND_MESSAGE = "찾을 수 없습니다."
@@ -379,6 +384,45 @@ class AdminClinicUnbanView(APIView):
                 "noshow_count": student.noshow_count,
             }
         )
+
+
+class AdminClinicHoursView(APIView):
+    """PUT /api/admin/clinic/courses/{id}/hours — 커리의 클리닉 시간대(FLOW 1-1).
+
+    시간대는 커리가 갖고, 바뀌면 슬롯 표가 따라 선다. 커리 화면이 부르는 자리다.
+    """
+
+    permission_classes = [FeatureRequired(FeatureKey.CLINIC_ASSIGN)]
+
+    def put(self, request, course_id):
+        course = Course.objects.filter(pk=course_id).first()
+        if course is None:
+            return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
+        body = request.data if isinstance(request.data, dict) else {}
+        try:
+            with transaction.atomic():
+                payload = slots.set_course_hours(
+                    course, body.get("clinic_start_time"), body.get("clinic_end_time")
+                )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(payload)
+
+
+class AdminClinicCapacityView(APIView):
+    """GET·PUT /api/admin/clinic/capacity — 정원(= 클리닉 조교 수, FLOW 3-7)."""
+
+    permission_classes = [FeatureRequired(FeatureKey.CLINIC_ASSIGN)]
+
+    def get(self, request):
+        return Response(clinic_admin.capacity_row())
+
+    def put(self, request):
+        body = request.data if isinstance(request.data, dict) else {}
+        try:
+            return Response(clinic_admin.set_capacity(body.get("capacity")))
+        except booking.ClinicError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class AdminClinicCriteriaView(APIView):

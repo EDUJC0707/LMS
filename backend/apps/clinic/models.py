@@ -2,7 +2,7 @@
 
 정렬 테이블(docs/db/lms-db-design-2026-07-15.md 도메인 6, baseline
 lms-db-spec.html Domain 4, PRD 3.2.4):
-  - clinic_slots            요일×시간 슬롯·정원(정원 = 조교 수)
+  - clinic_slots            커리×요일×시간 슬롯·정원(정원 = 클리닉 조교 수)
   - clinic_requests         신청·배정·링크·클리닉 출결(노쇼)
   - clinic_eligibilities    대상자 판정 기록(원천은 grades — 사본 금지)
   - clinic_eval_criteria    평가표 항목(체크리스트 마스터)
@@ -14,48 +14,51 @@ lms-db-spec.html Domain 4, PRD 3.2.4):
 accounts.Student(noshow_count/clinic_banned) — 여기 사본을 두지 않는다.
 """
 from django.conf import settings
-from django.core.exceptions import ValidationError
 from django.db import models
 
-# 클리닉 한 타임 정원 — **1 고정**(2026-07-21 회의: "시간별로 학생 한 명씩").
-# ClinicSlot.capacity 의 기본값·CheckConstraint·모델 검증이 공유하는 유일한 값.
-SLOT_CAPACITY = 1
+# 정원의 기본값 — 클리닉 조교가 한 명일 때의 값이다(FLOW 3-7).
+# **고정값이 아니다**: 조교가 늘면 관리자가 올린다(clinic_admin.set_capacity).
+DEFAULT_SLOT_CAPACITY = 1
 
 
 class ClinicSlot(models.Model):
-    """`clinic_slots` — 요일×시간 슬롯 (설계 도메인 6, PRD 3.2.4).
+    """`clinic_slots` — 커리×요일×시간 슬롯 (설계 도메인 6, PRD 3.2.4).
 
-    - weekday: 0=일…6=토(운영은 월~금). 시간대는 사전 정의 슬롯(예: 19~20시)로
-      제한하고 학생은 달력에서 날짜→시간을 골라 신청한다.
-    - capacity: **한 타임 1명 고정**. 근거는 2026-07-21 회의 — "클리닉이 한
-      시간에 여러 개 일어나는 경우도 있나요?" → "시간별로 학생 한 명씩"(그래서
-      구글 미트 계정 1개로 충분하다는 결론이 성립한다). 즉 정원은 관리자가
-      정하는 설정값이 아니라 **운영의 고정 사실**이므로 관리자 API·화면에
-      편집 경로를 두지 않고(editable=False) DB CheckConstraint 로 못 박는다.
-      (2026-07-15 회의의 "배정 가능 인원 기준으로 관리자가 설정"은 0721 회의로
-      뒤집힌 서술이다 — 정정 기록은 마이그레이션 0002·설계 문서 각주에.)
-      **컬럼을 남기는 이유**: ① 설계 문서(lms-db-design-2026-07-15 도메인 6)와
-      baseline 스키마가 이 컬럼을 정의하고 있어 삭제는 되돌리기 비싼 스키마
-      변경이다 ② 마감 판정식(활성 신청 수 >= capacity)이 컬럼을 그대로 읽어
-      1 이 어디서 오는지 코드에 드러난다 ③ 운영 전제가 바뀌어 2명이 되는 날
-      제약 완화만으로 열 수 있다. 값이 1 뿐이므로 소비자 응답에는 싣지 않는다
-      (booking.slot_block — 잔여석·정원 노출 폐지).
+    - course: **시간대는 커리가 갖는다**(FLOW 1-1·3-7). 커리의 클리닉 창
+      (`Course.clinic_start_time`~`clinic_end_time`)에서 한 시간 단위로 슬롯이
+      서고, 그 창을 고치면 `slots.sync_course_slots` 가 이 표를 맞춘다.
+      NULL 은 커리가 생기기 전에 만들어진 옛 슬롯이다 — 신청 이력이 참조하고
+      있어 지우지 못하고(PROTECT) 마이그레이션에서 폐지 처리했다.
+    - weekday: 0=일…6=토. 클리닉은 **월~금**만 연다(FLOW 3-7).
+    - capacity: **클리닉 조교 수**다(FLOW 3-7 "한 타임에 조교 수만큼 받는다").
+      2026-07-21 회의의 "시간별로 학생 한 명씩" 은 조교가 하나였을 때의 사실
+      이었고 2026-08-19 대표 구술로 뒤집혔다 — 그래서 `editable=False` ·
+      `CheckConstraint(capacity=1)` · `clean()` 셋을 걷어냈다(마이그레이션
+      0002 가 걸었던 것을 0007 이 푼다).
+      **고친 값은 그날 이후부터만 듣는다.** 정원을 줄여도 이미 잡힌 신청은
+      다시 검사하지 않으므로 지난 슬롯은 그대로다 — 소급해 취소하면 학생이
+      온다고 한 자리가 말없이 사라진다.
       마감 판정 계약: 해당 (slot, requested_date)의 활성 신청 수(status
-      `대기`+`승인배정`) >= capacity → 마감. capacity=1 이므로 **활성 신청이
-      한 건만 있어도 그 날짜·시간은 마감**이다. 집계는 clinic_requests 를 세는
+      `대기`+`승인배정`) >= capacity → 마감. 집계는 clinic_requests 를 세는
       앱 레이어 소관 — 잔여석 사본 컬럼 금지.
     - 폐지는 is_active=false(soft-off). 신청 이력이 참조하므로 실삭제는
       차단(ClinicRequest.slot PROTECT).
     """
 
-    # 한 타임 1명(2026-07-21 회의) — 모듈 상수 SLOT_CAPACITY 의 클래스 별칭.
-    FIXED_CAPACITY = SLOT_CAPACITY
-
     slot_id = models.BigAutoField(primary_key=True)
+    course = models.ForeignKey(
+        "curriculum.Course",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        db_column="course_id",
+        related_name="clinic_slots",
+        verbose_name="커리",
+    )
     weekday = models.SmallIntegerField("요일")  # 0=일…6=토
     start_time = models.TimeField("시작 시간")
     end_time = models.TimeField("종료 시간")
-    capacity = models.SmallIntegerField("정원", default=SLOT_CAPACITY, editable=False)
+    capacity = models.SmallIntegerField("정원", default=DEFAULT_SLOT_CAPACITY)
     is_active = models.BooleanField("활성", default=True)
 
     class Meta:
@@ -63,27 +66,16 @@ class ClinicSlot(models.Model):
         verbose_name = "클리닉 슬롯"
         verbose_name_plural = "클리닉 슬롯"
         constraints = [
-            # 설계: UQ(weekday, start_time)
+            # 같은 커리 안에서 요일×시각은 하나뿐이다. 커리가 달라지면 같은
+            # 시각이 또 설 수 있다 — 커리마다 자기 시간대를 갖기 때문이다.
             models.UniqueConstraint(
-                fields=["weekday", "start_time"],
-                name="uq_clinic_slots_weekday_start",
-            ),
-            # 한 타임 1명(0721 회의) — 값집합이 아니라 운영 불변식이라 DB 로 막는다
-            # (key_considerations §6 의 "값집합 CHECK 금지"와 다른 축).
-            models.CheckConstraint(
-                condition=models.Q(capacity=SLOT_CAPACITY),
-                name="ck_clinic_slots_capacity_one",
+                fields=["course", "weekday", "start_time"],
+                name="uq_clinic_slots_course_weekday_start",
             ),
         ]
 
     def __str__(self):
         return f"슬롯 요일{self.weekday} {self.start_time}~{self.end_time}"
-
-    def clean(self):
-        """폼·직접 호출 경로에서도 같은 불변식을 잡는다(DB 제약과 이중)."""
-        super().clean()
-        if self.capacity != self.FIXED_CAPACITY:
-            raise ValidationError({"capacity": "클리닉 정원은 1로 고정입니다."})
 
 
 class ClinicRequest(models.Model):

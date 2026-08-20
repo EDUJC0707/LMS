@@ -3,8 +3,8 @@
 규칙 강제 지점(전부 API 레벨 — 프런트 숨김은 보조):
   ① 자격: ClinicEligibility(is_target) 대상자만 — 비대상·무판정 403
   ② 정원: (slot, requested_date)의 활성 신청 수(`대기`+`승인배정`) >=
-     capacity → 마감 400. **capacity 는 1 고정**(ClinicSlot 모델 계약,
-     2026-07-21 회의)이라 활성 신청이 한 건만 있어도 그 날짜·시간은 마감이다.
+     capacity → 마감 400. capacity 는 **클리닉 조교 수**라 1 일 수도 2 일
+     수도 있다(FLOW 3-7) — 활성 신청이 정원을 채워야 마감이다.
      집계는 clinic_requests 를 센다(잔여석 사본 금지 — ClinicSlot 모델 계약).
      동시성은 트랜잭션 + select_for_update(슬롯 행 잠금)로 막는다 — 정원이
      1 이라 경합 창이 그만큼 좁고 결과는 더 치명적이다.
@@ -154,6 +154,17 @@ def _check_duplicate(student, exam, exclude_pk=None):
         raise ClinicError("이미 진행 중인 클리닉 신청이 있습니다.")
 
 
+def course_of(exam):
+    """그 시험의 커리 — 클리닉 시간대의 주인이다(FLOW 1-1·3-7).
+
+    `Exam.course_week` 는 주차가 지워지면 NULL 이 된다(SET_NULL). 그때는
+    커리를 알 수 없으므로 **슬롯을 커리로 좁히지 않는다** — 좁히면 달력이
+    통째로 비어서 학생은 자격이 없는 것과 구분할 수 없다.
+    """
+    week = exam.course_week
+    return week.course if week is not None else None
+
+
 def active_count(slot, requested_date, exclude_pk=None):
     """(slot, date) 활성 신청 수 — 정원 판정의 유일한 집계."""
     qs = ClinicRequest.objects.filter(
@@ -164,12 +175,27 @@ def active_count(slot, requested_date, exclude_pk=None):
     return qs.count()
 
 
+def _check_slot_course(slot, exam):
+    """다른 커리의 시간대로는 못 잡는다 — 시간대는 커리가 갖는다(FLOW 3-7).
+
+    커리를 알 수 없는 시험(주차가 지워진 것)과 커리가 안 붙은 옛 슬롯은
+    그냥 통과시킨다. 둘 다 비교할 대상이 없는 자리라 막으면 잡을 수 있는
+    시간이 하나도 없어진다.
+    """
+    course = course_of(exam)
+    if course is None or slot.course_id is None:
+        return
+    if slot.course_id != course.course_id:
+        raise ClinicError("이 수업의 클리닉 시간이 아닙니다.")
+
+
 def create_booking(student, exam, slot, requested_date):
     """신청 생성 — 규칙 ①~⑤ 전부 통과 시 `대기` 로 생성해 반환."""
     now = timezone.now()
     _ensure_can_book(student, exam)
     if model_weekday(requested_date) != slot.weekday:
         raise ClinicError("희망일이 슬롯 요일과 일치하지 않습니다.")
+    _check_slot_course(slot, exam)
     _check_date_open(requested_date, now)
     _check_in_window(requested_date, exam)
     _check_duplicate(student, exam)
@@ -200,6 +226,7 @@ def change_booking(request, slot, requested_date):
     _check_date_open(request.requested_date, now)  # 기존 날짜도 잠금(오늘 것은 못 옮긴다)
     if model_weekday(requested_date) != slot.weekday:
         raise ClinicError("희망일이 슬롯 요일과 일치하지 않습니다.")
+    _check_slot_course(slot, request.exam)
     _check_date_open(requested_date, now)
     # 창구는 **옮겨 갈 날짜**에만 건다 — 기존 날짜까지 보면 창구 밖으로
     # 들어온 예약(관리자·이관)을 창구 안으로 되돌릴 길이 막힌다.
@@ -394,15 +421,22 @@ def availability(student, exam, date_from=None, date_to=None):
     return {
         "exam_id": exam.exam_id,
         "range": {"from": start.isoformat(), "to": end.isoformat()},
-        "days": _day_blocks(student, start, end),
+        "days": _day_blocks(student, start, end, course_of(exam)),
     }
 
 
-def _day_blocks(student, start, end):
-    """[start, end] 각 날짜의 시간 목록 — 활성 슬롯이 있는 날만 담는다."""
+def _day_blocks(student, start, end, course=None):
+    """[start, end] 각 날짜의 시간 목록 — 활성 슬롯이 있는 날만 담는다.
+
+    `course` 를 주면 그 커리의 시간대만 본다(FLOW 3-7). 커리를 모르는 시험은
+    좁히지 않는다 — `course_of` 의 주석 참고.
+    """
     if start > end:
         return []
-    slots = list(ClinicSlot.objects.filter(is_active=True).order_by("weekday", "start_time"))
+    slots = ClinicSlot.objects.filter(is_active=True)
+    if course is not None:
+        slots = slots.filter(course=course)
+    slots = list(slots.order_by("weekday", "start_time"))
     if not slots:
         return []
     by_weekday = {}
@@ -442,7 +476,11 @@ def _taken_map(student, slots, start, end):
 
 
 def time_block(slot, taken=None):
-    """가용 시간 1칸 — 예약가능 여부와 사유(마감/내신청)."""
+    """가용 시간 1칸 — 예약가능 여부와 사유(마감/내신청), 그리고 남은 자리.
+
+    `remaining` 은 정원이 조교 수를 따라 2 이상이 될 수 있어 뜻을 갖는다
+    (FLOW 3-7). 정원이 1 이던 시절에는 성공한 순간 늘 0 이라 싣지 않았다.
+    """
     count, mine = taken or (0, 0)
     is_full = count >= slot.capacity
     return {
@@ -450,6 +488,7 @@ def time_block(slot, taken=None):
         "start_time": slot.start_time.strftime("%H:%M"),
         "end_time": slot.end_time.strftime("%H:%M"),
         "available": not is_full,
+        "remaining": max(0, slot.capacity - count),
         "reason": (REASON_MINE if mine else REASON_FULL) if is_full else None,
     }
 
@@ -457,10 +496,8 @@ def time_block(slot, taken=None):
 def slot_block(slot):
     """슬롯 요약 블록 — 신청·변경 응답 공용(재조회 불필요 계약).
 
-    정원·잔여석은 싣지 않는다: capacity 는 1 고정이라 신청이 성공한 순간
-    그 날짜·시간의 잔여는 언제나 0 이고, 값이 하나뿐인 필드는 계약이 아니라
-    노이즈다(ClinicSlot 모델 계약). 프런트가 "수요일 19:00~20:00" 를 그리는 데
-    필요한 요일·시간만 남긴다.
+    잔여석은 여기 싣지 않는다 — 잔여는 (슬롯, 날짜)의 성질인데 이 블록은
+    날짜를 모른다. 달력의 `time_block` 이 날짜별로 내려 준다.
     """
     return {
         "slot_id": slot.slot_id,

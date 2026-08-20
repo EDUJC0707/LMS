@@ -38,6 +38,7 @@ from apps.accounts.login_id import (
 from apps.accounts.matching_key import build_matching_key
 from apps.accounts.models import Parent, ParentStudent, StaffFeatureGrant, Student, User
 from apps.boards.models import AbsenceCounseling, ParentCounselRequest, Post, PostComment
+from apps.clinic import slots as clinic_slots
 from apps.clinic.models import (
     ClinicEligibility,
     ClinicEvalCriteria,
@@ -615,22 +616,21 @@ class Command(BaseCommand):
 
     @staticmethod
     def _create_clinic(exam, students, staff, now, today):
-        """슬롯 20(월~금 × 4교시) + 최근 시험 자격 판정 + 신청 혼합(대기·승인배정 등).
+        """슬롯(커리의 클리닉 창 17~21시 × 월~금) + 자격 판정 + 신청 혼합.
 
-        시간대를 요일당 하나가 아니라 넷으로 두는 이유: 정원이 1 고정이라
-        (2026-07-21 회의 "시간별로 학생 한 명씩") 한 요일에 시간이 하나뿐이면
-        전교생이 하루 한 자리를 두고 다투는 셈이라 운영이 성립하지 않는다.
-        회의 문구 자체가 "**시간별로** 한 명"이므로 시간대가 여럿인 것이 전제다.
+        **슬롯을 직접 만들지 않는다**(FLOW 1-1·3-7). 커리에 창을 넣고
+        `clinic.slots.sync_course_slots` 가 세우게 한다 — 시드가 손으로 만들면
+        실제 흐름에서만 나는 버그를 시드가 가려 준다.
+
+        요일당 시간을 넷으로 두는 이유: 정원이 조교 수라 한둘인데 한 요일에
+        시간이 하나뿐이면 전교생이 하루 한 자리를 두고 다투는 셈이 된다.
         """
-        slots = [
-            ClinicSlot.objects.create(
-                weekday=weekday,
-                start_time=datetime.time(hour, 0),
-                end_time=datetime.time(hour + 1, 0),
-            )
-            for weekday in (1, 2, 3, 4, 5)  # 0=일…6=토 → 월~금
-            for hour in (17, 18, 19, 20)
-        ]
+        course = exam.course_week.course
+        course.clinic_start_time = datetime.time(17, 0)
+        course.clinic_end_time = datetime.time(21, 0)
+        course.save(update_fields=["clinic_start_time", "clinic_end_time"])
+        clinic_slots.sync_course_slots(course)
+        slots = list(ClinicSlot.objects.filter(course=course).order_by("weekday", "start_time"))
         for order, item in enumerate(
             ["개념 이해도 점검", "오답 원인 설명", "유사문항 풀이 지도", "학습 태도 피드백"],
             start=1,

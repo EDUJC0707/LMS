@@ -18,8 +18,8 @@ const WED: AvailabilityDay = {
   date: "2026-07-30",
   weekday: 4,
   times: [
-    { slot_id: 231, start_time: "18:00", end_time: "19:00", available: true, reason: null },
-    { slot_id: 232, start_time: "19:00", end_time: "20:00", available: false, reason: "마감" },
+    { slot_id: 231, start_time: "18:00", end_time: "19:00", available: true, remaining: 1, reason: null },
+    { slot_id: 232, start_time: "19:00", end_time: "20:00", available: false, remaining: 0, reason: "마감" },
   ],
 };
 
@@ -54,7 +54,7 @@ function day(date: string, weekday: number): AvailabilityDay {
     date,
     weekday,
     times: [
-      { slot_id: 1, start_time: "18:00", end_time: "19:00", available: true, reason: null },
+      { slot_id: 1, start_time: "18:00", end_time: "19:00", available: true, remaining: 1, reason: null },
     ],
   };
 }
