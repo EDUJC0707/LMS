@@ -26,6 +26,28 @@
 - `권한부여` 가 대표 전용인 것이 맞는가(key_considerations §2)
 - 반별 관리 한 화면이 키 다섯을 걸친다 — 라우트 게이트 하나인가, 블록마다인가
 
+### 운영에 자격증명이 없어 배포됐지만 안 도는 것 (2026-08-20 실측)
+
+`flyctl secrets list -a edujc-lms` 가 21개인데 **아래가 통째로 없다.** 로컬
+`backend/.env` 에는 다 있다 — fly 에만 안 올라갔다.
+
+- [ ] **Mux 넷** — `MUX_TOKEN_ID`·`MUX_TOKEN_SECRET`·`MUX_SIGNING_KEY_ID`·`MUX_SIGNING_PRIVATE_KEY`.
+  없으면 관리자 영상 업로드가 **502** 다(`videos/views.py` → `mux.api_configured()`).
+  **키를 넣는 것만으로 DRM $100 은 시작되지 않는다** — DRM 은 따로 신청해야 켜진다
+- [ ] **클리닉 감독 넷** — `RECALL_API_KEY`·`RECALL_REGION`·`CLOVA_SPEECH_INVOKE_URL`·
+  `CLOVA_SPEECH_SECRET`·`OPENAI_API_KEY`. 20분마다 도는 수집 태스크가 아무것도 못 한다.
+  **태스크가 예외를 삼키게 짜여 있어**(`clinic/tasks.py:48-52`) 로그도 안 남기고 조용히 논다
+- 알리고·결제선생이 없는 것은 예상대로다 — 키 자체가 아직 없다(아래 "지금 막고 있는 것")
+
+넣을지는 **대표 판단**이다. 오픈 전이라 급하지 않지만, 그때까지
+**"배포됐다" 를 "동작한다" 로 읽으면 안 된다.**
+
+### `jc-search` 가 필요한 앱인가 (2026-08-20)
+
+- [ ] 같은 fly org 에 **이 저장소와 무관한 앱** `jc-search` 가 `shared-cpu-2x 1024MB` 로
+  상시 가동 중이다(월 **~$8.15**). 우리 청구서에서 **제일 큰 머신**이고, 안 쓰는 것이면
+  fly 비용에서 가장 큰 절감 자리다. `edujc-qbank` 워커(1GB 상시, ~$5.70)도 같이 본다
+
 ### 리뷰에서 넘긴 것 (2026-08-20)
 
 - [ ] **반별 격자에 OMR 대조 상태 · 워크북 제출 여부**(3-2). FLOW 는 이 둘을
@@ -720,7 +742,8 @@
   - 요금은 사실상 0 이다(학생 1000명·주 1장·연 4커리큘럼 = 연 117GB, 월 $2.24.
     업로드 월 4,300건은 무료 1만건 안, **egress 0원**)
 - [ ] prod `SECRET_KEY` fail-fast(기본값 제거), whitenoise + collectstatic(현재 /static/ 404)
-- [ ] **구글 미트 시크릿 3개를 운영에 올리기** — 로컬은 `backend/.env` 로 이미 돈다(2026-08-04 실계정 확인).
+- [x] **구글 미트 시크릿 3개를 운영에 올리기** — 2026-08-20 `flyctl secrets list` 로 확인,
+  `GOOGLE_MEET_CLIENT_ID`·`_SECRET`·`_REFRESH_TOKEN` 셋 다 Deployed. 아래는 재설정용 기록이다.
   `fly secrets set GOOGLE_MEET_CLIENT_ID=... GOOGLE_MEET_CLIENT_SECRET=... GOOGLE_MEET_REFRESH_TOKEN=... -a edujc-lms`
   **원본은 `backend/.env` 뿐이다** — fly 도 구글도 갱신 토큰을 다시 보여주지 않는다.
   잃어버리면 `manage.py meet_authorize` 로 재발급(같은 값이 아니라 새 값이 나온다)
