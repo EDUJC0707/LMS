@@ -290,21 +290,17 @@ class AdminClinicAssignView(APIView):
             return Response({"detail": _NOT_FOUND_MESSAGE}, status=status.HTTP_404_NOT_FOUND)
         body = request.data if isinstance(request.data, dict) else {}
         staff_id = body.get("assigned_staff_id")
-        conference_url = body.get("conference_url")
         if not _is_int(staff_id):
             return Response(
                 {"detail": "assigned_staff_id가 필요합니다."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        # conference_url 은 **선택**이다 — 없으면 서버가 화상 스페이스를 새로
-        # 만든다(clinic_admin.assign 의 순서 1·2·3). 들어오면 그것이 이긴다:
-        # 연동이 끊긴 날에도 관리자가 링크를 넣어 배정할 수 있어야 한다(§5).
-        # 링크 없는 승인 자체는 여전히 성립하지 않는다 — 만들지도 못하고 받지도
-        # 못하면 assign 이 400 으로 막는다.
-        manual_url = conference_url.strip() if isinstance(conference_url, str) else ""
+        # 링크는 **서버가 만든다**. 관리자가 손으로 넣는 경로는 없앴다
+        # (2026-08-18) — 실제로 그렇게 배정하는 상황이 없는데 코드 경로만
+        # 하나 더 있었다. 만들지 못하면 배정도 성립하지 않는다(assign 이 막는다).
         staff_user = User.objects.filter(pk=staff_id).first()
         try:
-            clinic_admin.assign(clinic_request, staff_user, manual_url or None)
+            clinic_admin.assign(clinic_request, staff_user)
         except booking.ClinicError as error:
             return Response({"detail": error.message}, status=error.http_status)
         return Response(clinic_admin.queue_row(clinic_request))

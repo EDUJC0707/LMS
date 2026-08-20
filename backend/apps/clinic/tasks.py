@@ -29,7 +29,6 @@ from .models import ClinicRequest
 
 #: beat 일정이 가리키는 이름. 문자열이 두 곳에서 갈리면 조용히 안 돈다.
 COLLECT_TASK_NAME = "apps.clinic.tasks.collect_clinic_supervision"
-DISPATCH_TASK_NAME = "apps.clinic.tasks.dispatch_clinic_supervision"
 REMINDER_TASK_NAME = "apps.clinic.tasks.send_clinic_reminders"
 
 #: FLOW 3-7 의 그 5분 — 시작 5분 전과 시작 5분 후.
@@ -55,23 +54,6 @@ def collect_clinic_supervision():
         return supervision.collect()
     except ConferenceError as error:
         return {"collected": 0, "waiting": 0, "failed": 0, "error": str(error)}
-
-
-@shared_task(name=DISPATCH_TASK_NAME)
-def dispatch_clinic_supervision():
-    """시작한 클리닉에 감독을 걸어 둔다. 결과 건수를 돌려준다.
-
-    **수집과 달리 늦으면 못 만회한다.** 수집은 며칠 뒤에 돌려도 같은 자료를
-    가져오지만, 봇은 회의가 도는 동안에만 들어갈 수 있다. 그래서 주기가
-    `supervision.DISPATCH_WINDOW` 보다 촘촘해야 하고, 그 관계는 테스트가 잡는다.
-
-    구글 경로에서는 어댑터가 아무것도 하지 않는다(계약 기본값) — 켜 두어도
-    해가 없고, 봇이 필요한 업체로 토글하는 순간 살아난다.
-    """
-    try:
-        return supervision.dispatch()
-    except ConferenceError as error:
-        return {"started": 0, "failed": 0, "error": str(error)}
 
 
 @shared_task(name=REMINDER_TASK_NAME)

@@ -3,7 +3,7 @@
  *
  * API
  *   GET  /api/admin/clinic/requests?status=&date=
- *   POST /api/admin/clinic/requests/{id}/assign      {assigned_staff_id, conference_url?}
+ *   POST /api/admin/clinic/requests/{id}/assign      {assigned_staff_id}
  *   POST /api/admin/clinic/requests/{id}/reject      {reason}
  *   POST /api/admin/clinic/requests/{id}/attendance  {status: "출석"|"결석"}
  *   POST /api/admin/clinic/requests/{id}/evaluation  {items[], overall_result?}
@@ -280,18 +280,13 @@ function RequestPanel({
   // 빈 칸으로 시작한다 — 서버가 화상 스페이스를 만들기 때문이다. 기존 링크를
   // 채워 두면 재배정할 때마다 그 값이 "직접 입력"으로 되돌아가 서버가 만든
   // 스페이스 참조가 지워진다(backend clinic_admin.assign 순서 1·2).
-  const [conferenceUrl, setConferenceUrl] = useState("");
   const [rejectReason, setRejectReason] = useState("");
 
   // 모든 액션은 성공 시 true 를 돌려준다 — useApiAction 은 실패에만
   // undefined 를 주므로 void 액션은 성공/실패를 구분할 수 없다.
   const assign = useApiAction(async () => {
-    const typed = conferenceUrl.trim();
     await http.post(`/admin/clinic/requests/${request.clinic_id}/assign`, {
       assigned_staff_id: Number(staffId),
-      // 적었을 때만 보낸다. 안 보내면 서버가 새 스페이스를 뚫고,
-      // 이미 링크가 있으면 그대로 둔다.
-      ...(typed ? { conference_url: typed } : {}),
     });
     return true;
   });
@@ -411,17 +406,6 @@ function RequestPanel({
                     </option>
                   ))}
                 </Select>
-              )}
-            </Field>
-            <Field label="화상 링크 직접 입력">
-              {(props) => (
-                <Input
-                  {...props}
-                  value={conferenceUrl}
-                  onChange={(e) => setConferenceUrl(e.target.value)}
-                  placeholder="https://meet.google.com/abc-defg-hij"
-                  inputMode="url"
-                />
               )}
             </Field>
             <div className="ui-row">

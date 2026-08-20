@@ -4,7 +4,6 @@
 스페이스 생성 요청의 URL·헤더·본문)와 **응답을 어떻게 번역하는가**
 (Temporary / Permanent)를 고정한다 — 어댑터의 일이 그 둘이기 때문이다.
 """
-import datetime
 import json
 import urllib.error
 
@@ -96,18 +95,27 @@ class CreateSpaceTests(SimpleTestCase):
         self.assertEqual(space_call["url"], SPACES_ENDPOINT)
         self.assertEqual(space_call["headers"]["Authorization"], "Bearer ya29.token")
 
-    def test_students_have_to_knock(self):
-        # PRD 6-3 '입장 통제' — 링크만 가진 사람은 못 들어온다. 조교가 조직
-        # 계정으로 먼저 들어가 호스트가 되고 학생을 수락한다(조사 문서 §3·§4).
-        # OPEN 이면 링크가 새는 순간 아무나 클리닉에 앉아 있게 된다.
+    def test_nobody_knocks(self):
+        # ~~TRUSTED(노크 → 호스트 수락)~~ → **OPEN**(2026-08-13 사용자 확정).
+        #
+        # 노크는 조교가 매 회차 눌러야 하는 유일한 단계였고, 감독 기록을 남기는
+        # 봇까지 같은 로비에 서면서 **조교가 봇을 안 들이면 그 회차 기록이
+        # 통째로 없어지는** 구조가 됐다(에러도 안 난다). 사람 손을 0 으로
+        # 만드는 것이 감독 체계의 전제라 로비를 없앤다.
+        #
+        # 통제가 사라지는 게 아니라 **한 겹으로 준다**: 클리닉 1건 = 새 스페이스
+        # 1개(재사용 없음) + 링크는 배정된 그 학생에게 시작 5분 전부터만 보인다.
+        # 이 상태에서 링크가 새려면 그 학생이 직접 남에게 넘겨야 하고, 그런
+        # 경우라면 노크가 있어도 조교가 수락해 준다 — 노크가 실제로 막던 것은
+        # "링크를 우연히 주운 외부인" 뿐이었다.
         transport = FakeTransport(TOKEN_OK, SPACE_OK)
         GoogleMeetAdapter(transport=transport).create_space()
         body = json.loads(transport.calls[1]["body"].decode())
-        self.assertEqual(body["config"]["accessType"], "TRUSTED")
+        self.assertEqual(body["config"]["accessType"], "OPEN")
 
     def test_google_records_nothing_now_that_the_bot_does(self):
         # ~~전사·요약 ON~~ → **전부 OFF**(2026-08-12 전면 교체).
-        # 감독 자료는 Fireflies 봇이 만든다. 구글까지 같이 켜 두면 ①안 쓰는
+        # 감독 자료는 회의에 들어오는 봇이 만든다. 구글까지 같이 켜 두면 ①안 쓰는
         # 회의록이 드라이브에 클리닉마다 하나씩 쌓이고 ②학생에게 녹취 안내가
         # **두 번** 뜬다. 구글을 켜 둘 이유였던 "아이패드에서 안 켜진다"가
         # 그대로 남아 있어서 어차피 조교 기기에 따라 있다 없다 한다.
@@ -206,24 +214,20 @@ class ConsentFlowTests(SimpleTestCase):
         self.assertEqual(params["redirect_uri"], "http://localhost:8765/")
         self.assertEqual(params["response_type"], "code")
 
-    def test_scopes_are_the_three_we_need_and_no_more(self):
-        # 스페이스 생성 + 감독 문서 읽기·정리 + 일정 만들기.
-        # 좁은 권한을 두 번 시도했다가 두 번 다 막혔다(2026-08-04 실측):
-        # `drive.meet.readonly` 는 파일 존재까지만 보이고 본문이 404 였고,
-        # 파일을 우리 폴더 구조로 옮기는 것은 **쓰기**라 읽기 권한으로 안 된다.
-        # 구글에 "미트가 만든 파일만 읽고 쓰기" 는 없다.
+    def test_scopes_are_the_two_we_need_and_no_more(self):
+        # 스페이스 생성 + 감독 문서 읽기·정리. 좁은 권한을 두 번 시도했다가 두 번
+        # 다 막혔다(2026-08-04 실측): `drive.meet.readonly` 는 파일 존재까지만
+        # 보이고 본문이 404 였고, 파일을 우리 폴더 구조로 옮기는 것은 **쓰기**라
+        # 읽기 권한으로 안 된다. 구글에 "미트가 만든 파일만 읽고 쓰기" 는 없다.
         #
-        # 캘린더는 2026-08-12 에 붙었다. 감독 봇을 우리가 1분마다 밀어 넣는
-        # 대신 **일정에 걸어 두면 업체가 시작 시각에 알아서 들어오기** 때문이다.
-        # `calendar` 전체가 아니라 `calendar.events` 인 이유: 우리가 하는 일은
-        # 클리닉 일정 하나를 만들고 고치고 지우는 것뿐이고, 달력 자체를
-        # 만들거나 남의 달력 설정을 건드릴 일이 없다.
+        # ~~`calendar.events`~~ 는 2026-08-12 에 붙었다 2026-08-19 에 빠졌다 —
+        # 봇이 캘린더를 보고 참석하던 구조가 예약 참가로 바뀌면서 부를 일이
+        # 없어졌다. **지금 토큰은 아직 그 권한을 달고 있다**(재동의 전까지).
         self.assertEqual(
             list(SCOPES),
             [
                 "https://www.googleapis.com/auth/meetings.space.created",
                 "https://www.googleapis.com/auth/drive",
-                "https://www.googleapis.com/auth/calendar.events",
             ],
         )
 
@@ -263,95 +267,71 @@ class ConsentFlowTests(SimpleTestCase):
             )
 
 
-CALENDAR_OK = (200, json.dumps({"id": "clinic11"}).encode())
-#: 토큰 주인이 누구인가 — 드라이브에 묻는다(캘린더 스코프로는 403).
-CALENDAR_ME = (200, json.dumps({"user": {"emailAddress": "hjcedu@hjcedu.com"}}).encode())
+FOLDER_FOUND = (200, json.dumps({"files": [{"id": "folder-1"}]}).encode())
+FOLDER_NONE = (200, json.dumps({"files": []}).encode())
+FOLDER_MADE = (200, json.dumps({"id": "folder-1"}).encode())
+UPLOADED = (
+    200,
+    json.dumps(
+        {"id": "file-1", "webViewLink": "https://docs.google.com/document/d/file-1/edit"}
+    ).encode(),
+)
 
 
-class CalendarEventTests(SimpleTestCase):
-    """캘린더 일정 — 감독 봇이 시작 시각을 아는 유일한 경로."""
+@override_settings(**CREDENTIALS)
+class DriveArchiveTests(SimpleTestCase):
+    """감독 자료를 **우리 드라이브**에 남긴다.
 
-    @override_settings(**CREDENTIALS)
-    def test_writes_the_meeting_link_where_a_notetaker_can_see_it(self):
-        transport = FakeTransport(TOKEN_OK, CALENDAR_ME, CALENDAR_OK)
-        GoogleMeetAdapter(transport=transport).upsert_event(
-            "clinic11",
-            title="clinic/2026-08/2026-08-13_1700_김하늘0001",
-            url="https://meet.google.com/a-b-c",
-            starts_at="2026-08-13T17:00:00+09:00",
-            minutes=60,
+    업체 저장소는 5일 뒤 비워지고, 업체가 주는 다운로드 주소는 서명된 임시
+    URL 이라 몇 시간이면 죽는다(2026-08-18 실측 — `Signature`·보안 토큰이
+    붙어 있다). 그 주소를 DB 에 넣으면 **곧 죽는 링크를 저장하는 것**이라,
+    원본과 전사를 우리 쪽으로 옮기고 DB 에는 안 죽는 링크만 남긴다.
+    """
+
+    def test_writes_the_transcript_as_a_google_doc(self):
+        # 폴더 둘(clinic·2026-08)을 각각 한 번씩 찾고, 마지막이 업로드다
+        transport = FakeTransport(TOKEN_OK, FOLDER_FOUND, FOLDER_FOUND, UPLOADED)
+        url = GoogleMeetAdapter(transport=transport).save_document(
+            "clinic/2026-08/2026-08-19_1800_김하늘0001", "[1] 오답 원인은…"
         )
-        body = json.loads(transport.calls[2]["body"].decode())
-        # 제목이 곧 전사 제목이 된다 — 되찾는 열쇠라 그대로 실어야 한다
-        self.assertEqual(body["summary"], "clinic/2026-08/2026-08-13_1700_김하늘0001")
-        # 구글은 **캘린더가 새로 만든** 미트만 정식 회의 필드에 넣어 준다.
-        # 이미 있는 스페이스 링크는 글자로 실어야 봇이 본다 — 두 자리 모두에.
-        self.assertEqual(body["location"], "https://meet.google.com/a-b-c")
-        self.assertIn("https://meet.google.com/a-b-c", body["description"])
-        self.assertEqual(body["start"]["dateTime"], "2026-08-13T17:00:00+09:00")
+        upload = transport.calls[-1]
+        self.assertIn("uploadType=multipart", upload["url"])
+        body = upload["body"].decode()
+        # 구글 문서로 변환시키되 **HTML 로** 올린다 — 제목·표가 살아야 읽힌다
+        self.assertIn("application/vnd.google-apps.document", body)
+        self.assertIn("text/html", body)
+        self.assertIn("[1] 오답 원인은…", body)
+        self.assertEqual(url, "https://docs.google.com/document/d/file-1/edit")
 
-    @override_settings(**CREDENTIALS)
-    def test_computes_the_end_from_the_slot_length(self):
-        # 실제로 오는 것은 문자열이 아니라 datetime 이다 — 끝 시각을 여기서
-        # 만든다(캘린더는 start 만으론 일정을 못 세운다).
-        transport = FakeTransport(TOKEN_OK, CALENDAR_ME, CALENDAR_OK)
-        start = datetime.datetime(2026, 8, 13, 17, 0, tzinfo=datetime.UTC)
-        GoogleMeetAdapter(transport=transport).upsert_event(
-            "clinic11", title="t", url="https://x/a", starts_at=start, minutes=60
+    def test_files_it_under_the_path_we_asked_for(self):
+        # clinic → 2026-08 → 파일. 폴더는 있으면 쓰고 없으면 만든다.
+        transport = FakeTransport(
+            TOKEN_OK, FOLDER_NONE, FOLDER_MADE, FOLDER_NONE, FOLDER_MADE, UPLOADED
         )
-        body = json.loads(transport.calls[2]["body"].decode())
-        self.assertEqual(body["start"]["dateTime"], "2026-08-13T17:00:00+00:00")
-        self.assertEqual(body["end"]["dateTime"], "2026-08-13T18:00:00+00:00")
-
-    @override_settings(**CREDENTIALS)
-    def test_puts_the_org_account_on_the_guest_list(self):
-        # 회의록 봇의 참석 규칙은 **참석자**를 본다(도메인·내부 회의 여부).
-        # 참석자가 비어 있으면 볼 것이 없어 규칙이 걸리지 않는다.
-        # 학생은 구글 계정이 아니라 외부 게스트라 여기 넣을 수 없고, 조직
-        # 계정 하나만 있으면 "내부 회의"로 읽힌다.
-        transport = FakeTransport(TOKEN_OK, CALENDAR_ME, CALENDAR_OK)
-        GoogleMeetAdapter(transport=transport).upsert_event(
-            "clinic11", title="t", url="https://x/a",
-            starts_at="2026-08-13T17:00:00+09:00", minutes=60,
+        GoogleMeetAdapter(transport=transport).save_document(
+            "clinic/2026-08/2026-08-19_1800_김하늘0001", "본문"
         )
-        body = json.loads(transport.calls[2]["body"].decode())
-        self.assertEqual(body["attendees"], [{"email": "hjcedu@hjcedu.com"}])
+        # 업로드 본문은 multipart 라 JSON 이 아니다 — 폴더 생성만 골라 읽는다
+        folders = [
+            json.loads(c["body"].decode())
+            for c in transport.calls
+            if c["method"] == "POST" and c["url"].endswith("drive/v3/files")
+        ]
+        self.assertEqual([f["name"] for f in folders], ["clinic", "2026-08"])
+        self.assertIn("2026-08-19_1800_김하늘0001", transport.calls[-1]["body"].decode())
 
-    @override_settings(**CREDENTIALS)
-    def test_creates_with_our_own_id(self):
-        # **PUT 으로는 못 만든다** — 구글 캘린더에서 PUT 은 이미 있는 일정만
-        # 고치고 없으면 404 다(2026-08-12 실측: 배정이 조용히 예약을 못 걸었다).
-        # 만들기는 POST 이고 ID 는 본문에 담는다.
-        transport = FakeTransport(TOKEN_OK, CALENDAR_ME, CALENDAR_OK)
-        GoogleMeetAdapter(transport=transport).upsert_event(
-            "clinic11", title="t", url="https://x/a",
-            starts_at="2026-08-13T17:00:00+09:00", minutes=60,
+    def test_copies_the_recording_next_to_it(self):
+        # 오디오 원본도 우리 것으로 만든다 — 업체 보관은 5일이다.
+        transport = FakeTransport(TOKEN_OK, FOLDER_FOUND, FOLDER_FOUND, UPLOADED)
+        GoogleMeetAdapter(transport=transport).save_bytes(
+            "clinic/2026-08/2026-08-19_1800_김하늘0001.mp3", b"ID3audio", "audio/mpeg"
         )
-        self.assertEqual(transport.calls[2]["method"], "POST")
-        self.assertEqual(json.loads(transport.calls[2]["body"].decode())["id"], "clinic11")
+        body = transport.calls[-1]["body"]
+        self.assertIn(b"audio/mpeg", body)
+        self.assertIn(b"ID3audio", body)
 
-    @override_settings(**CREDENTIALS)
-    def test_the_same_clinic_overwrites_its_own_event(self):
-        # 시간 변경이 예약을 **하나 더** 만들면 봇이 옛 시각에도 들어간다.
-        # 일정 ID 를 클리닉에서 정해 두면 이미 있을 때 409 가 오고, 그때
-        # 덮어쓴다 — 어느 일정이 그 클리닉 것인지 적어 둘 컬럼이 필요 없다.
-        transport = FakeTransport(TOKEN_OK, CALENDAR_ME, (409, b"duplicate"), CALENDAR_OK)
-        GoogleMeetAdapter(transport=transport).upsert_event(
-            "clinic11", title="t", url="https://x/a",
-            starts_at="2026-08-13T17:00:00+09:00", minutes=60,
-        )
-        self.assertEqual(transport.calls[3]["method"], "PUT")
-        self.assertIn("/events/clinic11", transport.calls[3]["url"])
-
-    @override_settings(**CREDENTIALS)
-    def test_deleting_an_event_that_is_already_gone_is_fine(self):
-        # 취소를 두 번 눌러도, 애초에 예약이 없어도 조용히 끝나야 한다.
-        transport = FakeTransport(TOKEN_OK, (404, b"not found"))
-        GoogleMeetAdapter(transport=transport).delete_event("clinic11")
-        self.assertEqual(transport.calls[1]["method"], "DELETE")
-
-    @override_settings(**CREDENTIALS)
-    def test_a_server_error_while_deleting_is_temporary(self):
-        transport = FakeTransport(TOKEN_OK, (503, b"upstream"))
+    def test_an_upload_failure_is_loud(self):
+        # 조용히 넘어가면 DB 에는 곧 죽을 업체 링크만 남는다
+        transport = FakeTransport(TOKEN_OK, FOLDER_FOUND, FOLDER_FOUND, (500, b"nope"))
         with self.assertRaises(TemporaryConferenceError):
-            GoogleMeetAdapter(transport=transport).delete_event("clinic11")
+            GoogleMeetAdapter(transport=transport).save_document("clinic/x/y", "본문")

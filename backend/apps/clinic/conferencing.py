@@ -76,32 +76,26 @@ class ConferenceAdapter(ABC):
     def create_space(self) -> Conference:
         """새 스페이스 1개. 실패하면 Temporary/PermanentConferenceError 를 던진다."""
 
-    def start_supervision(self, url: str, *, title: str, minutes: int) -> None:
-        """감독 기록을 시작시킨다. **기본은 아무것도 하지 않는 것이다.**
-
-        구글은 스페이스를 만들 때 "전사를 켜라"를 실어 보내므로 회의가 시작되면
-        저절로 돈다 — 부를 것이 없다. 봇을 회의에 넣어야 하는 업체만 이걸
-        구현한다(Fireflies). 그래서 `@abstractmethod` 가 아니다: 필요 없는
-        구현체까지 빈 메서드를 쓰게 만들면 계약이 거짓말을 하게 된다.
-
-        `title` 은 나중에 `fetch_supervision(file_as=...)` 이 되찾을 **같은
-        문자열**이다. 저장소가 제목을 모르는 업체면 무시해도 된다.
-        """
-        return None
-
     def schedule_supervision(
         self, url: str, *, key: str, title: str, starts_at, minutes: int
     ) -> None:
         """감독을 **미리 걸어 둔다**. 기본은 아무것도 하지 않는 것이다.
 
-        `start_supervision` 과 갈리는 점은 **누가 시각을 지키느냐**다. 그쪽은
-        회의가 도는 동안 우리가 밀어 넣는 것이라 배치가 1분마다 돌아야 하고,
-        이쪽은 업체가 시작 시각을 알고 알아서 들어온다 — 우리 쪽에 도는 것이
-        없다(알림톡을 업체 예약 발송으로 넘긴 것과 같은 모양).
+        구글은 스페이스를 만들 때 "전사를 켜라"를 실어 보내므로 회의가 시작되면
+        저절로 돈다 — 걸어 둘 것이 없다. 봇을 넣어야 하는 업체만 이걸 구현한다.
+        그래서 `@abstractmethod` 가 아니다: 필요 없는 구현체까지 빈 메서드를
+        쓰게 만들면 계약이 거짓말을 하게 된다.
+
+        **시각을 지키는 것은 업체다.** 우리는 배정하는 순간 "그 시각에 이 링크로
+        들어가"를 꽂아 두고 끝이라 우리 쪽에 도는 배치가 없다(알림톡을 업체
+        예약 발송으로 넘긴 것과 같은 모양).
 
         `key` 는 나중에 고치거나 지울 때 그 예약을 다시 가리키는 이름이다.
         클리닉 1건에 하나이고 **바뀌지 않아야** 한다 — 시각이 바뀌어도 같은
         예약을 덮어쓰는 것이지 새로 만드는 게 아니기 때문이다.
+
+        `title` 은 나중에 `fetch_supervision(file_as=...)` 이 받을 **같은
+        문자열**이다. 제목을 쓸 데가 없는 업체면 무시해도 된다.
         """
         return None
 
@@ -114,13 +108,18 @@ class ConferenceAdapter(ABC):
         return None
 
     @abstractmethod
-    def fetch_supervision(self, ref: str, *, file_as: str | None = None) -> "Supervision | None":
+    def fetch_supervision(
+        self, ref: str, *, file_as: str | None = None, key: str | None = None
+    ) -> "Supervision | None":
         """끝난 회의의 감독 자료. **아직 없으면 None**(실패가 아니다).
 
         None 이 나오는 경우가 여럿이고 전부 정상이다 — 아무도 안 들어왔거나,
         회의가 방금 끝나 자료가 아직 안 만들어졌거나, 전사가 애초에 돌지
         않았거나(호스트가 웹이 아닌 기기로 들어온 경우). 호출측은 그냥 다음
         차례에 다시 물어본다.
+
+        `key` 는 예약할 때 준 그 이름이다(`schedule_supervision`). 업체가 우리
+        이름을 달고 있으면 그것으로 되찾고, 예약을 안 쓰는 업체는 무시한다.
 
         `file_as` 는 **정리해 두고 싶은 논리 경로**다(`clinic/2026-08/…`).
         저장소가 폴더를 모르는 업체면 무시해도 된다 — 계약은 "가능하면 여기
