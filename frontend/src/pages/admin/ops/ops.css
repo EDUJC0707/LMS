@@ -495,3 +495,48 @@
   font-size: var(--text-2xs);
   color: var(--color-ink-2);
 }
+
+/* ── 반별 격자(FLOW 3-1) ───────────────────────────────────────── */
+
+/* 이름 열은 가로 스크롤에도 남는다 — 주차가 늘면 값만 흘러가고 누구 줄인지는
+   계속 보여야 한다. 가로 스크롤과 열 이름 고정은 .ui-tablewrap 이 이미 한다. */
+.ops-grid .ui-table th:first-child,
+.ops-grid .ui-table td:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--color-paper-3);
+}
+
+.ops-grid .ui-table thead th:first-child {
+  z-index: var(--z-sticky);
+}
+
+.ops-grid .ui-table td {
+  white-space: nowrap;
+}
+
+/* 상태색은 의미 전용 — 값 4종에만 쓴다(.ops-fig--* 와 같은 축). */
+.ops-grid__mark--present {
+  color: var(--color-success);
+}
+
+.ops-grid__mark--makeup {
+  color: var(--color-warning);
+}
+
+.ops-grid__mark--onsite {
+  color: var(--color-accent);
+}
+
+.ops-grid__mark--absent {
+  color: var(--color-danger);
+}
+
+.ops-grid__mark--blank {
+  color: var(--color-ink-2);
+}
+
+/* 그때 이 반에 없던 칸. 미입력(빈 칸)보다 약하게 둔다 — 채울 것이 없는 자리다. */
+.ops-grid__none {
+  color: var(--color-neutral);
+}
