@@ -72,7 +72,7 @@ from apps.curriculum.models import CourseEnrollment
 from apps.notifications.models import Notification
 from apps.notifications.sending import queue as queue_notification
 
-from .aliases import resolve_school
+from .aliases import resolve_school, unknown_schools
 from .login_id import (
     LoginIdError,
     issue_parent_login_id,
@@ -146,7 +146,15 @@ def bulk_issue(rows, klass):
             key = "parents_created" if result["parent"]["created"] else "parents_linked"
             summary[key] += 1
         results.append({"index": index, **result})
-    return {"results": results, "summary": summary}
+    return {
+        "results": results,
+        "summary": summary,
+        # 별칭표에 없던 학교 — 묶음이 스스로 뱉는다(FLOW 5-3). 행을 세우지 않고
+        # 끝나고 모아 준다. 이게 없으면 조교는 무엇이 안 맞았는지 알 길이 없다.
+        "unknown_schools": unknown_schools(
+            row.get("school") for row in rows if isinstance(row, dict)
+        ),
+    }
 
 
 def _issue_row(row, klass):

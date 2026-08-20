@@ -59,3 +59,29 @@ def resolve_school(raw) -> str:
         .first()
     )
     return canonical or text
+
+
+def unknown_schools(raws) -> list[str]:
+    """별칭표에 없는 학교 이름 — 온 그대로, 중복 없이, 온 순서대로.
+
+    **묶음이 스스로 뱉게 하는 자리다**(FLOW 5-3). 행마다 조교에게 묻지 않는다 —
+    학교는 계정 판정에 안 쓰므로(FLOW 2-3) 행을 세울 이유가 없고, 상태 네 갈래에
+    "학교를 모르겠다" 가 들어갈 자리도 없다. 대신 발급이 끝난 뒤 **모르는 것만
+    모아 내놓아** 조교가 별칭표에서 한 번에 붙인다.
+
+    이게 없으면 `SchoolAlias` 는 사람이 기억으로 타이핑할 때만 채워진다 —
+    무엇이 안 맞았는지 아무도 모르므로 표가 빈 채로 남는다.
+    """
+    seen, keys = [], []
+    for raw in raws:
+        text = nfc(raw).strip() if isinstance(raw, str) else ""
+        if not text or text in seen:
+            continue
+        seen.append(text)
+        keys.append(alias_key(text))
+    if not seen:
+        return []
+    known = set(
+        SchoolAlias.objects.filter(alias__in=keys).values_list("alias", flat=True)
+    )
+    return [text for text, key in zip(seen, keys) if key not in known]

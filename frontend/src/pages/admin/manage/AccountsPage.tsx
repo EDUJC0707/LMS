@@ -415,6 +415,26 @@ export default function AccountsPage() {
           <div className="pm-cardpad">
             <Alert tone="warning">초기 비밀번호는 이 화면에서만 보입니다</Alert>
           </div>
+          {result.unknown_schools.length > 0 && (
+            // 모르는 학교는 행을 세우지 않고 끝나고 모아 내놓는다(FLOW 5-3).
+            // 안 내놓으면 별칭표가 무엇을 놓쳤는지 아무도 모른 채 빈 채로 남는다.
+            <div className="pm-cardpad">
+              <Card
+                title="별칭표에 없는 학교"
+                actions={
+                  <Link to="/admin/aliases">
+                    <Button variant="ghost">별칭표</Button>
+                  </Link>
+                }
+              >
+                <ul className="pm-aliasmiss">
+                  {result.unknown_schools.map((name) => (
+                    <li key={name}>{name}</li>
+                  ))}
+                </ul>
+              </Card>
+            </div>
+          )}
           <Table<BulkResultRow>
             rows={result.results}
             rowKey={(row) => row.index}

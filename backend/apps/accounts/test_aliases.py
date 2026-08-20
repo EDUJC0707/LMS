@@ -14,7 +14,7 @@ import unicodedata
 
 from django.test import SimpleTestCase, TestCase
 
-from .aliases import alias_key, column_map, resolve_school
+from .aliases import alias_key, column_map, resolve_school, unknown_schools
 from .features import FeatureKey
 from .models import SchoolAlias, StaffFeatureGrant, User
 
@@ -131,3 +131,31 @@ class AliasApiTests(TestCase):
         self.assertEqual(resolve_school("숙명 여고"), "숙명여자고등학교")
         self.assertEqual(self.client.delete(detail).status_code, 204)
         self.assertEqual(resolve_school("숙명여고"), "숙명여고")
+
+
+class UnknownSchoolsTests(TestCase):
+    """묶음이 모르는 학교를 스스로 뱉는다 (FLOW 5-3).
+
+    이게 없으면 `SchoolAlias` 는 사람이 기억으로 타이핑할 때만 채워진다 —
+    무엇이 안 맞았는지 화면 어디에도 안 나오므로 표가 빈 채로 남는다.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        SchoolAlias.objects.create(alias=alias_key("숙명여고"), canonical="숙명여자고등학교")
+
+    def test_reports_only_the_ones_the_table_does_not_know(self):
+        got = unknown_schools(["숙명여고", "세화고", "숙명 여고"])
+
+        # `숙명 여고` 는 공백만 다르므로 같은 키다 — 이미 아는 학교다.
+        self.assertEqual(got, ["세화고"])
+
+    def test_keeps_the_first_spelling_and_drops_repeats(self):
+        got = unknown_schools(["세화고", "세화고", "중동고", None, "", "  "])
+
+        self.assertEqual(got, ["세화고", "중동고"])
+
+    def test_costs_one_query_regardless_of_row_count(self):
+        """행마다 조회하면 명단 200줄이 200 질의가 된다."""
+        with self.assertNumQueries(1):
+            unknown_schools([f"학교{n}" for n in range(50)])
