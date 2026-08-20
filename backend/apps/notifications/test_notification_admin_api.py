@@ -137,7 +137,7 @@ class NotificationAdminListTests(NotificationAdminFixtureMixin, TestCase):
             {"kind": "직원", "id": self.admin.user_id, "name": "관리자"},
         )
 
-    def test_student_without_account_falls_back_to_unique_id(self):
+    def test_student_without_account_falls_back_to_matching_key(self):
         # 계정 발급 전 학생 — 이름이 users 행에 있어서 비어 있다.
         orphan = Student.objects.create(matching_key="장예준0029")
         self.make_notif(student=orphan)
