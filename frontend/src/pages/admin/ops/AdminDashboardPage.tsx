@@ -18,7 +18,7 @@ import type { ApiState } from "../../../api";
 import { useMe } from "../../../auth";
 import { Button, Card, EmptyState, ErrorState, Loading, Spinner } from "../../../components";
 import { Fig } from "./Fig";
-import { relativeDay, sessionLabel, shortDate, todayISO } from "./format";
+import { relativeDay, sessionLabel, shortDate, todayISO, unconfirmedSessions } from "./format";
 import "./ops.css";
 import type {
   ClinicRequestRow,
@@ -55,6 +55,10 @@ export default function AdminDashboardPage() {
   // 오늘 수업이 있으면 그것이, 없으면 직전 수업이 지금 손댈 회차다.
   const focus = todays.length > 0 ? todays : previous ? [previous] : [];
   const focusKey = focus.map((s) => s.session_id).join(",");
+  // 확정을 안 누른 채 지나간 회차(FLOW 5-1). 서버가 날짜 오름차순으로 주므로
+  // 가장 오래 방치된 것이 맨 위에 온다.
+  // ponytail: 목록은 통짜다 — 회차 API 가 페이지네이션을 갖게 되면 여기도 같이 갈린다
+  const missed = unconfirmedSessions(all, today);
 
   const details = useApi<SessionDetail[] | null>(
     async () =>
@@ -194,6 +198,19 @@ export default function AdminDashboardPage() {
       {tiles.length > 0 && (
         <Card title="처리 대기">
           <div className="ops-tiles">{tiles}</div>
+        </Card>
+      )}
+
+      {/* FLOW 5-1 의 전체 레벨 목록 순서 그대로 — 오늘 할 일 다음이 이것이다. */}
+      {canAttendance && missed.length > 0 && (
+        <Card title="확정 안 된 주차">
+          <div className="ui-stack ui-stack--sm">
+            {missed.map((session) => (
+              <Link key={session.session_id} to={`/admin/attendance/${session.session_id}`}>
+                {shortDate(session.session_date)} {sessionLabel(session)}
+              </Link>
+            ))}
+          </div>
         </Card>
       )}
 
